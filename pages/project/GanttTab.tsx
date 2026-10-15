@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import {
@@ -405,6 +405,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const toast = useToast();
     const confirm = useConfirm();
     const location = useLocation();
+    const dailyLogHref = useMemo(() => {
+        const query = new URLSearchParams(location.search);
+        query.delete('taskId');
+        query.set('tab', 'dailylog');
+        if (projectId) query.set('projectId', projectId);
+        if (constructionSiteId) query.set('siteId', constructionSiteId);
+        return `/da?${query.toString()}`;
+    }, [constructionSiteId, location.search, projectId]);
     const effectiveId = projectId || constructionSiteId || '';
     const focusTaskId = useMemo(() => new URLSearchParams(location.search).get('taskId'), [location.search]);
     const focusTaskHandledRef = useRef<string | null>(null);
@@ -852,7 +860,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 estimatedCostPerDay: Number(fCostPerDay) || 0,
                 wbsCode: normalizedWbs || undefined, fallbackUnit: fFallbackUnit || undefined,
                 provisionalQuantity,
-                actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
+                actualStartDate: progressFromDailyLog ? editing.actualStartDate : fActualStart || undefined,
+                actualEndDate: progressFromDailyLog ? editing.actualEndDate : fActualEnd || undefined,
                 watchers: fWatchers,
             } : {
                 id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
@@ -869,7 +878,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 estimatedCostPerDay: Number(fCostPerDay) || 0,
                 wbsCode: normalizedWbs || undefined, fallbackUnit: fFallbackUnit || undefined,
                 provisionalQuantity,
-                actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
+                actualStartDate: progressFromDailyLog ? undefined : fActualStart || undefined,
+                actualEndDate: progressFromDailyLog ? undefined : fActualEnd || undefined,
                 watchers: fWatchers,
             };
             const item = baseItem;
@@ -1183,8 +1193,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         resourceCount: hasExcelValue(row, ['Nhân công dự kiến']) ? parseNonNegativeNumber(getExcelValue(row, ['Nhân công dự kiến'])) : existing.resourceCount,
                         resourceType: hasExcelValue(row, ['Nhân công dự kiến']) ? 'worker' : existing.resourceType,
                         progress: !progressFromDailyLog && hasExcelValue(row, ['Tiến độ (%)', 'Tiến độ']) ? parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])) : existing.progress,
-                        actualStartDate: actualStart || existing.actualStartDate,
-                        actualEndDate: actualEnd || existing.actualEndDate,
+                        actualStartDate: progressFromDailyLog ? existing.actualStartDate : actualStart || existing.actualStartDate,
+                        actualEndDate: progressFromDailyLog ? existing.actualEndDate : actualEnd || existing.actualEndDate,
                         notes: getExcelText(row, ['Ghi chú']) || existing.notes,
                     };
                     updatedTasks.push(next);
@@ -1253,8 +1263,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     provisionalQuantity: parseNonNegativeNumber(getExcelValue(row, ['Khối lượng tạm tính'])),
                     resourceCount: hasExcelValue(row, ['Nhân công dự kiến']) ? parseNonNegativeNumber(getExcelValue(row, ['Nhân công dự kiến'])) : 1,
                     resourceType: 'worker',
-                    actualStartDate: parseExcelDate(getExcelValue(row, ['Bắt đầu thực tế'])) || undefined,
-                    actualEndDate: parseExcelDate(getExcelValue(row, ['Kết thúc thực tế'])) || undefined,
+                    actualStartDate: progressFromDailyLog ? undefined : parseExcelDate(getExcelValue(row, ['Bắt đầu thực tế'])) || undefined,
+                    actualEndDate: progressFromDailyLog ? undefined : parseExcelDate(getExcelValue(row, ['Kết thúc thực tế'])) || undefined,
                     parentId: (row['Mã cha'] || row['Công việc cha (Mã WBS)']) ? String(row['Mã cha'] || row['Công việc cha (Mã WBS)']) : undefined,
                     order: tasks.length + newTasks.length,
                     isMilestone: false,
@@ -1290,7 +1300,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             const authoritativeTasks = deriveProjectTaskProgress(mergeAuthoritativeTasks(tasks, result.tasks), dailyLogs);
             setTasks(authoritativeTasks);
             toast.success('Thành công', progressFromDailyLog
-                ? `Đã nhập ${validRows.length} hạng mục thi công. Bỏ qua cột "Tiến độ (%)" — tiến độ thực tế lấy từ Nhật ký.`
+                ? `Đã nhập ${validRows.length} hạng mục thi công. Bỏ qua cột "Tiến độ (%)" và ngày thực tế — lấy từ Nhật ký.`
                 : `Đã nhập ${validRows.length} hạng mục thi công`);
             setShowImportModal(false);
             setImportRows([]);
@@ -2933,10 +2943,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {/* Actual Dates (table mode only) */}
                                                         {viewMode === 'table' && (
                                                             <>
-                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={progressFromDailyLog ? "Theo Nhật ký" : task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
                                                                     {derivedStart ? fmtShort(derivedStart) : <span className="text-slate-300">–</span>}
                                                                 </td>
-                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={progressFromDailyLog ? "Theo Nhật ký" : task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
                                                                     {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
                                                                 </td>
                                                                 <td className="hidden lg:table-cell px-2 py-2 text-slate-600 font-bold align-middle">
@@ -3541,6 +3551,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             </div>
 
                             {/* Actual Dates */}
+                            {progressFromDailyLog ? (
+                                <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 px-3.5 py-2.5 text-xs dark:border-emerald-800 dark:bg-emerald-900/10">
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                        <span className="flex items-center gap-1 font-bold uppercase text-[10px] text-muted-foreground"><Calendar size={10} /> Thực tế</span>
+                                        <span>BĐ <strong>{fActualStart ? fmtDate(fActualStart) : '—'}</strong></span>
+                                        <span>KT <strong>{fActualEnd ? fmtDate(fActualEnd) : '—'}</strong></span>
+                                        <Link to={dailyLogHref} className="ml-auto font-semibold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300">Ghi ở Nhật ký</Link>
+                                    </div>
+                                    <p className="mt-1 text-muted-foreground">Tự ghi khi CHT duyệt nhật ký có việc này.</p>
+                                </div>
+                            ) : (
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ thực tế</label>
@@ -3553,6 +3574,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-700 text-sm bg-emerald-50/30 dark:bg-emerald-900/10 focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                             </div>
+                            )}
 
                             {/* Duration info */}
                             {fStart && fEnd && (

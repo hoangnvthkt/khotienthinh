@@ -58,6 +58,8 @@ export interface ActualProgressWeek {
   weekStart: string;
   source: 'daily_log' | 'manual';
   cutoverDate: string | null;
+  /** Ngày gần nhất có nhật ký CHT đã duyệt (cả dự án). */
+  latestApprovedDate?: string | null;
   canConfirm: boolean;
   canEditException: boolean;
   state: { isLocked: boolean; lockedAt: string | null; lockedByName: string | null; unlockedAt: string | null; unlockReason: string | null } | null;
@@ -231,4 +233,12 @@ export const getConfirmBlock = (week: ActualProgressWeek, today: string): Confir
   if (!week.canConfirm) return 'no_permission';
   if (addDays(week.weekStart, 6) >= today) return 'not_ended';
   return null;
+};
+
+/** Lần mở đầu: tuần này chưa có nhật ký duyệt thì mở tuần có nhật ký duyệt gần nhất. */
+export const getAutoJumpWeek = (week: ActualProgressWeek): string | null => {
+  if (week.source !== 'daily_log' || !week.latestApprovedDate) return null;
+  if (week.days.some(d => d.summaryStatus === 'verified')) return null;
+  const target = mondayOf(week.latestApprovedDate);
+  return target < week.weekStart ? target : null;
 };

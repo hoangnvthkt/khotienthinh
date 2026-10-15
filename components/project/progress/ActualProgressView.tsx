@@ -1,6 +1,6 @@
 // Tiến độ thực tế (chủ SP duyệt mockup 15/10/2026): dự án dùng Nhật ký chính thức chỉ xem số từ nhật ký CHT đã duyệt.
 // Dải 7 ngày là bộ lọc; bảng không có ô nhập; bấm việc xem từng ngày + Điều chỉnh ngoại lệ; "Xác nhận tuần" chỉ khóa số.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   AlertTriangle, ArrowUpRight, CalendarCheck, CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, ClipboardCheck,
@@ -13,7 +13,7 @@ import { useToast } from '../../../context/ToastContext';
 import { useReasonConfirm } from '../../../context/ConfirmContext';
 import { getProjectProgressMutationErrorMessage, projectWeeklyProgressService } from '../../../lib/projectWeeklyProgressService';
 import {
-  ACTUAL_DAY_LABEL, addDays, buildActualProgressRows, dayCounts, dayGain, getActualDayStatus, getConfirmBlock, isoWeekNumber, mondayOf,
+  ACTUAL_DAY_LABEL, addDays, buildActualProgressRows, dayCounts, dayGain, getActualDayStatus, getAutoJumpWeek, getConfirmBlock, isoWeekNumber, mondayOf,
   pendingDayGain, summarizeActualProgress,
   type ActualDayStatus, type ActualProgressRow, type ActualProgressWeek,
 } from '../../../lib/projectActualProgress';
@@ -63,11 +63,19 @@ export default function ActualProgressView({ projectId, constructionSiteId, onSh
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Lần mở đầu: tuần này chưa có nhật ký duyệt thì tự mở tuần có nhật ký duyệt gần nhất (giữ tuần gốc để quay về).
+  const firstLoadRef = useRef(true);
+  const [jumpedFrom, setJumpedFrom] = useState<string | null>(null);
 
   const load = useCallback(async (target: string) => {
     setLoadState('loading');
     try {
       const data = await projectWeeklyProgressService.getActualProgressWeek({ projectId, constructionSiteId, weekStart: target });
+      if (firstLoadRef.current) {
+        firstLoadRef.current = false;
+        const jumpTo = getAutoJumpWeek(data);
+        if (jumpTo) { setJumpedFrom(data.weekStart); setWeekStart(jumpTo); return; }
+      }
       setWeek(data);
       setLoadState('ready');
     } catch (error) {
@@ -156,11 +164,11 @@ export default function ActualProgressView({ projectId, constructionSiteId, onSh
       </div>
       <div className="flex w-full items-center gap-2 md:w-auto">
         <div className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border bg-card md:flex-none">
-          <button type="button" disabled={atCutoverWeek || loadState === 'loading'} onClick={() => setWeekStart(addDays(week.weekStart, -7))}
+          <button type="button" disabled={atCutoverWeek || loadState === 'loading'} onClick={() => { setJumpedFrom(null); setWeekStart(addDays(week.weekStart, -7)); }}
             title={atCutoverWeek ? 'Tuần trước mốc Nhật ký chính thức: xem ở Số liệu trước mốc' : 'Tuần trước'} aria-label="Tuần trước"
             className="px-2 py-2 text-muted-foreground hover:text-foreground disabled:opacity-30"><ChevronLeft size={16} /></button>
           <span className="flex items-center gap-1.5 whitespace-nowrap px-1 text-sm font-semibold"><CalendarDays size={15} className="hidden text-mint-600 sm:block" />Tuần {isoWeekNumber(week.weekStart)} · {dm(week.weekStart)}–{dm(weekEnd)}</span>
-          <button type="button" disabled={week.weekStart >= mondayOf(today) || loadState === 'loading'} onClick={() => setWeekStart(addDays(week.weekStart, 7))}
+          <button type="button" disabled={week.weekStart >= mondayOf(today) || loadState === 'loading'} onClick={() => { setJumpedFrom(null); setWeekStart(addDays(week.weekStart, 7)); }}
             aria-label="Tuần sau" className="px-2 py-2 text-muted-foreground hover:text-foreground disabled:opacity-30"><ChevronRight size={16} /></button>
         </div>
         <button type="button" onClick={() => void load(week.weekStart)} className={`${secondaryBtn} hidden px-2.5 md:inline-flex`} title="Làm mới" aria-label="Làm mới">
@@ -172,6 +180,13 @@ export default function ActualProgressView({ projectId, constructionSiteId, onSh
               className={`${primaryBtn} shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50`}><CalendarCheck size={16} />Xác nhận tuần</button>}
       </div>
     </div>
+
+    {jumpedFrom && jumpedFrom !== week.weekStart && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100">
+      <Info size={15} className="shrink-0" />
+      <span>Tuần {isoWeekNumber(jumpedFrom)} chưa có nhật ký được duyệt. Đang xem tuần {isoWeekNumber(week.weekStart)}{week.latestApprovedDate && <> — nhật ký duyệt gần nhất ngày {dm(week.latestApprovedDate)}</>}.</span>
+      <button type="button" onClick={() => { const back = jumpedFrom; setJumpedFrom(null); setWeekStart(back); }}
+        className="ml-auto font-semibold underline underline-offset-2">Về tuần này</button>
+    </div>}
 
     {locked && week.state && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-leaf-200 bg-leaf-50 px-3 py-2 text-sm text-leaf-900 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-100">
       <Lock size={15} />Đã xác nhận{week.state.lockedByName && <> bởi <b className={ENT}>{week.state.lockedByName}</b></>}{week.state.lockedAt && <> lúc {dmt(week.state.lockedAt)}</>}. Nhật ký duyệt sau đó không cộng vào tuần này.
