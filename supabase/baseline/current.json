@@ -320,7 +320,8 @@
     "20261013141500_center_flow_v1.sql",
     "20261013170000_ai_skills_center.sql",
     "20261013180000_center_flow_items_v1.sql",
-    "20261014100000_purchase_receipt_guards.sql"
+    "20261014100000_purchase_receipt_guards.sql",
+    "20261015100000_progress_single_source.sql"
   ],
   "forbidIncludeAll": true
 }
