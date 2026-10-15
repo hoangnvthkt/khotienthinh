@@ -389,3 +389,16 @@ cầm cọc) và bàn gia công uốn / cắt thép; nhà khung bê tông n tầ
 chưa đổ (DA29: "2.4.2 ván khuôn cột tầng 2 14% nhưng 2.3.3 đổ bê tông cột tầng 1 0%") — phần tử tầng trên không vẽ lơ lửng.
 
 Ảnh: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong}.jpg`.
+
+**XinHai theo phối cảnh và bảng hạng mục thật (15/10).** Chủ SP gửi phối cảnh 3D (4 ảnh: toàn khu, nhà nghỉ ca 3 góc) + bảng cơ cấu đất (50.156,9 m²: xây dựng
+26.902,6 · sân đường 10.715,4 · cây xanh 12.538,9) + bảng hạng mục. Dựng lại theo đó:
+- Mặt bằng xoay đúng phối cảnh: đường chính dọc mặt trước (phía tây), đường nhánh bên phải (phía nam), xưởng chạy song song đường chính, nhà máy hiện có
+  (giai đoạn 1) phía sau.
+- Kích thước: **Xưởng sản xuất chính + kho 8.110 m² → 60 × 135 m** (2 nhịp × 30 m, 18 bước cột × 7,5 m, 2 tầng sàn deck); **Nhà điều hành 2 tầng 1.161 m² →
+  36,3 × 32 m** ở đầu xa, sát xưởng; **Nhà nghỉ ca 3 tầng 288 m² → 18 × 16 m** ở đầu gần, trước mặt dài của xưởng (đúng ảnh 2–4).
+- Hạng mục chưa thi công hiện bóng mờ có tên + diện tích, bật / tắt cùng "Hình hoàn thành" và chỉ hiện nhãn khi lại gần: nhà xe công nhân 5C 844,2 m² (dọc rào
+  mặt trước) và 5D 294 m², nhà lán xe 99,8, hồ nước PCCC 235, cột cờ, nhà vệ sinh 6A 105,8 / 6B 110,7, phòng khí nén 52,5, phòng máy phát 66,3, trạm biến áp 36,7,
+  nhà nồi hơi 40,2, chòi hút thuốc 11, công viên cây xanh. Vị trí các nhà phụ là ước theo phối cảnh (cụm nhà nhỏ ở đầu xa gần nhà điều hành) — cần mặt bằng tổng thể
+  để đặt chính xác.
+
+Ảnh thay mới: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong,hang-muc-phu}.jpg`.
