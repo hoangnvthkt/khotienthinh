@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PROJECT_PERMISSION_ROOMS,
   getProjectPermissionRoom,
+  getProjectPermissionRoomActionLabel,
   isRoomActionAllowed,
 } from '../permissions/projectPermissionRooms';
 
@@ -60,18 +61,21 @@ describe('projectPermissionRooms', () => {
     expect(isRoomActionAllowed('weekly_progress', 'approve')).toBe(false);
   });
 
-  it('gives gantt only view, edit, and delete, with view prerequisites', () => {
+  it('gives gantt view, edit, delete plus approve / confirm for schedule changes, with view prerequisites', () => {
     const room = getProjectPermissionRoom('gantt');
 
-    expect(room?.actions).toEqual(['view', 'edit', 'delete']);
+    expect(room?.actions).toEqual(['view', 'edit', 'delete', 'approve', 'confirm']);
     expect(room?.requiredActions).toEqual([]);
     expect(room?.actionPrerequisites).toEqual({
       edit: ['view'],
       delete: ['view'],
+      approve: ['view'],
+      confirm: ['view'],
     });
     expect(isRoomActionAllowed('gantt', 'submit')).toBe(false);
     expect(isRoomActionAllowed('gantt', 'verify')).toBe(false);
-    expect(isRoomActionAllowed('gantt', 'approve')).toBe(false);
+    expect(getProjectPermissionRoomActionLabel('gantt', 'approve')).toBe('Duyệt điều chỉnh');
+    expect(getProjectPermissionRoomActionLabel('gantt', 'confirm')).toBe('Duyệt dời về đích');
   });
 
   it('exposes immutable Room definitions', () => {

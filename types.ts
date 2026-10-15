@@ -975,6 +975,12 @@ export interface ProjectBaseline {
   lockedBy?: string;
   tasksSnapshot: ProjectTask[];
   createdAt?: string;
+  // Điều chỉnh tiến độ có duyệt (15/10/2026): bản gốc = 0, mỗi lần duyệt +1; 'legacy' = bản chụp tay cũ.
+  versionNo?: number | null;
+  versionKind?: 'legacy' | 'original' | 'approved';
+  scheduleChangeId?: string | null;
+  finishDate?: string | null;
+  isContract?: boolean;
 }
 
 export type ProjectDelayEventStatus = 'reported' | 'accepted' | 'applied' | 'resolved' | 'void';
