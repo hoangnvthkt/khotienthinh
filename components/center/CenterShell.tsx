@@ -25,6 +25,7 @@ import type { DashboardState } from '../dashboard/DashboardView';
 import type { FlowState } from '../flow/FlowView';
 import type { FlowQuery, FlowResult, FlowScope, LoadFlowItems, RemindFlow } from '../../lib/center/centerFlowService';
 import type { LoadMaterialMoves } from '../dashboard/StockTable';
+import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
@@ -631,7 +632,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
               today={today}
               mineCount={mineCount}
               active={activeTab === ASSISTANT_TAB.id && (!narrow || mobilePane === 'today')}
-              loadWorkItems={loadWorkItems}
+              // App thật không truyền loadWorkItems (cột việc tự dùng mặc định) → dùng cùng nguồn chung, không để undefined (sự cố 15/10).
+              loadWorkItems={loadWorkItems || loadWorkItemsShared}
               onDrill={onDrill}
               onOpenItem={openItem}
               onRetry={() => setTodayAttempt(value => value + 1)}
