@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, buildActualProgressRows, dayCounts, getActualDayStatus, getConfirmBlock, isoWeekNumber, mondayOf, summarizeActualProgress,
+  addDays, buildActualProgressRows, dayCounts, getActualDayStatus, getAutoJumpWeek, getConfirmBlock, isoWeekNumber, mondayOf, summarizeActualProgress,
   type ActualProgressWeek, type ActualProgressWeekDay, type ActualProgressWeekTask,
 } from '../projectActualProgress';
 
@@ -83,6 +83,14 @@ describe('tiến độ thực tế từ nhật ký', () => {
     expect(getConfirmBlock({ ...week, canConfirm: false }, '2026-10-19')).toBe('no_permission');
     expect(getConfirmBlock({ ...week, state: { isLocked: true, lockedAt: null, lockedByName: null, unlockedAt: null, unlockReason: null } }, '2026-10-19')).toBe('locked');
     expect(getConfirmBlock({ ...week, source: 'manual' }, '2026-10-19')).toBe('manual');
+  });
+
+  it('tuần này chưa có nhật ký duyệt thì mở tuần có nhật ký duyệt gần nhất', () => {
+    const empty = { ...week, days: week.days.map(d => ({ ...d, summaryStatus: d.summaryStatus === 'verified' ? 'submitted' : d.summaryStatus })) };
+    expect(getAutoJumpWeek({ ...empty, latestApprovedDate: '2026-10-09' })).toBe('2026-10-05');
+    expect(getAutoJumpWeek({ ...empty, latestApprovedDate: null })).toBeNull();
+    expect(getAutoJumpWeek({ ...week, latestApprovedDate: '2026-10-13' })).toBeNull();
+    expect(getAutoJumpWeek({ ...empty, latestApprovedDate: '2026-10-09', source: 'manual' })).toBeNull();
   });
 
   it('tuần ISO và ngày', () => {
