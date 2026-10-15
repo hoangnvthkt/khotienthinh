@@ -83,7 +83,7 @@ describe('project permission Rooms UI (person-first)', () => {
     const { getProjectPermissionRoomActionLabel } = await import('../permissions/projectPermissionRooms');
 
     expect(getProjectPermissionRoomActionLabel('weekly_progress', 'edit')).toBe('Sửa/Nhập liệu');
-    expect(getProjectPermissionRoomActionLabel('weekly_progress', 'confirm')).toBe('Chốt/Mở chốt');
+    expect(getProjectPermissionRoomActionLabel('weekly_progress', 'confirm')).toBe('Xác nhận/Mở lại tuần');
     expect(getProjectPermissionRoomActionLabel('material_po', 'edit')).toBe('Sửa');
     expect(getProjectPermissionRoomActionLabel('material_po', 'confirm')).toBe('Xác nhận');
   });

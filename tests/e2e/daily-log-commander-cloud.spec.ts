@@ -183,7 +183,7 @@ test('CHT returns an exact slip, publishes an isolated report; reader, locked pe
     }
     await query(`insert into public.project_progress_period_states(scope_key,project_id,period_type,period_start,is_locked,locked_by,locked_at)
       values('${project}','${project}','weekly',date_trunc('week','${date}'::date)::date,true,'${actor}',now()) on conflict(scope_key,period_type,period_start) do update set is_locked=true,locked_by='${actor}',locked_at=now()`,false);
-    await page.reload();await expect(page.getByRole('button',{name:'Tạo bản điều chỉnh',exact:true})).toHaveCount(0);await expect(page.getByRole('link',{name:'Mở Chốt tiến độ'}).first()).toBeVisible();
+    await page.reload();await expect(page.getByRole('button',{name:'Tạo bản điều chỉnh',exact:true})).toHaveCount(0);await expect(page.getByRole('link',{name:'Mở Tiến độ thực tế'}).first()).toBeVisible();
     await query(`update public.project_progress_period_states set is_locked=false,locked_by=null,locked_at=null where project_id='${project}'`,false);
     await page.reload();await page.getByRole('button',{name:'Tạo bản điều chỉnh',exact:true}).click();const revisionReason=page.getByPlaceholder('Nhập lý do điều chỉnh...');await expect(revisionReason).toBeVisible();await revisionReason.fill('Biên bản bổ sung sau duyệt');await page.getByRole('button',{name:'Tạo bản điều chỉnh',exact:true}).last().click();
     await expect.poll(async()=>(await query(`select count(*)::int n from public.daily_logs where project_id='${project}' and supersedes_daily_log_id='${log}'`))[0].n).toBe(1);

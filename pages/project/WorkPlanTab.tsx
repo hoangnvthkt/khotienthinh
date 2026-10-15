@@ -462,7 +462,7 @@ const VersionsBoard: React.FC<{ board: WorkPlanBoard; initialId: string; actions
     {viewed.attachments.length > 0 && <AttachmentList files={viewed.attachments} />}
     <div className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Thực hiện đến {dateVi(board.today)} — chấm theo bản gốc{viewed.id !== original?.id ? ', xem thêm theo bản đang xem' : ''}</p>
-      {!periodStarted ? <p className="text-xs text-muted-foreground">Kỳ chưa bắt đầu — số thực hiện sẽ tự lấy từ Nhật ký và Chốt tiến độ.</p> : <>
+      {!periodStarted ? <p className="text-xs text-muted-foreground">Kỳ chưa bắt đầu — số thực hiện sẽ tự lấy từ Nhật ký.</p> : <>
         {original && <PerfRow label={`Theo bản gốc (Bản ${original.revisionNo})`} hint="Dùng để đánh giá kỳ" plan={original} today={board.today} actualOf={id => actual.get(id)} strong />}
         {viewed.id !== original?.id && <PerfRow label={`Theo Bản ${viewed.revisionNo}`} hint={viewed.status === 'approved' ? 'Bản đang điều hành' : 'Bản đang xem'} plan={viewed} today={board.today} actualOf={id => actual.get(id)} />}
       </>}
@@ -713,7 +713,7 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
   const header = <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div>
       <h2 className="flex items-center gap-2 text-lg font-bold text-foreground"><CalendarRange size={20} className="text-teal-600" />{view === 'work' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư'}</h2>
-      <p className="text-xs text-muted-foreground">{view === 'work' ? 'Mỗi kỳ có bản gốc và các bản điều chỉnh. Số thực hiện lấy tự động từ Nhật ký và Chốt tiến độ.'
+      <p className="text-xs text-muted-foreground">{view === 'work' ? 'Mỗi kỳ có bản gốc và các bản điều chỉnh. Số thực hiện lấy tự động từ Nhật ký.'
         : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ, gửi CHT duyệt.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">

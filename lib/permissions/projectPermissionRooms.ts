@@ -123,7 +123,7 @@ export const getProjectPermissionRoomActionLabel = (
   if (roomCode === 'material_request' && actionCode === 'manage') return 'Quản trị quy trình duyệt';
   if (roomCode === 'weekly_progress') {
     if (actionCode === 'edit') return 'Sửa/Nhập liệu';
-    if (actionCode === 'confirm') return 'Chốt/Mở chốt';
+    if (actionCode === 'confirm') return 'Xác nhận/Mở lại tuần';
   }
   return GENERIC_ROOM_ACTION_LABELS[actionCode];
 };

@@ -24,6 +24,6 @@ for (const width of [1440, 900, 390]) {
 test('locked period offers hash-router reopen navigation without a revision form', async ({ page }) => {
   await page.goto('/tests/daily-log/revision-fixture.html?locked');
   await expect(page.getByRole('button', { name: 'Tạo bản điều chỉnh' })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Mở Chốt tiến độ' }).click();
+  await page.getByRole('link', { name: 'Mở Tiến độ thực tế' }).click();
   await expect(page).toHaveURL(/#\/da\?projectId=p1&tab=weekly_progress$/);
 });

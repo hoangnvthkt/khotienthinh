@@ -643,6 +643,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [fEnd, setFEnd] = useState('');
     const [fProgress, setFProgress] = useState('0');
     const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('weekly_report');
+    // Dự án đã dùng Nhật ký chính thức: % chỉ lấy từ nhật ký CHT duyệt, Gantt không sửa tay (chủ SP 15/10/2026).
+    const [progressFromDailyLog, setProgressFromDailyLog] = useState(false);
+    useEffect(() => {
+        if (!projectId) { setProgressFromDailyLog(false); return; }
+        let cancelled = false;
+        const now = new Date();
+        const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        projectWeeklyProgressService.getDailyProgressAuthority({ projectId, constructionSiteId: constructionSiteId || null, progressDate: todayIso })
+            .then(authority => { if (!cancelled) setProgressFromDailyLog(authority?.authoritative === true); })
+            .catch(() => { if (!cancelled) setProgressFromDailyLog(false); });
+        return () => { cancelled = true; };
+    }, [constructionSiteId, projectId]);
     const [fAssignee, setFAssignee] = useState('');
     const [fAssigneeUserId, setFAssigneeUserId] = useState('');
     const [fParentId, setFParentId] = useState('');
@@ -722,11 +734,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const getProgressHint = useCallback((task: ProjectTask, hasChildren: boolean) => {
         if (hasChildren) return 'Tự tính từ các hạng mục con';
+        if (progressFromDailyLog) return 'Theo Nhật ký đã duyệt — xem ở Tiến độ thực tế';
         if (task.progressMode === 'weekly_report') return 'Tự tính từ báo cáo tiến độ tuần';
         if (task.progressMode === 'daily_log') return (task.provisionalQuantity || 0) > 0 ? 'Tự tính từ nhật ký thi công đã xác nhận' : 'Chưa có KL tạm tính để tính từ nhật ký';
         if (task.progressMode === 'derived_from_acceptance') return 'Tự tính từ nghiệm thu khối lượng';
         return 'Click để chỉnh tiến độ thủ công';
-    }, []);
+    }, [progressFromDailyLog]);
 
     // ====== CRUD operations ======
     const resetForm = () => {
@@ -819,8 +832,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         try {
             const duration = daysBetween(fStart, fEnd);
             const taskHasChildren = editing ? tasks.some(task => task.parentId === editing.id) : false;
-            const normalizedProgressMode: ProjectTaskProgressMode = taskHasChildren ? 'children_auto' : (fProgressMode === 'children_auto' ? 'manual' : fProgressMode);
-            const normalizedProgress = normalizedProgressMode === 'manual' ? Number(fProgress) : Number(editing?.progress ?? fProgress);
+            const normalizedProgressMode: ProjectTaskProgressMode = progressFromDailyLog
+                ? (editing?.progressMode || 'weekly_report')
+                : taskHasChildren ? 'children_auto' : (fProgressMode === 'children_auto' ? 'manual' : fProgressMode);
+            const normalizedProgress = progressFromDailyLog
+                ? Number(editing?.progress ?? 0)
+                : normalizedProgressMode === 'manual' ? Number(fProgress) : Number(editing?.progress ?? fProgress);
             const provisionalQuantity = parseNonNegativeNumber(fProvisionalQuantity);
             const baseItem: ProjectTask = editing ? {
                 ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
@@ -920,6 +937,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const task = tasks.find(t => t.id === id);
         if (!task) return;
         if (!ensureGanttCapability('edit', 'cập nhật tiến độ hạng mục')) return;
+        if (progressFromDailyLog) {
+            toast.info('Tiến độ lấy từ Nhật ký', 'Ghi khối lượng ở Nhật ký; CHT duyệt xong, % tự cập nhật.');
+            return;
+        }
         if (childCountByTaskId.get(id)) {
             toast.warning('Tiến độ tự động', 'Hạng mục cha được tính từ các công việc con, không chỉnh tay.');
             return;
@@ -1161,7 +1182,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         provisionalQuantity: hasExcelValue(row, ['Khối lượng tạm tính']) ? parseNonNegativeNumber(getExcelValue(row, ['Khối lượng tạm tính'])) : existing.provisionalQuantity,
                         resourceCount: hasExcelValue(row, ['Nhân công dự kiến']) ? parseNonNegativeNumber(getExcelValue(row, ['Nhân công dự kiến'])) : existing.resourceCount,
                         resourceType: hasExcelValue(row, ['Nhân công dự kiến']) ? 'worker' : existing.resourceType,
-                        progress: hasExcelValue(row, ['Tiến độ (%)', 'Tiến độ']) ? parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])) : existing.progress,
+                        progress: !progressFromDailyLog && hasExcelValue(row, ['Tiến độ (%)', 'Tiến độ']) ? parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])) : existing.progress,
                         actualStartDate: actualStart || existing.actualStartDate,
                         actualEndDate: actualEnd || existing.actualEndDate,
                         notes: getExcelText(row, ['Ghi chú']) || existing.notes,
@@ -1224,7 +1245,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     startDate: start,
                     endDate: end,
                     duration: daysBetween(start, end),
-                    progress: parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])),
+                    progress: progressFromDailyLog ? 0 : parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])),
                     progressMode: 'weekly_report',
                     assignee: getExcelText(row, ['Người thực hiện']) || undefined,
                     wbsCode: wbs,
@@ -1268,7 +1289,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             );
             const authoritativeTasks = deriveProjectTaskProgress(mergeAuthoritativeTasks(tasks, result.tasks), dailyLogs);
             setTasks(authoritativeTasks);
-            toast.success('Thành công', `Đã nhập ${validRows.length} hạng mục thi công`);
+            toast.success('Thành công', progressFromDailyLog
+                ? `Đã nhập ${validRows.length} hạng mục thi công. Bỏ qua cột "Tiến độ (%)" — tiến độ thực tế lấy từ Nhật ký.`
+                : `Đã nhập ${validRows.length} hạng mục thi công`);
             setShowImportModal(false);
             setImportRows([]);
         } catch (error) {
@@ -1833,7 +1856,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const todayOffset = useMemo(() => daysBetween(timelineStart, today()), [timelineStart]);
     const formTaskHasChildren = !!(editing && childCountByTaskId.get(editing.id));
-    const formProgressReadOnly = formTaskHasChildren || fProgressMode !== 'manual';
+    const formProgressReadOnly = progressFromDailyLog || formTaskHasChildren || fProgressMode !== 'manual';
 
     // Scroll Syncing Refs
     const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -2779,7 +2802,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
                                                 const isTopLevel = level === 0;
                                                 const isSubHeader = level > 0 && rowHasChildren;
-                                                const progressReadOnly = !ganttCapabilities.canEdit || rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+                                                const progressReadOnly = progressFromDailyLog || !ganttCapabilities.canEdit || rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
                                                 const isFocusedTask = task.id === focusTaskId;
                                                 const isSplitOrTable = viewMode === 'split' || viewMode === 'table';
                                                 return (
@@ -3551,7 +3574,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     </div>
                                     {formProgressReadOnly && (
                                         <p className="mt-1 text-[9px] font-bold text-blue-500">
-                                            {formTaskHasChildren ? 'Tự tính từ công việc con' : 'Tự tính theo nguồn tiến độ đã chọn'}
+                                            {formTaskHasChildren ? 'Tự tính từ công việc con' : progressFromDailyLog ? 'Theo Nhật ký đã duyệt' : 'Tự tính theo nguồn tiến độ đã chọn'}
                                         </p>
                                     )}
                                 </div>
@@ -3608,7 +3631,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                 </select>
                             </div>
 
-                            <div>
+                            {!progressFromDailyLog && <div>
                                 <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Nguồn tiến độ</label>
                                 <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
@@ -3618,7 +3641,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
                                     {formTaskHasChildren && <option value="children_auto">Tự tính từ công việc con</option>}
                                 </select>
-                            </div>
+                            </div>}
 
                             {/* Parent + Color */}
                             <div className="grid grid-cols-2 gap-3">

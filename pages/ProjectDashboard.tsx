@@ -123,7 +123,7 @@ import { canViewSensitive, projectSensitiveAccessService } from '../lib/projectS
 
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
-const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
+const ActualProgressTab = React.lazy(() => import('./project/ActualProgressTab'));
 const WorkPlanTab = React.lazy(() => import('./project/WorkPlanTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
@@ -3410,7 +3410,7 @@ const ProjectDashboard: React.FC = () => {
                             {/* Chốt sản lượng thực tế chuyển từ tab Tài chính sang đây (doc 14 câu 3). */}
                             {hasSiteScope && <ActualProductionCard projectId={selectedProject.id} constructionSiteId={effectiveSiteId!} contractValue={contractValue}
                                 canEdit={canManageProjectTab('weekly_progress') || canManageProjectTab('finance')} />}
-                            <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                            <ActualProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                         </div>
                     ) : overviewTab === 'dailylog' ? (
                         <div className="space-y-3">
