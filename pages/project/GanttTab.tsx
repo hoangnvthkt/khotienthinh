@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import {
@@ -9,7 +9,7 @@ import {
     Circle, PlayCircle, ArrowUpDown, ChevronUp, ChevronsUp, ChevronsDown, Copy,
     Anchor, Link2, Wrench, Users, Zap, Lock, Bell,
     FlaskConical, Lightbulb, RotateCcw, Check, SlidersHorizontal,
-    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign,
+    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign, CalendarRange, History,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem } from '../../types';
@@ -27,10 +27,18 @@ import {
     type ProjectGanttScope,
     type ProjectGanttTaskChange,
 } from '../../lib/projectGanttCommandService';
+import {
+    applyLinesToTasks, buildDraftLines, isScheduleLockedError, mapScheduleError, rollupAncestors, scheduleChangeService, summarizeDraft,
+    type LineMeta, type ScheduleChange, type ScheduleControl, type ScheduleDraftHeader, type ScheduleReason,
+} from '../../lib/projectScheduleChangeService';
+import {
+    ApprovedNotice, ChangeList, DraftBanner, DraftRulesNote, ReviewDrawer, ReviewPlansAlert, ScheduleControlStrip,
+    ScheduleStatusBar, SubmitDrawer, VersionsDrawer,
+} from '../../components/project/schedule-change/ScheduleChangeUi';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import {
     calculateProjectProgress,
     clampProgress,
@@ -122,6 +130,13 @@ const addDays = (d: string, n: number) => {
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const fmtShort = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 const today = () => new Date().toISOString().split('T')[0];
+const EMPTY_DRAFT_HEADER: ScheduleDraftHeader = { reasonCode: null, responsibleParty: null, summary: '', attachments: [], isContractExtension: false };
+// Việc lá chưa xong đã quá ngày kết thúc kế hoạch.
+const countOverdueLeaves = (list: ProjectTask[]) => {
+    const parents = new Set(list.map(task => task.parentId).filter(Boolean));
+    const now = today();
+    return list.filter(task => !parents.has(task.id) && (task.progress || 0) < 100 && task.endDate < now).length;
+};
 
 const toGanttTaskChange = (
     task: ProjectTask,
@@ -404,6 +419,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const { projectFinances } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
+    const reasonConfirm = useReasonConfirm();
+    const navigate = useNavigate();
     const location = useLocation();
     const dailyLogHref = useMemo(() => {
         const query = new URLSearchParams(location.search);
@@ -413,6 +430,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (constructionSiteId) query.set('siteId', constructionSiteId);
         return `/da?${query.toString()}`;
     }, [constructionSiteId, location.search, projectId]);
+    const workPlanHref = useMemo(() => {
+        const query = new URLSearchParams();
+        query.set('tab', 'work_plan');
+        if (projectId) query.set('projectId', projectId);
+        if (constructionSiteId) query.set('siteId', constructionSiteId);
+        return `/da?${query.toString()}`;
+    }, [constructionSiteId, projectId]);
     const effectiveId = projectId || constructionSiteId || '';
     const focusTaskId = useMemo(() => new URLSearchParams(location.search).get('taskId'), [location.search]);
     const focusTaskHandledRef = useRef<string | null>(null);
@@ -458,6 +482,29 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [sandboxTasks, setSandboxTasks] = useState<ProjectTask[]>([]);
     const [showAiInsights, setShowAiInsights] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
+    // Điều chỉnh tiến độ có duyệt (15/10/2026): dự án bật kiểm soát thì ngày, khối lượng, thêm / xóa việc chỉ đổi qua phiếu.
+    const [scheduleControl, setScheduleControl] = useState<ScheduleControl | null>(null);
+    const [scheduleReasons, setScheduleReasons] = useState<ScheduleReason[]>([]);
+    const [draftChange, setDraftChange] = useState<ScheduleChange | null>(null);
+    const [draftHeader, setDraftHeader] = useState<ScheduleDraftHeader>(EMPTY_DRAFT_HEADER);
+    const [draftLineMeta, setDraftLineMeta] = useState<LineMeta>({});
+    const [draftPreview, setDraftPreview] = useState<ScheduleChange | null>(null);
+    const [draftSaving, setDraftSaving] = useState(false);
+    const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+    const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+    const [showSubmitDrawer, setShowSubmitDrawer] = useState(false);
+    const [reviewChange, setReviewChange] = useState<ScheduleChange | null>(null);
+    const [showVersions, setShowVersions] = useState(false);
+    const [scheduleBusy, setScheduleBusy] = useState(false);
+    const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
+    const scheduleLocked = !!scheduleControl?.controlled;
+    const isDraftMode = scheduleLocked && isSandboxMode && !draftPreview;
+    const viewTasks = isSandboxMode ? sandboxTasks : tasks;
+    // Quyền thao tác trên màn: dự án bật kiểm soát thì sửa = người được giao lập; thêm / xóa / kéo ngày chỉ trong bản nháp.
+    const canEditTasks = scheduleLocked ? !!scheduleControl?.canPropose && !draftPreview : ganttCapabilities.canEdit;
+    const canAddTasks = canEditTasks && (!scheduleLocked || isDraftMode);
+    const canDeleteTasks = scheduleLocked ? isDraftMode : ganttCapabilities.canDelete;
+    const scheduleFieldsLocked = scheduleLocked && !isDraftMode;
     const loadScheduleData = useCallback(async () => {
         if (!ganttCapabilities.canView) return;
         if (!effectiveId) {
@@ -523,7 +570,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 acc[link.taskId].push(link.contractItemId);
                 return acc;
             }, {}));
-            if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
+            if (baselineData.length > 0) setActiveBaseline(baselineData.find(item => item.versionKind === 'original') || baselineData[0]);
             setLoading(false);
         } catch (e) {
             console.error(e);
@@ -574,18 +621,46 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
         }
-        if (!ganttCapabilities.canView || (capability === 'edit' ? !ganttCapabilities.canEdit : !ganttCapabilities.canDelete)) {
-            toast.error('Không có quyền', `Bạn không có quyền ${capability === 'edit' ? 'chỉnh sửa' : 'xóa'} để ${actionLabel}.`);
+        // Dự án bật điều chỉnh có duyệt: chỉ người được giao lập mới sửa; xóa việc chỉ trong bản nháp.
+        const canEditNow = scheduleLocked ? !!scheduleControl?.canPropose : ganttCapabilities.canEdit;
+        const canDeleteNow = scheduleLocked ? isDraftMode && !!scheduleControl?.canPropose : ganttCapabilities.canDelete;
+        if (!ganttCapabilities.canView || (capability === 'edit' ? !canEditNow : !canDeleteNow)) {
+            toast.error('Không có quyền', scheduleLocked && capability === 'delete'
+                ? 'Xóa việc chỉ làm trong bản nháp "Điều chỉnh tiến độ" và cần duyệt.'
+                : `Bạn không có quyền ${capability === 'edit' ? 'chỉnh sửa' : 'xóa'} để ${actionLabel}.`);
             return false;
         }
         return true;
-    }, [ganttCapabilities, roomActionsReady, toast]);
+    }, [ganttCapabilities, isDraftMode, roomActionsReady, scheduleControl?.canPropose, scheduleLocked, toast]);
+
+    const loadScheduleControl = useCallback(async (): Promise<ScheduleControl | null> => {
+        if (!projectId || !ganttCapabilities.canView) { setScheduleControl(null); return null; }
+        try {
+            const control = await scheduleChangeService.getControl(ganttScope);
+            setScheduleControl(control);
+            return control;
+        } catch (error) {
+            console.warn('Schedule control load failed', error);
+            setScheduleControl(null);
+            return null;
+        }
+    }, [ganttCapabilities.canView, ganttScope, projectId]);
+    useEffect(() => { if (roomActionsReady) void loadScheduleControl(); }, [loadScheduleControl, roomActionsReady]);
+    useEffect(() => {
+        if (!scheduleLocked || scheduleReasons.length > 0) return;
+        scheduleChangeService.listReasons().then(setScheduleReasons).catch(() => setScheduleReasons([]));
+    }, [scheduleLocked, scheduleReasons.length]);
 
     const handleGanttCommandError = useCallback(async (error: unknown, title: string) => {
+        if (isScheduleLockedError(error)) {
+            toast.error(title, mapScheduleError(error).message);
+            await loadScheduleControl();
+            return;
+        }
         const commandError = parseProjectGanttCommandError(error);
         toast.error(title, commandError.message);
         if (commandError.shouldReload) await loadScheduleData();
-    }, [loadScheduleData, toast]);
+    }, [loadScheduleControl, loadScheduleData, toast]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -762,9 +837,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const openAdd = (parentId?: string) => {
         if (!ensureGanttCapability('edit', 'tạo hạng mục tiến độ')) return;
+        if (scheduleFieldsLocked) {
+            toast.info('Thêm việc trong "Điều chỉnh tiến độ"', 'Thêm hoặc xóa việc cần duyệt. Mở bản nháp điều chỉnh để thêm.');
+            return;
+        }
         resetForm();
         if (parentId) setFParentId(parentId);
-        setFWbsCode(getNextWbsCode(tasks, parentId));
+        setFWbsCode(getNextWbsCode(viewTasks, parentId));
         const t = today();
         setFStart(t);
         setFEnd(addDays(t, 14));
@@ -792,12 +871,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const duplicateTask = (t: ProjectTask) => {
         if (!ensureGanttCapability('edit', 'nhân bản hạng mục tiến độ')) return;
+        if (scheduleFieldsLocked) {
+            toast.info('Thêm việc trong "Điều chỉnh tiến độ"', 'Thêm hoặc xóa việc cần duyệt. Mở bản nháp điều chỉnh để nhân bản.');
+            return;
+        }
         setEditing(null);
         setFName(t.name + ' (Bản sao)'); setFStart(t.startDate); setFEnd(t.endDate);
         setFProgress('0'); setFProgressMode('weekly_report'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
-        setFWbsCode(getNextWbsCode(tasks, t.parentId));
+        setFWbsCode(getNextWbsCode(viewTasks, t.parentId));
         setFFallbackUnit(t.fallbackUnit || '');
         setFProvisionalQuantity(formatLocaleDecimalInput(t.provisionalQuantity || 0));
         setFResourceCount(String(t.resourceCount ?? 1));
@@ -817,7 +900,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             parentId: fParentId || undefined,
             dependencies: fDeps,
             isMilestone: fMilestone,
-        }, tasks, editing?.id);
+        }, viewTasks, editing?.id);
         if (!validation.valid) {
             toast.error('Không thể lưu tiến độ', validation.errors[0]);
             return;
@@ -831,11 +914,33 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             toast.error('Không thể lưu tiến độ', 'Mã WBS chỉ được dùng dạng 1, 1.1, 1.1.1.');
             return;
         }
-        if (normalizedWbs && tasks.some(task => task.id !== editing?.id && task.wbsCode?.trim().toLowerCase() === normalizedWbs.toLowerCase())) {
+        if (normalizedWbs && viewTasks.some(task => task.id !== editing?.id && task.wbsCode?.trim().toLowerCase() === normalizedWbs.toLowerCase())) {
             toast.error('Không thể lưu tiến độ', `Mã WBS "${normalizedWbs}" đã tồn tại.`);
             return;
         }
         if (!ensureGanttCapability('edit', editing ? 'sửa hạng mục tiến độ' : 'tạo hạng mục tiến độ')) return;
+        if (isDraftMode) {
+            const draftDuration = daysBetween(fStart, fEnd);
+            const quantity = parseNonNegativeNumber(fProvisionalQuantity);
+            if (editing) {
+                setSandboxTasks(previous => rollupAncestors(previous.map(task => task.id === editing.id
+                    ? { ...task, startDate: fStart, endDate: fEnd, duration: draftDuration, provisionalQuantity: quantity }
+                    : task), [editing.id]));
+            } else {
+                const id = crypto.randomUUID();
+                const added: ProjectTask = {
+                    id, projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
+                    name: fName, startDate: fStart, endDate: fEnd, duration: draftDuration, progress: 0, progressMode: 'weekly_report',
+                    assignee: fAssignee || undefined, assigneeUserId: fAssigneeUserId || undefined, parentId: fParentId || undefined,
+                    isMilestone: fMilestone, notes: fNotes || undefined, order: sandboxTasks.length,
+                    wbsCode: normalizedWbs || undefined, fallbackUnit: fFallbackUnit || undefined, provisionalQuantity: quantity, rowVersion: 0,
+                };
+                setSandboxTasks(previous => rollupAncestors([...previous, added], [id]));
+            }
+            resetForm();
+            toast.success(editing ? 'Đã đưa vào bản nháp' : 'Đã thêm vào bản nháp', 'Gửi duyệt để áp dụng.');
+            return;
+        }
 
         try {
             const duration = daysBetween(fStart, fEnd);
@@ -926,6 +1031,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const handleDelete = async () => {
         if (!deleteTarget) return;
         if (!ensureGanttCapability('delete', 'xoá hạng mục tiến độ')) return;
+        if (isDraftMode) {
+            const ids = collectDescendantTaskIds(viewTasks, deleteTarget.id);
+            ids.add(deleteTarget.id);
+            const parentId = deleteTarget.parentId;
+            setSandboxTasks(previous => {
+                const kept = previous.filter(task => !ids.has(task.id));
+                return parentId ? rollupAncestors(kept, kept.filter(task => task.parentId === parentId).map(task => task.id)) : kept;
+            });
+            setDeleteTarget(null);
+            toast.success('Đã đưa vào bản nháp', 'Việc bị xóa khi phiếu được duyệt.');
+            return;
+        }
         try {
             const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
             idsToRemove.add(deleteTarget.id);
@@ -1169,11 +1286,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         try {
             const validRows = importRows.filter((_, i) => !importErrors[i]);
 
+            if (scheduleFieldsLocked) {
+                toast.info('Mở "Điều chỉnh tiến độ" trước', 'Ngày và khối lượng từ Excel được đưa vào bản nháp điều chỉnh để duyệt.');
+                return;
+            }
+            const importBase = isDraftMode ? sandboxTasks : tasks;
             if (importMode === 'update') {
                 const updatedTasks: ProjectTask[] = [];
                 for (const row of validRows) {
                     const wbs = getExcelText(row, ['Mã WBS']);
-                    const existing = tasks.find(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
+                    const existing = importBase.find(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
                     if (!existing) continue;
                     const start = parseExcelDate(getExcelValue(row, ['Bắt đầu KH (*)', 'Bắt đầu KH']));
                     const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH (*)', 'Kết thúc KH']));
@@ -1200,6 +1322,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     updatedTasks.push(next);
                 }
                 const importedById = new Map(updatedTasks.map(task => [task.id, task]));
+                if (isDraftMode) {
+                    setSandboxTasks(previous => rollupAncestors(previous.map(task => {
+                        const next = importedById.get(task.id);
+                        return next ? { ...task, startDate: next.startDate, endDate: next.endDate, duration: next.duration, provisionalQuantity: next.provisionalQuantity } : task;
+                    }), [...importedById.keys()]));
+                    toast.success('Đã đưa vào bản nháp', `${updatedTasks.length} việc theo Mã WBS: chỉ lấy ngày và khối lượng. Gửi duyệt để áp dụng.`);
+                    setShowImportModal(false);
+                    setImportRows([]);
+                    return;
+                }
                 const rawNextTasks = tasks.map(task => importedById.get(task.id) || task);
                 const parentAssignments = validRows.flatMap(row => {
                     const wbs = getExcelText(row, ['Mã WBS']);
@@ -1274,7 +1406,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             for (const task of newTasks) {
                 if (task.parentId) {
                     const parentWbsOrName = task.parentId;
-                    const existingParent = tasks.find(t => t.wbsCode === parentWbsOrName || t.name === parentWbsOrName);
+                    const existingParent = importBase.find(t => t.wbsCode === parentWbsOrName || t.name === parentWbsOrName);
                     if (existingParent) {
                         task.parentId = existingParent.id;
                     } else if (codeToId[parentWbsOrName]) {
@@ -1285,6 +1417,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 }
             }
 
+            if (isDraftMode) {
+                setSandboxTasks(previous => rollupAncestors([...previous, ...newTasks.map(task => ({ ...task, progress: 0, actualStartDate: undefined, actualEndDate: undefined, rowVersion: 0 }))], newTasks.map(task => task.id)));
+                toast.success('Đã thêm vào bản nháp', `${newTasks.length} việc từ Excel. Gửi duyệt để áp dụng.`);
+                setShowImportModal(false);
+                setImportRows([]);
+                return;
+            }
             const nextTasks = deriveProjectTaskProgress([...tasks, ...newTasks], dailyLogs);
             const changedImportedTasks = nextTasks.filter(next => {
                 const previous = tasks.find(task => task.id === next.id);
@@ -1381,7 +1520,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const q = searchQuery.trim().toLowerCase();
         const parentsToExpand = new Set<string>();
 
-        tasks.forEach(t => {
+        viewTasks.forEach(t => {
             let isMatch = true;
             if (q) {
                 const searchStr = normalizeLookupText(t.name);
@@ -1399,10 +1538,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 isMatch = getStatus(t) === filterStatus;
             }
             if (isMatch) {
-                let curr = t.parentId ? tasks.find(x => x.id === t.parentId) : null;
+                let curr = t.parentId ? viewTasks.find(x => x.id === t.parentId) : null;
                 while (curr) {
                     parentsToExpand.add(curr.id);
-                    curr = curr.parentId ? tasks.find(x => x.id === curr.parentId) : null;
+                    curr = curr.parentId ? viewTasks.find(x => x.id === curr.parentId) : null;
                 }
             }
         });
@@ -1414,7 +1553,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 return next;
             });
         }
-    }, [searchQuery, filterStatus, tasks]);
+    }, [searchQuery, filterStatus, viewTasks]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -1422,12 +1561,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     };
 
     const filteredTasks = useMemo(() => {
-        if (!searchQuery && filterStatus === 'all') return tasks;
+        if (!searchQuery && filterStatus === 'all') return viewTasks;
 
         const q = searchQuery.trim().toLowerCase();
         const matches = new Set<string>();
 
-        tasks.forEach(t => {
+        viewTasks.forEach(t => {
             let isMatch = true;
             if (q) {
                 const searchStr = normalizeLookupText(t.name);
@@ -1451,11 +1590,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
         const visible = new Set<string>();
         const addWithAncestors = (taskId: string) => {
-            let curr = tasks.find(t => t.id === taskId);
+            let curr = viewTasks.find(t => t.id === taskId);
             while (curr) {
                 if (visible.has(curr.id)) break;
                 visible.add(curr.id);
-                curr = curr.parentId ? tasks.find(t => t.id === curr.parentId) : undefined;
+                curr = curr.parentId ? viewTasks.find(t => t.id === curr.parentId) : undefined;
             }
         };
 
@@ -1463,8 +1602,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             addWithAncestors(id);
         });
 
-        return tasks.filter(t => visible.has(t.id));
-    }, [tasks, searchQuery, filterStatus]);
+        return viewTasks.filter(t => visible.has(t.id));
+    }, [viewTasks, searchQuery, filterStatus]);
 
     const sortTasksHelper = useCallback((taskList: ProjectTask[]) => {
         return [...taskList].sort((a, b) => {
@@ -1530,11 +1669,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     // Map baseline tasks by ID for quick lookup (shadow bars)
     const baselineMap = useMemo(() => {
+        if (isSandboxMode && scheduleLocked) return new Map(tasks.map(task => [task.id, task] as const));
         if (!activeBaseline) return new Map<string, ProjectTask>();
         const m = new Map<string, ProjectTask>();
         for (const t of activeBaseline.tasksSnapshot) m.set(t.id, t);
         return m;
-    }, [activeBaseline]);
+    }, [activeBaseline, isSandboxMode, scheduleLocked, tasks]);
 
     // Lock baseline handler
     const lockBaseline = useCallback(async () => {
@@ -1554,11 +1694,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     // ====== GĐ2: Drag-Resize with Ripple (GĐ5: sandbox-aware) ======
     const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
-        if (!ensureGanttCapability('edit', 'điều chỉnh kế hoạch bằng thao tác kéo')) return;
+        if (!ensureGanttCapability('edit', 'điều chỉnh kế hoạch bằng thao tác kéo') || (scheduleLocked && !isDraftMode)) {
+            setDraggingTaskId(null);
+            setDragGhost(null);
+            return;
+        }
         const source = isSandboxMode ? sandboxTasks : tasks;
         const rippled = rippleEffect(source, taskId, newEndDate);
         if (isSandboxMode) {
-            setSandboxTasks(rippled);
+            if (scheduleLocked) {
+                const sourceById = new Map(source.map(task => [task.id, task] as const));
+                const changedIds = rippled.filter(task => {
+                    const before = sourceById.get(task.id);
+                    return before && (before.startDate !== task.startDate || before.endDate !== task.endDate);
+                }).map(task => task.id);
+                setSandboxTasks(rollupAncestors(rippled, changedIds));
+            } else {
+                setSandboxTasks(rippled);
+            }
         } else {
             const changedTasks = rippled.filter(t => {
                 const orig = tasks.find(o => o.id === t.id);
@@ -1579,7 +1732,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         }
         setDraggingTaskId(null);
         setDragGhost(null);
-    }, [ensureGanttCapability, ganttScope, handleGanttCommandError, tasks, isSandboxMode, sandboxTasks]);
+    }, [ensureGanttCapability, ganttScope, handleGanttCommandError, isDraftMode, scheduleLocked, tasks, isSandboxMode, sandboxTasks]);
 
     // GĐ2: Live ripple preview during drag
     const handleBarDragMove = useCallback((taskId: string, newEndDate: string) => {
@@ -1679,6 +1832,210 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         }
     }, [ensureGanttCapability, ganttScope, handleGanttCommandError, sandboxTasks, tasks]);
 
+    // ====== Điều chỉnh tiến độ có duyệt: bản nháp tự lưu, gửi, duyệt ======
+    const meId = scheduleControl?.currentUserId || null;
+    const draftSummary = useMemo(() => summarizeDraft(tasks, isSandboxMode ? sandboxTasks : tasks), [isSandboxMode, sandboxTasks, tasks]);
+    const overdueLeafCount = useMemo(() => countOverdueLeaves(tasks), [tasks]);
+    const draftOverdueLeft = useMemo(() => (isDraftMode ? countOverdueLeaves(sandboxTasks) : 0), [isDraftMode, sandboxTasks]);
+    const taskNameById = useMemo(() => new Map(viewTasks.map(task => [task.id, `${task.wbsCode ? `${task.wbsCode} ` : ''}${task.name}`] as const)), [viewTasks]);
+    const groupName = useCallback((parentId: string | null) => (parentId ? taskNameById.get(parentId) || 'Hạng mục' : 'Hạng mục gốc'), [taskNameById]);
+    const sandboxTasksRef = useRef(sandboxTasks);
+    sandboxTasksRef.current = sandboxTasks;
+    const draftHeaderRef = useRef(draftHeader);
+    draftHeaderRef.current = draftHeader;
+    const draftLineMetaRef = useRef(draftLineMeta);
+    draftLineMetaRef.current = draftLineMeta;
+    const draftIdRef = useRef<string | null>(null);
+    const draftRowVersionRef = useRef<number | null>(null);
+    const draftSaveChainRef = useRef<Promise<ScheduleChange | null>>(Promise.resolve(null));
+
+    const resetDraftState = useCallback(() => {
+        setIsSandboxMode(false);
+        setSandboxTasks([]);
+        setDraftChange(null);
+        setDraftPreview(null);
+        setDraftHeader(EMPTY_DRAFT_HEADER);
+        setDraftLineMeta({});
+        setDraftSavedAt(null);
+        setDraftSaveError(null);
+        setShowSubmitDrawer(false);
+        draftIdRef.current = null;
+        draftRowVersionRef.current = null;
+    }, []);
+
+    const saveDraftNow = useCallback((): Promise<ScheduleChange | null> => {
+        const run = async (): Promise<ScheduleChange | null> => {
+            const lines = buildDraftLines(tasks, sandboxTasksRef.current, draftLineMetaRef.current);
+            if (!draftIdRef.current && lines.length === 0) return null;
+            setDraftSaving(true);
+            setDraftSaveError(null);
+            try {
+                const saved = await scheduleChangeService.saveDraft({
+                    projectId: ganttScope.projectId, constructionSiteId: ganttScope.constructionSiteId, changeId: draftIdRef.current,
+                    rowVersion: draftRowVersionRef.current, header: draftHeaderRef.current, lines,
+                });
+                draftIdRef.current = saved.id;
+                draftRowVersionRef.current = saved.rowVersion;
+                setDraftChange(saved);
+                setDraftSavedAt(new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }));
+                return saved;
+            } catch (error) {
+                setDraftSaveError(error instanceof Error ? error.message : 'Chưa lưu được bản nháp.');
+                throw error;
+            } finally {
+                setDraftSaving(false);
+            }
+        };
+        const next = draftSaveChainRef.current.catch(() => null).then(run);
+        draftSaveChainRef.current = next;
+        return next;
+    }, [ganttScope, tasks]);
+
+    useEffect(() => {
+        if (!isDraftMode) return;
+        const timer = window.setTimeout(() => { saveDraftNow().catch(() => undefined); }, 1200);
+        return () => window.clearTimeout(timer);
+    }, [draftHeader, draftLineMeta, isDraftMode, sandboxTasks, saveDraftNow]);
+
+    const startDraft = useCallback(async () => {
+        if (!scheduleControl?.canPropose) {
+            toast.error('Không có quyền', 'Chỉ người được giao lập điều chỉnh tiến độ mới mở được bản nháp.');
+            return;
+        }
+        const control = await loadScheduleControl();
+        const open = control?.openChange || null;
+        if (open && (open.createdBy !== control?.currentUserId || open.status === 'submitted')) {
+            toast.info('Đang có phiếu điều chỉnh mở', `${open.code} của ${open.createdByName}. Mỗi lúc chỉ một phiếu.`);
+            return;
+        }
+        resetDraftState();
+        if (open) {
+            setSandboxTasks(applyLinesToTasks(tasks, open.lines, ganttScope));
+            setDraftChange(open);
+            draftIdRef.current = open.id;
+            draftRowVersionRef.current = open.rowVersion;
+            setDraftHeader({ reasonCode: open.reasonCode, responsibleParty: open.responsibleParty, summary: open.summary || '',
+                attachments: open.attachments || [], isContractExtension: open.isContractExtension });
+            setDraftLineMeta(Object.fromEntries(open.lines
+                .filter(line => (line.reasonCode && line.reasonCode !== open.reasonCode) || (line.responsibleParty && line.responsibleParty !== open.responsibleParty))
+                .map(line => [line.taskId, {
+                    reasonCode: line.reasonCode !== open.reasonCode ? line.reasonCode : null,
+                    responsibleParty: line.responsibleParty !== open.responsibleParty ? line.responsibleParty : null,
+                    note: line.note,
+                }])));
+        } else {
+            setSandboxTasks(tasks.map(task => ({ ...task })));
+        }
+        setIsSandboxMode(true);
+        setShowToolsMenu(false);
+    }, [ganttScope, loadScheduleControl, resetDraftState, scheduleControl?.canPropose, tasks, toast]);
+
+    const cancelDraft = useCallback(async () => {
+        const ok = await confirm({
+            title: 'Bỏ bản nháp điều chỉnh?', targetName: draftChange?.code || 'Bản nháp điều chỉnh tiến độ',
+            warningText: 'Các thay đổi trong bản nháp sẽ không được áp dụng.', actionLabel: 'Bỏ nháp', intent: 'danger', countdownSeconds: 0,
+        });
+        if (!ok) return;
+        try {
+            await draftSaveChainRef.current.catch(() => null);
+            if (draftIdRef.current) await scheduleChangeService.withdraw(draftIdRef.current, draftRowVersionRef.current ?? 0, true);
+            resetDraftState();
+            await loadScheduleControl();
+            toast.success('Đã bỏ bản nháp');
+        } catch (error) {
+            toast.error('Không bỏ được bản nháp', error instanceof Error ? error.message : '');
+        }
+    }, [confirm, draftChange?.code, loadScheduleControl, resetDraftState, toast]);
+
+    const openSubmitDrawer = useCallback(async () => {
+        try {
+            await saveDraftNow();
+            setShowSubmitDrawer(true);
+        } catch (error) {
+            toast.error('Chưa lưu được bản nháp', error instanceof Error ? error.message : '');
+        }
+    }, [saveDraftNow, toast]);
+
+    const submitDraft = useCallback(async () => {
+        setScheduleBusy(true);
+        try {
+            const saved = await saveDraftNow();
+            const id = saved?.id || draftIdRef.current;
+            if (!id) throw new Error('Bản nháp chưa có thay đổi.');
+            const submitted = await scheduleChangeService.submit(id, draftRowVersionRef.current ?? 0);
+            resetDraftState();
+            await loadScheduleControl();
+            toast.success('Đã gửi duyệt', `${submitted.code} chờ ${submitted.approvers.map(user => user.name).join(', ')} duyệt.`);
+        } catch (error) {
+            toast.error('Chưa gửi được', error instanceof Error ? error.message : '');
+        } finally {
+            setScheduleBusy(false);
+        }
+    }, [loadScheduleControl, resetDraftState, saveDraftNow, toast]);
+
+    const withdrawOpenChange = useCallback(async () => {
+        const open = scheduleControl?.openChange;
+        if (!open) return;
+        try {
+            await scheduleChangeService.withdraw(open.id, open.rowVersion, false);
+            await loadScheduleControl();
+            toast.success('Đã rút lại', 'Phiếu về bản nháp. Sửa xong bấm Gửi duyệt lại.');
+        } catch (error) {
+            toast.error('Không rút lại được', error instanceof Error ? error.message : '');
+        }
+    }, [loadScheduleControl, scheduleControl?.openChange, toast]);
+
+    const decideChange = useCallback(async (decision: 'approve' | 'return') => {
+        const change = reviewChange;
+        if (!change) return;
+        let reason: string | undefined;
+        if (decision === 'return') {
+            const typed = await reasonConfirm({
+                title: 'Trả lại điều chỉnh tiến độ', targetName: change.code, reasonLabel: 'Lý do trả lại',
+                reasonPlaceholder: 'Cần sửa gì trước khi gửi lại', actionLabel: 'Trả lại', intent: 'warning', minLength: 3,
+            });
+            if (!typed) return;
+            reason = typed;
+        }
+        setScheduleBusy(true);
+        try {
+            const result = await scheduleChangeService.decide(change.id, change.rowVersion, decision, reason);
+            setReviewChange(null);
+            if (result.status === 'approved') {
+                taskService.invalidateListCache();
+                await loadScheduleData();
+                setScheduleNotice(`${result.code} đã được duyệt và lưu thành phiên bản mới.`);
+                toast.success('Đã duyệt', `${result.code} đã áp dụng vào Gantt.`);
+            } else if (result.status === 'returned') {
+                toast.success('Đã trả lại', `${result.code} về người lập để sửa.`);
+            } else {
+                toast.success('Đã duyệt bước CHT', `${result.code} chờ duyệt dời về đích.`);
+            }
+            await loadScheduleControl();
+        } catch (error) {
+            toast.error(decision === 'approve' ? 'Chưa duyệt được' : 'Chưa trả lại được', error instanceof Error ? error.message : '');
+        } finally {
+            setScheduleBusy(false);
+        }
+    }, [loadScheduleControl, loadScheduleData, reasonConfirm, reviewChange, toast]);
+
+    const previewChangeOnGantt = useCallback((change: ScheduleChange) => {
+        setReviewChange(null);
+        setSandboxTasks(applyLinesToTasks(tasks, change.lines, ganttScope));
+        setDraftPreview(change);
+        setIsSandboxMode(true);
+    }, [ganttScope, tasks]);
+
+    const currentVersion = useMemo(() => baselines
+        .filter(item => item.versionKind && item.versionKind !== 'legacy')
+        .sort((a, b) => (b.versionNo ?? 0) - (a.versionNo ?? 0))[0] || null, [baselines]);
+    const originalVersion = useMemo(() => baselines.find(item => item.versionKind === 'original') || null, [baselines]);
+    const draftApproverHint = useMemo(() => {
+        const names = (scheduleControl?.myApprovers || []).map(user => user.name).join(', ') || 'chưa có người duyệt';
+        const extra = draftSummary.finishDelta !== 0 && (scheduleControl?.confirmers || []).some(user => user.id !== meId);
+        return `${names} duyệt${extra ? ', rồi duyệt dời về đích' : ''}`;
+    }, [draftSummary.finishDelta, meId, scheduleControl?.confirmers, scheduleControl?.myApprovers]);
+
     const handleDelayEventStatus = useCallback(async (event: ProjectDelayEvent, status: ProjectDelayEventStatus) => {
         if (!ensureGanttCapability('edit', 'cập nhật sự kiện chậm tiến độ')) return;
         try {
@@ -1702,6 +2059,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!ensureGanttCapability('edit', 'áp dụng dự báo tiến độ')) return;
         if (scheduleForecast.changedTasks.length === 0) {
             toast.info('Không có thay đổi forecast', 'Chưa có hạng mục nào cần điều chỉnh theo sự kiện chậm tiến độ.');
+            return;
+        }
+        if (scheduleLocked) {
+            if (!isDraftMode) {
+                toast.info('Mở "Điều chỉnh tiến độ" trước', 'Dự báo trễ được đưa vào bản nháp điều chỉnh để duyệt.');
+                return;
+            }
+            const forecastById = new Map(scheduleForecast.changedTasks.map(task => [task.id, task] as const));
+            setSandboxTasks(previous => rollupAncestors(previous.map(task => {
+                const next = forecastById.get(task.id);
+                return next ? { ...task, startDate: next.startDate, endDate: next.endDate, duration: next.duration } : task;
+            }), [...forecastById.keys()]));
+            toast.success('Đã đưa dự báo vào bản nháp', `${forecastById.size} việc. Gửi duyệt để áp dụng.`);
             return;
         }
 
@@ -1767,8 +2137,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         ensureGanttCapability,
         ganttScope,
         handleGanttCommandError,
+        isDraftMode,
         projectId,
         scheduleForecast,
+        scheduleLocked,
         tasks,
         toast,
     ]);
@@ -2011,7 +2383,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     Công cụ & Phân tích Nâng cao
                                 </div>
 
-                                {ganttCapabilities.canEdit && <button
+                                {scheduleLocked && <button
+                                    type="button"
+                                    onClick={() => { setShowVersions(true); setShowToolsMenu(false); }}
+                                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    <span className="flex items-center gap-2"><History size={14} /> Phiên bản tiến độ</span>
+                                    <span className="text-[10px] text-zinc-400">tự lưu khi duyệt</span>
+                                </button>}
+
+                                {ganttCapabilities.canEdit && !scheduleLocked && <button
                                     type="button"
                                     onClick={() => { lockBaseline(); setShowToolsMenu(false); }}
                                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
@@ -2020,7 +2401,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     {baselines.length > 0 && <span className="text-[10px] text-zinc-400">v{baselines.length}</span>}
                                 </button>}
 
-                                {baselines.length > 0 && (
+                                {baselines.length > 0 && !scheduleLocked && (
                                     <button
                                         type="button"
                                         onClick={() => { setShowBaselinePanel(v => !v); setShowToolsMenu(false); }}
@@ -2032,7 +2413,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     </button>
                                 )}
 
-                                {ganttCapabilities.canEdit && <button
+                                {canEditTasks && <button
                                     type="button"
                                     onClick={() => { setShowForecastPanel(v => !v); setShowToolsMenu(false); }}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -2047,7 +2428,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     )}
                                 </button>}
 
-                                {ganttCapabilities.canEdit && <button
+                                {ganttCapabilities.canEdit && !scheduleLocked && <button
                                     type="button"
                                     onClick={() => { toggleSandbox(); setShowToolsMenu(false); }}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -2082,7 +2463,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     >
                                         <Download size={13} /> Xuất Excel
                                     </button>
-                                    {ganttCapabilities.canEdit && (
+                                    {(scheduleLocked ? isDraftMode : ganttCapabilities.canEdit) && (
                                         <button
                                             type="button"
                                             onClick={() => { fileInputRef.current?.click(); setShowToolsMenu(false); }}
@@ -2097,7 +2478,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     </div>
                     <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
 
-                    {ganttCapabilities.canEdit && (
+                    {scheduleLocked ? (
+                        isDraftMode ? (
+                            <button onClick={() => openAdd()}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-300 hover:bg-teal-100 transition-colors whitespace-nowrap shrink-0 dark:bg-teal-950/40 dark:text-teal-200">
+                                <Plus size={14} /> Thêm việc vào nháp
+                            </button>
+                        ) : !isSandboxMode && scheduleControl?.canPropose ? (
+                            <button onClick={startDraft} disabled={!!scheduleControl?.openChange && (scheduleControl.openChange.createdBy !== meId || scheduleControl.openChange.status === 'submitted')}
+                                title={!!scheduleControl?.openChange && (scheduleControl.openChange.createdBy !== meId || scheduleControl.openChange.status === 'submitted') ? `Đang có phiếu ${scheduleControl?.openChange?.code} mở` : undefined}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors whitespace-nowrap shrink-0 disabled:cursor-not-allowed disabled:opacity-50">
+                                <CalendarRange size={14} /> {scheduleControl?.openChange && scheduleControl.openChange.createdBy === meId && scheduleControl.openChange.status !== 'submitted' ? 'Tiếp tục soạn' : 'Điều chỉnh tiến độ'}
+                            </button>
+                        ) : null
+                    ) : ganttCapabilities.canEdit && (
                         <button onClick={() => openAdd()}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors whitespace-nowrap shrink-0">
                             <Plus size={14} /> Thêm hạng mục
@@ -2119,8 +2513,65 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 </div>
             </div>
 
+            {scheduleLocked && scheduleControl && (
+                <div className="space-y-3">
+                    {scheduleNotice && <ApprovedNotice text={scheduleNotice} onClose={() => setScheduleNotice(null)} />}
+                    <ScheduleControlStrip
+                        control={scheduleControl}
+                        versionLabel={!currentVersion || currentVersion.versionKind === 'original' ? 'Bản gốc' : `Phiên bản ${currentVersion.versionNo}`}
+                        versionHint={(() => {
+                            if (!currentVersion || currentVersion.versionKind === 'original') return 'Bản gốc lúc bật · khóa';
+                            const change = scheduleControl.recentChanges?.find(item => item.id === currentVersion.scheduleChangeId);
+                            return change ? `${change.code} · duyệt ${new Date(change.confirmedAt || change.approvedAt || currentVersion.lockedAt).toLocaleDateString('vi-VN')}` : currentVersion.name;
+                        })()}
+                        originalFinish={originalVersion?.finishDate || null}
+                        overdueCount={overdueLeafCount}
+                        onOpenVersions={() => setShowVersions(true)}
+                    />
+                    {!isSandboxMode && (
+                        <ScheduleStatusBar control={scheduleControl} meId={meId} reasons={scheduleReasons}
+                            onReview={() => scheduleControl.openChange && setReviewChange(scheduleControl.openChange)}
+                            onContinue={startDraft} onWithdraw={withdrawOpenChange} />
+                    )}
+                    {!isSandboxMode && <ReviewPlansAlert control={scheduleControl} onOpen={() => navigate(workPlanHref)} />}
+                    {!isSandboxMode && !scheduleControl.openChange && scheduleControl.canPropose && overdueLeafCount > 0 && (
+                        <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs dark:bg-rose-950/30">
+                            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-rose-600" />
+                            <div className="min-w-0 flex-1"><b className="text-rose-700 dark:text-rose-200">{overdueLeafCount} việc chưa xong đã quá ngày kế hoạch</b> — kế hoạch không còn đúng thực tế.</div>
+                            <button type="button" onClick={startDraft} className="shrink-0 rounded-lg bg-rose-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700">Lập lại</button>
+                        </div>
+                    )}
+                    {isSandboxMode && (
+                        <>
+                            <DraftBanner
+                                code={draftPreview?.code || draftChange?.code || null}
+                                summary={draftSummary}
+                                saving={draftSaving}
+                                savedAt={draftSavedAt}
+                                saveError={draftSaveError}
+                                overdueLeft={draftOverdueLeft}
+                                approverHint={draftPreview ? `người duyệt ${draftPreview.approvers.map(user => user.name).join(', ') || '—'}` : draftApproverHint}
+                                readOnly={!!draftPreview}
+                                onCancel={cancelDraft}
+                                onSubmit={openSubmitDrawer}
+                                onClose={resetDraftState}
+                            />
+                            <details open className="rounded-2xl border border-border bg-muted/30 p-3">
+                                <summary className="cursor-pointer text-sm font-black text-foreground">
+                                    Thay đổi so với kế hoạch đang áp dụng ({draftSummary.rows.filter(row => row.isLeaf || row.action !== 'update').length})
+                                </summary>
+                                <div className="mt-3 grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+                                    <div className="min-w-0"><ChangeList rows={draftSummary.rows} groupName={groupName} /></div>
+                                    {!draftPreview && <DraftRulesNote />}
+                                </div>
+                            </details>
+                        </>
+                    )}
+                </div>
+            )}
+
             {/* GĐ5: Sandbox active banner */}
-            {ganttCapabilities.canEdit && isSandboxMode && (
+            {ganttCapabilities.canEdit && isSandboxMode && !scheduleLocked && (
                 <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-2xl p-4 shadow-lg flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <FlaskConical size={20} className="text-white" />
@@ -2148,7 +2599,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             )}
 
             {/* Schedule Forecast Panel */}
-            {ganttCapabilities.canEdit && showForecastPanel && (
+            {canEditTasks && showForecastPanel && (
                 <div className="bg-card rounded-2xl border border-destructive/20 shadow-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-red-100 dark:border-red-900/60 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
                         <div className="flex items-center gap-2">
@@ -2173,7 +2624,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                 <button onClick={applyScheduleForecast}
                                     disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
                                     className="px-3 py-1.5 rounded-lg text-[10px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                                    {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
+                                    {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} {scheduleLocked ? 'Đưa vào bản nháp' : 'Áp dụng forecast'}
                                 </button>
                             )}
                             <button onClick={() => setShowForecastPanel(false)}
@@ -2629,7 +3080,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         </div>
                         <p className="text-sm font-bold text-muted-foreground mb-1">Chưa có hạng mục nào</p>
                         <p className="text-xs text-muted-foreground mb-4">Thêm hạng mục thi công để bắt đầu theo dõi tiến độ</p>
-                        {ganttCapabilities.canEdit && (
+                        {canAddTasks && (
                             <button onClick={() => openAdd()}
                                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl transition-all">
                                 <Plus size={14} /> Thêm hạng mục đầu tiên
@@ -2882,7 +3333,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                             ? 'font-bold text-xs text-slate-800 dark:text-slate-100 hover:text-orange-600'
                                                                             : 'font-medium text-xs text-slate-700 dark:text-slate-300 hover:text-orange-600'
                                                                 }`}
-                                                                    onClick={() => ganttCapabilities.canEdit && openEdit(task)} title={task.name}>
+                                                                    onClick={() => canEditTasks && openEdit(task)} title={task.name}>
                                                                     {task.name}
                                                                 </span>
                                                                 {(task.watchers || []).length > 0 && (
@@ -2930,13 +3381,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {/* Planned Dates */}
                                                         <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2 align-middle'} text-muted-foreground font-medium whitespace-nowrap`}
                                                             style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
-                                                            <div className="flex items-center h-full">
+                                                            <div className={`flex items-center h-full ${isSandboxMode && scheduleLocked && baselineMap.get(task.id)?.startDate !== task.startDate ? 'font-bold text-amber-700 dark:text-amber-300' : ''}`}
+                                                                title={scheduleFieldsLocked ? 'Ngày kế hoạch đã khóa — đổi bằng "Điều chỉnh tiến độ"' : undefined}>
                                                                 {fmtShort(task.startDate)}
                                                             </div>
                                                         </td>
                                                         <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2 align-middle'} text-muted-foreground font-medium whitespace-nowrap`}
                                                             style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
-                                                            <div className="flex items-center h-full">
+                                                            <div className={`flex items-center h-full ${isSandboxMode && scheduleLocked && baselineMap.get(task.id)?.endDate !== task.endDate ? 'font-bold text-amber-700 dark:text-amber-300' : ''}`}
+                                                                title={scheduleFieldsLocked ? 'Ngày kế hoạch đã khóa — đổi bằng "Điều chỉnh tiến độ"' : undefined}>
                                                                 {fmtShort(task.endDate)}
                                                             </div>
                                                         </td>
@@ -2995,11 +3448,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         <td className={`px-2 ${viewMode === 'split' ? 'py-0 overflow-hidden whitespace-nowrap' : 'py-2 align-middle'}`}
                                                             style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
-                                                                {ganttCapabilities.canEdit && <>
+                                                                {canEditTasks && (
                                                                     <button onClick={() => openEdit(task)} title="Sửa"
                                                                         className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                         <Edit2 size={12} />
                                                                     </button>
+                                                                )}
+                                                                {canAddTasks && <>
                                                                     <button onClick={() => duplicateTask(task)} title="Nhân bản"
                                                                         className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
                                                                         <Copy size={12} />
@@ -3009,7 +3464,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                         <Plus size={12} />
                                                                     </button>
                                                                 </>}
-                                                                {ganttCapabilities.canDelete && (
+                                                                {canDeleteTasks && (
                                                                     <button onClick={() => setDeleteTarget(task)} title="Xoá"
                                                                         className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
                                                                         <Trash2 size={12} />
@@ -3203,7 +3658,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 border: `2px solid ${isCrit ? '#ef4444' : color}`,
                                                             }}
                                                             title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}`}
-                                                            onClick={() => ganttCapabilities.canEdit && openEdit(task)}
+                                                            onClick={() => canEditTasks && openEdit(task)}
                                                             onMouseEnter={(e) => {
                                                                 if (latestPhoto) {
                                                                     setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
@@ -3254,7 +3709,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 </span>
                                                             )}
                                                             {/* Drag handle — resize bar end date with ripple + ghost + weather */}
-                                                            {ganttCapabilities.canEdit && <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
+                                                            {(scheduleLocked ? isDraftMode : ganttCapabilities.canEdit) && <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
                                                                 onMouseDown={e => {
                                                                     e.stopPropagation();
                                                                     e.preventDefault();
@@ -3491,6 +3946,52 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 </div>
             )}
 
+            {showSubmitDrawer && isDraftMode && (
+                <SubmitDrawer
+                    code={draftChange?.code || null}
+                    summary={draftSummary}
+                    reasons={scheduleReasons}
+                    header={draftHeader}
+                    lineMeta={draftLineMeta}
+                    contractFinishDate={scheduleControl?.contractFinishDate || null}
+                    approverText={`Người duyệt: ${(scheduleControl?.myApprovers || []).map(user => user.name).join(', ') || 'chưa có'}${draftApproverHint.includes('rồi') ? ', rồi người giữ quyền "Duyệt dời về đích"' : ''}. ${draftSummary.finishDelta !== 0
+                        ? `Phiếu đổi ngày về đích ${(draftSummary.finishBefore || '').split('-').reverse().join('/')} → ${(draftSummary.finishAfter || '').split('-').reverse().join('/')}.`
+                        : 'Không đổi ngày về đích.'}`}
+                    scope={ganttScope}
+                    groupName={groupName}
+                    busy={scheduleBusy}
+                    onHeader={setDraftHeader}
+                    onLineMeta={setDraftLineMeta}
+                    onClose={() => setShowSubmitDrawer(false)}
+                    onSubmit={submitDraft}
+                />
+            )}
+            {reviewChange && (
+                <ReviewDrawer
+                    change={reviewChange}
+                    reasons={scheduleReasons}
+                    canDecide={reviewChange.status === 'submitted' && reviewChange.createdBy !== meId && (reviewChange.step === 'confirm'
+                        ? !!scheduleControl?.canConfirm && reviewChange.approvedBy !== meId
+                        : reviewChange.approvers.some(user => user.id === meId))}
+                    busy={scheduleBusy}
+                    groupName={groupName}
+                    onClose={() => setReviewChange(null)}
+                    onApprove={() => decideChange('approve')}
+                    onReturn={() => decideChange('return')}
+                    onShowOnGantt={() => previewChangeOnGantt(reviewChange)}
+                />
+            )}
+            {showVersions && scheduleControl && (
+                <VersionsDrawer
+                    baselines={baselines}
+                    control={scheduleControl}
+                    reasons={scheduleReasons}
+                    compareId={activeBaseline?.id || null}
+                    onCompare={baseline => { setActiveBaseline(baseline); setShowVersions(false); }}
+                    onClose={() => setShowVersions(false)}
+                />
+            )}
+
             {/* ====== TASK FORM MODAL ====== */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && resetForm()}>
@@ -3527,7 +4028,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">KL tạm tính</label>
                                     <input type="text" inputMode="decimal" value={fProvisionalQuantity} onChange={e => setFProvisionalQuantity(e.target.value)} placeholder="0"
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        disabled={scheduleFieldsLocked && !!editing} title={scheduleFieldsLocked ? 'Đổi khối lượng bằng "Điều chỉnh tiến độ"' : undefined}
+                                        className="disabled:cursor-not-allowed disabled:opacity-60 w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Nhân công dự kiến</label>
@@ -3540,15 +4042,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ kế hoạch <span className="text-red-400">*</span></label>
-                                    <input type="date" value={fStart} onChange={e => setFStart(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                    <input type="date" value={fStart} onChange={e => setFStart(e.target.value)} disabled={scheduleFieldsLocked && !!editing}
+                                        className="disabled:cursor-not-allowed disabled:opacity-60 w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT kế hoạch <span className="text-red-400">*</span></label>
-                                    <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                    <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)} disabled={scheduleFieldsLocked && !!editing}
+                                        className="disabled:cursor-not-allowed disabled:opacity-60 w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                             </div>
+
+                            {scheduleLocked && (
+                                <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[11px] ${isDraftMode ? 'border-teal-200 bg-teal-50 text-teal-900 dark:bg-teal-950/30 dark:text-teal-100' : 'border-border bg-muted/40 text-muted-foreground'}`}>
+                                    <Lock size={12} className="mt-0.5 shrink-0" />
+                                    <span>{isDraftMode
+                                        ? (editing ? 'Trong bản nháp chỉ lưu ngày và khối lượng. Tên, người phụ trách, ghi chú sửa sau khi đóng nháp.' : 'Việc mới vào bản nháp, được thêm khi phiếu được duyệt.')
+                                        : 'Ngày và khối lượng đổi bằng "Điều chỉnh tiến độ" (cần duyệt). Tên, người phụ trách, ghi chú lưu ngay.'}</span>
+                                </div>
+                            )}
 
                             {/* Actual Dates */}
                             {progressFromDailyLog ? (
@@ -3764,7 +4275,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         {/* Footer */}
                         <div className="px-6 py-4 border-t border-border dark:border-slate-700 flex justify-between items-center">
                             <div>
-                                {editing && ganttCapabilities.canDelete && (
+                                {editing && canDeleteTasks && (
                                     <button onClick={() => { setDeleteTarget(editing); resetForm(); }}
                                         className="px-3 py-2 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1 transition-colors">
                                         <Trash2 size={14} /> Xoá

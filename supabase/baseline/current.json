@@ -322,7 +322,8 @@
     "20261013180000_center_flow_items_v1.sql",
     "20261014100000_purchase_receipt_guards.sql",
     "20261015100000_progress_single_source.sql",
-    "20261015180000_progress_actual_dates_from_log.sql"
+    "20261015180000_progress_actual_dates_from_log.sql",
+    "20261015200000_project_schedule_changes.sql"
   ],
   "forbidIncludeAll": true
 }

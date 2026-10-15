@@ -78,7 +78,8 @@ export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
   defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'confirm', 'approve', 'view_available_stock', 'manage'], [], 30),
   defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
-  defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý hạng mục và tiến độ thi công.', ['view', 'edit', 'delete'], [], 70, { edit: ['view'], delete: ['view'] }),
+  // Điều chỉnh tiến độ có duyệt (15/10/2026): approve = Duyệt điều chỉnh (CHT), confirm = Duyệt dời về đích (bước thêm, tùy chọn).
+  defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Lập điều chỉnh tiến độ, duyệt điều chỉnh và duyệt dời ngày về đích.', ['view', 'edit', 'delete', 'approve', 'confirm'], [], 70, { edit: ['view'], delete: ['view'], approve: ['view'], confirm: ['view'] }),
   defineRoom('work_plan', 'progress', 'Kế hoạch tháng/tuần', 'Lập, gửi duyệt và duyệt kế hoạch tháng, kế hoạch tuần.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], [], 75, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'] }),
   defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật và chốt/mở chốt kỳ tiến độ.', ['view', 'edit', 'confirm'], [], 80, { edit: ['view'], confirm: ['view'] }),
   defineRoom('quantity_acceptance', 'finance', 'Nghiệm thu khối lượng', 'Lập và duyệt nghiệm thu khối lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 90, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'] }),
@@ -121,6 +122,12 @@ export const getProjectPermissionRoomActionLabel = (
     if (actionCode === 'approve') return 'Duyệt KH tháng';
   }
   if (roomCode === 'material_request' && actionCode === 'manage') return 'Quản trị quy trình duyệt';
+  if (roomCode === 'gantt') {
+    if (actionCode === 'edit') return 'Lập điều chỉnh, sửa việc';
+    if (actionCode === 'delete') return 'Xóa việc (dự án chưa bật duyệt)';
+    if (actionCode === 'approve') return 'Duyệt điều chỉnh';
+    if (actionCode === 'confirm') return 'Duyệt dời về đích';
+  }
   if (roomCode === 'weekly_progress') {
     if (actionCode === 'edit') return 'Sửa/Nhập liệu';
     if (actionCode === 'confirm') return 'Xác nhận/Mở lại tuần';
