@@ -109,3 +109,14 @@ test("điện thoại: nút Trợ lý ở thanh đáy mở bản tin, việc xu�
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
   await expect(nav.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
 });
+
+test("như app thật (không truyền hàm tải việc): mở Trợ lý không sập, báo chưa đọc được việc khi mất mạng", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(`${base}?loader=app`);
+  await openAssistant(page, false);
+  await expect(brief(page).getByRole("region", { name: "Làm trước" })).toContainText("Chưa đọc được Việc của tôi");
+  await expect(page.getByText("Đã xảy ra lỗi hệ thống")).toHaveCount(0);
+  expect(errors.filter(message => /is not a function/.test(message))).toEqual([]);
+});

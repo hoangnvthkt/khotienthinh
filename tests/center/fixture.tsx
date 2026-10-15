@@ -330,7 +330,8 @@ const Fixture: React.FC = () => {
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
             onNavigate={setLastRoute}
             now={params.get('defaults') === '1' ? undefined : NOW}
-            loadWorkItems={loadWorkItems}
+            // ?loader=app: như app thật — không truyền loadWorkItems (dùng nguồn mặc định).
+            loadWorkItems={params.get('loader') === 'app' ? undefined : loadWorkItems}
             loadToday={loadToday}
             loadActions={loadActions}
             loadLayout={loadLayout}
