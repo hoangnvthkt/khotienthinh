@@ -151,7 +151,7 @@ export const DraftBanner: React.FC<{
 
 const LineRow: React.FC<{ row: ScheduleDiffRow; reasonText?: string | null }> = ({ row, reasonText }) => {
   const kept = row.action === 'update' && row.beforeStart === row.afterStart && row.progress > 0 && row.beforeEnd !== row.afterEnd;
-  return <div className="flex items-start gap-2 border-t border-border px-3 py-2 text-xs">
+  return <div className="flex items-start gap-2 px-3 py-2 text-xs">
     <span className="w-12 shrink-0 pt-0.5 font-mono text-[11px] text-teal-700 dark:text-teal-300">{row.wbsCode || '—'}</span>
     <div className="min-w-0 flex-1">
       <div className="truncate font-medium text-foreground" title={row.name}>{row.name}</div>
@@ -185,8 +185,9 @@ export const ChangeList: React.FC<{ rows: ScheduleDiffRow[]; groupName: (parentI
       return [...map.entries()];
     }, [rows]);
     if (groups.length === 0) return <div className="rounded-xl border border-dashed border-border bg-card p-4 text-center text-xs text-muted-foreground">Chưa có thay đổi. Kéo thanh trên Gantt hoặc sửa ngày, khối lượng của việc.</div>;
-    return <div className="space-y-2">{groups.map(([parentId, items]) => <div key={parentId || 'root'} className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex items-center justify-between border-l-4 border-teal-600 bg-muted/50 px-3 py-2 text-xs">
+    // Không dùng class chứa "border-t" trong ngăn kéo: CSS điện thoại (index.css) biến các div đó thành thanh dính đáy.
+    return <div className="space-y-2">{groups.map(([parentId, items]) => <div key={parentId || 'root'} className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between border-l-4 border-l-[#0d9488] bg-muted/50 px-3 py-2 text-xs">
         <span className="truncate font-bold text-foreground">{groupName(parentId || null)}</span><span className="shrink-0 text-muted-foreground">{items.length} việc</span>
       </div>
       {items.map(row => <LineRow key={row.taskId} row={row} reasonText={reasonOf?.(row)} />)}

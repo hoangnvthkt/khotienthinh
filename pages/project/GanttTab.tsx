@@ -9,7 +9,7 @@ import {
     Circle, PlayCircle, ArrowUpDown, ChevronUp, ChevronsUp, ChevronsDown, Copy,
     Anchor, Link2, Wrench, Users, Zap, Lock, Bell,
     FlaskConical, Lightbulb, RotateCcw, Check, SlidersHorizontal,
-    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign, CalendarRange, History,
+    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign, CalendarRange, History, Gauge, Route,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem } from '../../types';
@@ -35,6 +35,9 @@ import {
     ApprovedNotice, ChangeList, DraftBanner, DraftRulesNote, ReviewDrawer, ReviewPlansAlert, ScheduleControlStrip,
     ScheduleStatusBar, SubmitDrawer, VersionsDrawer,
 } from '../../components/project/schedule-change/ScheduleChangeUi';
+import { ScheduleLinksDrawer, ScheduleVariancePanel } from '../../components/project/schedule-variance/ScheduleVarianceUi';
+import { computeScheduleVariance, recentDailyLogIssues, varianceDataDate, varianceStatus } from '../../lib/projectScheduleVariance';
+import { localToday } from '../../lib/projectScheduleVarianceService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -2036,6 +2039,49 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         return `${names} duyệt${extra ? ', rồi duyệt dời về đích' : ''}`;
     }, [draftSummary.finishDelta, meId, scheduleControl?.confirmers, scheduleControl?.myApprovers]);
 
+    // ====== Nhanh / chậm so với tiến độ tổng + mốc khống chế (PR-3, 15/10/2026) ======
+    const [showVariance, setShowVariance] = useState(false);
+    const [showLinks, setShowLinks] = useState(false);
+    const [linkBusy, setLinkBusy] = useState(false);
+    const varianceToday = localToday();
+    const varianceDate = useMemo(() => varianceDataDate({ today: varianceToday, authoritative: progressFromDailyLog, logs: dailyLogs }),
+        [dailyLogs, progressFromDailyLog, varianceToday]);
+    const variance = useMemo(() => (tasks.length ? computeScheduleVariance(tasks, varianceDate) : null), [tasks, varianceDate]);
+    const varianceIssues = useMemo(() => recentDailyLogIssues(dailyLogs), [dailyLogs]);
+    const manualLinkCount = useMemo(() => tasks.reduce((count, task) => count + (task.dependencies || []).filter(dep => dep.type === 'FS').length, 0), [tasks]);
+    const canManageLinks = canEditTasks && !isSandboxMode;
+
+    const saveTaskDependencies = useCallback(async (taskId: string, update: (deps: NonNullable<ProjectTask['dependencies']>) => NonNullable<ProjectTask['dependencies']>, success: string) => {
+        const task = tasks.find(item => item.id === taskId);
+        if (!task || !ensureGanttCapability('edit', 'khai báo mốc khống chế')) return;
+        setLinkBusy(true);
+        try {
+            const next = { ...task, dependencies: update(task.dependencies || []) };
+            const result = await projectGanttCommandService.saveTasks(ganttScope, [toGanttTaskChange(next, task.rowVersion ?? 0)]);
+            setTasks(previous => deriveProjectTaskProgress(mergeAuthoritativeTasks(previous, result.tasks), dailyLogs));
+            toast.success(success);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không lưu được mốc khống chế');
+        } finally {
+            setLinkBusy(false);
+        }
+    }, [dailyLogs, ensureGanttCapability, ganttScope, handleGanttCommandError, tasks, toast]);
+    const addScheduleLink = useCallback((predId: string, succId: string) => saveTaskDependencies(succId,
+        deps => [...deps.filter(dep => dep.taskId !== predId), { taskId: predId, type: 'FS' }], 'Đã thêm mốc khống chế'), [saveTaskDependencies]);
+    const removeScheduleLink = useCallback((predId: string, succId: string) => saveTaskDependencies(succId,
+        deps => deps.filter(dep => !(dep.taskId === predId && dep.type === 'FS')), 'Đã bỏ mốc khống chế'), [saveTaskDependencies]);
+    const splitScheduleLink = useCallback((predId: string, succId: string) => saveTaskDependencies(succId,
+        deps => [...deps.filter(dep => dep.taskId !== predId), { taskId: predId, type: 'SS' }], 'Đã tách: hai việc làm song song'), [saveTaskDependencies]);
+    const unsplitScheduleLink = useCallback((predId: string, succId: string) => saveTaskDependencies(succId,
+        deps => deps.filter(dep => !(dep.taskId === predId && dep.type !== 'FS')), 'Đã bỏ tách'), [saveTaskDependencies]);
+    const varianceChip = (taskId: string) => {
+        if (isSandboxMode || !variance) return null;
+        const node = variance.nodes.get(taskId);
+        if (!node || node.done || varianceStatus(node.lagDays) !== 'late') return null;
+        return <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+            title={`Dự kiến xong ${fmtShort(node.forecastEnd)} — chậm ${-node.lagDays} ngày so với kế hoạch`}>+{-node.lagDays}</span>;
+    };
+
     const handleDelayEventStatus = useCallback(async (event: ProjectDelayEvent, status: ProjectDelayEventStatus) => {
         if (!ensureGanttCapability('edit', 'cập nhật sự kiện chậm tiến độ')) return;
         try {
@@ -2383,6 +2429,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     Công cụ & Phân tích Nâng cao
                                 </div>
 
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowLinks(true); setShowToolsMenu(false); }}
+                                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    <span className="flex items-center gap-2"><Route size={14} /> Mốc khống chế</span>
+                                    <span className="text-[10px] text-zinc-400">{manualLinkCount} mốc</span>
+                                </button>
+
                                 {scheduleLocked && <button
                                     type="button"
                                     onClick={() => { setShowVersions(true); setShowToolsMenu(false); }}
@@ -2512,6 +2567,38 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     <div className="h-full bg-teal-700 rounded-full transition-all" style={{ width: `${clampProgress(valueProgressMetric.valueProgressPercent)}%` }} />
                 </div>
             </div>
+
+            {variance && !isSandboxMode && (
+                <div className="rounded-xl border border-border bg-card">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2.5 text-xs">
+                        <Gauge size={16} className="shrink-0 text-teal-700 dark:text-teal-300" />
+                        <span className="font-bold text-foreground">So tiến độ tổng</span>
+                        {(() => {
+                            const state = varianceStatus(variance.projectLagDays);
+                            return <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${state === 'late' ? 'bg-rose-100 text-rose-700' : state === 'early' ? 'bg-leaf-100 text-leaf-800' : 'bg-mint-100 text-mint-800'}`}>
+                                {state === 'late' ? `Chậm ${-variance.projectLagDays} ngày` : state === 'early' ? `Nhanh ${variance.projectLagDays} ngày` : 'Đúng hạn'}</span>;
+                        })()}
+                        <span className="text-muted-foreground">dự kiến về đích <b className="text-foreground">{variance.projectForecastEnd ? fmtDate(variance.projectForecastEnd) : '—'}</b> · KH {variance.projectPlanEnd ? fmtDate(variance.projectPlanEnd) : '—'} · số liệu tới {fmtShort(variance.dataDate)}</span>
+                        {manualLinkCount === 0 && <span className="text-rose-600">· chưa khai báo mốc khống chế</span>}
+                        <div className="ml-auto flex w-full gap-2 sm:w-auto">
+                            <button type="button" onClick={() => setShowLinks(true)}
+                                className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-semibold text-foreground hover:bg-muted sm:flex-none">
+                                <Route size={13} /> Mốc khống chế ({manualLinkCount})
+                            </button>
+                            <button type="button" onClick={() => setShowVariance(value => !value)}
+                                className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-semibold text-foreground hover:bg-muted sm:flex-none">
+                                {showVariance ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {showVariance ? 'Thu gọn' : 'Xem chi tiết'}
+                            </button>
+                        </div>
+                    </div>
+                    {showVariance && (
+                        <div className="border-t border-border p-3">
+                            <ScheduleVariancePanel result={variance} today={varianceToday} authoritative={progressFromDailyLog}
+                                manualLinkCount={manualLinkCount} issues={varianceIssues} bare />
+                        </div>
+                    )}
+                </div>
+            )}
 
             {scheduleLocked && scheduleControl && (
                 <div className="space-y-3">
@@ -3390,7 +3477,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                             style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className={`flex items-center h-full ${isSandboxMode && scheduleLocked && baselineMap.get(task.id)?.endDate !== task.endDate ? 'font-bold text-amber-700 dark:text-amber-300' : ''}`}
                                                                 title={scheduleFieldsLocked ? 'Ngày kế hoạch đã khóa — đổi bằng "Điều chỉnh tiến độ"' : undefined}>
-                                                                {fmtShort(task.endDate)}
+                                                                {fmtShort(task.endDate)}{varianceChip(task.id)}
                                                             </div>
                                                         </td>
                                                         {/* Actual Dates (table mode only) */}
@@ -3617,6 +3704,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     {todayOffset >= 0 && todayOffset <= totalDays && (
                                                         <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${ganttOffset + todayOffset * zoom}px` }} />
                                                     )}
+
+                                                    {(() => {
+                                                        const node = !isSandboxMode ? variance?.nodes.get(task.id) : undefined;
+                                                        if (!node || node.done || varianceStatus(node.lagDays) !== 'late') return null;
+                                                        return <div className="absolute top-[30px] h-[3px] rounded-full bg-rose-500/80 z-[3] pointer-events-none"
+                                                            style={{ left: `${ganttOffset + daysBetween(timelineStart, node.planEnd) * zoom}px`, width: `${Math.max(daysBetween(node.planEnd, node.forecastEnd) * zoom, 2)}px` }}
+                                                            title={`Dự kiến xong ${fmtShort(node.forecastEnd)} — chậm ${-node.lagDays} ngày`} />;
+                                                    })()}
 
                                                     {/* GĐ1: Baseline Shadow Bar */}
                                                     {baselineTask && blWidth > 0 && (
@@ -3979,6 +4074,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     onApprove={() => decideChange('approve')}
                     onReturn={() => decideChange('return')}
                     onShowOnGantt={() => previewChangeOnGantt(reviewChange)}
+                />
+            )}
+            {showLinks && variance && (
+                <ScheduleLinksDrawer
+                    tasks={tasks}
+                    result={variance}
+                    canEdit={canManageLinks}
+                    busy={linkBusy}
+                    onAdd={addScheduleLink}
+                    onRemove={removeScheduleLink}
+                    onSplit={splitScheduleLink}
+                    onUnsplit={unsplitScheduleLink}
+                    onClose={() => setShowLinks(false)}
                 />
             )}
             {showVersions && scheduleControl && (
