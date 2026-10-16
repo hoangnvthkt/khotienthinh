@@ -111,7 +111,38 @@ const poReviewBrief: SkillDef = {
   summary: (input, output) => `đơn mua: ${input.facts.split('\n').length} dòng kiểm tra → ${String(output.sentence || '').length} ký tự`,
 };
 
+// Đề xuất vật tư · Từ một câu (A1, chủ SP 16/10): AI chỉ tách câu thành dòng; khớp mã làm trên máy với danh mục dự án (lib/materialRequestText.ts).
+const strOrNull = (v: unknown, max: number) => { const t = clampText(v, max).trim(); return t && t.toLowerCase() !== 'null' ? t : null; };
+const mrTextLines: SkillDef = {
+  code: 'mr_text_lines',
+  maxInputChars: 3000,
+  maxOutputTokens: 1500,
+  parseInput: raw => {
+    const text = clampText(asObject(raw).text, 3000).trim();
+    if (text.length < 3) throw new Error('AI_BAD_INPUT');
+    return { text };
+  },
+  system: 'Tách yêu cầu vật tư công trường (tiếng Việt, có thể viết tắt, không dấu, nhiều vật tư trong một câu) thành danh sách dòng, giữ thứ tự, mỗi vật tư một dòng. name: tên vật tư như người viết, bỏ từ thừa ("cần", "lấy", "xin", "cho"). spec: quy cách / kích thước / mác / độ dày tách riêng được (VD "PN10", "50x100x1.8", "PCB40"), không có thì null. qty: số lượng dạng số (dấu phẩy là thập phân: 1,5 = 1.5), không có thì null — không đoán. unit: đơn vị như người viết (cây, m, kg, tấn, bao, cái…), không có thì null. note: mục đích, hạng mục, vị trí, người nhận (VD "móng M3"), không có thì null. Không thêm vật tư không có trong câu, không đổi đơn vị.',
+  user: input => `${wrapData('yeu_cau', input.text)}\nTrả JSON: {"lines": [{"name": "<tên>", "spec": null, "qty": null, "unit": null, "note": null}]}`,
+  schema: {
+    type: 'object', additionalProperties: false, required: ['lines'],
+    properties: { lines: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'spec', 'qty', 'unit', 'note'], properties: {
+      name: { type: 'string' }, spec: { type: ['string', 'null'] }, qty: { type: ['number', 'null'] }, unit: { type: ['string', 'null'] }, note: { type: ['string', 'null'] },
+    } } } },
+  },
+  parseOutput: raw => ({
+    lines: (Array.isArray(asObject(raw).lines) ? asObject(raw).lines as unknown[] : []).slice(0, 60).flatMap(l => {
+      const o = asObject(l);
+      const name = strOrNull(o.name, 160);
+      if (!name) return [];
+      const q = typeof o.qty === 'number' ? o.qty : typeof o.qty === 'string' ? Number(o.qty.replace(',', '.')) : NaN;
+      return [{ name, spec: strOrNull(o.spec, 80), qty: Number.isFinite(q) && q >= 0 ? q : null, unit: strOrNull(o.unit, 20), note: strOrNull(o.note, 200) }];
+    }),
+  }),
+  summary: (input, output) => `tách ${input.text.length} ký tự → ${(output.lines as unknown[]).length} dòng`,
+};
+
 export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
-  [poReviewBrief.code]: poReviewBrief,
+  [poReviewBrief.code]: poReviewBrief, [mrTextLines.code]: mrTextLines,
 };

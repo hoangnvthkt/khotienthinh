@@ -336,7 +336,8 @@
     "20261017140000_hrm_profile_custom_fields.sql",
     "20261017150000_hrm_roster_3p_sync.sql",
     "20261017160000_hrm_roster_org_seat_sync.sql",
-    "20261017180000_procurement_po_review.sql"
+    "20261017180000_procurement_po_review.sql",
+    "20261017190000_ai_skill_mr_text_lines.sql"
   ],
   "forbidIncludeAll": true
 }
