@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer, FileText, Shield } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer, FileText, Shield, Keyboard } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -29,6 +29,7 @@ import {
     WorkflowNodeType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
+import { QuickRequestLines, type QuickLine } from './QuickRequestLines';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
 import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
@@ -510,6 +511,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
         [prefillEnabled, requests, effectiveProjectId, effectiveConstructionSiteId, request?.id],
     );
     const frequentItems = useMemo(() => frequentSiteItems(siteItemHistory), [siteItemHistory]);
+    const frequentItemIds = useMemo(() => new Set(frequentItems.map(f => f.itemId)), [frequentItems]);
+    const [isQuickLinesOpen, setQuickLinesOpen] = useState(false);
+    useEffect(() => { if (!isOpen) setQuickLinesOpen(false); }, [isOpen]);
     const recordSpecOutcome = (lines: RequestLineDraft[], code?: string) => {
         if (request?.id || !siteItemHistory.size) return;
         let suggested = 0; let accepted = 0;
@@ -975,6 +979,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
             return;
         }
         setItemSelectOpen(true);
+    };
+
+    // Gõ nhanh danh sách (A1 "đề xuất từ một câu"): cùng điều kiện như Thêm vật tư; dòng thêm vào như chọn từng mã.
+    const handleOpenQuickLines = () => {
+        if (items.length === 0 || (!isProjectRequest && !sourceWarehouseId)) { handleAddItem(); return; }
+        setQuickLinesOpen(true);
+    };
+    const handleAddQuickLines = (lines: QuickLine[]) => {
+        setReqItems(prev => [...prev, ...lines.map(line => ({
+            lineId: crypto.randomUUID(),
+            itemId: line.item.id,
+            qty: line.qty,
+            itemNameSnapshot: line.item.name,
+            unitSnapshot: line.item.unit,
+            skuSnapshot: line.item.sku,
+            specification: line.specification,
+            overBudgetReason: isProjectRequest ? line.reason : undefined,
+            note: !isProjectRequest ? line.reason : undefined,
+        }))]);
+        setQuickLinesOpen(false);
+        toast.success(`Đã thêm ${lines.length} dòng`, 'Kiểm lại số lượng, quy cách trước khi gửi.');
     };
 
     const handleSelectFromModal = (item: InventoryItem) => {
@@ -3448,13 +3473,24 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </tbody>
                         </table>
                         {isEditable && (
-                            <button
-                                type="button"
-                                onClick={handleAddItem}
-                                className="w-full py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 active:scale-[0.99]"
-                            >
-                                <Plus size={15} /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
-                            </button>
+                            <div className="flex">
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    className="flex-1 py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 active:scale-[0.99]"
+                                >
+                                    <Plus size={15} /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenQuickLines}
+                                    aria-expanded={isQuickLinesOpen}
+                                    title="Gõ hoặc dán danh sách vật tư, hệ thống tách dòng và khớp mã"
+                                    className="px-4 py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-l border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-1.5 whitespace-nowrap"
+                                >
+                                    <Keyboard size={15} /> Gõ nhanh
+                                </button>
+                            </div>
                         )}
                     </div>
 
@@ -3663,11 +3699,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             );
                         })}
                         {isEditable && (
-                            <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center active:scale-95 transition-all hover:bg-muted">
-                                <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={handleAddItem} className="flex-1 py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center active:scale-95 transition-all hover:bg-muted">
+                                    <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
+                                </button>
+                                <button type="button" onClick={handleOpenQuickLines} aria-expanded={isQuickLinesOpen} className="px-4 py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-muted">
+                                    <Keyboard size={16} /> Gõ nhanh
+                                </button>
+                            </div>
                         )}
                     </div>
+
+                    {isEditable && isQuickLinesOpen && (
+                        <QuickRequestLines
+                            items={items}
+                            boost={frequentItemIds}
+                            withReason={isProjectRequest}
+                            filterWarehouseId={isProjectRequest && !canSeeAvailability ? undefined : isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
+                            allowAllItems={isProjectRequest}
+                            onAdd={handleAddQuickLines}
+                            onClose={() => setQuickLinesOpen(false)}
+                        />
+                    )}
 
                     {!isEditable && request && isProjectRequest && [RequestStatus.APPROVED, RequestStatus.IN_TRANSIT, RequestStatus.COMPLETED].includes(request.status) && (
                         <div className="mt-5">

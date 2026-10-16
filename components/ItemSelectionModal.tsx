@@ -15,6 +15,8 @@ interface ItemSelectionModalProps {
   items?: InventoryItem[];    // Danh mục riêng (mặc định lấy từ kho dữ liệu chung)
   /** Mã công trường hay đề xuất (mới nhất / nhiều nhất trước): khi chưa gõ tìm, đưa lên đầu kèm số phiếu. */
   frequent?: Array<{ itemId: string; count: number }>;
+  /** Mở với sẵn từ khóa tìm (VD tên vật tư gõ nhanh chưa khớp mã). Không truyền thì giữ hành vi cũ. */
+  initialQuery?: string;
 }
 
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
@@ -27,11 +29,16 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   showStockQuantities = true,
   items: itemsProp,
   frequent,
+  initialQuery,
 }) => {
   const { items: appItems, warehouses } = useApp();
   const items = itemsProp ?? appItems;
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (isOpen && initialQuery !== undefined) { setSearchTerm(initialQuery); setDebouncedSearchTerm(initialQuery); }
+  }, [isOpen, initialQuery]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 250);
