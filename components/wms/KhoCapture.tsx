@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Camera, CheckCircle2, FileText, ImagePlus, Loader2, Plus, RefreshCw, Sparkles, Truck, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, Camera, CheckCircle2, FileText, ImagePlus, Images, Loader2, Plus, RefreshCw, Sparkles, Truck, X } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useReasonConfirm } from '../../context/ConfirmContext';
 import { Badge, StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
@@ -11,6 +12,7 @@ import {
   type CaptureLine, type CapturePhoto, type CaptureSuggestion, type DeliveryCapture,
 } from '../../lib/wmsDeliveryCaptureService';
 import { GREY, Panel, Section, TEAL, WARN, dateVi, fmtQty } from './wmsUi';
+import { CaptureCamera } from './CaptureCamera';
 
 // Kho Đợt 1 — Phiếu giao chụp: ảnh → AI điền (hoặc nhập tay) → chọn đơn mua → Nhận hàng (mỗi xe một phiếu nhập).
 // Chỉ tiêu đề + số liệu (chủ SP 10/10). Ô vàng = AI đọc chưa chắc.
@@ -32,7 +34,7 @@ const toLines = (f: Form): CaptureLine[] => f.lines.filter(l => l.name.trim()).m
 const blankLine = (): EditLine => ({ name: '', unit: '', qty: '', low: false, note: null });
 const sameUnit = (a?: string | null, b?: string | null) => !a || !b || foldVi(a).replace(/\s/g, '') === foldVi(b).replace(/\s/g, '');
 
-const Photo: React.FC<{ p: CapturePhoto; onRemove?: () => void }> = ({ p, onRemove }) => {
+const Photo: React.FC<{ p: CapturePhoto; onRemove?: () => void; onSplit?: () => void }> = ({ p, onRemove, onSplit }) => {
   const [url, setUrl] = useState<string | null>(null);
   const isImg = p.mimeType.startsWith('image/');
   useEffect(() => { let live = true; if (isImg) svc.photoUrl(p.path).then(u => { if (live) setUrl(u); }).catch(() => undefined); return () => { live = false; }; }, [p.path, isImg]);
@@ -45,7 +47,8 @@ const Photo: React.FC<{ p: CapturePhoto; onRemove?: () => void }> = ({ p, onRemo
     <button type="button" onClick={() => void open()} className="block h-full w-full" aria-label={`Xem ${p.name}`}>
       {isImg ? url ? <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" /> : <Loader2 size={16} className="m-auto mt-9 animate-spin text-muted-foreground" />
         : <FileText size={22} className="m-auto mt-8 text-teal-700" />}</button>
-    {onRemove && <button type="button" onClick={onRemove} aria-label="Bỏ ảnh" className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white"><X size={13} /></button>}
+    {onRemove && <button type="button" onClick={onRemove} aria-label="Bỏ ảnh" className="absolute right-0.5 top-0.5 grid h-7 w-7 !min-h-0 !min-w-0 place-items-center rounded-full bg-black/55 text-white"><X size={13} /></button>}
+    {onSplit && <button type="button" onClick={onSplit} title="Ảnh này là phiếu khác: tách thành phiếu riêng" className="absolute inset-x-0 bottom-0 !min-h-0 bg-black/55 py-1 text-[11px] font-semibold text-white">Tách</button>}
   </div>;
 };
 
@@ -163,6 +166,18 @@ export const KhoCapture: React.FC<{
     catch (e) { toast.error('Chưa tải được ảnh', captureErrorMessage(e)); }
     finally { setBusy(''); if (addRef.current) addRef.current.value = ''; }
   };
+  // Ảnh bị gộp nhầm (khác phiếu): tách thành phiếu riêng, AI đọc phiếu mới ở nền.
+  const splitPhoto = async (p: CapturePhoto) => {
+    if (!cap) return;
+    setBusy('photo');
+    try {
+      const { current, created } = await svc.split(cap, p.path);
+      accept(current); onSaved(created);
+      toast.success('Đã tách thành phiếu riêng', 'Xem lại hàng trên phiếu này.');
+      void svc.read(created).then(r => { if (r.code === 'OK') onSaved(r.capture); });
+    } catch (e) { toast.error('Chưa tách được', captureErrorMessage(e)); }
+    finally { setBusy(''); }
+  };
   const removePhoto = async (p: CapturePhoto) => {
     if (!cap) return;
     try { accept(await svc.removePhoto(cap, p.path)); } catch (e) { toast.error('Chưa bỏ được ảnh', captureErrorMessage(e)); }
@@ -258,7 +273,8 @@ export const KhoCapture: React.FC<{
         {busy === 'receive' ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}Nhận hàng</button>
     </>}>
     <div className="flex gap-2 overflow-x-auto pb-1">
-      {cap.photos.map(p => <Photo key={p.path} p={p} onRemove={cap.photos.length > 1 ? () => void removePhoto(p) : undefined} />)}
+      {cap.photos.map(p => <Photo key={p.path} p={p} onRemove={cap.photos.length > 1 ? () => void removePhoto(p) : undefined}
+        onSplit={cap.photos.length > 1 && !busy ? () => void splitPhoto(p) : undefined} />)}
       <label className="grid h-24 w-[4.5rem] shrink-0 cursor-pointer place-items-center rounded-lg border border-dashed border-teal-400 text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/30" aria-label="Thêm ảnh">
         {busy === 'photo' ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={20} />}
         <input ref={addRef} type="file" accept={CAPTURE_ACCEPT} multiple className="sr-only" onChange={e => void addPhotos(e.target.files)} /></label>
@@ -334,10 +350,36 @@ export const KhoCapture: React.FC<{
   </Panel>;
 };
 
-/** Nút chụp phiếu giao: điện thoại mở thẳng camera sau; máy tính chọn ảnh scan / PDF. */
-export const CaptureButton: React.FC<{ onFiles: (files: File[]) => void; className?: string; children?: React.ReactNode }> = ({ onFiles, className, children }) =>
-  <label className={`${className || primaryBtn} cursor-pointer`}>
-    {children || <><Camera size={15} />Chụp phiếu giao</>}
-    <input type="file" accept={CAPTURE_ACCEPT} capture="environment" multiple className="sr-only"
+/** Nút chụp phiếu giao (chủ SP 16/10): chọn Chụp liên tiếp (camera trong app) hoặc Chọn từ album (nhiều ảnh / PDF). */
+export const CaptureButton: React.FC<{ onFiles: (files: File[]) => void; className?: string; children?: React.ReactNode }> = ({ onFiles, className, children }) => {
+  const [menu, setMenu] = useState<DOMRect | null>(null);
+  const [camera, setCamera] = useState(false);
+  const albumRef = useRef<HTMLInputElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menu]);
+  const option = (icon: React.ReactNode, label: string, hint: string, onClick: () => void) =>
+    <button type="button" role="menuitem" onClick={() => { setMenu(null); onClick(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-muted">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">{icon}</span>
+      <span><span className="block font-semibold">{label}</span><span className="block text-[12px] text-muted-foreground">{hint}</span></span></button>;
+  return <>
+    <button ref={btnRef} type="button" aria-haspopup="menu" aria-expanded={!!menu} onClick={() => setMenu(m => m ? null : btnRef.current?.getBoundingClientRect() || null)}
+      className={className || primaryBtn}>{children || <><Camera size={15} />Chụp phiếu giao</>}</button>
+    <input ref={albumRef} type="file" accept={CAPTURE_ACCEPT} multiple className="sr-only" tabIndex={-1} aria-hidden="true"
       onChange={e => { const list = Array.from(e.target.files || []); e.target.value = ''; if (list.length) onFiles(list); }} />
-  </label>;
+    {menu && createPortal(<div className="fixed inset-0 z-[250]" onClick={() => setMenu(null)}>
+      <div className="absolute inset-0 bg-black/30 sm:bg-transparent" />
+      <div role="menu" aria-label="Chụp phiếu giao" onClick={e => e.stopPropagation()}
+        style={window.innerWidth >= 640 ? { top: menu.bottom + 6, right: Math.max(8, window.innerWidth - menu.right) } : undefined}
+        className="absolute inset-x-0 bottom-0 rounded-t-2xl border border-border bg-card p-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-xl sm:inset-x-auto sm:bottom-auto sm:w-72 sm:rounded-2xl sm:pb-2">
+        {option(<Camera size={20} />, 'Chụp phiếu', 'Chụp liền nhiều tờ', () => setCamera(true))}
+        {option(<Images size={20} />, 'Chọn từ album', 'Nhiều ảnh hoặc PDF', () => albumRef.current?.click())}
+      </div>
+    </div>, document.body)}
+    {camera && <CaptureCamera onClose={() => setCamera(false)} onDone={files => { setCamera(false); if (files.length) onFiles(files); }} />}
+  </>;
+};
