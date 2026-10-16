@@ -93,7 +93,7 @@ export const KhoCapture: React.FC<{
   const read = useCallback(async (c: DeliveryCapture) => {
     if (!c.photos.length) return;
     setAi('reading'); setAiErr('');
-    const r = await svc.read(c.id);
+    const r = await svc.read(c);
     if (r.code === 'OK') {
       accept(r.capture);
       // Ô người dùng đã gõ trong lúc AI đọc được giữ nguyên.

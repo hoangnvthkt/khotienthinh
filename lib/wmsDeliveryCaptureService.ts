@@ -6,7 +6,7 @@ import { formatQuantityInput } from './quantityInput';
 
 export interface CaptureLine { name: string; unit: string | null; qty: number | null; note?: string | null; confidence?: 'high' | 'low' }
 export interface CapturePhoto { path: string; name: string; size: number; mimeType: string }
-export interface CaptureAi { provider?: string; model?: string; result?: { warnings?: string[]; lines?: CaptureLine[] }; error?: string }
+export interface CaptureAi { provider?: string; model?: string; readAt?: string; result?: { warnings?: string[]; lines?: CaptureLine[] }; error?: string }
 export interface DeliveryCapture {
   id: string; warehouseId: string; status: 'new' | 'read' | 'received' | 'discarded';
   supplierName: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null;
@@ -47,6 +47,7 @@ const ERRORS: Record<string, string> = {
   AI_REFUSED: 'AI từ chối đọc ảnh này.',
   AI_EMPTY: 'AI không trả kết quả.',
   AI_FAILED: 'AI chưa đọc được phiếu.',
+  AI_CONNECTION_LOST: 'Mất kết nối khi AI đang đọc — bấm Đọc lại.',
 };
 
 export const captureErrorMessage = (e: unknown, fallback = 'Chưa lưu được phiếu giao.') => {
@@ -91,6 +92,20 @@ export const prepareCapturePhoto = async (file: File): Promise<File> => {
 const safeName = (name: string) => name.trim().replace(/[^a-zA-Z0-9._-]+/g, '_') || 'phieu.jpg';
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+/** Sau khi mất kết nối: hỏi lại phiếu vài lần, AI đã lưu kết quả mới hơn lúc bấm đọc thì dùng luôn. */
+const waitForRead = async (capture: DeliveryCapture, since: number, tries = 6, gapMs = 5000): Promise<DeliveryCapture | null> => {
+  for (let i = 0; i < tries; i++) {
+    await new Promise(resolve => setTimeout(resolve, gapMs));
+    try {
+      const { data } = await supabase.rpc('list_delivery_captures_v1', { p: { warehouseId: capture.warehouseId } });
+      const fresh = ((data || []) as DeliveryCapture[]).find(c => c.id === capture.id);
+      const readAt = fresh?.ai?.readAt ? Date.parse(fresh.ai.readAt) : 0;
+      if (fresh && readAt >= since - 60_000 && readAt > (capture.ai?.readAt ? Date.parse(capture.ai.readAt) : 0)) return fresh;
+    } catch { /* mạng vẫn chập chờn: thử lần sau */ }
+  }
+  return null;
+};
+
 export const wmsDeliveryCaptureService = {
   list: (warehouseId?: string) => rpc<DeliveryCapture[]>('list_delivery_captures_v1', { p: warehouseId ? { warehouseId } : {} }),
   create: (warehouseId: string) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { newId: uid(), warehouseId } }),
@@ -132,9 +147,15 @@ export const wmsDeliveryCaptureService = {
   },
 
   /** AI đọc ảnh (máy chủ chọn nhà cung cấp AI). Chưa cấu hình khóa → AI_NOT_CONFIGURED, thủ kho nhập tay. */
-  async read(id: string): Promise<CaptureReadResult> {
-    const { data, error } = await supabase.functions.invoke('wms-doc-reader', { body: { captureId: id } });
+  async read(capture: DeliveryCapture): Promise<CaptureReadResult> {
+    const startedAt = Date.now();
+    const { data, error } = await supabase.functions.invoke('wms-doc-reader', { body: { captureId: capture.id } });
     if (error) {
+      // Đứt mạng / máy chủ đang triển khai lại (16/10: "Failed to send a request to the Edge Function"): máy chủ có thể vẫn đọc xong và đã lưu.
+      if (error.name === 'FunctionsFetchError') {
+        const saved = await waitForRead(capture, startedAt);
+        return saved ? { code: 'OK', capture: saved } : { code: 'AI_FAILED', error: ERRORS.AI_CONNECTION_LOST };
+      }
       const ctx = (error as { context?: Response }).context;
       let code = '';
       try { code = (await ctx?.clone?.().json?.())?.error || ''; } catch { code = ''; }
