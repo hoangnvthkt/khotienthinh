@@ -13,6 +13,7 @@ import {
 } from '../../lib/wmsDeliveryCaptureService';
 import { GREY, Panel, Section, TEAL, WARN, dateVi, fmtQty } from './wmsUi';
 import { CaptureCamera } from './CaptureCamera';
+import { CaptureSupplier } from './CaptureSupplier';
 
 // Kho Đợt 1 — Phiếu giao chụp: ảnh → AI điền (hoặc nhập tay) → chọn đơn mua → Nhận hàng (mỗi xe một phiếu nhập).
 // Chỉ tiêu đề + số liệu (chủ SP 10/10). Ô vàng = AI đọc chưa chắc.
@@ -157,6 +158,15 @@ export const KhoCapture: React.FC<{
     finally { setBusy(''); }
   };
 
+  // Chọn NCC (hoặc đánh dấu NCC mới): lưu ngay kèm tên đang gõ để hệ thống học, rồi tìm lại đơn theo NCC.
+  const pickSupplier = async (patch: { supplierId: string | null; supplierMatch?: 'new'; supplierTaxCode?: string | null; supplierAddress?: string | null }) => {
+    if (!cap) return;
+    try {
+      const c = await svc.save(cap.id, { supplierName: form.supplierName, ...patch });
+      accept(c);
+      if (patch.supplierId !== undefined && !('supplierTaxCode' in patch) && !('supplierAddress' in patch)) void loadSugs(c, poId);
+    } catch (e) { toast.error('Chưa lưu được NCC', captureErrorMessage(e)); }
+  };
   const findOrders = async () => { const c = dirty ? await save(true) : cap; if (c) await loadSugs(c, poId); };
 
   const addPhotos = async (list: FileList | null) => {
@@ -249,7 +259,7 @@ export const KhoCapture: React.FC<{
     foot={cap.wmsTransactionId ? <button type="button" onClick={() => onOpenTx(cap.wmsTransactionId!)} className={primaryBtn}>Mở phiếu nhập</button> : undefined}>
     <div className="flex gap-2 overflow-x-auto pb-1">{cap.photos.map(p => <Photo key={p.path} p={p} />)}</div>
     <dl className="grid grid-cols-2 gap-2 text-sm">
-      <div><dt className="text-[12px] text-muted-foreground">NCC</dt><dd className={ENT}>{cap.supplierName || '—'}</dd></div>
+      <div><dt className="text-[12px] text-muted-foreground">NCC</dt><dd className={ENT}>{cap.supplierPartnerName || cap.supplierName || '—'}</dd></div>
       <div><dt className="text-[12px] text-muted-foreground">Số phiếu · xe</dt><dd>{[cap.docNo, cap.truckNo].filter(Boolean).join(' · ') || '—'}</dd></div>
       <div><dt className="text-[12px] text-muted-foreground">Ngày giao</dt><dd>{dateVi(cap.docDate)}</dd></div>
       {cap.status === 'received' && <div><dt className="text-[12px] text-muted-foreground">Phiếu nhập</dt><dd className="font-mono font-semibold text-teal-700 dark:text-teal-300">{cap.code || '—'}{cap.poNumber && ` · ${cap.poNumber}`}</dd></div>}
@@ -288,8 +298,8 @@ export const KhoCapture: React.FC<{
       <p className="flex items-center gap-2 font-semibold"><Sparkles size={14} />AI đã đọc{lowCount > 0 && ` · ${lowCount} ô vàng cần xem lại`}</p>
       {warnings.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px]">{warnings.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}</ul>}</div>}
 
+    <Section title="Nhà cung cấp"><CaptureSupplier capture={cap} name={form.supplierName} onName={v => edit({ supplierName: v })} onPick={pickSupplier} /></Section>
     <div className="grid grid-cols-2 gap-2">
-      {field('Nhà cung cấp', 'supplierName', 'col-span-2')}
       {field('Số phiếu', 'docNo')}
       <label className="block text-[12px] font-semibold text-muted-foreground">Ngày giao
         <input type="date" value={form.docDate} onChange={e => edit({ docDate: e.target.value })} className={`mt-1 w-full ${inputCls}`} /></label>

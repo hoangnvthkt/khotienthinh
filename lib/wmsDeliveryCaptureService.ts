@@ -11,6 +11,8 @@ export interface DeliveryCapture {
   id: string; warehouseId: string; status: 'new' | 'read' | 'received' | 'discarded';
   supplierName: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null;
   lines: CaptureLine[]; photos: CapturePhoto[]; ai: CaptureAi | null; note: string | null;
+  supplierId?: string | null; supplierMatch?: 'auto' | 'picked' | 'new' | null; supplierPartnerName?: string | null;
+  supplierTaxCode?: string | null; supplierAddress?: string | null;
   purchaseOrderId: string | null; poNumber: string | null; deliveryBatchId: string | null; wmsTransactionId: string | null; code: string | null;
   createdBy: string | null; createdAt: string; receivedAt: string | null; receivedBy: string | null; deliveryNo?: number;
 }
@@ -20,7 +22,10 @@ export interface CaptureSuggestion {
   purchaseOrderId: string; poNumber: string; status: string; approved: boolean; vendorName: string; createdAt: string;
   supplierScore: number; score: number; lines: CaptureMatchLine[]; poLines: CapturePoLine[];
 }
-export type CaptureSavePatch = Partial<Pick<DeliveryCapture, 'supplierName' | 'docNo' | 'docDate' | 'docTime' | 'truckNo' | 'lines' | 'photos' | 'note'>>;
+export type CaptureSavePatch = Partial<Pick<DeliveryCapture, 'supplierName' | 'docNo' | 'docDate' | 'docTime' | 'truckNo' | 'lines' | 'photos' | 'note'
+  | 'supplierId' | 'supplierTaxCode' | 'supplierAddress'>> & { supplierMatch?: 'new' };
+/** NCC gợi ý cho phiếu: tax = MST trùng, learned = tên đã học, name = giống tên, search = thủ kho tìm. */
+export interface CaptureSupplierOption { id: string; name: string; taxCode: string | null; address: string | null; score: number; reason: 'tax' | 'learned' | 'name' | 'search'; openOrders: number }
 export type CaptureReadResult = { code: 'OK'; capture: DeliveryCapture } | { code: 'AI_NOT_CONFIGURED' } | { code: 'AI_FAILED'; error: string };
 
 const ERRORS: Record<string, string> = {
@@ -34,6 +39,7 @@ const ERRORS: Record<string, string> = {
   CAPTURE_DUPLICATE: 'Phiếu giao này (cùng số phiếu, xe, ngày) đã nhận vào đơn rồi.',
   CAPTURE_PO_LINE_INVALID: 'Dòng đơn không còn trong đơn — tải lại gợi ý.',
   CAPTURE_LINES_REQUIRED: 'Chưa có dòng nào có số lượng nhận.',
+  CAPTURE_SUPPLIER_INVALID: 'NCC không còn trong danh mục — chọn lại.',
   CAPTURE_PAYLOAD_INVALID: 'Dữ liệu phiếu không hợp lệ.',
   CAPTURE_NO_PHOTO: 'Phiếu chưa có ảnh.',
   PHOTO_READ_FAILED: 'Không mở được ảnh phiếu.',
@@ -111,6 +117,7 @@ export const wmsDeliveryCaptureService = {
   create: (warehouseId: string) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { newId: uid(), warehouseId } }),
   save: (id: string, patch: CaptureSavePatch) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { id, ...patch } }),
   discard: (id: string, reason: string) => rpc<DeliveryCapture>('discard_delivery_capture_v1', { p: { id, reason } }),
+  suppliers: (captureId: string, q?: string) => rpc<CaptureSupplierOption[]>('suggest_capture_suppliers_v1', { p: q ? { captureId, q } : { captureId } }),
   suggest: (id: string) => rpc<CaptureSuggestion[]>('suggest_capture_orders_v1', { p_capture_id: id }),
   receive: (input: { captureId: string; purchaseOrderId: string; lines: Array<{ captureIndex: number; poLineId: string; qty: number }> }) =>
     rpc<DeliveryCapture>('receive_capture_v1', { p: input }),

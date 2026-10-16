@@ -247,7 +247,9 @@ export const KhoView: React.FC = () => {
     return <li key={c.id}><button type="button" onClick={() => setSel({ kind: 'capture', key: c.id, id: c.id })}
       className={`flex w-full items-start gap-2 border-l-4 border-l-leaf-500 px-3 py-2.5 text-left ${active(sel?.kind === 'capture' && sel.id === c.id)}`}>
       <Camera size={16} className="mt-0.5 shrink-0 text-teal-600" />
-      <span className="min-w-0 flex-1"><span className={`line-clamp-2 ${ENT}`}>{c.supplierName || 'Phiếu giao chụp'}</span>
+      <span className="min-w-0 flex-1"><span className={`line-clamp-2 ${ENT}`}>{c.supplierPartnerName || c.supplierName || 'Phiếu giao chụp'}</span>
+        {c.supplierMatch === 'new' ? <span className="mt-0.5 block"><Badge className={WARN}>NCC mới</Badge></span>
+          : !c.supplierId && c.supplierName && c.status === 'read' ? <span className="mt-0.5 block"><Badge className={WARN}>Chưa khớp NCC</Badge></span> : null}
         <span className="block truncate text-[12px] text-muted-foreground">{[c.docNo && `Số ${c.docNo}`, c.truckNo, !wh && whName(c.warehouseId)].filter(Boolean).join(' · ') || dateVi(c.createdAt)}</span>
         <span className="block truncate text-[12px]">{names.length ? <>{names.slice(0, 2).join(', ')}{names.length > 2 ? ` +${names.length - 2}` : ''}</> : <span className="text-muted-foreground">Chưa nhập hàng</span>}</span></span>
       <Badge className={readingIds.has(c.id) ? GREY : age >= 3 ? BAD : TEAL}>{readingIds.has(c.id) ? 'AI đang đọc' : age >= 3 ? `treo ${age} ngày` : 'Phiếu chụp'}</Badge>

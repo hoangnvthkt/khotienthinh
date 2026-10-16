@@ -4,10 +4,12 @@
 export const DOC_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['docType', 'supplierName', 'docNo', 'docDate', 'docTime', 'truckNo', 'lines', 'warnings'],
+  required: ['docType', 'supplierName', 'supplierTaxCode', 'supplierAddress', 'docNo', 'docDate', 'docTime', 'truckNo', 'lines', 'warnings'],
   properties: {
     docType: { type: 'string', enum: ['phieu_giao', 'bien_ban_giao_nhan', 'phieu_xuat_ncc', 'phieu_be_tong', 'hoa_don_ban_le', 'phieu_nhap_noi_bo', 'khac'] },
     supplierName: { type: ['string', 'null'] },
+    supplierTaxCode: { type: ['string', 'null'] },
+    supplierAddress: { type: ['string', 'null'] },
     docNo: { type: ['string', 'null'] },
     docDate: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
     docTime: { type: ['string', 'null'], description: 'HH:MM' },
@@ -35,6 +37,7 @@ export const DOC_PROMPT = `Bạn đọc ảnh chứng từ giao hàng tại kho 
 
 Quy tắc:
 - supplierName: bên GIAO hàng (tên công ty / cửa hàng in ở đầu phiếu hoặc mục "Bên giao", "Đơn vị giao hàng", dấu đỏ). Không lấy Tiến Thịnh.
+- supplierTaxCode: mã số thuế bên GIAO nếu in trên phiếu (chỉ chữ số và dấu gạch), không có thì null. supplierAddress: địa chỉ bên GIAO nếu có.
 - docNo: số phiếu / số biên bản / số docket của NCC đúng như in. docDate YYYY-MM-DD (ngày Việt Nam dd/mm/yyyy). docTime giờ giao nếu có.
 - truckNo: biển số xe (VD 29CD-00280, 15H 21307), viết hoa.
 - lines: mỗi dòng hàng THỰC GIAO. name giữ nguyên tên + quy cách như trên phiếu. unit là đơn vị trên phiếu.
@@ -46,7 +49,7 @@ Quy tắc:
 - warnings: tổng ghi tay không khớp cộng dòng, số viết đè, ngày giao khác ngày ghi, tiền viết tắt theo nghìn đồng…`;
 
 export interface DocLine { name: string; unit: string | null; qty: number | null; note: string | null; confidence: 'high' | 'low' }
-export interface DocRead { docType: string; supplierName: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null; lines: DocLine[]; warnings: string[] }
+export interface DocRead { docType: string; supplierName: string | null; supplierTaxCode: string | null; supplierAddress: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null; lines: DocLine[]; warnings: string[] }
 
 /** Chuẩn hóa kết quả AI trước khi lưu: cắt chuỗi, bỏ dòng rỗng, ngày hợp lệ. */
 export const normalizeRead = (raw: unknown): DocRead => {
@@ -57,6 +60,8 @@ export const normalizeRead = (raw: unknown): DocRead => {
   return {
     docType: str(r.docType, 40) || 'khac',
     supplierName: str(r.supplierName),
+    supplierTaxCode: str(r.supplierTaxCode, 20)?.replace(/[^0-9-]/g, '') || null,
+    supplierAddress: str(r.supplierAddress, 300),
     docNo: str(r.docNo, 60),
     docDate: date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) ? date : null,
     docTime: str(r.docTime, 5),
