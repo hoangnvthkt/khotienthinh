@@ -93,6 +93,25 @@ const morningBrief: SkillDef = {
   summary: (input, output) => `bản tin từ ${input.facts.split('\n').length} dòng → ${String(output.brief || '').length} ký tự`,
 };
 
+// Mua hàng · Tóm tắt trước khi duyệt (A1, chủ SP 16/10): `facts` = các dòng "cần xem / ổn / chưa rõ" màn hình dựng từ get_procurement_po_review_v1
+// (đã kiểm quyền). AI chỉ viết một câu từ đúng các dòng đó; người duyệt quyết.
+const poReviewBrief: SkillDef = {
+  code: 'po_review_brief',
+  maxInputChars: 6000,
+  maxOutputTokens: 200,
+  parseInput: raw => {
+    const facts = clampText(asObject(raw).facts, 6000).trim();
+    if (facts.length < 10) throw new Error('AI_BAD_INPUT');
+    return { facts };
+  },
+  system: 'Viết MỘT câu tiếng Việt, tối đa 35 từ, cho người duyệt đơn mua từ các dòng kiểm tra được cung cấp: điểm "Cần xem" quan trọng nhất trước (trùng đơn, hàng về trước, giá cao, vượt dự toán), rồi điểm "Ổn" chính. Chỉ dùng thông tin trong các dòng, không thêm số, không khuyên duyệt hay trả lại. Không có điểm cần xem thì nói các kiểm tra không thấy điểm bất thường.',
+  user: input => `${wrapData('kiem_tra', input.facts)}\nTrả JSON: {"sentence": "<một câu>"}`,
+  schema: { type: 'object', additionalProperties: false, required: ['sentence'], properties: { sentence: { type: 'string' } } },
+  parseOutput: raw => ({ sentence: clampText(asObject(raw).sentence, 400).trim() }),
+  summary: (input, output) => `đơn mua: ${input.facts.split('\n').length} dòng kiểm tra → ${String(output.sentence || '').length} ký tự`,
+};
+
 export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
+  [poReviewBrief.code]: poReviewBrief,
 };
