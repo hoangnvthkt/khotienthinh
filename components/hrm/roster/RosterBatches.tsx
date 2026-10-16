@@ -5,7 +5,7 @@ import { useToast } from '../../../context/ToastContext';
 import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import {
-  BATCH_SOURCE_LABEL, BATCH_STATUS_LABEL, PAY_FIELDS, dateVi,
+  BATCH_SOURCE_LABEL, BATCH_STATUS_LABEL, dateVi, isPayField,
   type RosterBatch, type RosterChangeItem, type RosterData, type RosterFieldKey,
 } from '../../../lib/hrmRoster';
 import { hrmRosterService, type RosterBatchScope } from '../../../lib/hrmRosterService';
@@ -31,8 +31,8 @@ export const BatchItems: React.FC<{ items: RosterChangeItem[]; data: RosterData;
   const [onlyChanges, setOnlyChanges] = useState(false);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const hiddenPay = !data.can.viewPay ? items.filter(item => PAY_FIELDS.includes(item.field as RosterFieldKey)).length : 0;
-  const visible = items.filter(item => (data.can.viewPay || !PAY_FIELDS.includes(item.field as RosterFieldKey)) && (!onlyChanges || item.oldValue != null));
+  const hiddenPay = !data.can.viewPay ? items.filter(item => isPayField(item.field)).length : 0;
+  const visible = items.filter(item => (data.can.viewPay || !isPayField(item.field)) && (!onlyChanges || item.oldValue != null));
   const people = groupItems(visible).filter(person => matchesSearchQueryMultiple([person.fullName, person.employeeCode], query));
   const fills = items.filter(item => item.oldValue == null && item.employeeId != null).length;
   const isOpen = (key: string) => (collapsedByDefault ? open.has(key) : !open.has(key));
@@ -67,6 +67,24 @@ export const BatchItems: React.FC<{ items: RosterChangeItem[]; data: RosterData;
   </section>;
 };
 
+/** The step after the current one, when the request has more than one approval step. */
+const nextStep = (batch: RosterBatch) => batch.steps && batch.currentStep ? batch.steps.find(step => step.step === batch.currentStep! + 1) || null : null;
+
+const StepTrail: React.FC<{ batch: RosterBatch }> = ({ batch }) =>
+  <ol className="mt-2 flex flex-wrap items-center gap-1.5 text-xs" aria-label="Các bước duyệt">
+    {batch.steps!.map((step, index) => {
+      const done = Boolean(step.decidedAt);
+      const current = batch.status === 'pending' && step.step === batch.currentStep;
+      return <li key={step.step} className="flex items-center gap-1.5">
+        {index > 0 && <ChevronRight size={13} className="text-muted-foreground" />}
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${done ? 'border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200'
+          : current ? 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-border bg-card text-muted-foreground'}`}>
+          {done ? <CheckCircle2 size={12} /> : <Hourglass size={12} />}Bước {step.step}: {done ? step.decidedByName : step.approverNames.join(' / ')}
+          {done && step.decidedAt && <span className="font-normal opacity-80">· {timeVi(step.decidedAt)}</span>}</span>
+      </li>;
+    })}
+  </ol>;
+
 const BatchDrawer: React.FC<{ batchId: string; data: RosterData; onClose: () => void; onChanged: () => void; onResubmit: (batch: RosterBatch) => void }> = ({ batchId, data, onClose, onChanged, onResubmit }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -82,17 +100,20 @@ const BatchDrawer: React.FC<{ batchId: string; data: RosterData; onClose: () => 
 
   const approve = async () => {
     if (!batch) return;
+    const next = nextStep(batch);
     const ok = await confirm({
-      title: 'Duyệt phiếu thay đổi?', targetName: `${batch.code} · ${batch.title}`, confirmText: 'Duyệt', actionLabel: 'Duyệt',
+      title: next ? `Duyệt bước ${batch.currentStep}?` : 'Duyệt phiếu thay đổi?', targetName: `${batch.code} · ${batch.title}`, confirmText: 'Duyệt', actionLabel: 'Duyệt',
       subtitle: `${batch.itemCount} thay đổi cho ${batch.peopleCount} người${batch.newPeopleCount ? ` (${batch.newPeopleCount} người mới)` : ''}, hiệu lực từ ${dateVi(batch.effectiveDate)}.`,
-      warningText: 'Hồ sơ từng người cập nhật ngay. Muốn sửa lại thì lập phiếu mới; lịch sử giữ cả giá trị cũ.', intent: 'success', countdownSeconds: 0,
+      warningText: next ? `Phiếu chuyển sang bước ${next.step}: ${next.approverNames.join(' / ')} duyệt. Hồ sơ chỉ cập nhật sau bước cuối.`
+        : 'Hồ sơ từng người cập nhật ngay. Muốn sửa lại thì lập phiếu mới; lịch sử giữ cả giá trị cũ.', intent: 'success', countdownSeconds: 0,
     });
     if (!ok) return;
     setBusy(true);
     try {
-      const next = await hrmRosterService.decide(batch.id, true, '');
-      setBatch(next);
-      toast.success(`Đã duyệt ${batch.code}`, `${batch.peopleCount} hồ sơ đã cập nhật. Người gửi đã được thông báo.`);
+      const decided = await hrmRosterService.decide(batch.id, true, '');
+      setBatch(decided);
+      toast.success(`Đã duyệt ${batch.code}${next ? ` bước ${batch.currentStep}` : ''}`,
+        next ? `Chờ ${next.approverNames.join(' / ')} duyệt bước ${next.step}.` : `${batch.peopleCount} hồ sơ đã cập nhật. Người gửi đã được thông báo.`);
       onChanged();
     } catch (e) { toast.error('Chưa duyệt được', e instanceof Error ? e.message : ''); } finally { setBusy(false); }
   };
@@ -129,6 +150,7 @@ const BatchDrawer: React.FC<{ batchId: string; data: RosterData; onClose: () => 
     header={batch ? <>
       <div className="flex flex-wrap items-center gap-1.5"><Badge className={BATCH_STATUS_STYLE[batch.status]}>{BATCH_STATUS_LABEL[batch.status]}</Badge><SourceBadge batch={batch} /></div>
       <h2 className="mt-2 text-lg font-bold text-foreground"><span className={ENT}>{batch.code}</span> · {batch.title}</h2>
+      {batch.steps && batch.steps.length > 1 && <StepTrail batch={batch} />}
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
         {([['Người gửi', `${batch.createdByName} · ${timeVi(batch.createdAt)}`], ['Hiệu lực từ', dateVi(batch.effectiveDate)],
           ['Người duyệt', batch.approverNames.join(', ') || '—'], ['Quy mô', `${batch.itemCount} ô · ${batch.peopleCount} người`]] as const).map(([label, value]) =>
@@ -139,7 +161,8 @@ const BatchDrawer: React.FC<{ batchId: string; data: RosterData; onClose: () => 
       {batch.can.cancel && <button type="button" onClick={() => void cancel()} disabled={busy} className={`${secondaryBtn} mr-auto`}><Undo2 size={15} />Rút phiếu</button>}
       {batch.can.resubmit && <button type="button" onClick={() => onResubmit(batch)} disabled={busy} className={primaryBtn}><RotateCcw size={15} />Sửa & gửi lại</button>}
       {batch.can.decide && <><button type="button" onClick={() => void reject()} disabled={busy} className={secondaryBtn}>Trả lại</button>
-        <button type="button" onClick={() => void approve()} disabled={busy} className={primaryBtn}><CheckCircle2 size={15} />Duyệt {batch.itemCount} thay đổi</button></>}
+        <button type="button" onClick={() => void approve()} disabled={busy} className={primaryBtn}><CheckCircle2 size={15} />
+          {nextStep(batch) ? `Duyệt bước ${batch.currentStep}` : `Duyệt ${batch.itemCount} thay đổi`}</button></>}
     </> : undefined}>
     {error ? <StateBox kind="error" title="Chưa mở được phiếu" message={error} onRetry={load} />
       : !batch ? <StateBox kind="loading" title="Đang mở phiếu…" />
@@ -210,7 +233,8 @@ export const RosterBatchesView: React.FC<{
           <button type="button" onClick={() => setOpenId(batch.id)} className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-l-4 px-3 py-3 text-left hover:bg-muted/50 ${BATCH_STRIP[batch.status]}`}>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-2"><span className={ENT}>{batch.code}</span><SourceBadge batch={batch} />
-                {batch.awaitingMe && <Badge className="border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">Chờ bạn duyệt</Badge>}</span>
+                {batch.awaitingMe && <Badge className="border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">Chờ bạn duyệt</Badge>}
+                {batch.status === 'pending' && batch.steps && batch.steps.length > 1 && <Badge className="border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">Bước {batch.currentStep}/{batch.steps.length}</Badge>}</span>
               <span className="mt-0.5 block truncate text-sm font-semibold text-foreground">{batch.title}</span>
               <span className="block truncate text-xs text-muted-foreground">{batch.createdByName} · {timeVi(batch.createdAt)} · hiệu lực {dateVi(batch.effectiveDate)}</span>
             </span>

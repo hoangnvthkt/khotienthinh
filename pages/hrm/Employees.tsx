@@ -39,7 +39,8 @@ const Employees: React.FC = () => {
     useModuleData('hrm');
     const toast = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
-    const pageView: 'roster' | 'directory' = isHr && searchParams.get('view') !== 'directory' ? 'roster' : 'directory';
+    // Non-HR approvers (e.g. TGĐ at step 2) arrive here from a notification link with view=roster.
+    const pageView: 'roster' | 'directory' = (isHr && searchParams.get('view') !== 'directory') || searchParams.get('view') === 'roster' ? 'roster' : 'directory';
     const setPageView = (view: 'roster' | 'directory') => setSearchParams(current => {
         const next = new URLSearchParams(current);
         next.set('view', view);
@@ -234,7 +235,7 @@ const Employees: React.FC = () => {
     if (pageView === 'roster') {
         return (
             <div className="flex h-full flex-col space-y-4">
-                <ViewSwitch view="roster" onChange={setPageView} />
+                {isHr && <ViewSwitch view="roster" onChange={setPageView} />}
                 <HrmRosterView embedded initialTab={searchParams.get('tab') === 'batches' ? 'batches' : 'roster'}
                     initialBatchId={searchParams.get('batch')} onDataChanged={() => loadModuleData('hrm', true)} />
             </div>

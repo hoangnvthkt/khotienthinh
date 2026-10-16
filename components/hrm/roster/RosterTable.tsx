@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight, Clock3, PencilLine } from 'lucide-react';
 import {
-  FIELD_BY_KEY, ROSTER_FIELDS, ROSTER_GROUPS, formatValue, isPayField, isPlaceholderPhone, missingFields, moneyVi, positionOf, salaryTotal, seniorityLabel, seniorityMonths,
+  ROSTER_GROUPS, fieldDef, formatValue, isPayField, rosterFields, isPlaceholderPhone, missingFields, moneyVi, positionOf, salaryTotal, seniorityLabel, seniorityMonths,
   type RosterData, type RosterFieldKey, type RosterGroupKey, type RosterRow, type RosterValue,
 } from '../../../lib/hrmRoster';
 import { DRAFT_CELL, ENT, MISSING_CHIP, NUM, PENDING_CELL } from './rosterUi';
@@ -32,7 +32,7 @@ export const rosterColumns = (data: RosterData, groups: RosterGroupKey[]): Colum
         render: (_row, values) => { const total = salaryTotal(values); return total == null ? null : <span className={NUM}>{moneyVi(total)}</span>; } });
     }
     // Bộ phận is the row group, so it is not repeated as a column.
-    ROSTER_FIELDS.filter(field => field.group === group.key && field.key !== 'orgUnit' && (!field.payOnly || data.can.viewPay)).forEach(field => {
+    rosterFields().filter(field => field.group === group.key && field.key !== 'orgUnit' && (!field.payOnly || data.can.viewPay)).forEach(field => {
       columns.push({ key: field.key, label: field.label, group: field.group, width: field.width, align: field.align, field: field.key });
       if (field.key === 'position') {
         columns.push({ key: 'positionGroup', label: 'Nhóm', group: 'position', width: 64,
@@ -124,7 +124,7 @@ export const RosterTable: React.FC<{
     const values = valuesOf(row);
     if (column.render) return column.render(row, values) ?? <span className="text-muted-foreground/60">—</span>;
     const key = column.field!;
-    const def = FIELD_BY_KEY[key];
+    const def = fieldDef(key);
     const value = values[key] ?? null;
     const text = formatValue(key, value, data.catalogs);
     if (!text) return def.required ? <span className={MISSING_CHIP}>Thiếu</span> : <span className="text-muted-foreground/60">—</span>;
@@ -208,7 +208,7 @@ export const RosterTable: React.FC<{
                         </button></td>
                       {columns.map(column => {
                         const field = column.field;
-                        const def = field ? FIELD_BY_KEY[field] : null;
+                        const def = field ? fieldDef(field) : null;
                         const draftValue = field ? rowDraft[field] : undefined;
                         const pendingHere = field ? row.pending[field] : undefined;
                         const editable = Boolean(def?.editable && data.can.edit && (!isPayField(def.key) || data.can.editPay));

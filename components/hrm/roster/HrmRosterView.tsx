@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardList, Download, FilePenLine, Hourglass, PencilLine, RefreshCw, Search, Send, TriangleAlert, Upload, Users2, X } from 'lucide-react';
+import { ClipboardList, Download, FilePenLine, Hourglass, PencilLine, RefreshCw, Search, Send, Settings2, TriangleAlert, Upload, Users2, X } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
 import { loadXlsx } from '../../../lib/loadXlsx';
 import { StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import {
-  ROSTER_GROUPS, blockOf, fieldLabel, formatValue, missingFields, salaryTotal, seniorityLabel, seniorityMonths,
+  ROSTER_GROUPS, blockOf, fieldLabel, formatValue, missingFields, salaryTotal, seniorityLabel, seniorityMonths, setRosterCustomFields,
   type RosterBatch, type RosterChangeItem, type RosterData, type RosterFieldKey, type RosterGroupKey, type RosterRow, type RosterValue,
 } from '../../../lib/hrmRoster';
 import { hrmRosterService } from '../../../lib/hrmRosterService';
@@ -14,6 +14,7 @@ import { RosterEditDrawer, type RosterDraftChange } from './RosterEditDrawer';
 import { RosterDraftDrawer, draftTitle } from './RosterDraftDrawer';
 import { RosterBatchesView } from './RosterBatches';
 import { RosterImportDrawer } from './RosterImportDrawer';
+import { RosterConfigDrawer } from './RosterConfigDrawer';
 import { useStoredState } from './rosterUi';
 
 type QuickFilter = 'all' | 'missing' | 'pending' | 'draft';
@@ -47,6 +48,7 @@ const HrmRosterView: React.FC<{
   const [editing, setEditing] = useState<{ ids: string[]; field: RosterFieldKey | null } | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
   const [batchReload, setBatchReload] = useState(0);
   const [batchCounts, setBatchCounts] = useState<{ pending: number; mine: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -55,6 +57,7 @@ const HrmRosterView: React.FC<{
     if (quiet) setRefreshing(true); else setStatus(cur => (cur === 'ready' ? cur : 'loading'));
     try {
       const next = await hrmRosterService.load();
+      setRosterCustomFields(next.customFields);
       setData(next); setStatus('ready'); setMessage('');
     } catch (e) {
       const text = e instanceof Error ? e.message : String(e);
@@ -203,6 +206,17 @@ const HrmRosterView: React.FC<{
   if (status === 'error' && !data) return <main className="p-4"><StateBox kind="error" title="Chưa tải được Bảng nhân sự" message={message} onRetry={() => void load()} /></main>;
   if (!data) return <main className="p-4"><StateBox kind="loading" title="Đang tải Bảng nhân sự…" /></main>;
 
+  // Not HR but named as an approver (e.g. TGĐ at step 2): only the requests given to them.
+  if (data.can.approverOnly) return <main className={embedded ? 'space-y-4 text-foreground' : 'min-h-screen space-y-4 bg-slate-50 px-3 py-4 text-foreground dark:bg-slate-950 sm:px-5 md:py-5'}>
+    <header className="flex min-w-0 items-start gap-3">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-600 to-leaf-500 text-white shadow-sm"><ClipboardList size={22} /></span>
+      <div className="min-w-0"><h1 className="text-xl font-bold tracking-tight md:text-2xl">Phiếu thay đổi nhân sự</h1>
+        <p className="text-sm text-muted-foreground">Phiếu được giao cho bạn duyệt</p></div>
+    </header>
+    <RosterBatchesView data={data} reloadKey={batchReload} initialOpenId={initialBatchId} onChanged={() => { void load(true); onDataChanged?.(); }}
+      onResubmit={() => undefined} onCounts={onCounts} />
+  </main>;
+
   const tiles: Array<{ key: QuickFilter; label: string; value: number; hint: React.ReactNode; icon: React.ElementType; tone: string }> = [
     { key: 'all', label: 'Đang làm', value: active.length, icon: Users2, tone: 'text-teal-700 dark:text-teal-300', hint: blockCounts.map(item => `${item.code} ${item.n}`).join(' · ') },
     { key: 'missing', label: 'Thiếu thông tin', value: missingRows.length, icon: TriangleAlert, tone: 'text-amber-700 dark:text-amber-300', hint: topMissing || 'đủ thông tin bắt buộc' },
@@ -221,6 +235,8 @@ const HrmRosterView: React.FC<{
         </div>
       </div>
       <span className="flex flex-wrap items-center gap-2">
+        {data.can.configure && <button type="button" onClick={() => setConfigOpen(true)} className={`${secondaryBtn} bg-card`} title="Người duyệt và cột thông tin">
+          <Settings2 size={15} />Cấu hình</button>}
         {data.can.import && <>
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) setImportFile(file); }} />
           <button type="button" onClick={() => fileRef.current?.click()} className={`${secondaryBtn} bg-card`} title="Tải file Data nhân sự theo mẫu chuẩn"><Upload size={15} />Nhập Data</button>
@@ -308,6 +324,7 @@ const HrmRosterView: React.FC<{
       onRemove={(employeeId, field) => applyChanges([{ employeeId, field, value: data.rows.find(row => row.employeeId === employeeId)?.values[field] ?? null }], true)}
       onClear={() => { setDraftEntries([]); setDraftOpen(false); }} onSubmit={submitDraft} />}
     {importFile && <RosterImportDrawer data={data} file={importFile} onClose={() => setImportFile(null)} onSubmit={submitImport} />}
+    {configOpen && <RosterConfigDrawer onClose={() => setConfigOpen(false)} onChanged={() => void load(true)} />}
   </main>;
 };
 

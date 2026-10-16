@@ -18,7 +18,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   HRM_ROSTER_VALUE_INVALID: 'Có ô giá trị không hợp lệ (ngày, số, CCCD hoặc mục không còn trong danh mục). Kiểm tra lại rồi gửi.',
   HRM_ROSTER_FIELD_UNKNOWN: 'Có cột không được phép đổi. Tải lại trang rồi soạn lại.',
   HRM_ROSTER_EFFECTIVE_DATE_INVALID: 'Ngày hiệu lực chỉ trong vòng 1 năm quanh hôm nay.',
-  HRM_ROSTER_NO_APPROVER: 'Chưa có ai được duyệt phiếu (HR Manage). Nhờ Admin cấp quyền.',
+  HRM_ROSTER_NO_APPROVER: 'Không ai duyệt được phiếu này: người duyệt trùng người gửi hoặc có tên trong phiếu. Nhờ Admin thêm người duyệt ở Cấu hình.',
   HRM_ROSTER_TOO_MANY: 'Phiếu quá lớn (tối đa 6.000 ô). Chia file làm nhiều lần.',
   HRM_ROSTER_NOT_FOUND: 'Không tìm thấy phiếu.',
 };
