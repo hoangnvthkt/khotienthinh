@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Send, Trash2, UserCheck } from 'lucide-react';
 import { Drawer, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
-import { fieldLabel, type RosterData, type RosterFieldKey, type RosterRow, type RosterValue } from '../../../lib/hrmRoster';
+import { fieldLabel, isPayField, type RosterData, type RosterFieldKey, type RosterRow, type RosterValue } from '../../../lib/hrmRoster';
 import type { RosterDraftMap } from './RosterTable';
 import { ChangeLine, ENT } from './rosterUi';
 
@@ -31,6 +31,10 @@ export const RosterDraftDrawer: React.FC<{
     .filter((item): item is { row: RosterRow; changes: Partial<Record<string, RosterValue>> } => Boolean(item.row))
     .sort((a, b) => a.row.fullName.localeCompare(b.row.fullName, 'vi')), [draft, rows]);
   const count = people.reduce((sum, item) => sum + Object.keys(item.changes).length, 0);
+  const fields = people.flatMap(item => Object.keys(item.changes));
+  const hasPay = fields.some(isPayField);
+  const hasGeneral = fields.some(field => !isPayField(field));
+  const names = (list: Array<{ name: string }> | undefined) => (list || []).map(item => item.name).join(', ') || 'chưa có';
   const reasonOk = reason.trim().length >= 10;
   const submit = async () => {
     setSaving(true);
@@ -41,8 +45,10 @@ export const RosterDraftDrawer: React.FC<{
     header={<>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phiếu nháp</p>
       <h2 className="mt-1 text-lg font-bold text-foreground">{draftTitle(draft)}</h2>
-      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><UserCheck size={14} className="text-teal-600" />
-        Người duyệt: <b className="text-foreground">{data.approvers.map(item => item.name).join(', ') || 'chưa có'}</b></p>
+      {hasGeneral && <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><UserCheck size={14} className="text-teal-600" />
+        Người duyệt: <b className="text-foreground">{names(data.approvers)}</b></p>}
+      {hasPay && <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><UserCheck size={14} className="text-leaf-600" />
+        {hasGeneral ? 'Ô lương gửi phiếu riêng cho' : 'Người duyệt lương:'} <b className="text-foreground">{names(data.payApprovers || data.approvers)}</b></p>}
     </>}
     footer={<>
       <button type="button" onClick={onClear} disabled={saving} className={`${secondaryBtn} mr-auto text-rose-700`}><Trash2 size={15} />Bỏ phiếu nháp</button>

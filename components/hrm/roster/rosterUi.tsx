@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import SearchableSelect from '../../common/SearchableSelect';
 import { inputCls } from '../../procurement/hub/hubUi';
 import {
-  FIELD_BY_KEY, GENDER_OPTIONS, fieldLabel, formatValue,
+  GENDER_OPTIONS, fieldDef, fieldLabel, formatValue,
   type RosterBatchStatus, type RosterCatalogs, type RosterFieldDef, type RosterValue,
 } from '../../../lib/hrmRoster';
 
@@ -29,7 +29,7 @@ export const BATCH_STRIP: Record<RosterBatchStatus, string> = {
 export const ValueText: React.FC<{ field: string; value: RosterValue; catalogs: RosterCatalogs; className?: string }> = ({ field, value, catalogs, className = '' }) => {
   const text = formatValue(field, value, catalogs);
   if (!text) return <span className={`text-muted-foreground ${className}`}>trống</span>;
-  const def = FIELD_BY_KEY[field as keyof typeof FIELD_BY_KEY];
+  const def = fieldDef(field);
   const tone = def && (def.type === 'money' || def.type === 'number') ? NUM : field === 'employeeCode' ? ENT : 'text-foreground';
   return <span className={`${tone} ${className}`}>{text}</span>;
 };
@@ -74,6 +74,12 @@ export const ValueInput: React.FC<{
       renderOption={position => <span className="flex items-center justify-between gap-2"><span>{position.name}</span>
         <span className="shrink-0 text-xs text-muted-foreground">{[position.groupCode, position.levelCode].filter(Boolean).join(' · ')}</span></span>}
       placeholder="Chọn chức danh…" onChange={position => onChange(position?.id ?? null)} />;
+  }
+  if (field.type === 'select' && field.options) {
+    return <select id={id} aria-label={field.label} autoFocus={autoFocus} value={value == null ? '' : String(value)} onChange={e => onChange(e.target.value || null)} className={`w-full ${inputCls}`}>
+      <option value="">— Chọn —</option>
+      {field.options.map(option => <option key={option} value={option}>{option}</option>)}
+    </select>;
   }
   if (field.type === 'select') {
     const options = field.catalog === 'level' ? catalogs.levels.map(level => ({ code: level.code, name: `${level.code} — ${level.name}` }))

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Clock3, Users } from 'lucide-react';
 import { Drawer, primaryBtn, secondaryBtn, inputCls } from '../../procurement/hub/hubUi';
 import {
-  FIELD_BY_KEY, ROSTER_FIELDS, ROSTER_GROUPS, codeFromIdNumber, fieldLabel, formatValue, isPayField,
+  ROSTER_GROUPS, codeFromIdNumber, fieldDef, fieldLabel, formatValue, isPayField, rosterFields,
   type RosterData, type RosterFieldKey, type RosterRow, type RosterValue,
 } from '../../../lib/hrmRoster';
 import type { RosterDraftMap } from './RosterTable';
@@ -22,7 +22,7 @@ export const RosterEditDrawer: React.FC<{
   onApply: (changes: RosterDraftChange[]) => void;
 }> = ({ data, people, focusField, draft, onClose, onApply }) => {
   const single = people.length === 1 ? people[0] : null;
-  const editableFields = useMemo(() => ROSTER_FIELDS.filter(field => field.editable
+  const editableFields = useMemo(() => rosterFields().filter(field => field.editable
     && (field.group !== 'personal' || data.can.viewPersonal)
     && (!isPayField(field.key) || data.can.editPay)), [data.can]);
   const current = (row: RosterRow, field: RosterFieldKey): RosterValue => {
@@ -39,7 +39,7 @@ export const RosterEditDrawer: React.FC<{
   const [bulkField, setBulkField] = useState<RosterFieldKey>(focusField && editableFields.some(f => f.key === focusField) ? focusField : 'position');
   const [bulkValue, setBulkValue] = useState<RosterValue>(null);
   const [withLevel, setWithLevel] = useState(false);
-  const bulkDef = FIELD_BY_KEY[bulkField];
+  const bulkDef = fieldDef(bulkField);
   const chosenPosition = bulkField === 'position' ? data.catalogs.positions.find(p => p.id === bulkValue) : null;
   const bulkRows = people.map(row => ({ row, old: current(row, bulkField), pending: row.pending[bulkField] }));
   const bulkTargets = bulkRows.filter(item => !item.pending && bulkValue != null && !sameValue(item.old, bulkValue));

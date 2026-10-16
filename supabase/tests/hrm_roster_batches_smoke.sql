@@ -23,6 +23,14 @@ select set_config('test.r.plain_auth', u.auth_id::text, true)
 from public.users u where u.is_active and u.auth_id is not null and app_private.hrm_roster_access(u.id) is null order by u.name limit 1;
 select set_config('test.r.unit', (select id::text from public.org_units where code = 'XINHAI'), true),
   set_config('test.r.pos', (select id::text from public.hrm_positions where code = 'VT113'), true);
+-- Default approvers only (Cấu hình from 20261017130000 may add a step 2 for pay).
+do $$
+begin
+  if to_regclass('public.hrm_roster_settings') is not null then
+    execute 'update public.hrm_roster_settings set general_step1 = ''{}'', general_step2 = ''{}'', pay_step1 = ''{}'', pay_step2 = ''{}''';
+  end if;
+end;
+$$;
 -- Clean subjects for the test.
 delete from public.hrm_employee_identity_documents where regexp_replace(document_number, '\D', '', 'g') in ('012345678901', '098765432109');
 update public.employees set employee_code = employee_code || 'X' where employee_code in ('TT678901', 'TT432109');

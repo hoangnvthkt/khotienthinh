@@ -16,7 +16,9 @@ export type RosterFieldKey =
   | 'phone' | 'dateOfBirth' | 'gender' | 'idNumber' | 'idIssuedDate' | 'idIssuedPlace'
   | 'permanentAddress' | 'education' | 'institution'
   | 'p1' | 'pctn' | 'phoneAllowance' | 'p3' | 'vehicleAllowance' | 'seniorityAllowance'
-  | 'note' | 'legacyCode';
+  | 'note' | 'legacyCode'
+  /** Columns HR adds in Cấu hình (lib/hrmRosterConfig.ts). */
+  | `custom:${string}`;
 
 export interface RosterFieldDef {
   key: RosterFieldKey;
@@ -33,6 +35,11 @@ export interface RosterFieldDef {
   /** Shown and changed only by people who see pay (the note often carries salary decisions). */
   payOnly?: boolean;
   align?: 'right';
+  /** Choices of a custom "Danh sách chọn" / "Có / Không" column. */
+  options?: string[];
+  /** Added by HR in Cấu hình. */
+  custom?: boolean;
+  hint?: string | null;
 }
 
 export const ROSTER_GROUPS: Array<{ key: RosterGroupKey; label: string; tone: string }> = [
@@ -69,14 +76,60 @@ export const ROSTER_FIELDS: RosterFieldDef[] = [
   { key: 'legacyCode', label: 'Mã NV cũ', group: 'other', type: 'text', editable: false, width: 84 },
 ];
 
-export const FIELD_BY_KEY = Object.fromEntries(ROSTER_FIELDS.map(field => [field.key, field])) as Record<RosterFieldKey, RosterFieldDef>;
+const STANDARD_BY_KEY = Object.fromEntries(ROSTER_FIELDS.map(field => [field.key, field])) as Record<string, RosterFieldDef>;
 
-const EXTRA_LABELS: Partial<Record<RosterFieldKey, string>> = { employeeCode: 'Mã NV', fullName: 'Họ và tên' };
-export const fieldLabel = (key: string): string => FIELD_BY_KEY[key as RosterFieldKey]?.label || EXTRA_LABELS[key as RosterFieldKey] || key;
+// Custom columns of the current company setup; set once the roster is loaded (setRosterCustomFields).
+let customFieldDefs: RosterFieldDef[] = [];
+let customByKey: Record<string, RosterFieldDef> = {};
+
+export interface RosterCustomFieldInput {
+  key: string; label: string; group: RosterGroupKey; type: 'text' | 'number' | 'money' | 'date' | 'select' | 'boolean';
+  options: string[]; required: boolean; payOnly: boolean; hint: string | null; sortOrder: number; isActive: boolean;
+}
+
+const CUSTOM_WIDTH = { text: 180, number: 90, money: 110, date: 100, select: 150, boolean: 80 } as const;
+
+export const customFieldToDef = (field: RosterCustomFieldInput): RosterFieldDef => ({
+  key: field.key as RosterFieldKey,
+  label: field.label,
+  group: field.group,
+  type: field.type === 'boolean' ? 'select' : field.type,
+  options: field.type === 'boolean' ? ['Có', 'Không'] : field.type === 'select' ? field.options : undefined,
+  required: field.required,
+  editable: true,
+  width: field.type === 'select'
+    ? Math.min(240, Math.max(CUSTOM_WIDTH.select, 28 + 7 * Math.max(field.label.length, ...field.options.map(option => option.length))))
+    : CUSTOM_WIDTH[field.type],
+  align: field.type === 'money' || field.type === 'number' ? 'right' : undefined,
+  payOnly: field.payOnly || field.group === 'pay',
+  custom: true,
+  hint: field.hint,
+});
+
+/** Registers the active custom columns; inactive ones keep their values but leave the table. */
+export const setRosterCustomFields = (fields: RosterCustomFieldInput[] | null | undefined) => {
+  const all = (fields || []).map(customFieldToDef);
+  customFieldDefs = (fields || []).filter(field => field.isActive).sort((a, b) => a.sortOrder - b.sortOrder).map(customFieldToDef);
+  customByKey = Object.fromEntries(all.map(def => [def.key, def]));
+};
+
+/** Standard columns followed by custom ones, each custom column at the end of its group. */
+export const rosterFields = (): RosterFieldDef[] => ROSTER_GROUPS.flatMap(group => [
+  ...ROSTER_FIELDS.filter(field => field.group === group.key),
+  ...customFieldDefs.filter(field => field.group === group.key),
+]);
+
+const FALLBACK_DEF = (key: string): RosterFieldDef => ({ key: key as RosterFieldKey, label: key, group: 'other', type: 'text', editable: false, width: 120 });
+export const fieldDef = (key: string): RosterFieldDef => STANDARD_BY_KEY[key] || customByKey[key] || FALLBACK_DEF(key);
+/** Standard columns by key (custom ones go through fieldDef). */
+export const FIELD_BY_KEY = STANDARD_BY_KEY as Record<string, RosterFieldDef>;
+
+const EXTRA_LABELS: Record<string, string> = { employeeCode: 'Mã NV', fullName: 'Họ và tên' };
+export const fieldLabel = (key: string): string => STANDARD_BY_KEY[key]?.label || customByKey[key]?.label || EXTRA_LABELS[key] || key;
 
 /** Pay fields (and the note): only people with the compensation permission see and change them. */
 export const PAY_FIELDS = ROSTER_FIELDS.filter(field => field.group === 'pay' || field.payOnly).map(field => field.key);
-export const isPayField = (key: string): boolean => PAY_FIELDS.includes(key as RosterFieldKey);
+export const isPayField = (key: string): boolean => PAY_FIELDS.includes(key as RosterFieldKey) || Boolean(customByKey[key]?.payOnly);
 /** Personal fields: CCCD, phone, address… visible to HR only. */
 export const PERSONAL_FIELDS = ROSTER_FIELDS.filter(field => field.group === 'personal').map(field => field.key);
 
@@ -117,13 +170,21 @@ export interface RosterCapabilities {
   editPay: boolean;
   approve: boolean;
   import: boolean;
+  /** Admin / HR Manage: người duyệt and extra columns. */
+  configure?: boolean;
+  /** Not HR, but named as an approver in Cấu hình: sees only the requests given to them. */
+  approverOnly?: boolean;
 }
 
 export interface RosterData {
   rows: RosterRow[];
   catalogs: RosterCatalogs;
   can: RosterCapabilities;
+  /** Step-1 approvers of a request without pay (who a draft goes to). */
   approvers: Array<{ userId: string; name: string }>;
+  /** Step-1 approvers of a request with pay, when different. */
+  payApprovers?: Array<{ userId: string; name: string }>;
+  customFields?: RosterCustomFieldInput[];
   today: string;
 }
 
@@ -142,8 +203,20 @@ export interface RosterChangeItem {
   newValue: RosterValue;
 }
 
+export interface RosterBatchStep {
+  step: number;
+  approverNames: string[];
+  decidedByName: string | null;
+  decidedAt: string | null;
+}
+
 export interface RosterBatch {
   id: string;
+  /** 'pay' when the request changes pay: it follows the Lương & phụ cấp approvers. */
+  approvalGroup?: 'general' | 'pay';
+  /** One entry per approval step; the request is applied after the last one. */
+  steps?: RosterBatchStep[];
+  currentStep?: number;
   code: string;
   source: RosterBatchSource;
   title: string;
@@ -188,7 +261,7 @@ const catalogLabel = (catalogs: RosterCatalogs, catalog: RosterCatalogKey, value
 };
 
 export const formatValue = (key: string, value: RosterValue, catalogs: RosterCatalogs): string => {
-  const field = FIELD_BY_KEY[key as RosterFieldKey];
+  const field = STANDARD_BY_KEY[key] || customByKey[key];
   if (value == null || value === '') return '';
   if (!field) return String(value);
   if (field.type === 'date') return dateVi(value);
@@ -234,8 +307,8 @@ export const positionOf = (row: Pick<RosterRow, 'values'>, catalogs: RosterCatal
 export const isPlaceholderPhone = (value: RosterValue): boolean => typeof value === 'string' && /^0999/.test(value);
 
 /** Required columns that are empty (or hold a placeholder). Only columns the viewer can see count. */
-export const missingFields = (row: Pick<RosterRow, 'values'>, can: Pick<RosterCapabilities, 'viewPersonal'>): RosterFieldKey[] =>
-  ROSTER_FIELDS.filter(field => field.required && (can.viewPersonal || field.group !== 'personal'))
+export const missingFields = (row: Pick<RosterRow, 'values'>, can: Pick<RosterCapabilities, 'viewPersonal'> & Partial<Pick<RosterCapabilities, 'viewPay'>>): RosterFieldKey[] =>
+  rosterFields().filter(field => field.required && (can.viewPersonal || field.group !== 'personal') && (!field.payOnly || Boolean(can.viewPay)))
     .filter(field => row.values[field.key] == null || row.values[field.key] === '' || (field.key === 'phone' && isPlaceholderPhone(row.values.phone ?? null)))
     .map(field => field.key);
 
@@ -261,12 +334,12 @@ export const uniqueCodeFromIdNumber = (idNumber: RosterValue, taken: (code: stri
 // ---------------------------------------------------------------------------
 export const nfcText = (value: unknown): string => String(value ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
 const nameKey = (value: unknown): string => nfcText(value).replace(/\(\d+\)/g, '').trim().toLocaleLowerCase('vi');
-export const flatText = (value: unknown): string => nameKey(value).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+export const flatText = (value: unknown): string => nameKey(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 
 /** Same letters and marks, any tone-mark placement: "Thuỷ" = "Thủy", but "Thanh" ≠ "Thành". */
 const toneKey = (value: unknown): string => nameKey(value).split(' ').map(syllable => {
   const chars = [...syllable.normalize('NFD')];
-  const isMark = (ch: string) => /[̀-ͯ]/.test(ch);
+  const isMark = (ch: string) => /[\u0300-\u036f]/.test(ch);
   return `${chars.filter(ch => !isMark(ch)).join('')}|${chars.filter(isMark).sort().join('')}`;
 }).join(' ');
 
@@ -424,6 +497,14 @@ export const parseRosterSheet = (sheetName: string, cells: unknown[][]): ParsedR
   }
   // Seniority amount sits right after the "Thâm niên (tháng)" column.
   const seniorityAmountCol = columns.seniorityMonths != null ? columns.seniorityMonths + 1 : null;
+  // Columns HR added in Cấu hình are found by their name in the header.
+  const customColumns = customFieldDefs.map(def => {
+    let col = -1;
+    for (let index = 0; index < width && col < 0; index += 1) {
+      if (headerFlat(top[index]) === flatText(def.label) || headerFlat(sub[index]) === flatText(def.label)) col = index;
+    }
+    return { def, col };
+  }).filter(item => item.col >= 0);
 
   const rows: RosterImportRow[] = [];
   const issues: RosterImportIssue[] = [];
@@ -467,6 +548,22 @@ export const parseRosterSheet = (sheetName: string, cells: unknown[][]): ParsedR
       values.leaveRemaining = Math.round(leave * 2) / 2;
       issue('Phép năm', cellAt(row, 'leaveRemaining'), `Làm tròn về ${String(values.leaveRemaining).replace('.', ',')} ngày`);
     } else values.leaveRemaining = leave;
+
+    customColumns.forEach(({ def, col }) => {
+      const raw = row[col];
+      if (def.type === 'date') {
+        const parsed = parseRosterDate(raw);
+        if (parsed.bad) issue(def.label, raw, 'Ngày không đọc được — bỏ qua ô này');
+        values[def.key] = parsed.value;
+      } else if (def.type === 'money' || def.type === 'number') {
+        values[def.key] = parseMoney(raw);
+      } else if (def.options) {
+        const text = textOrNull(raw);
+        const option = text ? def.options.find(item => flatText(item) === flatText(text)) : null;
+        if (text && !option) issue(def.label, raw, `Không có trong danh sách chọn (${def.options.join(', ')}) — bỏ qua ô này`);
+        values[def.key] = option || null;
+      } else values[def.key] = textOrNull(raw);
+    });
 
     values.idIssuedPlace = textOrNull(cellAt(row, 'idIssuedPlace'));
     values.permanentAddress = textOrNull(cellAt(row, 'permanentAddress'));
@@ -630,7 +727,7 @@ export const importItemsFor = (
   };
   if (!person) push('fullName', null, fullName);
   else if (nameKey(person.fullName) !== nameKey(fullName)) push('fullName', person.fullName, fullName);
-  ROSTER_FIELDS.forEach(field => {
+  rosterFields().forEach(field => {
     if (!field.editable || !(field.key in values)) return;
     if (isPayField(field.key) && !can.editPay) return;
     push(field.key, person?.values[field.key] ?? null, values[field.key] ?? null);
