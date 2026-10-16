@@ -7,7 +7,7 @@
 // Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
-import { complete, costUsd, envTarget, readConfig } from './providers.ts';
+import { complete, costUsd, envTarget, readConfig, type ImagePart } from './providers.ts';
 import { KIND_LABEL, targetFromConnection, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 import { SKILLS } from './skills.ts';
 
@@ -32,7 +32,7 @@ Deno.serve(async request => {
   // Đích theo lớp model: kết nối Admin gán (Cài đặt → Kết nối, khóa trong Vault) → Secrets → (suy luận) kết nối của lớp nhanh.
   // service_role chỉ dùng để giải mã đúng một khóa qua integration_secret_v1; mọi dữ liệu khác vẫn đi bằng JWT người dùng.
   const service = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false, autoRefreshToken: false } });
-  const assigned = async (feature: 'ai.fast' | 'ai.reasoning', cls: ModelClass) => {
+  const assigned = async (feature: 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader', cls: ModelClass) => {
     const r = await service.rpc('integration_secret_v1', { p_id: null, p_feature: feature });
     if (r.error) { console.error('ai-gateway connection read failed', r.error.message); return null; }
     return targetFromConnection(r.data, cls);
@@ -64,14 +64,16 @@ Deno.serve(async request => {
 
   const def = SKILLS[body.skill];
   if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }
-  const target = await resolveTarget(opened.skill?.modelClass || 'fast');
+  // Skill đọc ảnh đi kết nối đọc ảnh (Cài đặt → Kết nối · "Đọc ảnh chứng từ", đang dùng cho Kho); chưa gán thì như skill thường.
+  const target = (def.images ? await assigned('wms.doc_reader', 'fast') : null) ?? await resolveTarget(opened.skill?.modelClass || 'fast');
   if (!target) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
 
   const model = target.model;
   const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
   const started = Date.now();
   let input: Record<string, string>;
-  try { input = def.parseInput(body.input); } catch { await finish({ status: 'error', provider, model, error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', error: 'AI_BAD_INPUT' }); }
+  let images: ImagePart[] | undefined;
+  try { input = def.parseInput(body.input); images = def.images?.(body.input); } catch { await finish({ status: 'error', provider, model, error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', error: 'AI_BAD_INPUT' }); }
 
   // Che dữ liệu nhạy cảm từng ô rồi mới dựng prompt; số lượt che ghi vào tóm tắt nhật ký.
   const masked: Record<string, string> = {}; const hits: Record<string, number> = {};
@@ -83,7 +85,7 @@ Deno.serve(async request => {
   const inputChars = userText.length;
 
   try {
-    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens });
+    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images });
     const result = def.parseOutput(parseJsonLoose(out.text));
     const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
     const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };

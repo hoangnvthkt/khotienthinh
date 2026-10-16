@@ -11,7 +11,9 @@ export type Provider = 'anthropic' | 'gemini' | 'openai';
 export type { ModelClass };
 export interface Usage { tokensIn: number | null; tokensOut: number | null }
 export interface Completion { text: string; usage: Usage }
-export interface CompletionRequest { system: string; user: string; schema: Record<string, unknown>; maxTokens: number }
+import type { ImagePart } from './images.ts';
+export type { ImagePart };
+export interface CompletionRequest { system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[] }
 
 const DEFAULT_MODELS: Record<Provider, Record<ModelClass, string>> = {
   anthropic: { fast: 'claude-haiku-5-5', reasoning: 'claude-opus-5-5' },
@@ -61,7 +63,9 @@ async function withAnthropic(t: AiTarget, req: CompletionRequest): Promise<Compl
   const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
   const response = await client.messages.create({
     model: t.model, max_tokens: req.maxTokens, system: req.system,
-    messages: [{ role: 'user', content: req.user }],
+    messages: [{ role: 'user', content: req.images?.length
+      ? [...req.images.map(i => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: i.mime, data: i.b64 } })), { type: 'text' as const, text: req.user }]
+      : req.user }],
   });
   if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
   const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text;
@@ -74,7 +78,7 @@ async function withGemini(t: AiTarget, req: CompletionRequest): Promise<Completi
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(55000),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
-      contents: [{ role: 'user', parts: [{ text: req.user }] }],
+      contents: [{ role: 'user', parts: [...(req.images || []).map(i => ({ inline_data: { mime_type: i.mime, data: i.b64 } })), { text: req.user }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: outputTokenCap(t.kind, req.maxTokens), responseMimeType: 'application/json' },
     }),
   });
@@ -95,7 +99,9 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
     body: JSON.stringify({
       model: t.model, ...(compatible ? { max_tokens: outputTokenCap(t.kind, req.maxTokens) } : { max_completion_tokens: outputTokenCap(t.kind, req.maxTokens) }),
       response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
-      messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.user }],
+      messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.images?.length
+        ? [...req.images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text: req.user }]
+        : req.user }],
     }),
   });
   if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);

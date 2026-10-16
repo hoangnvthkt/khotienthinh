@@ -57,6 +57,7 @@ service-account*.json
 /.procurement-test-results/
 /.center-test-results/
 /.search-test-results/
+/.quick-lines-test-results/
 
 .office-run-logs/
 /.daily-log-prefill-test-results/

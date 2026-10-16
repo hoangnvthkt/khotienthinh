@@ -14,8 +14,24 @@ const AI_LINES: Record<string, Array<{ name: string; spec: string | null; qty: n
   'tổ anh hùng': [{ name: 'băng tan', spec: null, qty: 10, unit: 'cuộn', note: 'tổ anh Hùng, làm tường rào' }, { name: 'đinh', spec: '10', qty: 5, unit: 'kg', note: 'tổ anh Hùng, làm tường rào' }, { name: 'đá cắt', spec: '100', qty: 3, unit: 'hộp', note: 'tổ anh Hùng, làm tường rào' }],
   'thép d16': [{ name: 'thép', spec: 'D16', qty: 2, unit: 'tấn', note: 'móng M3' }, { name: 'xi măng', spec: 'PCB40', qty: 50, unit: 'bao', note: 'móng M3' }],
 };
+// Ảnh phiếu viết tay giả lập (?photo=fail: AI lỗi). Kết quả mô phỏng phiếu đề xuất SMB viết tay.
+const PHOTO_READ = {
+  lines: [
+    { name: 'Ống PVC', spec: '110 C1', qty: 20, unit: 'cây', note: null },
+    { name: 'Cút PVC', spec: '110', qty: 15, unit: 'cái', note: null },
+    { name: 'Keo dán ống', spec: null, qty: 2, unit: 'kg', note: null },
+    { name: 'Xi măng PCB40', spec: null, qty: 2.5, unit: 'tấn', note: 'đổ móng M3' },
+    { name: 'Băng tan', spec: null, qty: 10, unit: 'cuộn', note: null },
+  ],
+  purpose: 'Thoát nước mưa nhà xưởng 1', neededDate: '2026-10-20', warnings: ['Dòng 3: số lượng viết đè, đọc là 2 — kiểm lại.'],
+};
 const hooks: QuickLinesHooks = {
-  aiAvailable: async () => params.get('ai') !== 'none',
+  aiStatus: async () => ({ text: params.get('ai') !== 'none', photo: params.get('ai') !== 'none' }),
+  readPhotos: async () => {
+    await new Promise(r => setTimeout(r, 1800));
+    if (params.get('photo') === 'fail') return { code: 'AI_FAILED', error: 'AI_HTTP_502' };
+    return { code: 'OK', runId: 'run-photo', result: PHOTO_READ, model: 'claude-sonnet-5-5', provider: 'openai_compatible', usage: { tokensIn: 900, tokensOut: 400, costUsd: null, durationMs: 1800 } };
+  },
   split: async text => {
     await new Promise(r => setTimeout(r, 1500));
     if (params.get('ai') === 'fail') return { code: 'AI_FAILED', error: 'AI_TRUNCATED' };
@@ -36,7 +52,7 @@ const Fixture: React.FC = () => {
         <table className="w-full text-sm">
           <thead className="bg-muted/60 text-left text-xs text-muted-foreground"><tr><th className="px-2 py-1.5">Vật tư</th><th className="px-2 py-1.5">SL</th><th className="px-2 py-1.5">Quy cách</th>{project && <th className="px-2 py-1.5">Lý do</th>}</tr></thead>
           <tbody data-testid="request-lines">{lines.length ? lines.map((l, i) => <tr key={i} className="border-b border-border last:border-0">
-            <td className="px-2 py-1.5">{l.item.name}</td><td className="px-2 py-1.5 tabular-nums">{l.qty} {l.item.unit}</td><td className="px-2 py-1.5">{l.specification}</td>{project && <td className="px-2 py-1.5">{l.reason}</td>}</tr>)
+            <td className="px-2 py-1.5">{l.item.name}{l.neededDate ? <span className="ml-1 text-xs text-muted-foreground">· cần {l.neededDate}</span> : null}</td><td className="px-2 py-1.5 tabular-nums">{l.qty} {l.item.unit}</td><td className="px-2 py-1.5">{l.specification}</td>{project && <td className="px-2 py-1.5">{l.reason}</td>}</tr>)
             : <tr><td colSpan={4} className="px-2 py-4 text-center text-muted-foreground">Chưa có vật tư</td></tr>}</tbody>
         </table>
         {!open && <button type="button" onClick={() => setOpen(true)} className="w-full py-3 text-xs font-bold text-indigo-700">Gõ nhanh</button>}

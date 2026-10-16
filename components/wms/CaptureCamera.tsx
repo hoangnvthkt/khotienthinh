@@ -37,7 +37,8 @@ const toShot = async (original: File, src?: { el: CanvasImageSource; w: number; 
   } catch { return { ...blank, url: URL.createObjectURL(original) }; }
 };
 
-export const CaptureCamera: React.FC<{ onDone: (files: File[]) => void; onClose: () => void }> = ({ onDone, onClose }) => {
+/** title: nhãn đầu màn (Kho: "Chụp phiếu giao"; Đề xuất: "Chụp phiếu đề xuất"). */
+export const CaptureCamera: React.FC<{ onDone: (files: File[]) => void; onClose: () => void; title?: string }> = ({ onDone, onClose, title = 'Chụp phiếu giao' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const nativeRef = useRef<HTMLInputElement>(null);
@@ -143,10 +144,11 @@ export const CaptureCamera: React.FC<{ onDone: (files: File[]) => void; onClose:
     return () => window.removeEventListener('keydown', onKey);
   }, [close]);
 
-  return createPortal(<div className="fixed inset-x-0 inset-y-0 z-[300] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label="Chụp phiếu giao">
+  // z-[1200]: nổi trên form Đề xuất vật tư (z-[1000]/[1010]), dưới thông báo (z-[9999]).
+  return createPortal(<div className="fixed inset-x-0 inset-y-0 z-[1200] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label={title}>
     <div className="flex items-center justify-between px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
       <button type="button" onClick={close} className="grid h-10 w-10 place-items-center rounded-full bg-white/10" aria-label="Đóng"><X size={20} /></button>
-      <p className="text-sm font-semibold">{shots.length ? `Đã chụp ${shots.length}` : 'Chụp phiếu giao'}</p>
+      <p className="text-sm font-semibold">{shots.length ? `Đã chụp ${shots.length}` : title}</p>
       <span className="w-10" />
     </div>
 
