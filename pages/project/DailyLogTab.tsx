@@ -30,6 +30,7 @@ import { recordSuggestionEvent } from '../../lib/uiSuggestionEvents';
 import { PrefillGhost } from '../../components/common/PrefillGhost';
 import { DailyLogEngineerWorkspace } from '../../components/project/daily-log/DailyLogEngineerWorkspace';
 import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
+import type { DelayReasonEntry } from '../../lib/projectDelayReasons';
 import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
 import { DailyLogDocumentHeader } from '../../components/project/daily-log/DailyLogDocumentHeader';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
@@ -2589,7 +2590,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     }, [hasDailyLogAction, reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast]);
 
-    const publishWbsSummary = useCallback(async () => {
+    const publishWbsSummary = useCallback(async (input?: { delayReasons?: DelayReasonEntry[] }) => {
         const log = reviewWbsBundle?.summaryLog;
         if (!log) throw new Error('Không tìm thấy bản tổng hợp cần công bố.');
         const commandId = publishCommandIdsRef.current[log.id] || globalThis.crypto.randomUUID();
@@ -2598,6 +2599,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             commandId,
             dailyLogId: log.id,
             expectedUpdatedAt: log.lastActionAt || log.createdAt,
+            delayReasons: input?.delayReasons,
         });
         delete publishCommandIdsRef.current[log.id];
         await reloadDailyLogRecords();
@@ -3137,6 +3139,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         key={`${summaryLogId}:${summaryWbsBundle.summaryLog?.lastActionAt || 'new'}`}
                                         bundle={summaryWbsBundle}
                                         mode="summarize"
+                                        projectId={projectId || effectiveId}
+                                        constructionSiteId={constructionSiteId || null}
                                         ensureSummaryLog={prepareWbsSummaryLog}
                                         onClose={() => closeSummary()}
                                         onBusyChange={setSummarySaving}
@@ -3547,6 +3551,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         key={`${reviewWbsBundle.summaryLog?.id}:${reviewWbsBundle.summaryLog?.lastActionAt || ''}`}
                         bundle={reviewWbsBundle}
                         mode="review"
+                        projectId={projectId || effectiveId}
+                        constructionSiteId={constructionSiteId || null}
                         onClose={()=>{if(!reviewWbsBusy)setViewLogId(null);}}
                         onBusyChange={setReviewWbsBusy}
                         onSaved={async () => {

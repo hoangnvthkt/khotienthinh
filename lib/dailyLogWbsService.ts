@@ -22,6 +22,7 @@ import { mapDailyLogWbsCommandError } from './dailyLogWorkflow';
 import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
 import type { DailyLogCrewContract, DailyLogCrewLaborLinks } from '../types';
 import { supabase } from './supabase';
+import type { DelayReasonEntry, DelayReasonOption } from './projectDelayReasons';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 const fromDb = (value: unknown): any => {
@@ -247,6 +248,8 @@ export interface PublishDailyLogSummaryInput {
   commandId: string;
   dailyLogId: string;
   expectedUpdatedAt: string;
+  /** Lý do chậm của việc gây chậm (dự án dùng Nhật ký chính thức); có thì công bố qua v2 để lưu cùng giao dịch. */
+  delayReasons?: DelayReasonEntry[];
 }
 
 export interface DailyLogPublishReceipt {
@@ -295,7 +298,32 @@ const callRpc = async <T>(name: string, params: Record<string, unknown>): Promis
   return fromDb(data) as T;
 };
 
+const toDelayReasonPayload = (reasons: DelayReasonEntry[]) => reasons.map(entry => ({
+  taskId: entry.taskId, reasonCode: entry.reasonCode, responsibleParty: entry.responsibleParty,
+  note: entry.note?.trim() || null, lagDays: entry.lagDays ?? null,
+}));
+
+export interface ProjectDelayReasonsBundle {
+  catalog: DelayReasonOption[];
+  /** Lý do đã công bố gần nhất theo việc (trước ngày của bản tổng hợp nếu truyền dailyLogId). */
+  latest: DelayReasonEntry[];
+  /** Nháp lý do của bản tổng hợp. */
+  draft: DelayReasonEntry[];
+}
+
 export const dailyLogWbsService = {
+  getDelayReasons(input: { projectId: string; constructionSiteId?: string | null; dailyLogId?: string | null }): Promise<ProjectDelayReasonsBundle> {
+    return callRpc('get_project_delay_reasons_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_daily_log_id: input.dailyLogId || null,
+    });
+  },
+
+  saveDelayReasonDraft(input: { dailyLogId: string; reasons: DelayReasonEntry[] }): Promise<{ dailyLogId: string; count: number }> {
+    return callRpc('save_daily_log_delay_reasons_v1', { p_daily_log_id: input.dailyLogId, p_reasons: toDelayReasonPayload(input.reasons) });
+  },
+
   async updateSummaryMetadata(input: {
     dailyLogId: string;
     expectedUpdatedAt: string | null;
@@ -435,6 +463,12 @@ export const dailyLogWbsService = {
   },
 
   publishSummary(input: PublishDailyLogSummaryInput): Promise<DailyLogPublishReceipt> {
+    if (input.delayReasons) return callRpc('publish_daily_log_summary_v2', {
+      p_command_id: input.commandId,
+      p_daily_log_id: input.dailyLogId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_delay_reasons: toDelayReasonPayload(input.delayReasons),
+    });
     return callRpc('publish_daily_log_summary_v1', {
       p_command_id: input.commandId,
       p_daily_log_id: input.dailyLogId,

@@ -35,9 +35,9 @@ import {
     ApprovedNotice, ChangeList, DraftBanner, DraftRulesNote, ReviewDrawer, ReviewPlansAlert, ScheduleControlStrip,
     ScheduleStatusBar, SubmitDrawer, VersionsDrawer,
 } from '../../components/project/schedule-change/ScheduleChangeUi';
-import { ScheduleLinksDrawer, ScheduleVariancePanel } from '../../components/project/schedule-variance/ScheduleVarianceUi';
+import { ScheduleLinksDrawer, ScheduleVariancePanel, type VarianceDelayReasons } from '../../components/project/schedule-variance/ScheduleVarianceUi';
 import { computeScheduleVariance, recentDailyLogIssues, varianceDataDate, varianceStatus } from '../../lib/projectScheduleVariance';
-import { localToday } from '../../lib/projectScheduleVarianceService';
+import { loadVarianceDelayReasons, localToday } from '../../lib/projectScheduleVarianceService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -2050,6 +2050,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const varianceIssues = useMemo(() => recentDailyLogIssues(dailyLogs), [dailyLogs]);
     const manualLinkCount = useMemo(() => tasks.reduce((count, task) => count + (task.dependencies || []).filter(dep => dep.type === 'FS').length, 0), [tasks]);
     const canManageLinks = canEditTasks && !isSandboxMode;
+    // Lý do chậm đã công bố ở Nhật ký (PR-3b) — tải khi mở chi tiết.
+    const [varianceReasons, setVarianceReasons] = useState<VarianceDelayReasons | null>(null);
+    useEffect(() => {
+        if (!showVariance || !projectId) return;
+        let alive = true;
+        loadVarianceDelayReasons(projectId, constructionSiteId || null).then(value => { if (alive) setVarianceReasons(value); });
+        return () => { alive = false; };
+    }, [constructionSiteId, projectId, showVariance]);
 
     const saveTaskDependencies = useCallback(async (taskId: string, update: (deps: NonNullable<ProjectTask['dependencies']>) => NonNullable<ProjectTask['dependencies']>, success: string) => {
         const task = tasks.find(item => item.id === taskId);
@@ -2594,7 +2602,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     {showVariance && (
                         <div className="border-t border-border p-3">
                             <ScheduleVariancePanel result={variance} today={varianceToday} authoritative={progressFromDailyLog}
-                                manualLinkCount={manualLinkCount} issues={varianceIssues} bare />
+                                manualLinkCount={manualLinkCount} issues={varianceIssues} delayReasons={varianceReasons} bare />
                         </div>
                     )}
                 </div>

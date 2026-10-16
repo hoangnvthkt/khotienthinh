@@ -8,6 +8,33 @@ import {
   computeScheduleVariance, daysBetweenIso, varianceSlackDays, varianceStatus,
   type VarianceLink, type VarianceNode, type VarianceResult,
 } from '../../../lib/projectScheduleVariance';
+import {
+  DELAY_PARTY_LABEL, delayPartyTally, delayReasonTargets, nodeDelayReasons, type DelayReasonEntry, type DelayReasonOption,
+} from '../../../lib/projectDelayReasons';
+import { DelayPartyPill } from './DelayReasonsSection';
+
+/** Lý do chậm đã công bố từ Nhật ký (PR-3b). */
+export interface VarianceDelayReasons { catalog: DelayReasonOption[]; latest: DelayReasonEntry[] }
+interface ReasonCtx { map: Map<string, DelayReasonEntry>; labelOf: (code: string) => string }
+const reasonCtxOf = (reasons?: VarianceDelayReasons | null): ReasonCtx | null => (reasons ? {
+  map: new Map(reasons.latest.map(entry => [entry.taskId, entry])),
+  labelOf: code => reasons.catalog.find(item => item.code === code)?.label || code,
+} : null);
+
+/** Dòng "Lý do: …" của một hạng mục / việc trên thẻ. */
+const ReasonLine: React.FC<{ result: VarianceResult; nodeId: string; ctx: ReasonCtx }> = ({ result, nodeId, ctx }) => {
+  const summary = nodeDelayReasons(result, nodeId, ctx.map);
+  if (!summary) return null;
+  return <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+    <span>Lý do:</span>
+    {summary.items.map(item => <span key={`${item.reasonCode}|${item.responsibleParty}`} className="inline-flex items-center gap-1">
+      <DelayPartyPill party={item.responsibleParty} /><span className="text-foreground">{ctx.labelOf(item.reasonCode)}</span>
+      {!summary.inherited && item.count > 1 && <span>{item.count} việc</span>}</span>)}
+    {summary.inherited && summary.items.length > 0 && <span>(theo việc trước)</span>}
+    {!summary.inherited && summary.followCount > 0 && <span>· kéo theo {summary.followCount} việc</span>}
+    {summary.missingCount > 0 && <span className="font-semibold text-rose-600">{summary.items.length ? '· ' : ''}{summary.missingCount} việc chưa ghi lý do</span>}
+  </div>;
+};
 
 const sd = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
 const pill = 'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold';
@@ -25,7 +52,17 @@ const lateChildren = (result: VarianceResult, node: VarianceNode) =>
   node.childIds.map(id => result.nodes.get(id)!).filter(child => child && varianceStatus(child.lagDays) === 'late' && !child.done);
 
 /** Câu tóm tắt cho Ban lãnh đạo. */
-export const varianceSummary = (result: VarianceResult): string => {
+export const varianceSummary = (result: VarianceResult, reasons?: VarianceDelayReasons | null): string => {
+  const base = varianceSummaryBase(result);
+  const ctx = reasonCtxOf(reasons);
+  if (!ctx) return base;
+  const worst = delayReasonTargets(result).required.filter(node => ctx.map.has(node.id)).sort((a, b) => a.lagDays - b.lagDays)[0];
+  if (!worst) return base;
+  const entry = ctx.map.get(worst.id)!;
+  return `${base} Việc chậm nhiều nhất: ${label(worst)} ${-worst.lagDays} ngày — ${ctx.labelOf(entry.reasonCode)} (${DELAY_PARTY_LABEL[entry.responsibleParty]}).`;
+};
+
+const varianceSummaryBase = (result: VarianceResult): string => {
   const finish = viDate(result.projectForecastEnd);
   const roots = result.rootIds.map(id => result.nodes.get(id)!).filter(Boolean);
   const status = varianceStatus(result.projectLagDays);
@@ -56,7 +93,7 @@ export const varianceSummary = (result: VarianceResult): string => {
   return head + tail + close;
 };
 
-const NodeRow: React.FC<{ result: VarianceResult; node: VarianceNode; depth: number; open: boolean; onToggle?: () => void }> = ({ result, node, depth, open, onToggle }) => {
+const NodeRow: React.FC<{ result: VarianceResult; node: VarianceNode; depth: number; open: boolean; onToggle?: () => void; ctx: ReasonCtx | null }> = ({ result, node, depth, open, onToggle, ctx }) => {
   const status = varianceStatus(node.lagDays);
   const slack = varianceSlackDays(result, node.id);
   const lateKids = lateChildren(result, node);
@@ -80,12 +117,13 @@ const NodeRow: React.FC<{ result: VarianceResult; node: VarianceNode; depth: num
         {status === 'late' && !node.done && <div className="mt-0.5 text-[11px] text-muted-foreground">
           {blockers.length ? <>Do chờ {blockers.slice(0, 2).map(item => `${label(item)} (chậm ${-item.lagDays} ngày)`).join('; ')}</>
             : lateKids.length ? <>Việc chậm: {lateKids.sort((a, b) => a.lagDays - b.lagDays).slice(0, 2).map(item => `${label(item)} (${-item.lagDays} ngày)`).join('; ')}</>
-            : <span className="text-rose-600">Chưa ghi lý do</span>}
+            : ctx ? null : <span className="text-rose-600">Chưa ghi lý do</span>}
         </div>}
+        {ctx && !node.done && <ReasonLine result={result} nodeId={node.id} ctx={ctx} />}
       </div>
     </div>
     {open && <div className="divide-y divide-border border-y border-border">{node.childIds.map(id => result.nodes.get(id)).filter(Boolean).map(child =>
-      <NodeRow key={child!.id} result={result} node={child!} depth={1} open={false} />)}</div>}
+      <NodeRow key={child!.id} result={result} node={child!} depth={1} open={false} ctx={ctx} />)}</div>}
   </div>;
 };
 
@@ -104,7 +142,11 @@ export const ScheduleVariancePanel: React.FC<{
   result: VarianceResult; today: string; authoritative: boolean; manualLinkCount: number;
   issues?: Array<{ date: string; text: string }>; versionLabel?: string | null;
   linksAction?: React.ReactNode; bare?: boolean;
-}> = ({ result, today, authoritative, manualLinkCount, issues = [], versionLabel, linksAction, bare }) => {
+  /** Lý do chậm đã công bố ở Nhật ký; null = chưa tải được (giữ cách hiện cũ). */
+  delayReasons?: VarianceDelayReasons | null;
+}> = ({ result, today, authoritative, manualLinkCount, issues = [], versionLabel, linksAction, bare, delayReasons }) => {
+  const ctx = useMemo(() => reasonCtxOf(delayReasons), [delayReasons]);
+  const tally = useMemo(() => (ctx ? delayPartyTally(result, ctx.map) : null), [ctx, result]);
   const [openId, setOpenId] = useState<string | null>(null);
   const roots = result.rootIds.map(id => result.nodes.get(id)).filter(Boolean) as VarianceNode[];
   const status = varianceStatus(result.projectLagDays);
@@ -137,14 +179,27 @@ export const ScheduleVariancePanel: React.FC<{
         <div className={`text-xl font-black tabular-nums ${lateRoots ? 'text-rose-600' : 'text-foreground'}`}>{lateRoots} / {roots.filter(root => !root.done).length}</div>
         <div className="text-[11px] text-muted-foreground">{rootsWithLateKids} hạng mục có việc con chậm</div></div>
     </div>
-    <div className="px-4 py-3 text-sm text-foreground"><b>Tóm lại:</b> {varianceSummary(result)}</div>
+    {ctx && tally && tally.total > 0 && <div className="border-b border-border px-4 py-3">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <span>Việc chậm do đâu</span><span className="font-normal normal-case tracking-normal">{tally.total} việc gây chậm · {tally.chained} việc chậm theo</span></div>
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">{tally.parties.map(item => <div key={item.party}
+        className={item.party === 'owner' ? 'bg-sky-500' : item.party === 'company' ? 'bg-amber-500' : 'bg-zinc-400'} style={{ width: `${(item.count / tally.total) * 100}%` }} />)}</div>
+      <div className="mt-2 grid gap-1.5 text-xs md:grid-cols-3">
+        {tally.parties.map(item => <div key={item.party} className="rounded-lg border border-border px-2.5 py-1.5">
+          <DelayPartyPill party={item.party} /> <b className="tabular-nums">{item.count} việc</b>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">{item.reasonCodes.map(ctx.labelOf).join(', ')} · chậm nhất {item.maxLagDays} ngày</div></div>)}
+        {tally.missing > 0 && <div className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+          <b className="tabular-nums">{tally.missing} việc</b> chưa ghi lý do<div className="mt-0.5 text-[11px]">CHT chọn khi duyệt Nhật ký</div></div>}
+      </div>
+    </div>}
+    <div className="px-4 py-3 text-sm text-foreground"><b>Tóm lại:</b> {varianceSummary(result, delayReasons)}</div>
   </>;
   return <div className="space-y-3">
     {bare ? <div className="overflow-hidden rounded-2xl border border-border bg-card">{body}</div>
       : <section className="overflow-hidden rounded-2xl border border-border bg-card">{body}</section>}
     <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
       <div className="flex items-center justify-between bg-muted/50 px-3 py-2 text-xs"><span className="font-black text-foreground">Hạng mục lớn</span><span className="text-muted-foreground">bấm để xem việc con</span></div>
-      {roots.map(root => <NodeRow key={root.id} result={result} node={root} depth={0} open={openId === root.id}
+      {roots.map(root => <NodeRow key={root.id} result={result} node={root} depth={0} open={openId === root.id} ctx={ctx}
         onToggle={() => setOpenId(previous => (previous === root.id ? null : root.id))} />)}
     </div>
     {issues.length > 0 && status === 'late' && <div className="rounded-xl border border-border bg-card p-3 text-xs">

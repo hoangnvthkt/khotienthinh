@@ -328,7 +328,8 @@
     "20261016120000_capture_select_procurement_can.sql",
     "20261016200000_wms_capture_supplier_match.sql",
     "20261016220000_procurement_capture_queue.sql",
-    "20261016233000_capture_order_kinds_hot_purchase.sql"
+    "20261016233000_capture_order_kinds_hot_purchase.sql",
+    "20261017080000_project_task_delay_reasons.sql"
   ],
   "forbidIncludeAll": true
 }
