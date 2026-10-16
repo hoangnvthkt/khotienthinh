@@ -333,7 +333,8 @@
     "20261017090000_workflow_template_roles_see_all_tickets.sql",
     "20261017120000_hrm_roster_batches.sql",
     "20261017130000_hrm_roster_config.sql",
-    "20261017140000_hrm_profile_custom_fields.sql"
+    "20261017140000_hrm_profile_custom_fields.sql",
+    "20261017150000_hrm_roster_3p_sync.sql"
   ],
   "forbidIncludeAll": true
 }

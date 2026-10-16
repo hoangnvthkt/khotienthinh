@@ -5,7 +5,7 @@ import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
 import { loadXlsx } from '../../../lib/loadXlsx';
 import { StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import {
-  ROSTER_GROUPS, blockOf, fieldLabel, formatValue, missingFields, salaryTotal, seniorityLabel, seniorityMonths, setRosterCustomFields,
+  ROSTER_GROUPS, blockOf, fieldLabel, formatValue, missingFields, pay3pLabel, salaryTotal, seniorityLabel, seniorityMonths, setRosterCustomFields,
   type RosterBatch, type RosterChangeItem, type RosterData, type RosterFieldKey, type RosterGroupKey, type RosterRow, type RosterValue,
 } from '../../../lib/hrmRoster';
 import { hrmRosterService } from '../../../lib/hrmRosterService';
@@ -199,6 +199,8 @@ const HrmRosterView: React.FC<{
             if (column.key === 'salaryTotal') return salaryTotal(row.values);
             if (column.key === 'salaryAfter') { const total = salaryTotal(row.values); return total == null ? null : total + (typeof row.values.seniorityAllowance === 'number' ? row.values.seniorityAllowance : 0); }
             if (column.key === 'seniority') return seniorityLabel(seniorityMonths(row.values.startDate ?? null, data.today));
+            if (column.key === 'p3Actual') return null;
+            if (column.key === 'pay3p') return pay3pLabel(row.pay3p, data.today);
             if (column.key === 'positionGroup') return data.catalogs.positions.find(p => p.id === row.values.position)?.groupCode || null;
             const value = row.values[column.field!] ?? null;
             return typeof value === 'number' ? value : formatValue(column.field!, value, data.catalogs) || null;
