@@ -140,6 +140,27 @@ export const wmsDeliveryCaptureService = {
     return next;
   },
 
+  /** Gộp phiếu nguồn vào phiếu đích như trang tiếp theo: ảnh + dòng hàng nối vào, ô trống của đích lấy từ nguồn; phiếu nguồn bỏ. */
+  async merge(target: DeliveryCapture, source: DeliveryCapture): Promise<DeliveryCapture> {
+    const next = await wmsDeliveryCaptureService.save(target.id, {
+      photos: [...target.photos, ...source.photos], lines: [...target.lines, ...source.lines],
+      supplierName: target.supplierName || source.supplierName, docNo: target.docNo || source.docNo, docDate: target.docDate || source.docDate,
+      truckNo: target.truckNo || source.truckNo,
+    });
+    await wmsDeliveryCaptureService.discard(source.id, `Gộp trang vào phiếu ${target.docNo || target.id.slice(0, 8)}`);
+    return next;
+  },
+
+  /** Tách một ảnh thành phiếu giao riêng (ảnh giữ nguyên chỗ lưu). Trả phiếu hiện tại sau khi bỏ ảnh + phiếu mới. */
+  async split(capture: DeliveryCapture, path: string): Promise<{ current: DeliveryCapture; created: DeliveryCapture }> {
+    const photo = capture.photos.find(p => p.path === path);
+    if (!photo) throw new Error('Không thấy ảnh.');
+    const fresh = await wmsDeliveryCaptureService.create(capture.warehouseId);
+    const created = await wmsDeliveryCaptureService.save(fresh.id, { photos: [photo] });
+    const current = await wmsDeliveryCaptureService.save(capture.id, { photos: capture.photos.filter(p => p.path !== path) });
+    return { current, created };
+  },
+
   async photoUrl(path: string): Promise<string> {
     const { data, error } = await supabase.storage.from(WMS_ATTACHMENT_BUCKET).createSignedUrl(path, 600);
     if (error || !data?.signedUrl) throw new Error('Không mở được ảnh.');

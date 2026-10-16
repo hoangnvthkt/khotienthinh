@@ -23,6 +23,7 @@ import { CountPanel } from './StockCountView';
 import { CountStartForm, MoveForm } from './KhoForms';
 import { wmsStepLabel } from './WmsWorkspace';
 import { CaptureButton, KhoCapture } from './KhoCapture';
+import { CaptureBatchPanel, batchProgress, useCaptureBatch } from './CaptureBatch';
 import { wmsDeliveryCaptureService, type DeliveryCapture } from '../../lib/wmsDeliveryCaptureService';
 
 // V2 Kho một màn: Việc cần làm · Tồn kho · Sổ phiếu bên trái; nhận hàng, xuất, chuyển, hủy, kiểm đếm mở ngay cột phải.
@@ -32,7 +33,7 @@ import { wmsDeliveryCaptureService, type DeliveryCapture } from '../../lib/wmsDe
 type Mode = 'todo' | 'stock' | 'book';
 type TileKey = 'receive' | 'approve' | 'stock' | 'check';
 type Sel = { kind: 'tx'; id: string; tx?: Transaction } | { kind: 'item'; key: string } | { kind: 'count'; id: string }
-  | { kind: 'capture'; key: string; id?: string; files?: File[] }
+  | { kind: 'capture'; key: string; id?: string; files?: File[] } | { kind: 'batch' }
   | { kind: 'issue' | 'transfer' | 'loss' | 'newCount'; itemKey?: string } | null;
 
 const ageDays = (iso: string, today: string) => daysBetween(iso, today);
@@ -72,6 +73,9 @@ export const KhoView: React.FC = () => {
     setCaps(list => [c, ...list.filter(x => x.id !== c.id)]);
     setSel(s => s?.kind === 'capture' && (s.id === c.id || !s.id) ? { ...s, id: c.id } : s);
   }, []);
+  const capBatch = useCaptureBatch(onCapSaved);
+  const batch = capBatch.batch;
+  const readingIds = new Set((batch?.items || []).filter(it => it.state === 'read').map(it => it.capture?.id));
 
   // Mở đúng phiếu từ link (?tx= hoặc state.transactionId).
   useEffect(() => {
@@ -193,8 +197,12 @@ export const KhoView: React.FC = () => {
           <button type="button" onClick={() => void print('print')} className={secondaryBtn}><Printer size={15} />In phiếu</button></>}
         onClose={() => setSel(null)} onUpdated={next => { setSel({ kind: 'tx', id: next.id, tx: next }); void loadStock(); }} />;
     }
+    if (sel.kind === 'batch') return batch
+      ? <CaptureBatchPanel batch={{ ...batch, items: batch.items.map(it => ({ ...it, capture: caps.find(c => c.id === it.capture?.id) || it.capture })) }} warehouses={whs} onBack={() => setSel(null)} onOpen={id => setSel({ kind: 'capture', key: id, id })}
+        onPickWarehouse={capBatch.pickWarehouse} onMergeUp={capBatch.mergeUp} onClear={() => { capBatch.clear(); setSel(null); }} />
+      : <EmptyPanel icon={Camera} title="Không còn xấp phiếu" text="Phiếu đã đọc nằm ở Việc cần làm." />;
     if (sel.kind === 'capture') return <KhoCapture key={sel.key} initial={sel.id ? caps.find(c => c.id === sel.id) : undefined} files={sel.files}
-      warehouseId={wh} warehouses={whs} onBack={() => setSel(null)} onSaved={onCapSaved}
+      warehouseId={wh} warehouses={whs} onBack={() => setSel(batch?.items.some(it => it.capture?.id === sel.id) ? { kind: 'batch' } : null)} onSaved={onCapSaved}
       onOpenTx={id => { reload(); setSel({ kind: 'tx', id }); }} />;
     if (sel.kind === 'item') {
       if (!selRow) return <EmptyPanel icon={Boxes} title="Không còn dòng tồn này" text="Tải lại để xem số mới." />;
@@ -242,7 +250,7 @@ export const KhoView: React.FC = () => {
       <span className="min-w-0 flex-1"><span className={`line-clamp-2 ${ENT}`}>{c.supplierName || 'Phiếu giao chụp'}</span>
         <span className="block truncate text-[12px] text-muted-foreground">{[c.docNo && `Số ${c.docNo}`, c.truckNo, !wh && whName(c.warehouseId)].filter(Boolean).join(' · ') || dateVi(c.createdAt)}</span>
         <span className="block truncate text-[12px]">{names.length ? <>{names.slice(0, 2).join(', ')}{names.length > 2 ? ` +${names.length - 2}` : ''}</> : <span className="text-muted-foreground">Chưa nhập hàng</span>}</span></span>
-      <Badge className={age >= 3 ? BAD : TEAL}>{age >= 3 ? `treo ${age} ngày` : 'Phiếu chụp'}</Badge>
+      <Badge className={readingIds.has(c.id) ? GREY : age >= 3 ? BAD : TEAL}>{readingIds.has(c.id) ? 'AI đang đọc' : age >= 3 ? `treo ${age} ngày` : 'Phiếu chụp'}</Badge>
     </button></li>; };
   const countRow = (c: StockCountSummary) => <li key={c.id}><button type="button" onClick={() => setSel({ kind: 'count', id: c.id })}
     className={`flex w-full items-start gap-2 px-3 py-2.5 text-left ${active(sel?.kind === 'count' && sel.id === c.id)}`}>
@@ -272,6 +280,10 @@ export const KhoView: React.FC = () => {
         {mode === 'stock' && <button type="button" onClick={() => void exportExcel()} disabled={!listStock.length} className={secondaryBtn} title="Xuất Excel"><FileSpreadsheet size={15} /></button>}
       </div>
     </div>
+    {batch && sel?.kind !== 'batch' && (() => { const p = batchProgress(batch);
+      return <button type="button" onClick={() => setSel({ kind: 'batch' })} className="flex w-full items-center gap-2 border-b border-border bg-teal-50/70 px-3 py-2 text-left text-sm dark:bg-teal-950/30">
+        <Camera size={15} className="text-teal-700 dark:text-teal-300" /><span className="flex-1 font-semibold">Xấp phiếu giao</span>
+        <span className="tabular-nums text-[12px] text-muted-foreground">{batch.running ? `AI đọc ${p.finished}/${p.total}` : `${p.papers} phiếu`}</span></button>; })()}
     <ul className="max-h-[68vh] divide-y divide-border overflow-y-auto">
       {mode === 'todo' && (todoCaps.length + todoTx.length + todoCounts.length === 0 ? empty(tile === 'receive' ? 'Không có hàng chờ nhận' : 'Không có việc cần làm')
         : <>{todoCaps.map(capRow)}{todoTx.map(t => txRow(t, false))}{todoCounts.map(countRow)}</>)}
@@ -300,7 +312,12 @@ export const KhoView: React.FC = () => {
       <button type="button" onClick={reload} disabled={state === 'loading'} className={`${secondaryBtn} bg-card`} aria-label="Tải lại"><RefreshCw size={15} className={state === 'loading' ? 'animate-spin' : ''} /></button>
     </div>
     {canOperate && <div className={`${sel ? 'hidden lg:flex' : 'flex'} flex-col gap-1.5 sm:flex-row sm:justify-end sm:gap-2`}>
-      <CaptureButton onFiles={files => setSel({ kind: 'capture', key: `new-${Date.now()}`, files })} className={`${primaryBtn} !py-2.5 sm:order-last sm:!py-2`} />
+      <CaptureButton onFiles={files => {
+        if (files.length === 1) { setSel({ kind: 'capture', key: `new-${Date.now()}`, files }); return; }
+        const operable = whs.filter(w => w.canOperate);
+        capBatch.start(files, operable.some(w => w.id === wh) ? wh : operable.length === 1 ? operable[0].id : '');
+        setSel({ kind: 'batch' });
+      }} className={`${primaryBtn} !py-2.5 sm:order-last sm:!py-2`} />
       <div className="grid grid-cols-4 gap-1.5 sm:flex sm:gap-2">
         {([['newCount', 'Kiểm đếm', ClipboardCheck], ['loss', 'Xuất hủy', Trash2], ['transfer', 'Chuyển kho', ArrowRightLeft], ['issue', 'Xuất cấp', ArrowUpFromLine]] as const).map(([k, label, Icon]) =>
           <button key={k} type="button" onClick={() => setSel({ kind: k })}
@@ -309,7 +326,7 @@ export const KhoView: React.FC = () => {
     </div>}
     <div className={`${sel ? 'hidden lg:flex' : 'flex'} scrollbar-hide gap-2 overflow-x-auto pb-1`}>{tiles.map(t => <Tile key={t.k} active={tile === t.k} onClick={() => pick(t.k)}
       icon={t.icon} label={t.label} value={t.value} hint={t.hint} tone={t.tone} ic={t.ic} blink={t.blink && tile !== t.k} />)}</div>
-    <Split open={!!sel} selKey={sel ? `${sel.kind}:${sel.kind === 'capture' ? sel.key : 'id' in sel ? sel.id : 'key' in sel ? sel.key : sel.itemKey || ''}` : null} list={list} detail={detail} />
+    <Split open={!!sel} selKey={sel ? `${sel.kind}:${sel.kind === 'capture' ? sel.key : sel.kind === 'batch' ? '' : 'id' in sel ? sel.id : 'key' in sel ? sel.key : sel.itemKey || ''}` : null} list={list} detail={detail} />
   </div>;
 };
 

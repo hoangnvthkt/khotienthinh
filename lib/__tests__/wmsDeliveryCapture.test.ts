@@ -76,7 +76,11 @@ describe('máy chủ: chụp trước, đơn sau', () => {
     expect(view).toContain('<CaptureButton onFiles=');
     expect(view).toContain('{todoCaps.map(capRow)}');
     const panel = read('components/wms/KhoCapture.tsx');
-    expect(panel).toContain('capture="environment"');
+    // 16/10: nút mở hai lựa chọn — Chụp phiếu (camera trong app, chụp liên tiếp) và Chọn từ album.
+    expect(panel).toContain("'Chụp liền nhiều tờ'");
+    expect(panel).toContain("'Chọn từ album'");
+    expect(read('components/wms/CaptureCamera.tsx')).toContain('capture="environment"');
+    expect(view).toContain('capBatch.start(files');
     expect(panel).toContain("'Đơn chờ duyệt — Mua hàng duyệt xong mới nhận được'");
   });
   it('AI đổi được nhà cung cấp, chưa có khóa thì nhập tay', () => {
