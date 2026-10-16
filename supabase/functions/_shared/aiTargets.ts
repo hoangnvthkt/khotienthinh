@@ -177,6 +177,17 @@ export const probe = async (target: Pick<AiTarget, 'kind' | 'baseUrl' | 'apiKey'
   return done({ ok: true, httpStatus: res.status, models: ids.length, modelIds: ids.slice(0, 300), code: missing ? 'MODEL_NOT_FOUND' : null, balance });
 };
 
+/**
+ * Model "suy nghĩ trước khi trả lời" (DeepSeek, Gemini 2.5, dòng o của OpenAI…) tính phần suy nghĩ vào giới hạn token đầu ra.
+ * 16/10: bản tin sáng qua RevidAPI deepseek-v4.1-flash dùng hết 600/600 token để suy nghĩ → nội dung rỗng (AI_EMPTY).
+ * Chừa thêm chỗ cho suy nghĩ; model không suy nghĩ dừng khi trả lời xong nên không tốn thêm. Anthropic chỉ suy nghĩ khi bật riêng.
+ */
+export const THINKING_HEADROOM = 4000;
+export const outputTokenCap = (kind: AiKind, maxTokens: number) => kind === 'anthropic' ? maxTokens : maxTokens + THINKING_HEADROOM;
+
+/** Trả lời rỗng: hết giới hạn token (thường do suy nghĩ quá dài) → AI_TRUNCATED; còn lại AI_EMPTY. */
+export const emptyReplyError = (finishReason: unknown) => /^(length|max_tokens)$/i.test(String(finishReason ?? '')) ? 'AI_TRUNCATED' : 'AI_EMPTY';
+
 /** Cổng chuẩn OpenAI (VD RevidAPI) hay bọc JSON trong ```json … ``` hoặc thêm câu dẫn: lấy đúng object đầu tiên. */
 export const parseJsonLoose = (text: string): unknown => {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
