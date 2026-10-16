@@ -99,3 +99,22 @@ describe('skill mr_text_lines', () => {
     expect(() => skill.parseInput({ text: 'a' })).toThrow('AI_BAD_INPUT');
   });
 });
+
+describe('skill mr_photo_lines (chụp phiếu đề xuất viết tay)', () => {
+  const skill = SKILLS.mr_photo_lines;
+  const img = (b64 = 'A'.repeat(400)) => ({ mime: 'image/jpeg', b64 });
+  it('chỉ nhận 1–4 ảnh JPG/PNG/WebP base64; skill có ảnh để cổng gửi sang kết nối đọc ảnh', () => {
+    expect(skill.images).toBeTypeOf('function');
+    expect(skill.parseInput({ images: [img(), img()] })).toEqual({ pages: '2' });
+    expect(skill.images!({ images: [img()] })).toEqual([{ mime: 'image/jpeg', b64: 'A'.repeat(400) }]);
+    expect(() => skill.parseInput({ images: [] })).toThrow('AI_BAD_INPUT');
+    expect(() => skill.parseInput({ images: [img(), img(), img(), img(), img()] })).toThrow('AI_BAD_INPUT');
+    expect(() => skill.parseInput({ images: [{ mime: 'application/pdf', b64: 'A'.repeat(400) }] })).toThrow('AI_BAD_INPUT');
+    expect(() => skill.parseInput({ images: [img('<script>'.repeat(50))] })).toThrow('AI_BAD_INPUT');
+  });
+  it('chuẩn hóa: SL "1.500" = 1500, ngày cần hợp lệ, cảnh báo; model trả mảng thì lấy phiếu đầu', () => {
+    const out = skill.parseOutput([{ lines: [{ name: 'Gạch 2 lỗ', qty: '1.500', unit: 'viên' }, { name: ' ', qty: 2 }], purpose: 'Xây tường rào', neededDate: '2026-10-20', warnings: ['Dòng 1 viết đè'] }]);
+    expect(out).toEqual({ lines: [{ name: 'Gạch 2 lỗ', spec: null, qty: 1500, unit: 'viên', note: null }], purpose: 'Xây tường rào', neededDate: '2026-10-20', warnings: ['Dòng 1 viết đè'] });
+    expect(skill.parseOutput({ lines: [], purpose: null, neededDate: '20/10/2026', warnings: [] }).neededDate).toBeNull();
+  });
+});

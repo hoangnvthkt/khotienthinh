@@ -997,6 +997,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             specification: line.specification,
             overBudgetReason: isProjectRequest ? line.reason : undefined,
             note: !isProjectRequest ? line.reason : undefined,
+            ...(line.neededDate ? { neededDate: line.neededDate } : {}),
         }))]);
         setQuickLinesOpen(false);
         toast.success(`Đã thêm ${lines.length} dòng`, 'Kiểm lại số lượng, quy cách trước khi gửi.');

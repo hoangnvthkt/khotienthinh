@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Camera, CheckCircle2, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import ItemSelectionModal from './ItemSelectionModal';
+import { CaptureCamera } from './wms/CaptureCamera';
+import { prepareCapturePhoto } from '../lib/wmsDeliveryCaptureService';
 import { InventoryItem } from '../types';
 import { aiErrorMessage, aiGateway, type AiRunResult } from '../lib/aiGateway';
 import { matchLines, parseRequestText, parseViNumber, sameUnit, type MatchedLine, type TextLine } from '../lib/materialRequestText';
@@ -8,19 +10,37 @@ import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
 
 // Đề xuất vật tư · Gõ nhanh (lộ trình AI A1, chủ SP 16/10/2026): gõ / dán danh sách → dòng nháp có mã, SL, quy cách, lý do.
 // Tách bằng quy tắc ngay khi gõ; câu khó thì "Nhờ AI tách" (skill mr_text_lines). Người dùng xem, đổi mã rồi mới thêm vào phiếu.
+// Chụp phiếu viết tay (chủ SP 16/10): camera của Kho (tự cắt khung) → AI đọc ảnh (skill mr_photo_lines, kết nối đọc ảnh) → chữ đọc được
+// hiện trong ô gõ để sửa, dòng khớp mã như Gõ nhanh. Ảnh chỉ để đọc, không lưu kèm phiếu.
 
-export interface QuickLine { item: InventoryItem; qty: number; specification: string; reason: string }
+export interface QuickLine { item: InventoryItem; qty: number; specification: string; reason: string; neededDate?: string }
 type AiLine = Pick<TextLine, 'name' | 'spec' | 'qty' | 'unit' | 'note'>;
+export interface PhotoRead { lines: AiLine[]; purpose: string | null; neededDate: string | null; warnings: string[] }
+export interface PhotoImage { mime: string; b64: string }
 export interface QuickLinesHooks {
-  aiAvailable: () => Promise<boolean>;
+  aiStatus: () => Promise<{ text: boolean; photo: boolean }>;
   split: (text: string) => Promise<AiRunResult<{ lines: AiLine[] }>>;
+  readPhotos: (images: PhotoImage[]) => Promise<AiRunResult<PhotoRead>>;
   feedback: (runId: string, accepted: boolean) => void;
 }
 export const defaultQuickLinesHooks: QuickLinesHooks = {
-  aiAvailable: () => aiGateway.status().then(s => s.configured && s.skills.includes('mr_text_lines')).catch(() => false),
+  aiStatus: () => aiGateway.status()
+    .then(s => ({ text: s.configured && s.skills.includes('mr_text_lines'), photo: s.configured && s.skills.includes('mr_photo_lines') }))
+    .catch(() => ({ text: false, photo: false })),
   split: text => aiGateway.run<{ lines: AiLine[] }>('mr_text_lines', { text }, { screen: 'material_request' }),
+  readPhotos: images => aiGateway.run<PhotoRead>('mr_photo_lines', { images }, { screen: 'material_request', pages: images.length }),
   feedback: (runId, accepted) => aiGateway.feedback(runId, accepted),
 };
+
+const fileToB64 = (f: Blob) => new Promise<string>((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1] || '');
+  r.onerror = () => reject(new Error('Không đọc được ảnh.'));
+  r.readAsDataURL(f);
+});
+/** Dòng AI đọc → một dòng chữ trong ô gõ (sửa được; gõ lại thì tách bằng quy tắc như thường). */
+const lineText = (l: AiLine) => [l.name, l.spec, l.qty != null ? String(l.qty).replace('.', ',') : null, l.unit].filter(Boolean).join(' ') + (l.note ? ` cho ${l.note}` : '');
+const dmy = (iso: string) => iso.split('-').reverse().join('/');
 
 interface Row { key: string; line: MatchedLine<InventoryItem>; itemId: string | null; qty: string; spec: string; reason: string; include: boolean; showSpec: boolean; showReason: boolean }
 
@@ -60,13 +80,52 @@ export const QuickRequestLines: React.FC<{
   const [rows, setRows] = useState<Row[]>([]);
   const [ai, setAi] = useState<{ available: boolean; state: 'idle' | 'pending' | 'error'; message?: string; runId?: string }>({ available: false, state: 'idle' });
   const [picker, setPicker] = useState<{ key: string; query: string } | null>(null);
+  const [photoReady, setPhotoReady] = useState(false);
+  const [camera, setCamera] = useState(false);
+  const [photo, setPhoto] = useState<{ urls: string[]; state: 'reading' | 'done' | 'error'; message?: string; warnings?: string[]; runId?: string } | null>(null);
+  const [neededDate, setNeededDate] = useState<string | null>(null);
+  // Chữ AI vừa đổ vào ô gõ: không tách lại bằng quy tắc (giữ dòng AI đọc) cho tới khi người dùng sửa.
+  const aiTextRef = useRef<string | null>(null);
+  const readToken = useRef(0);
 
-  useEffect(() => { let alive = true; hooks.aiAvailable().then(v => { if (alive) setAi(a => ({ ...a, available: v })); }); return () => { alive = false; }; }, [hooks]);
-  // Tách bằng quy tắc khi gõ (trễ 250 ms); gõ lại sau khi AI tách thì quay về quy tắc.
   useEffect(() => {
+    let alive = true;
+    hooks.aiStatus().then(v => { if (alive) { setAi(a => ({ ...a, available: v.text })); setPhotoReady(v.photo); } });
+    return () => { alive = false; };
+  }, [hooks]);
+  // Tách bằng quy tắc khi gõ (trễ 250 ms); gõ lại sau khi AI tách / đọc ảnh thì quay về quy tắc.
+  useEffect(() => {
+    if (aiTextRef.current !== null && text === aiTextRef.current) return;
+    aiTextRef.current = null;
     const t = window.setTimeout(() => { setRows(toRows(matchLines(parseRequestText(text), catalog, { boost }))); setAi(a => ({ ...a, runId: undefined, state: a.state === 'pending' ? a.state : 'idle' })); }, 250);
     return () => window.clearTimeout(t);
   }, [text, catalog, boost]);
+  useEffect(() => () => { photo?.urls.forEach(u => URL.revokeObjectURL(u)); }, [photo?.urls]);
+
+  const readPhotos = async (files: File[]) => {
+    setCamera(false);
+    const images = files.filter(f => f.type.startsWith('image/'));
+    if (!images.length) { setPhoto({ urls: [], state: 'error', message: files.length ? 'Chỉ đọc được ảnh (JPG, PNG) — chụp lại phiếu.' : 'Chưa chụp ảnh nào.' }); return; }
+    const token = ++readToken.current;
+    const prepared = await Promise.all(images.slice(0, 4).map(f => prepareCapturePhoto(f).catch(() => f)));
+    setPhoto({ urls: prepared.map(f => URL.createObjectURL(f)), state: 'reading' });
+    const r = await Promise.all(prepared.map(async f => ({ mime: f.type || 'image/jpeg', b64: await fileToB64(f) })))
+      .then(imgs => hooks.readPhotos(imgs))
+      .catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
+    if (token !== readToken.current) return; // đã hủy / chụp lại
+    if (r.code === 'OK' && r.result.lines.length) {
+      const transcript = r.result.lines.map(lineText).join('\n');
+      aiTextRef.current = transcript;
+      setText(transcript);
+      setRows(toRows(matchLines(r.result.lines.map(l => ({ ...l, raw: [l.name, l.spec].filter(Boolean).join(' ') })), catalog, { boost })));
+      if (r.result.purpose) setReasonAll(v => v || r.result.purpose || '');
+      setNeededDate(r.result.neededDate);
+      setPhoto(p => p && { ...p, state: 'done', warnings: r.result.warnings, runId: r.runId });
+    } else {
+      setPhoto(p => p && { ...p, state: 'error', message: r.code === 'OK' ? 'AI không thấy dòng vật tư nào trên ảnh — chụp rõ hơn hoặc gõ tay.' : `${aiErrorMessage(r)} Chụp lại hoặc gõ tay.` });
+    }
+  };
+  const clearPhoto = () => { readToken.current += 1; setPhoto(null); };
 
   const update = (key: string, patch: Partial<Row>) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch } : r)));
   const choose = (row: Row, item: InventoryItem) => update(row.key, {
@@ -92,29 +151,54 @@ export const QuickRequestLines: React.FC<{
   const needPick = rows.filter(r => !r.itemId && r.line.candidates.length).length;
   const unknown = rows.filter(r => !r.itemId && !r.line.candidates.length).length;
   // Gợi ý nhờ AI khi quy tắc chưa chắc; AI tách rồi thì thôi nhắc.
-  const shaky = !ai.runId && (rows.some(r => r.line.unsure) || unknown > 0);
+  const fromAiText = aiTextRef.current !== null && text === aiTextRef.current; // dòng đang là kết quả AI đọc ảnh
+  const shaky = !ai.runId && !fromAiText && (rows.some(r => r.line.unsure) || unknown > 0);
 
   const add = () => {
-    const out: QuickLine[] = ready.map(r => ({ item: byId.get(r.itemId!)!, qty: num(r.qty), specification: r.spec.trim(), reason: (r.reason || reasonAll).trim() }));
+    const out: QuickLine[] = ready.map(r => ({ item: byId.get(r.itemId!)!, qty: num(r.qty), specification: r.spec.trim(), reason: (r.reason || reasonAll).trim(), ...(neededDate ? { neededDate } : {}) }));
     if (!out.length) return;
     const untouched = ready.every(r => r.itemId === r.line.pick?.id);
-    recordSuggestionEvent({ screen: 'material_request', field: ai.runId ? 'text_lines_ai' : 'text_lines', outcome: untouched && out.length === rows.length ? 'accepted' : 'edited', suggested: rows.length, accepted: out.length });
+    const fromPhoto = photo?.state === 'done' && fromAiText;
+    recordSuggestionEvent({ screen: 'material_request', field: fromPhoto ? 'photo_lines' : ai.runId ? 'text_lines_ai' : 'text_lines', outcome: untouched && out.length === rows.length ? 'accepted' : 'edited', suggested: rows.length, accepted: out.length });
     if (ai.runId) hooks.feedback(ai.runId, true);
+    if (fromPhoto && photo?.runId) hooks.feedback(photo.runId, true);
     onAdd(out);
   };
 
   return <section aria-label="Gõ nhanh danh sách vật tư" data-testid="quick-lines" className="mt-3 space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-900 dark:bg-indigo-950/20">
-    <header className="flex items-center gap-2">
-      <h3 className="text-sm font-bold text-foreground">Gõ nhanh danh sách</h3>
-      {rows.length > 0 && <span className="text-xs text-muted-foreground">{rows.length} dòng · {matched} đã khớp mã{needPick ? ` · ${needPick} chọn mã` : ''}{unknown ? ` · ${unknown} chưa có mã` : ''}</span>}
-      <button type="button" onClick={onClose} aria-label="Đóng gõ nhanh" className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-card"><X size={15} /></button>
+    <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <h3 className="text-sm font-bold text-foreground">Gõ nhanh</h3>
+      {rows.length > 0 && <span className="order-last w-full text-xs text-muted-foreground sm:order-none sm:w-auto">{rows.length} dòng · {matched} đã khớp mã{needPick ? ` · ${needPick} chọn mã` : ''}{unknown ? ` · ${unknown} chưa có mã` : ''}</span>}
+      <span className="ml-auto flex items-center gap-1">
+        {photoReady && <button type="button" onClick={() => setCamera(true)} disabled={photo?.state === 'reading'} title="Chụp phiếu đề xuất viết tay, AI đọc thành dòng"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-card px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300">
+          <Camera size={14} />Chụp phiếu</button>}
+        <button type="button" onClick={onClose} aria-label="Đóng gõ nhanh" className="rounded-md p-1 text-muted-foreground hover:bg-card"><X size={15} /></button>
+      </span>
     </header>
+    {photo && <div data-testid="quick-photo" aria-live="polite" className={`space-y-1.5 rounded-lg border bg-card p-2 text-xs ${photo.state === 'error' ? 'border-amber-300' : 'border-border'}`}>
+      <div className="flex items-center gap-2">
+        {photo.urls.map((u, i) => <img key={u} src={u} alt={`Ảnh phiếu ${i + 1}`} className="h-12 w-9 shrink-0 rounded-md border border-border object-cover" />)}
+        {photo.state === 'reading' && <p className="flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-foreground"><Loader2 size={13} className="shrink-0 animate-spin text-indigo-600" />AI đang đọc phiếu… (khoảng 20 giây)</p>}
+        {photo.state === 'done' && <p className="flex min-w-0 flex-1 items-center gap-1.5 font-semibold text-foreground"><Sparkles size={13} className="shrink-0 text-indigo-600" />AI đã đọc {photo.urls.length > 1 ? `${photo.urls.length} ảnh` : 'ảnh'} — kiểm từng dòng trước khi thêm</p>}
+        {photo.state === 'error' && <p className="flex min-w-0 flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-200"><AlertTriangle size={13} className="shrink-0" />{photo.message}</p>}
+      </div>
+      {photo.warnings?.length ? <ul className="list-disc space-y-0.5 pl-4 text-amber-800 dark:text-amber-200">{photo.warnings.slice(0, 4).map((w, i) => <li key={i}>{w}</li>)}</ul> : null}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {neededDate && <span className="text-muted-foreground">Ngày cần trên phiếu <b className="text-foreground">{dmy(neededDate)}</b>
+          <button type="button" onClick={() => setNeededDate(null)} className="ml-1 font-semibold text-indigo-700 hover:underline dark:text-indigo-300">Bỏ</button></span>}
+        <span className="ml-auto flex gap-1">
+          {photo.state !== 'reading' && <button type="button" onClick={() => setCamera(true)} className="rounded-md px-2 py-1 font-semibold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300">Chụp lại</button>}
+          <button type="button" onClick={clearPhoto} className="rounded-md px-2 py-1 font-semibold text-muted-foreground hover:bg-muted">{photo.state === 'reading' ? 'Hủy' : 'Bỏ ảnh'}</button>
+        </span>
+      </div>
+    </div>}
     <textarea value={text} onChange={e => setText(e.target.value)} rows={3} autoFocus aria-label="Danh sách vật tư"
       placeholder="VD: ống PVC 110 C1 20 cây, cút PVC 110 15 cái, keo dán ống 2 hộp cho thoát nước mưa xưởng 1"
       className={`${inputCls} resize-y`} />
     {withReason && <input value={reasonAll} onChange={e => setReasonAll(e.target.value)} aria-label="Dùng cho" placeholder="Dùng cho (điền các dòng chưa có lý do)" className={inputCls} />}
 
-    {ai.available && text.trim() && <div className={`flex flex-wrap items-center gap-2 text-xs ${shaky ? 'rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'text-muted-foreground'}`}>
+    {ai.available && text.trim() && !fromAiText && <div className={`flex flex-wrap items-center gap-2 text-xs ${shaky ? 'rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'text-muted-foreground'}`}>
       {shaky && <span className="flex items-center gap-1"><AlertTriangle size={13} />Câu khó tách</span>}
       {ai.state === 'error' && <span>{ai.message}</span>}
       {ai.runId && ai.state === 'idle' && <span className="flex items-center gap-1"><Sparkles size={12} />AI đã tách</span>}
@@ -178,6 +262,7 @@ export const QuickRequestLines: React.FC<{
         <Plus size={14} />Thêm {ready.length || ''} dòng</button>
     </div>
 
+    {camera && <CaptureCamera title="Chụp phiếu đề xuất" onClose={() => setCamera(false)} onDone={files => { void readPhotos(files); }} />}
     <ItemSelectionModal isOpen={Boolean(picker)} onClose={() => setPicker(null)} onOpenScanner={() => undefined}
       onSelect={it => { const row = rows.find(r => r.key === picker?.key); if (row) choose(row, it); setPicker(null); }}
       items={catalog} allowAllItems={allowAllItems} filterWarehouseId={filterWarehouseId} showStockQuantities={false} initialQuery={picker?.query} />

@@ -85,7 +85,7 @@ test('danh sách: kết nối đã lưu (đang chạy, dùng cho…), khóa tron
   const s = server(page); await s.install();
   await page.goto(base);
   const gemini = rowOf(page, 'Gemini chính');
-  await expect(gemini).toContainText('Dùng cho: Trợ lý · model nhanh, Kho · đọc ảnh phiếu giao');
+  await expect(gemini).toContainText('Dùng cho: Trợ lý · model nhanh, Đọc ảnh chứng từ · Kho, Đề xuất');
   await expect(gemini).toContainText('khóa •••• 7Qx2');
   await expect(gemini.getByTestId('connection-status')).toContainText(/Đang chạy · thử \d\d:\d\d/);
   await expect(gemini.getByRole('button', { name: 'Sửa Gemini chính' })).toBeVisible();

@@ -31,7 +31,7 @@ export const kindLabelFull = (kind: ConnectionKind) => KIND_OPTIONS.find(o => o.
 export const FEATURES: Array<{ feature: ConnectionFeature; label: string }> = [
   { feature: 'ai.fast', label: 'Trợ lý · model nhanh' },
   { feature: 'ai.reasoning', label: 'Trợ lý · model suy luận' },
-  { feature: 'wms.doc_reader', label: 'Kho · đọc ảnh phiếu giao' },
+  { feature: 'wms.doc_reader', label: 'Đọc ảnh chứng từ · Kho, Đề xuất' },
 ];
 
 export interface TestSummary { ms: number | null; httpStatus: number | null; models: number | null; code: string | null; message: string | null }
