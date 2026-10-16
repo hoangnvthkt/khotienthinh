@@ -1395,7 +1395,7 @@ const WorkflowBuilder: React.FC = () => {
                 <div className="divide-y" style={{ borderColor: 'var(--wf-border)' }}>
                     <WorkflowRoleRow
                         label="Người quản trị quy trình"
-                        hint="Toàn quyền với quy trình: cấu hình, duyệt, trả lại và gán lại mọi giai đoạn."
+                        hint="Thấy mọi phiếu của quy trình, kể cả phiếu tạo trước khi được thêm; duyệt hoặc trả lại thay người xử lý ở bước đang chờ."
                         userIds={template.managers || []}
                         users={users}
                         editing={rolesEditing}
@@ -1404,7 +1404,7 @@ const WorkflowBuilder: React.FC = () => {
                     />
                     <WorkflowRoleRow
                         label="Người giám sát workflow"
-                        hint="Được tag mặc định vào mọi nhiệm vụ mới và theo dõi toàn bộ quy trình."
+                        hint="Thấy mọi phiếu của quy trình, kể cả phiếu tạo trước khi được thêm; nhận thông báo diễn biến của phiếu tạo mới."
                         userIds={template.defaultWatchers || []}
                         users={users}
                         editing={rolesEditing}
@@ -1417,8 +1417,8 @@ const WorkflowBuilder: React.FC = () => {
                                 Tùy chọn quyền xem các nhiệm vụ
                             </p>
                             <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
-                                Quản trị viên module, người quản trị quy trình, người theo dõi, người tạo và người được giao
-                                giai đoạn đều nhìn thấy nhiệm vụ.
+                                Quản trị module, người quản trị và người giám sát thấy mọi phiếu. Người tạo, người theo dõi,
+                                người được @nhắc và người xử lý thấy phiếu của mình.
                             </p>
                         </div>
                         <span className="shrink-0 text-[13px]" style={{ color: 'var(--wf-text-muted)' }}>
