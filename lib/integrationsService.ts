@@ -14,6 +14,18 @@ export const KIND_OPTIONS: Array<{ kind: ConnectionKind; label: string; baseUrl:
 const SHORT: Record<ConnectionKind, string> = { anthropic: 'Anthropic', gemini: 'Gemini', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI' };
 /** Tên ngắn: dùng làm tên mặc định khi thêm kết nối. */
 export const kindLabel = (kind: ConnectionKind) => SHORT[kind] || kind;
+
+/** Mẫu trong ô "Loại": mỗi loại kết nối + nhà cung cấp quen (điền sẵn endpoint, model). */
+export interface ConnectionPreset { id: string; kind: ConnectionKind; label: string; name: string; baseUrl: string; keyHint: string; modelHint: string }
+export const PRESETS: ConnectionPreset[] = [
+  ...KIND_OPTIONS.filter(o => o.kind !== 'openai_compatible').map(o => ({ ...o, id: o.kind, name: SHORT[o.kind] })),
+  // RevidAPI (16/10): cổng chuẩn OpenAI bán lại Claude, GPT, Gemini… trả bằng VND; khóa dạng sk_…
+  { id: 'revidapi', kind: 'openai_compatible', label: 'RevidAPI (Claude, GPT, Gemini… trả VND)', name: 'RevidAPI', baseUrl: 'https://revidapi.com/v1', keyHint: 'sk_…', modelHint: 'claude-sonnet-5' },
+  { ...KIND_OPTIONS[3], id: 'openai_compatible', name: SHORT.openai_compatible },
+];
+/** Mẫu của một kết nối đã lưu: theo endpoint nếu khớp nhà cung cấp quen, không thì theo loại. */
+export const presetOf = (kind: ConnectionKind, baseUrl: string): ConnectionPreset =>
+  PRESETS.find(p => p.id !== p.kind && p.kind === kind && baseUrl.replace(/\/+$/, '').startsWith(p.baseUrl)) || PRESETS.find(p => p.id === kind)!;
 export const kindLabelFull = (kind: ConnectionKind) => KIND_OPTIONS.find(o => o.kind === kind)?.label || kind;
 
 export const FEATURES: Array<{ feature: ConnectionFeature; label: string }> = [
@@ -43,7 +55,7 @@ export interface Connection {
 /** Khóa đang có trong Secrets của edge function — chỉ đọc. */
 export interface EnvConnection { id: string; kind: ConnectionKind; name: string; baseUrl: string; model: string; keyHint: string }
 
-export interface ProbeResult { ok: boolean; ms: number; httpStatus: number | null; models: number | null; modelIds: string[]; code: string | null; message: string }
+export interface ProbeResult { ok: boolean; ms: number; httpStatus: number | null; models: number | null; modelIds: string[]; code: string | null; message: string; balance?: { amount: number; unit: string } | null }
 
 export interface ConnectionDraft { id?: string; kind: ConnectionKind; name: string; baseUrl: string; apiKey: string; model: string; enabled: boolean }
 

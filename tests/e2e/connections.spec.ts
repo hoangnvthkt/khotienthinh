@@ -166,6 +166,23 @@ test('sửa: khóa để trống = giữ khóa cũ; đổi endpoint thì bắt n
   await expect(page.getByLabel('Trợ lý · model nhanh')).toHaveValue('');
 });
 
+test('mẫu RevidAPI: điền sẵn endpoint chuẩn OpenAI, tên và model; lưu đúng loại', async ({ page }) => {
+  const s = server(page); await s.install();
+  await page.goto(base);
+  await page.getByRole('button', { name: 'Thêm kết nối' }).click();
+  const drawer = page.getByRole('dialog', { name: 'Thêm kết nối' });
+  await drawer.getByLabel('Loại kết nối').selectOption('revidapi');
+  await expect(drawer.getByLabel('Endpoint')).toHaveValue('https://revidapi.com/v1');
+  await expect(drawer.getByLabel('Tên kết nối')).toHaveValue('RevidAPI');
+  await expect(drawer.getByLabel('Model')).toHaveValue('claude-sonnet-5');
+  await drawer.getByLabel('API key').fill('sk_live_revid_9Z1k');
+  await drawer.getByRole('button', { name: 'Lưu' }).click();
+  await expect(rowOf(page, 'RevidAPI')).toContainText('khóa •••• 9Z1k');
+  expect((s.state.calls.find(c => c.fn === 'save_integration_connection_v1')!.body.p as Record<string, unknown>)).toMatchObject({ kind: 'openai_compatible', baseUrl: 'https://revidapi.com/v1', model: 'claude-sonnet-5' });
+  await page.getByRole('button', { name: 'Sửa RevidAPI' }).click();
+  await expect(page.getByRole('dialog', { name: 'Sửa kết nối RevidAPI' }).getByLabel('Loại kết nối')).toHaveValue('revidapi');
+});
+
 test('điện thoại: không tràn ngang, hộp thêm kết nối toàn màn hình', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'chỉ đo trên điện thoại');
   const s = server(page); await s.install();

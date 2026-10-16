@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { envEntries, isSafeEndpoint, probe, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
+import { envEntries, isSafeEndpoint, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
 
 const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const clock = () => { let t = 1000; return () => (t += 210); };
@@ -56,5 +56,22 @@ describe('aiTargets — thử kết nối', () => {
       .toMatchObject({ kind: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-opus-5-5', source: 'connection', connectionId: 'c1' });
     expect(targetFromConnection(null, 'fast')).toBeNull();
     expect(targetFromConnection({ kind: 'gemini', apiKey: '' }, 'fast')).toBeNull();
+  });
+
+  it('RevidAPI: danh sách model công khai → kiểm thêm /v1/credits; khóa sai báo BAD_KEY, khóa đúng hiện số credit', async () => {
+    const models = { object: 'list', data: [{ id: 'claude-sonnet-5' }, { id: 'claude-haiku-4-5' }] };
+    const target = { kind: 'openai_compatible' as const, baseUrl: 'https://revidapi.com/v1', apiKey: 'sk_x', model: 'claude-sonnet-5' };
+    const bad = vi.fn((url: string) => url.endsWith('/v1/models') ? reply(200, models) : reply(401, { error: { message: 'api key không hợp lệ' } }));
+    expect(await probe(target, bad)).toMatchObject({ ok: false, code: 'BAD_KEY', httpStatus: 401, models: 2 });
+    expect((bad.mock.calls[1] as unknown as [string, RequestInit])[0]).toBe('https://revidapi.com/v1/credits');
+    expect((bad.mock.calls[1] as unknown as [string, RequestInit])[1].headers).toMatchObject({ Authorization: 'Bearer sk_x' });
+    const good = vi.fn((url: string) => url.endsWith('/v1/models') ? reply(200, models) : reply(200, { credits: 1234.5 }));
+    expect(await probe(target, good)).toMatchObject({ ok: true, code: null, models: 2, balance: { amount: 1234.5, unit: 'credit' } });
+    // Cổng khác không có bước kiểm thêm.
+    const other = vi.fn(() => reply(200, models));
+    expect(await probe({ ...target, baseUrl: 'https://router.example.com/v1' }, other)).toMatchObject({ ok: true, balance: null });
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(readBalance({ data: { balance: '88' } })).toBe(88);
+    expect(readBalance({ nope: 1 })).toBeNull();
   });
 });

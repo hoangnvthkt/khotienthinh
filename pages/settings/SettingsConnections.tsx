@@ -4,7 +4,7 @@ import { Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../comp
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
-  FEATURES, KIND_OPTIONS, integrationError, integrationsService, kindLabel, kindLabelFull, testedAtLabel,
+  FEATURES, PRESETS, integrationError, integrationsService, kindLabel, kindLabelFull, presetOf, testedAtLabel,
   type Connection, type ConnectionDraft, type ConnectionFeature, type ConnectionKind, type EnvConnection, type ProbeResult,
 } from '../../lib/integrationsService';
 
@@ -18,10 +18,10 @@ const DOT: Record<Row['tone'], string> = { ok: 'bg-leaf-500', error: 'bg-rose-50
 const STATUS_TEXT: Record<Row['tone'], string> = { ok: 'text-leaf-700 dark:text-leaf-300', error: 'text-rose-700 dark:text-rose-300', idle: 'text-muted-foreground' };
 
 const probeLine = (r: ProbeResult) => r.ok
-  ? `${r.code === 'MODEL_NOT_FOUND' ? r.message : 'Kết nối được'} · ${r.ms} ms${r.models != null ? ` · ${r.models} model` : ''}`
+  ? `${r.code === 'MODEL_NOT_FOUND' ? r.message : 'Kết nối được'} · ${r.ms} ms${r.models != null ? ` · ${r.models} model` : ''}${r.balance ? ` · còn ${r.balance.amount.toLocaleString('vi-VN')} ${r.balance.unit}` : ''}`
   : `${r.httpStatus ? `Lỗi ${r.httpStatus} — ` : ''}${r.message}`;
 
-const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: KIND_OPTIONS[1].baseUrl, apiKey: '', model: 'gemini-2.5-flash', enabled: true });
+const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: '', model: 'gemini-2.5-flash', enabled: true });
 
 const ConnectionEditor: React.FC<{
   initial: Connection | null;
@@ -38,13 +38,16 @@ const ConnectionEditor: React.FC<{
   const [result, setResult] = useState<ProbeResult | null>(null);
   const [testError, setTestError] = useState('');
   const [saving, setSaving] = useState(false);
-  const opt = KIND_OPTIONS.find(o => o.kind === draft.kind)!;
+  const [presetId, setPresetId] = useState(() => (initial ? presetOf(initial.kind, initial.baseUrl) : PRESETS.find(p => p.id === 'gemini')!).id);
+  const opt = PRESETS.find(p => p.id === presetId)!;
   const set = (patch: Partial<ConnectionDraft>) => { setDraft(d => ({ ...d, ...patch })); setResult(null); setTestError(''); };
-  const changeKind = (kind: ConnectionKind) => {
-    const next = KIND_OPTIONS.find(o => o.kind === kind)!;
-    const prev = KIND_OPTIONS.find(o => o.kind === draft.kind)!;
-    set({ kind, baseUrl: !draft.baseUrl || draft.baseUrl === prev.baseUrl ? next.baseUrl : draft.baseUrl,
-      name: !draft.name || draft.name === kindLabel(prev.kind) ? kindLabel(kind) : draft.name, model: draft.model === prev.modelHint ? '' : draft.model });
+  const changePreset = (id: string) => {
+    const next = PRESETS.find(p => p.id === id)!;
+    const prev = opt;
+    setPresetId(id);
+    set({ kind: next.kind, baseUrl: !draft.baseUrl || draft.baseUrl === prev.baseUrl ? next.baseUrl : draft.baseUrl,
+      name: !draft.name || draft.name === prev.name || draft.name === kindLabel(prev.kind) ? next.name : draft.name,
+      model: !draft.model || draft.model === prev.modelHint ? (next.id === next.kind ? '' : next.modelHint) : draft.model });
   };
   const needsKey = !initial || draft.baseUrl.trim().replace(/\/+$/, '') !== initial.baseUrl;
   const canTest = draft.baseUrl.trim().startsWith('https://') && (draft.apiKey.trim() || !needsKey);
@@ -90,8 +93,8 @@ const ConnectionEditor: React.FC<{
       </>}>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={label}>Loại
-          <select value={draft.kind} onChange={e => changeKind(e.target.value as ConnectionKind)} className={`${inputCls} mt-1 block w-full`} aria-label="Loại kết nối">
-            {KIND_OPTIONS.map(o => <option key={o.kind} value={o.kind}>{o.label}</option>)}
+          <select value={presetId} onChange={e => changePreset(e.target.value)} className={`${inputCls} mt-1 block w-full`} aria-label="Loại kết nối">
+            {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </label>
         <label className={label}>Tên
