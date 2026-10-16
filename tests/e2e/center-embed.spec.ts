@@ -18,6 +18,12 @@ test("embedded module page keeps the user in the Center", async ({ page }, info)
   await expect(page.getByTestId("outer-path")).toHaveText("/center");
   expect(await page.evaluate(() => history.length)).toBe(historyLength);
 
+  // Link thô <a href="#/..."> (vd. "Màn PO dự án") cũng đi trong tab, không đổi hash cửa sổ.
+  await page.reload();
+  await page.getByRole("link", { name: "Link thô sang việc" }).click();
+  await expect(page.getByTestId("fake-task")).toHaveText("Việc VW-2");
+  expect(await page.evaluate(() => location.hash)).toBe("#/center");
+
   await page.reload();
   await page.getByRole("button", { name: "Sang bảng lương" }).click();
   await expect(page.locator("[data-embed-exit]")).toHaveAttribute("data-embed-exit", "/hrm/payroll");
