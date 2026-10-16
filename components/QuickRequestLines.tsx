@@ -5,7 +5,7 @@ import { CaptureCamera } from './wms/CaptureCamera';
 import { prepareCapturePhoto } from '../lib/wmsDeliveryCaptureService';
 import { InventoryItem } from '../types';
 import { aiErrorMessage, aiGateway, type AiRunResult } from '../lib/aiGateway';
-import { matchLines, parseRequestText, parseViNumber, sameUnit, type MatchedLine, type TextLine } from '../lib/materialRequestText';
+import { isMeasureNote, matchLines, parseRequestText, parseViNumber, qtyInUnit, sameUnit, type MatchedLine, type TextLine } from '../lib/materialRequestText';
 import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
 
 // Đề xuất vật tư · Gõ nhanh (lộ trình AI A1, chủ SP 16/10/2026): gõ / dán danh sách → dòng nháp có mã, SL, quy cách, lý do.
@@ -39,7 +39,8 @@ const fileToB64 = (f: Blob) => new Promise<string>((resolve, reject) => {
   r.readAsDataURL(f);
 });
 /** Dòng AI đọc → một dòng chữ trong ô gõ (sửa được; gõ lại thì tách bằng quy tắc như thường). */
-const lineText = (l: AiLine) => [l.name, l.spec, l.qty != null ? String(l.qty).replace('.', ',') : null, l.unit].filter(Boolean).join(' ') + (l.note ? ` cho ${l.note}` : '');
+const lineText = (l: AiLine) => [l.name, l.spec, l.qty != null ? String(l.qty).replace('.', ',') : null, l.unit].filter(Boolean).join(' ')
+  + (!l.note ? '' : isMeasureNote(l.note) ? ` (${l.note})` : ` cho ${l.note}`);
 const dmy = (iso: string) => iso.split('-').reverse().join('/');
 
 interface Row { key: string; line: MatchedLine<InventoryItem>; itemId: string | null; qty: string; spec: string; reason: string; include: boolean; showSpec: boolean; showReason: boolean }
@@ -47,17 +48,21 @@ interface Row { key: string; line: MatchedLine<InventoryItem>; itemId: string | 
 const PICK_OTHER = '__pick';
 const num = (s: string) => parseViNumber(String(s).trim()) ?? 0;
 const qtyText = (q: number | null) => (q == null ? '' : String(q).replace('.', ','));
+/** Số để đọc (1.332,42) — khác qtyText là giá trị ô nhập. */
+const qtyShow = (q: number | null) => (q == null ? '' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(q));
 const inputCls = 'w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-indigo-300';
 
 const toRows = (lines: MatchedLine<InventoryItem>[]): Row[] => lines.map((line, i) => {
   const item = line.pick;
+  // Ghi chú chỉ là số đo ("Trọng lượng tạm tính 6300 kg") không phải lý do.
+  const reason = line.note && !isMeasureNote(line.note) ? line.note : '';
   return {
     key: `${i}:${line.raw}`, line, itemId: item?.id ?? null,
-    // Lệch đơn vị (câu ghi "tấn", mã tính "kg") → để trống SL, bắt nhập lại theo đơn vị của mã.
-    qty: item && !sameUnit(line.unit, item.unit) ? '' : qtyText(line.qty),
-    spec: line.specGuess || '', reason: line.note || '', include: Boolean(item),
+    // Lệch đơn vị (câu ghi "tấn", mã tính "kg") → lấy số theo đơn vị của mã nếu dòng có ghi, không thì để trống bắt nhập lại.
+    qty: item && !sameUnit(line.unit, item.unit) ? qtyText(line.qtyFromText) : qtyText(line.qty),
+    spec: line.specGuess || '', reason, include: Boolean(item),
     // Ô quy cách / lý do riêng chỉ mở khi câu có ghi (93% dòng đề xuất thật không ghi quy cách; lý do chung ở ô "Dùng cho").
-    showSpec: Boolean(line.specGuess), showReason: Boolean(line.note),
+    showSpec: Boolean(line.specGuess), showReason: Boolean(reason),
   };
 });
 
@@ -130,7 +135,7 @@ export const QuickRequestLines: React.FC<{
   const update = (key: string, patch: Partial<Row>) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch } : r)));
   const choose = (row: Row, item: InventoryItem) => update(row.key, {
     itemId: item.id, include: true,
-    qty: sameUnit(row.line.unit, item.unit) ? (row.qty || qtyText(row.line.qty)) : '',
+    qty: sameUnit(row.line.unit, item.unit) ? (row.qty || qtyText(row.line.qty)) : qtyText(qtyInUnit(row.line, item.unit)),
   });
 
   const runAi = async () => {
@@ -222,7 +227,7 @@ export const QuickRequestLines: React.FC<{
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 <span className={`rounded-full px-1.5 py-0.5 font-semibold ${status === 'Đã khớp' ? 'bg-leaf-50 text-leaf-800 dark:bg-leaf-950/40 dark:text-leaf-200' : status === 'Chưa có mã' ? 'bg-muted text-muted-foreground' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}`}>
                   {status === 'Đã khớp' && <CheckCircle2 size={11} className="mr-0.5 inline" />}{status}</span>
-                <span className="truncate">“{row.line.name}{row.line.qty != null ? ` · ${qtyText(row.line.qty)} ${row.line.unit || ''}` : ''}”</span>
+                <span className="truncate">“{row.line.name}{row.line.qty != null ? ` · ${qtyShow(row.line.qty)} ${row.line.unit || ''}` : ''}”</span>
               </p>
               <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-1.5 sm:grid-cols-[minmax(0,1fr)_8rem]">
                 <select value={row.itemId || ''} aria-label="Mã vật tư" className={inputCls}
@@ -248,7 +253,14 @@ export const QuickRequestLines: React.FC<{
                 {!row.showSpec && <button type="button" onClick={() => update(row.key, { showSpec: true })} className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">+ Quy cách</button>}
                 {withReason && !row.showReason && <button type="button" onClick={() => update(row.key, { showReason: true })} className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">+ Lý do riêng</button>}
               </p>}
-              {unitClash && <p className="flex items-center gap-1 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle size={12} />Câu ghi {qtyText(row.line.qty)} {row.line.unit} — mã tính theo {item?.unit}, nhập lại số lượng.</p>}
+              {unitClash && (() => {
+                const fromText = qtyInUnit(row.line, item?.unit);
+                return <p className="flex items-center gap-1 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle size={12} className="shrink-0" />
+                  {fromText != null
+                    ? `Phiếu ghi ${qtyShow(row.line.qty)} ${row.line.unit} và ${qtyShow(fromText)} ${item?.unit} — mã tính theo ${item?.unit}, đã lấy ${qtyShow(fromText)}. Kiểm lại.`
+                    : `Câu ghi ${qtyShow(row.line.qty)} ${row.line.unit} — mã tính theo ${item?.unit}, nhập lại số lượng.`}</p>;
+              })()}
+              {row.line.note && isMeasureNote(row.line.note) && !unitClash && <p className="text-xs text-muted-foreground">Phiếu ghi: {row.line.note}</p>}
             </div>
           </div>
         </li>;
