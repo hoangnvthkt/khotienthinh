@@ -46,6 +46,7 @@ Quy tắc:
 - Biên bản nhiều nhóm: lấy dòng chi tiết có số lượng, không lấy dòng tổng nhóm.
 - Dòng bị gạch bỏ: bỏ qua. Dấu tay ghi thiếu ("có 1 cái", "không có (0)"): qty = số thực nhận, note ghi số trên phiếu in.
 - Chữ không chắc: vẫn ghi giá trị đoán được, confidence "low", và thêm một câu vào warnings. Không bịa: không đọc được thì qty null.
+- Một ảnh có nhiều phiếu của nhiều bên giao: vẫn trả MỘT object cho phiếu đầu tiên (trên cùng / bên trái) và thêm warning "Ảnh có N phiếu".
 - warnings: tổng ghi tay không khớp cộng dòng, số viết đè, ngày giao khác ngày ghi, tiền viết tắt theo nghìn đồng…`;
 
 export interface DocLine { name: string; unit: string | null; qty: number | null; note: string | null; confidence: 'high' | 'low' }
@@ -53,7 +54,9 @@ export interface DocRead { docType: string; supplierName: string | null; supplie
 
 /** Chuẩn hóa kết quả AI trước khi lưu: cắt chuỗi, bỏ dòng rỗng, ngày hợp lệ. */
 export const normalizeRead = (raw: unknown): DocRead => {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  // Cổng chuẩn OpenAI chỉ ép JSON, không ép lược đồ: ảnh có 2 hóa đơn (đo 16/10, trang 20) → model trả mảng. Đọc phiếu đầu, báo chụp riêng.
+  const many = Array.isArray(raw) ? raw.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : null;
+  const r = (many ? many[0] ?? {} : raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const str = (v: unknown, max = 200) => typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
   const date = str(r.docDate, 10);
   const lines = Array.isArray(r.lines) ? r.lines : [];
@@ -73,6 +76,9 @@ export const normalizeRead = (raw: unknown): DocRead => {
       const qty = typeof x.qty === 'number' && Number.isFinite(x.qty) && x.qty >= 0 ? x.qty : null;
       return [{ name, unit: str(x.unit, 20), qty, note: str(x.note, 300), confidence: x.confidence === 'high' && qty != null ? 'high' : 'low' } as DocLine];
     }),
-    warnings: (Array.isArray(r.warnings) ? r.warnings : []).map(w => str(w, 300)).filter((w): w is string => !!w).slice(0, 20),
+    warnings: [
+      ...(many && many.length > 1 ? [`Ảnh có ${many.length} phiếu — mới đọc phiếu đầu, chụp riêng từng phiếu còn lại.`] : []),
+      ...(Array.isArray(r.warnings) ? r.warnings : []).map(w => str(w, 300)).filter((w): w is string => !!w),
+    ].slice(0, 20),
   };
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { envEntries, isSafeEndpoint, parseJsonLoose, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
+import { THINKING_HEADROOM, emptyReplyError, envEntries, isSafeEndpoint, outputTokenCap, parseJsonLoose, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
 
 const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const clock = () => { let t = 1000; return () => (t += 210); };
@@ -81,5 +81,16 @@ describe('aiTargets — thử kết nối', () => {
     expect(parseJsonLoose('Kết quả: {"a":1} xong')).toEqual({ a: 1 });
     expect(() => parseJsonLoose('không có gì')).toThrow('AI_BAD_JSON');
     expect(() => parseJsonLoose('{ hỏng')).toThrow('AI_BAD_JSON');
+  });
+
+  it('model suy nghĩ trước (deepseek-v4.1-flash 16/10: 600/600 token suy nghĩ, nội dung rỗng): chừa chỗ suy nghĩ, rỗng vì hết token → AI_TRUNCATED', () => {
+    expect(outputTokenCap('openai_compatible', 600)).toBe(600 + THINKING_HEADROOM);
+    expect(outputTokenCap('gemini', 600)).toBe(600 + THINKING_HEADROOM);
+    expect(outputTokenCap('openai', 120)).toBe(120 + THINKING_HEADROOM);
+    expect(outputTokenCap('anthropic', 600)).toBe(600);
+    expect(emptyReplyError('length')).toBe('AI_TRUNCATED');
+    expect(emptyReplyError('MAX_TOKENS')).toBe('AI_TRUNCATED');
+    expect(emptyReplyError('stop')).toBe('AI_EMPTY');
+    expect(emptyReplyError(undefined)).toBe('AI_EMPTY');
   });
 });

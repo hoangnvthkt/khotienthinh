@@ -5,7 +5,7 @@
 //   AI_PRICE_IN_PER_M / AI_PRICE_OUT_PER_M = USD mỗi triệu token (không đặt → chi phí ghi "chưa rõ")
 //   Kết nối Admin thêm ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên; chưa gán thì dùng các biến trên (index.ts chọn đích).
 import Anthropic from '@anthropic-ai/sdk';
-import { DEFAULT_BASE_URL, KIND_LABEL, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
+import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
 export type { ModelClass };
@@ -75,14 +75,14 @@ async function withGemini(t: AiTarget, req: CompletionRequest): Promise<Completi
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
       contents: [{ role: 'user', parts: [{ text: req.user }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: req.maxTokens, responseMimeType: 'application/json' },
+      generationConfig: { temperature: 0.2, maxOutputTokens: outputTokenCap(t.kind, req.maxTokens), responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
   const data = await res.json();
   if (data?.promptFeedback?.blockReason) throw new Error('AI_REFUSED');
   const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('');
-  if (!text) throw new Error('AI_EMPTY');
+  if (!text) throw new Error(emptyReplyError(data?.candidates?.[0]?.finishReason));
   return { text, usage: { tokensIn: data?.usageMetadata?.promptTokenCount ?? null, tokensOut: data?.usageMetadata?.candidatesTokenCount ?? null } };
 }
 
@@ -93,7 +93,7 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
   const res = await fetch(`${t.baseUrl}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(55000),
     body: JSON.stringify({
-      model: t.model, ...(compatible ? { max_tokens: req.maxTokens } : { max_completion_tokens: req.maxTokens }),
+      model: t.model, ...(compatible ? { max_tokens: outputTokenCap(t.kind, req.maxTokens) } : { max_completion_tokens: outputTokenCap(t.kind, req.maxTokens) }),
       response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
       messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.user }],
     }),
@@ -102,7 +102,7 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
   const data = await res.json();
   if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
   const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('AI_EMPTY');
+  if (!text) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
   return { text, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
 }
 
