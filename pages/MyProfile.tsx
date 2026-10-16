@@ -4,15 +4,16 @@ import { useApp } from '../context/AppContext';
 import { useModuleData } from '../hooks/useModuleData';
 import { Employee, AssetStatus, Asset } from '../types';
 import {
-    User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building, Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight, Settings, Package, FileText, Hash, Edit3, Save, X, Check, Sparkles, Zap, TrendingUp, Activity, Medal, Camera, Loader2
+    User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building, Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight, Settings, Package, FileText, Hash, Edit3, Save, X, Check, Sparkles, Zap, TrendingUp, Activity, Medal, Camera, Loader2, ListPlus
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
 import AchievementWall from '../components/AchievementWall';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { employeeSelfService } from '../lib/employeeSelfService';
+import ProfileCustomFieldsPanel, { useProfileCustomFields } from '../components/hrm/ProfileCustomFieldsPanel';
 
-type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'achievements';
+type TabKey = 'personal' | 'work' | 'contact' | 'extra' | 'assets' | 'achievements';
 
 const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.ReactNode; badge?: boolean; badgeColor?: string }> = ({ label, value, icon, badge, badgeColor }) => (
     <div className="group flex items-center py-4 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
@@ -219,10 +220,15 @@ const MyProfile: React.FC = () => {
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || '';
 
+    // Extra columns HR adds in Bảng nhân sự; the tab appears only when there is something to read.
+    const { state: customState, reload: reloadCustom } = useProfileCustomFields(employee?.id, !!employee);
+    const showCustomTab = (customState?.status === 'ready' && customState.data.fields.length > 0) || activeTab === 'extra';
+
     const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
         { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={15} /> },
         { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
         { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
+        ...(showCustomTab ? [{ key: 'extra' as const, label: 'Thông Tin Thêm', icon: <ListPlus size={15} /> }] : []),
         { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} />, count: employeeAssets.length },
         { key: 'achievements', label: 'Thành Tích', icon: <Medal size={15} /> },
     ];
@@ -403,7 +409,7 @@ const MyProfile: React.FC = () => {
                         <button
                             key={tab.key}
                             onClick={() => { setActiveTab(tab.key); setIsEditing(false); }}
-                            className={`flex items-center gap-2 px-4 sm:px-5 py-3 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 rounded-t-xl whitespace-nowrap ${activeTab === tab.key
+                            className={`flex shrink-0 items-center gap-2 px-4 sm:px-5 py-3 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 rounded-t-xl whitespace-nowrap ${activeTab === tab.key
                                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700 border-b-transparent -mb-px'
                                 : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/40'
                             }`}
@@ -529,6 +535,11 @@ const MyProfile: React.FC = () => {
                             <InfoRow icon={<Phone size={14} />} label="Số điện thoại" value={employee?.phone || linkedUser.phone} />
                             <InfoRow icon={<Mail size={14} />} label="Email liên hệ" value={employee?.email || linkedUser.email} />
                         </div>
+                    )}
+
+                    {/* === THÔNG TIN THÊM === */}
+                    {activeTab === 'extra' && (
+                        <ProfileCustomFieldsPanel state={customState} onRetry={() => void reloadCustom()} />
                     )}
 
                     {/* === TÀI SẢN === */}

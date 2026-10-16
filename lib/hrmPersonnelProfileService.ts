@@ -3,6 +3,7 @@ import type {
   HrmPersonnelOverview,
   HrmPersonnelSectionPayload,
 } from '../types/hrmPersonnelProfile';
+import type { ProfileCustomFields } from './hrmProfileCustomFields';
 import { supabase } from './supabase';
 
 const SECTION_RPC: Record<HrmPersonnelDetailSectionKey, string> = {
@@ -52,6 +53,14 @@ export const hrmPersonnelProfileService = {
     }
     const { data, error } = await supabase.rpc(SECTION_RPC[section], params);
     return requireData(data as HrmPersonnelSectionPayload | null, error, 'Không thể tải phần hồ sơ nhân sự.');
+  },
+
+  async getCustomFields(employeeId: string): Promise<ProfileCustomFields> {
+    const { data, error } = await supabase.rpc('get_hrm_employee_custom_fields', { p_employee_id: employeeId });
+    if (error?.message?.includes('HRM_PROFILE_SECTION_ACCESS_DENIED')) {
+      throw new Error('Bạn không có quyền xem thông tin thêm của hồ sơ này.');
+    }
+    return requireData(data as ProfileCustomFields | null, error, 'Không thể tải thông tin thêm.');
   },
 
   async updatePersonalContact(input: {

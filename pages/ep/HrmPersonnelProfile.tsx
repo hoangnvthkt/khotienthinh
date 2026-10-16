@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BadgeDollarSign, BriefcaseBusiness, CalendarDays, Contact,
-  FileBadge, FileText, GraduationCap, IdCard, Loader2, LockKeyhole,
+  FileBadge, FileText, GraduationCap, IdCard, ListPlus, Loader2, LockKeyhole,
   FilePenLine, PencilLine, Plus, RefreshCcw, Save, ShieldAlert, UserRound, X,
 } from 'lucide-react';
 import { hrmPersonnelProfileService } from '../../lib/hrmPersonnelProfileService';
@@ -17,6 +17,12 @@ import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { codeLabel, EDITOR_META, type ProfileEditorKind } from '../../lib/hrmProfileFields';
 import MyProfileChangesCard from '../../components/hrm/MyProfileChangesCard';
 import ProfileChangeRequestDialog, { ProfileFieldInput } from '../../components/hrm/ProfileChangeRequestDialog';
+import ProfileCustomFieldsPanel, { useProfileCustomFields } from '../../components/hrm/ProfileCustomFieldsPanel';
+import { canReadProfileCustomFields } from '../../lib/hrmProfileCustomFields';
+
+// Extra columns HR adds in Bảng nhân sự → Cấu hình; not one of the server's profile sections.
+const CUSTOM_TAB = 'custom_fields' as const;
+type ProfileTab = HrmPersonnelSectionKey | typeof CUSTOM_TAB;
 
 const SECTION_META: Array<{
   key: HrmPersonnelSectionKey;
@@ -173,12 +179,12 @@ const HrmPersonnelProfile: React.FC = () => {
   const { employeeId } = useParams<{ employeeId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSection = searchParams.get('section') as HrmPersonnelSectionKey | null;
+  const requestedSection = searchParams.get('section') as ProfileTab | null;
   const [overview, setOverview] = useState<HrmPersonnelOverview | null>(null);
   const [overviewError, setOverviewError] = useState('');
   const [overviewLoading, setOverviewLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<HrmPersonnelSectionKey>(
-    requestedSection && HRM_PERSONNEL_SECTION_KEYS.includes(requestedSection) ? requestedSection : 'overview',
+  const [activeSection, setActiveSection] = useState<ProfileTab>(
+    requestedSection && (requestedSection === CUSTOM_TAB || HRM_PERSONNEL_SECTION_KEYS.includes(requestedSection)) ? requestedSection : 'overview',
   );
   const [sectionData, setSectionData] = useState<Partial<Record<HrmPersonnelDetailSectionKey, HrmPersonnelSectionPayload>>>({});
   const [sectionLoading, setSectionLoading] = useState<HrmPersonnelDetailSectionKey | null>(null);
@@ -237,11 +243,39 @@ const HrmPersonnelProfile: React.FC = () => {
   }, [employeeId, sectionData]);
 
   useEffect(() => {
-    if (!overview || activeSection === 'overview' || !visibleSections.has(activeSection)) return;
+    if (!overview || activeSection === 'overview' || activeSection === CUSTOM_TAB || !visibleSections.has(activeSection)) return;
     void loadSection(activeSection);
   }, [activeSection, loadSection, overview, visibleSections]);
 
-  const selectSection = (section: HrmPersonnelSectionKey) => {
+  const customAllowed = canReadProfileCustomFields(overview?.accessLevel);
+  const { state: customState, reload: reloadCustom } = useProfileCustomFields(overview?.employeeId, customAllowed);
+  // HR always sees the tab (it says where columns come from); an employee only when they have something to read.
+  const showCustomTab = customAllowed && (overview?.accessLevel !== 'SELF'
+    || (customState?.status === 'ready' && customState.data.fields.length > 0) || activeSection === CUSTOM_TAB);
+
+  // The tab strip scrolls sideways; keep the chosen tab in view (e.g. "Thông tin thêm" at the end).
+  const tabsRef = useRef<HTMLElement>(null);
+  // Widths settle after styles and fonts load, so check again when the strip resizes.
+  useEffect(() => {
+    const nav = tabsRef.current;
+    if (!nav) return undefined;
+    const reveal = () => {
+      const tab = nav.querySelector<HTMLElement>('[data-active="true"]');
+      if (!tab) return;
+      const navBox = nav.getBoundingClientRect();
+      const tabBox = tab.getBoundingClientRect();
+      if (tabBox.left < navBox.left || tabBox.right > navBox.right) {
+        nav.scrollLeft += tabBox.left - navBox.left - (navBox.width - tabBox.width) / 2;
+      }
+    };
+    reveal();
+    if (typeof ResizeObserver === 'undefined' || !nav.firstElementChild) return undefined;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(nav.firstElementChild);
+    return () => observer.disconnect();
+  }, [activeSection, overview, showCustomTab]);
+
+  const selectSection = (section: ProfileTab) => {
     setActiveSection(section);
     setSearchParams(section === 'overview' ? {} : { section });
   };
@@ -388,21 +422,21 @@ const HrmPersonnelProfile: React.FC = () => {
   }
 
   const isSelf = overview.accessLevel === 'SELF';
-  const canEditActive = overview.canEditSections.includes(activeSection);
+  const canEditActive = activeSection !== CUSTOM_TAB && overview.canEditSections.includes(activeSection);
   // Employees change verified data through HR ("Đề nghị cập nhật"), never directly.
   const canRequestActive = isSelf && ['personal_contact', 'contracts_employment', 'legal_insurance', 'qualifications_documents'].includes(activeSection);
-  const selectedPayload = activeSection === 'overview' ? null : sectionData[activeSection];
-  const selectedError = activeSection === 'overview' ? '' : sectionErrors[activeSection];
-  const hasPermission = visibleSections.has(activeSection);
+  const selectedPayload = activeSection === 'overview' || activeSection === CUSTOM_TAB ? null : sectionData[activeSection];
+  const selectedError = activeSection === 'overview' || activeSection === CUSTOM_TAB ? '' : sectionErrors[activeSection];
+  const hasPermission = activeSection === CUSTOM_TAB ? customAllowed : visibleSections.has(activeSection);
 
   return (
     <main className="w-full space-y-5 pb-10">
-      <button type="button" onClick={() => navigate(overview.accessLevel === 'SELF' ? '/my-profile' : '/ep')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700 dark:text-slate-300 dark:hover:text-sky-300">
+      <button type="button" onClick={() => navigate(overview.accessLevel === 'SELF' ? '/my-profile' : '/ep')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-teal-700 dark:text-slate-300 dark:hover:text-teal-300">
         <ArrowLeft size={16} /> {overview.accessLevel === 'SELF' ? 'Hồ sơ của tôi' : 'Danh sách nhân sự'}
       </button>
 
       <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div className="h-1.5 bg-sky-600" />
+        <div className="h-1.5 bg-gradient-to-r from-teal-600 via-mint-500 to-leaf-500" />
         <div className="grid gap-5 p-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
           <img
             src={overview.avatarUrl || DEFAULT_AVATAR_URL}
@@ -420,12 +454,12 @@ const HrmPersonnelProfile: React.FC = () => {
           </div>
           <div className="rounded-xl bg-slate-100 px-4 py-3 text-right dark:bg-slate-800">
             <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Mức truy cập</p>
-            <p className="mt-1 text-sm font-black text-sky-700 dark:text-sky-300">{ACCESS_LEVEL_LABEL[overview.accessLevel] || overview.accessLevel}</p>
+            <p className="mt-1 text-sm font-black text-mint-700 dark:text-mint-300">{ACCESS_LEVEL_LABEL[overview.accessLevel] || overview.accessLevel}</p>
           </div>
         </div>
       </header>
 
-      <nav className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900" aria-label="Nhóm thông tin hồ sơ">
+      <nav ref={tabsRef} className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900" aria-label="Nhóm thông tin hồ sơ">
         <div className="flex min-w-max gap-1">
           {SECTION_META.map(section => {
             const Icon = section.icon;
@@ -436,13 +470,14 @@ const HrmPersonnelProfile: React.FC = () => {
                 key={section.key}
                 type="button"
                 onClick={() => selectSection(section.key)}
+                data-active={selected}
                 aria-disabled={!allowed}
                 title={allowed ? section.label : `${section.label}: không có quyền xem`}
                 className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-xs font-black transition active:scale-[0.98] ${
                   selected
-                    ? 'bg-sky-700 text-white'
+                    ? 'bg-teal-700 text-white'
                     : allowed
-                      ? 'text-slate-600 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-sky-300'
+                      ? 'text-slate-600 hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-teal-300'
                       : 'text-slate-400 dark:text-slate-600'
                 }`}
               >
@@ -452,24 +487,40 @@ const HrmPersonnelProfile: React.FC = () => {
               </button>
             );
           })}
+          {showCustomTab && (
+            <button
+              type="button"
+              onClick={() => selectSection(CUSTOM_TAB)}
+              data-active={activeSection === CUSTOM_TAB}
+              title="Cột HR thêm ở Bảng nhân sự"
+              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-xs font-black transition active:scale-[0.98] ${
+                activeSection === CUSTOM_TAB
+                  ? 'bg-teal-700 text-white'
+                  : 'text-slate-600 hover:bg-teal-50 hover:text-teal-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-teal-300'
+              }`}
+            >
+              <ListPlus size={15} />
+              <span>Thông tin thêm</span>
+            </button>
+          )}
         </div>
       </nav>
 
-      {hasPermission && activeSection !== 'overview' && !selectedError && !(sectionLoading === activeSection && !selectedPayload) && (
+      {hasPermission && activeSection !== 'overview' && activeSection !== CUSTOM_TAB && !selectedError && !(sectionLoading === activeSection && !selectedPayload) && (
         <>{(canEditActive || canRequestActive) && (
             <div className="flex flex-wrap justify-end gap-2">
               {canRequestActive && (
-                <button type="button" onClick={() => setRequestOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-black text-sky-800 active:scale-[0.98] dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                <button type="button" onClick={() => setRequestOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-black text-teal-800 active:scale-[0.98] dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200">
                   <FilePenLine size={15} /> Đề nghị cập nhật
                 </button>
               )}
               {canEditActive && activeSection === 'personal_contact' && (
-                <button type="button" onClick={() => setEditingContact(true)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
+                <button type="button" onClick={() => setEditingContact(true)} className="inline-flex items-center gap-2 rounded-xl bg-leaf-600 px-4 py-2.5 text-sm font-black text-white hover:bg-leaf-700 active:scale-[0.98]">
                   <PencilLine size={15} /> Cập nhật liên hệ
                 </button>
               )}
               {canEditActive && !isSelf && (SECTION_EDITORS[activeSection] || []).map(kind => (
-                <button key={kind} type="button" onClick={() => openEditor(kind)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
+                <button key={kind} type="button" onClick={() => openEditor(kind)} className="inline-flex items-center gap-2 rounded-xl bg-leaf-600 px-4 py-2.5 text-sm font-black text-white hover:bg-leaf-700 active:scale-[0.98]">
                   <Plus size={15} /> {EDITOR_META[kind].label}
                 </button>
               ))}
@@ -495,6 +546,8 @@ const HrmPersonnelProfile: React.FC = () => {
             Phần hồ sơ này không thuộc phạm vi được cấp. Hệ thống chưa tải dữ liệu của tab.
           </p>
         </section>
+      ) : activeSection === CUSTOM_TAB ? (
+        <ProfileCustomFieldsPanel state={customState} onRetry={() => void reloadCustom()} />
       ) : activeSection === 'overview' ? (
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
@@ -561,16 +614,16 @@ const HrmPersonnelProfile: React.FC = () => {
             <div className="mt-6 space-y-4">
               <label className="block space-y-2">
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Điện thoại cá nhân</span>
-                <input value={contactForm.personalPhone} onChange={event => setContactForm(current => ({ ...current, personalPhone: event.target.value }))} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                <input value={contactForm.personalPhone} onChange={event => setContactForm(current => ({ ...current, personalPhone: event.target.value }))} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
               </label>
               <label className="block space-y-2">
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Email cá nhân</span>
-                <input type="email" value={contactForm.personalEmail} onChange={event => setContactForm(current => ({ ...current, personalEmail: event.target.value }))} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                <input type="email" value={contactForm.personalEmail} onChange={event => setContactForm(current => ({ ...current, personalEmail: event.target.value }))} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
               </label>
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={() => setEditingContact(false)} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:text-slate-200">Hủy</button>
-              <button type="button" onClick={() => void savePersonalContact()} disabled={savingContact} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50 active:scale-[0.98]">
+              <button type="button" onClick={() => void savePersonalContact()} disabled={savingContact} className="inline-flex items-center gap-2 rounded-xl bg-leaf-600 px-4 py-2.5 text-sm font-black text-white hover:bg-leaf-700 disabled:opacity-50 active:scale-[0.98]">
                 {savingContact ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />} Lưu liên hệ
               </button>
             </div>
@@ -601,7 +654,7 @@ const HrmPersonnelProfile: React.FC = () => {
                 onChange={event => setEditorReason(event.target.value)}
                 rows={3}
                 placeholder="Tối thiểu 10 ký tự để phục vụ kiểm toán"
-                className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </label>
             <div className="mt-6 flex justify-end gap-3">
@@ -610,7 +663,7 @@ const HrmPersonnelProfile: React.FC = () => {
                 type="button"
                 onClick={() => void saveDomainRecord()}
                 disabled={savingEditor || editorReason.trim().length < 10 || EDITOR_META[editorKind].fields.some(field => field.required && !String(editorForm[field.key] || '').trim())}
-                className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
+                className="inline-flex items-center gap-2 rounded-xl bg-leaf-600 px-4 py-2.5 text-sm font-black text-white hover:bg-leaf-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
               >
                 {savingEditor ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />} Lưu bản ghi
               </button>
