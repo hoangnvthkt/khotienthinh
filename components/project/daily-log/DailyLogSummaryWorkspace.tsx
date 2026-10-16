@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { DailyLog, DailyLogContribution, DailyLogPhoto, DailyLogResourceProvider, DailyLogSummarySource, DailyLogWbsDecisionDraft, DailyLogWorkItem } from '../../../types';
 import { aggregateAreaWorkItems } from '../../../lib/dailyLogWorkItemRules';
@@ -13,6 +13,8 @@ import { Link } from 'react-router-dom';
 import { DayReportBody } from './DailyLogTodayBoard';
 import { useDailyLogPhotoViewer } from './DailyLogPhotoViewer';
 import type { DailyLogTodayBoard as DayBoard, TodayBoardSlip } from '../../../lib/dailyLogTodayBoard';
+import type { DelayReasonEntry } from '../../../lib/projectDelayReasons';
+import { DelayReasonsSection, type DelayReasonsState } from '../schedule-variance/DelayReasonsSection';
 
 interface Props {
   bundle: DailyLogWbsBundle;
@@ -20,7 +22,8 @@ interface Props {
   ensureSummaryLog?: () => Promise<DailyLog>;
   onSaved?: (receipt?: DailyLogWorkSaveReceipt) => void | Promise<void>;
   onSubmit?: (receipt: DailyLogWorkSaveReceipt) => void | Promise<void>;
-  onPublish?: () => void | Promise<void>;
+  /** delayReasons: lý do chậm của việc gây chậm (dự án dùng Nhật ký chính thức), lưu cùng giao dịch công bố. */
+  onPublish?: (input?: { delayReasons?: DelayReasonEntry[] }) => void | Promise<void>;
   /** Pilot only: CHT approves the summary (closes the day) without publishing official progress. */
   onVerifyPilot?: () => Promise<void>;
   onReturnAll?: () => void | Promise<void>;
@@ -30,6 +33,9 @@ interface Props {
   metadataDirty?: boolean;
   canSendSummary?: boolean;
   sendDisabledReason?: string;
+  /** Dự án / công trường của bản tổng hợp — cần để tính việc chậm so với tiến độ tổng. */
+  projectId?: string;
+  constructionSiteId?: string | null;
 }
 
 interface SummaryDraft {
@@ -208,7 +214,7 @@ export const adjustSummaryCardProgress = (card: DailyLogAreaCardModel, itemId: s
   }) };
 };
 
-export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensureSummaryLog, onSaved, onSubmit, onPublish, onVerifyPilot, onReturnAll, onClose = () => {}, onBusyChange, metadataForm, metadataDirty=false, canSendSummary=true, sendDisabledReason }) => {
+export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensureSummaryLog, onSaved, onSubmit, onPublish, onVerifyPilot, onReturnAll, onClose = () => {}, onBusyChange, metadataForm, metadataDirty=false, canSendSummary=true, sendDisabledReason, projectId, constructionSiteId }) => {
   const initial = useMemo(() => buildDailyLogSummaryDraft(bundle), [bundle]);
   const [cards, setCards] = useState(initial.cards);
   const [pickerOpen, setPickerOpen] = useState(initial.cards.length === 0);
@@ -250,6 +256,15 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       && [decision.officialCumulativeQuantity,decision.officialDailyQuantity].every(value=>value==null || Number.isFinite(value) && value>=0));
   const editable = mode === 'summarize' && bundle.rollout.enabled && bundle.permissions.canSummarize && (!bundle.summaryLog || ['draft','rejected'].includes(bundle.summaryLog.status));
   const canSave = editable && safeDraft;
+  // Lý do chậm (PR-3b): chỉ dự án dùng Nhật ký chính thức; người tổng hợp điền sẵn, CHT bắt buộc đủ khi Duyệt & công bố.
+  const delayLogDate = (bundle.summaryLog?.date || bundle.contributionsForSummary[0]?.date || '').slice(0, 10);
+  const delayActive = bundle.rollout.mode === 'enforced' && !verified && Boolean(projectId || bundle.summaryLog?.projectId) && Boolean(delayLogDate) && (mode === 'summarize' ? editable : mode === 'review');
+  const [delayState, setDelayState] = useState<DelayReasonsState>({ entries: [], missing: 0, ready: false });
+  const onDelayChange = useCallback((state: DelayReasonsState) => setDelayState(state), []);
+  const delayProgressKey = JSON.stringify(Object.values(decisions).filter(decision => decision?.officialCumulativePercent != null).map(decision => [decision.taskId, Number(decision.officialCumulativePercent)]).sort());
+  const delayProgress = useMemo(() => new Map<string, number>(JSON.parse(delayProgressKey)), [delayProgressKey]);
+  const engineerNotes = useMemo(() => new Map(cards.flatMap(card => card.editedItems).filter(item => item.forecastChangeReason?.trim()).map(item => [item.taskId, item.forecastChangeReason!.trim()])), [cards]);
+  const delayBlocker = delayActive && mode === 'review' ? (!delayState.ready ? 'Đang tính việc chậm so với tiến độ tổng…' : delayState.missing > 0 ? `Chọn lý do cho ${delayState.missing} việc chậm trước khi duyệt.` : null) : null;
   const setWorking = (value: boolean, action: 'primary' | 'secondary' = 'secondary') => { busyRef.current = value; setBusy(value); setBusyAction(value ? action : null); onBusyChange?.(value); };
 
   const save = async (submit: boolean) => {
@@ -297,6 +312,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
         })),
       };
       const receipt = await dailyLogWbsService.saveSummary(input);
+      if (delayActive && delayState.ready) await dailyLogWbsService.saveDelayReasonDraft({ dailyLogId: log.id, reasons: delayState.entries });
       setDirty(false);
       await onSaved?.(receipt);
       if (submit) await onSubmit?.(receipt);
@@ -306,10 +322,10 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   };
 
   const publish = async () => {
-    if (busyRef.current || !onPublish || !canReview || periodLocked || sourceBlockers || unresolved) return;
+    if (busyRef.current || !onPublish || !canReview || periodLocked || sourceBlockers || unresolved || delayBlocker) return;
     setWorking(true,'primary'); setError(null);
     try {
-      await onPublish();
+      await onPublish(delayActive ? { delayReasons: delayState.entries } : undefined);
       // Pilot: the comparison above is kept as evidence; approving closes the day.
       if (pilot && onVerifyPilot) await onVerifyPilot();
     }
@@ -392,6 +408,9 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       return [...photos, ...workPhotos].map(photo => ({photo,area:card.source.workAreaName || card.contribution.workAreaName || 'Chưa xác định khu vực'}));
     }),
   ].filter((entry,index,all) => entry.photo?.url && all.findIndex(other => other.photo?.url === entry.photo.url) === index) : [];
+  const delaySection = delayActive ? <DelayReasonsSection projectId={projectId || bundle.summaryLog?.projectId || ''} constructionSiteId={constructionSiteId ?? bundle.summaryLog?.constructionSiteId ?? null}
+          dailyLogId={bundle.summaryLog?.id || null} logDate={delayLogDate} progressByTask={delayProgress} engineerNotes={engineerNotes}
+          editable={mode === 'summarize' ? editable && !busy : canReview && publishAllowed && !periodLocked && !busy} mode={mode === 'summarize' ? 'summarize' : 'review'} onChange={onDelayChange} /> : null;
   return <section className={`daily-log-document daily-log-summary ${report?'daily-log-summary--report':''} min-w-0 text-foreground`} aria-label="Workspace tổng hợp theo phiếu">
     {mode === 'summarize' && <DailyLogDocumentHeader title="Tổng hợp thi công ngày" date={date} authorName={summaryAuthor}
       statusLabel={bundle.summaryLog?.status === 'rejected' ? 'Cần sửa' : 'Nháp tổng hợp'} statusTone={bundle.summaryLog?.status === 'rejected' ? 'returned' : 'neutral'}
@@ -403,7 +422,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       statusTone={verified?'verified':bundle.summaryLog?.status==='rejected'?'returned':'pending'}
       busyAction={busyAction} onClose={onClose} closeDisabled={busy}
       secondaryAction={canReview && onReturnAll?{label:'Trả bản tổng hợp',tone:'return',disabled:busy,onClick:returnSummary}:undefined}
-      primaryAction={publishAllowed && !periodLocked && onPublish?{label:pilot?(onVerifyPilot?'Duyệt (thí điểm)':'Đối chiếu thử nghiệm'):'Duyệt & công bố',tone:pilot && !onVerifyPilot?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved),disabledReason:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':undefined,onClick:publish}:undefined}/>}
+      primaryAction={publishAllowed && !periodLocked && onPublish?{label:pilot?(onVerifyPilot?'Duyệt (thí điểm)':'Đối chiếu thử nghiệm'):'Duyệt & công bố',tone:pilot && !onVerifyPilot?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved || delayBlocker),disabledReason:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':delayBlocker || undefined,onClick:publish}:undefined}/>}
     <div className="daily-log-document-body space-y-5 p-4 sm:p-6">
       {report && !verified && bundle.rollout.mode==='pilot' && <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">{onVerifyPilot ? 'Đang chạy thử: bấm Duyệt (thí điểm) để khép ngày. Hệ thống đối chiếu số liệu với cách ghi cũ; tiến độ chính thức chưa thay đổi.' : 'Đang chạy thử: CHT chỉ đối chiếu số liệu với cách ghi cũ. Tiến độ chính thức không thay đổi và bản tổng hợp vẫn ở trạng thái chờ duyệt.'}</p>}
       {report && periodLocked && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">Kỳ tiến độ đang khóa. <Link to={reopenUrl} className="inline-flex min-h-11 items-center font-medium underline">Mở Tiến độ thực tế</Link> để mở lại tuần trước khi xử lý.</p>}
@@ -442,6 +461,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
             </span>}
           </>;
         }} />
+        {delaySection}
         {sharedGroups.length > 0 && <section className="space-y-2">
           <h2 className="text-sm font-bold text-foreground">Hạng mục nhiều mũi cùng báo · số liệu chốt</h2>
           <p className="text-xs text-muted-foreground">{sharedGroups.length} hạng mục có từ 2 mũi cùng báo. Đây là % / khối lượng người tổng hợp đã chốt để ghi tiến độ.</p>
@@ -466,6 +486,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
           {cards.length === 0 ? <p className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">Chưa chọn phiếu. Mở “Chọn phiếu để tổng hợp” ở trên để bắt đầu.</p> : <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">{areaCards}</div>}
         </section>
         {wbsTable}
+        {delaySection}
         {warningCount > 0 && <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có phiếu cần sửa, gửi lại hoặc thiếu nguồn. Xử lý đúng phiếu trước khi gửi. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa chốt. Có thể lưu tổng hợp để tiếp tục sau; chưa thể gửi CHT.` : ''}</span></p>}
       </>}
     </div>
