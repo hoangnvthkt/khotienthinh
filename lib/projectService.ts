@@ -214,8 +214,15 @@ const loadProjectRowsByChunkedValue = async (input: {
     return rows;
 };
 
+// Phụ thuộc lưu trong DB dạng { task_id, type }; giao diện và đường găng đọc taskId (fromDb ở đây không đổi khóa lồng).
+const normalizeTaskDependencies = (value: unknown): ProjectTask['dependencies'] => Array.isArray(value)
+    ? value.filter(dep => dep && typeof dep === 'object' && (dep.taskId || dep.task_id))
+        .map(dep => ({ taskId: String(dep.taskId ?? dep.task_id), type: dep.type || 'FS' }))
+    : undefined;
+
 const taskFromDb = (row: any): ProjectTask => ({
     ...fromDb(row),
+    dependencies: normalizeTaskDependencies(row.dependencies),
     order: row.sort_order ?? row.order ?? 0,
 });
 
