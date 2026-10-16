@@ -20,6 +20,8 @@ export interface MatchedLine<T extends CatalogItem = CatalogItem> extends TextLi
   specGuess: string | null;
   /** Đơn vị trên câu khác đơn vị của mã (không tự quy đổi). */
   unitMismatch: boolean;
+  /** Lệch đơn vị nhưng chữ của dòng có sẵn số theo đơn vị của mã ("3 cây · 6300 kg", mã tính Kg) → dùng số này. */
+  qtyFromText: number | null;
 }
 
 export const fold = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[φø∅Φ]/g, 'phi');
@@ -189,6 +191,24 @@ export const leftoverSpec = (query: string, itemName: string): string | null => 
   return s && s.length <= 80 ? s : null;
 };
 
+/** Ghi chú chỉ là số đo ("Trọng lượng tạm tính 6300 kg", "702kg") — không phải lý do / mục đích. */
+export const isMeasureNote = (note: string | null | undefined) =>
+  Boolean(note && new RegExp(`(^|\\s|[a-zà-ỹ])${NUM}\\s*(?:${UNIT_WORDS})\\b`, 'i').test(note) && !/\b(cho|để|de|làm|lam|dùng|dung)\b/i.test(note));
+
+/** Số lượng theo đơn vị của mã tìm thấy trong chữ của dòng ("6300 kg" khi mã tính Kg). Không thấy thì null. */
+export const qtyInUnit = (line: Pick<TextLine, 'note' | 'raw' | 'spec'>, unit: string | null | undefined): number | null => {
+  const want = unitKey(unit);
+  if (!want) return null;
+  const re = new RegExp(`(${NUM})\\s*(${UNIT_WORDS})(?![a-zà-ỹ0-9])`, 'gi');
+  for (const text of [line.note, line.spec, line.raw]) {
+    for (const m of String(text || '').matchAll(re)) {
+      const q = parseViNumber(m[1]);
+      if (q != null && q > 0 && unitKey(m[2]) === want) return q;
+    }
+  }
+  return null;
+};
+
 export const matchLines = <T extends CatalogItem>(lines: TextLine[], items: T[], opts: { boost?: Set<string> } = {}): MatchedLine<T>[] =>
   lines.map(raw => {
     let line: TextLine = raw;
@@ -202,7 +222,11 @@ export const matchLines = <T extends CatalogItem>(lines: TextLine[], items: T[],
     // Chọn sẵn khi đủ chắc và cùng đơn vị; lệch đơn vị thì người dùng chọn (không tự quy đổi cây ↔ mét).
     // Tên trùng khít (điểm 1) mà mã thứ hai không khít thì chọn luôn: "Ống PPR 25" thắng "Ống tránh PPR 25".
     const exact = a && a.score >= 0.999 && (!b || b.score < 0.999);
-    const pick = a && a.score >= 0.75 && (exact || !b || a.score - b.score >= 0.1) && !unitDiff(a.item) ? a.item : null;
+    // Đơn vị phân định: phiếu ghi "cây", mã đầu tính Cây còn mã sau tính Kg (Thép XD D16 / Thép tròn trơn D16) → chọn mã đầu.
+    const unitDecides = Boolean(a && b && line.unit && !unitDiff(a.item) && unitDiff(b.item) && a.score - b.score >= 0.05);
+    // Lệch đơn vị mà dòng có sẵn số theo đơn vị của mã (thép D8: phiếu ghi 3 cây, khối lượng 6300 kg; mã tính Kg) → vẫn chọn được.
+    const altQty = a && unitDiff(a.item) ? qtyInUnit(line, a.item.unit) : null;
+    const pick = a && a.score >= 0.75 && (exact || unitDecides || !b || a.score - b.score >= 0.1) && (!unitDiff(a.item) || altQty != null) ? a.item : null;
     const chosen = pick || a?.item || null;
     const { alt: _alt, ...rest } = line;
     return {
@@ -210,5 +234,6 @@ export const matchLines = <T extends CatalogItem>(lines: TextLine[], items: T[],
       // Quy cách AI tách riêng hoặc phần chữ thừa của tên — bỏ nếu tên mã đã có ("10" với "Đinh sắt 10cm").
       specGuess: chosen ? leftoverSpec(line.spec || line.name, chosen.name) : line.spec,
       unitMismatch: unitDiff(chosen || undefined),
+      qtyFromText: chosen && unitDiff(chosen) ? qtyInUnit(line, chosen.unit) : null,
     };
   });

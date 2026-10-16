@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchLines, parseRequestText, parseSegment, parseViNumber, rankItems, scoreItem } from '../materialRequestText';
+import { isMeasureNote, matchLines, parseRequestText, parseSegment, parseViNumber, qtyInUnit, rankItems, scoreItem } from '../materialRequestText';
 import { SKILLS } from '../../supabase/functions/ai-gateway/skills';
 
 // Danh mục mẫu lấy theo tên mã thật (16/10/2026).
@@ -81,6 +81,31 @@ describe('Gõ nhanh đề xuất — dòng AI tách', () => {
     ], CATALOG);
     expect(a).toMatchObject({ pick: { name: 'Đá cắt 100' }, specGuess: null, note: 'tường rào' });
     expect(b).toMatchObject({ pick: { name: 'Ống PVC 110 C1' }, specGuess: 'PN10' });
+  });
+});
+
+describe('Gõ nhanh đề xuất — bảng thép (phiếu HANAKA 16/10, AI đọc ảnh)', () => {
+  const STEEL = [
+    ['s8', 'Thép XD D8', 'Kg'], ['s10', 'Thép XD D10', 'Cây'], ['s16', 'Thép XD D16', 'Cây'], ['r16', 'Thép tròn trơn D16', 'Kg'],
+  ].map(([id, name, unit]) => ({ id, name, unit, sku: id }));
+  const ai = (name: string, qty: number, note: string) => ({ name, spec: null, qty, unit: 'cây', note, raw: name });
+
+  it('đơn vị phân định: phiếu ghi cây → Thép XD (Cây) thắng Thép tròn trơn (Kg) dù điểm sát nhau', () => {
+    const [m] = matchLines([ai('Thép D16 CB500', 560, 'Trọng lượng tạm tính 10192 kg')], STEEL);
+    expect(m).toMatchObject({ pick: { name: 'Thép XD D16' }, specGuess: 'CB500', unitMismatch: false, qtyFromText: null });
+  });
+
+  it('lệch đơn vị nhưng dòng có số theo đơn vị của mã (3 cây · 6300 kg, mã tính Kg) → chọn và lấy 6300', () => {
+    const [m] = matchLines([ai('Thép D8 CB240', 3, 'Trọng lượng tạm tính 6300 kg')], STEEL);
+    expect(m).toMatchObject({ pick: { name: 'Thép XD D8' }, unitMismatch: true, qtyFromText: 6300 });
+    // Không có số theo đơn vị của mã thì không tự chọn.
+    expect(matchLines([ai('Thép D8 CB240', 3, 'móng M3')], STEEL)[0].pick).toBeNull();
+  });
+
+  it('ghi chú chỉ là số đo không phải lý do; tìm số theo đơn vị', () => {
+    expect([isMeasureNote('Trọng lượng tạm tính 6300 kg'), isMeasureNote('702kg'), isMeasureNote('đổ móng M3'), isMeasureNote('cho tổ 2 làm 5 m')]).toEqual([true, true, false, false]);
+    expect(qtyInUnit({ note: 'Trọng lượng tạm tính 21490.1 kg', raw: '', spec: null }, 'Kg')).toBe(21490.1);
+    expect(qtyInUnit({ note: 'Trọng lượng tạm tính 6300 kg', raw: '', spec: null }, 'Cây')).toBeNull();
   });
 });
 
