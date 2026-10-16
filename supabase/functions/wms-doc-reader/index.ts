@@ -115,7 +115,7 @@ Deno.serve(async request => {
   if (!target) return json({ code: 'AI_NOT_CONFIGURED', reason: linked.error ? 'connection_read_failed' : linked.data ? 'connection_without_key' : 'no_connection_no_secret' });
   const provider = target.kind; const model = target.model;
 
-  const { data: capture, error } = await user.from('wms_delivery_captures').select('id,status,photos,supplier_name,doc_no,doc_date,truck_no,lines').eq('id', body.captureId).maybeSingle();
+  const { data: capture, error } = await user.from('wms_delivery_captures').select('id,status,photos,supplier_name,supplier_tax_code,supplier_address,doc_no,doc_date,truck_no,lines').eq('id', body.captureId).maybeSingle();
   if (error || !capture) return json({ error: 'CAPTURE_NOT_FOUND' }, 404);
   if (capture.status === 'received' || capture.status === 'discarded') return json({ error: 'CAPTURE_LOCKED' }, 409);
   const photos = (Array.isArray(capture.photos) ? capture.photos : []).slice(0, 6) as Array<{ path?: string; mimeType?: string }>;
@@ -137,6 +137,8 @@ Deno.serve(async request => {
     // Không ghi đè ô người đã nhập: chỉ điền ô còn trống; dòng hàng chỉ điền khi phiếu chưa có dòng.
     const fill: Record<string, unknown> = { id: capture.id, ai: { provider, model, ms: Date.now() - started, readAt: new Date().toISOString(), result: read } };
     if (!capture.supplier_name && read.supplierName) fill.supplierName = read.supplierName;
+    if (!capture.supplier_tax_code && read.supplierTaxCode) fill.supplierTaxCode = read.supplierTaxCode;
+    if (!capture.supplier_address && read.supplierAddress) fill.supplierAddress = read.supplierAddress;
     if (!capture.doc_no && read.docNo) fill.docNo = read.docNo;
     if (!capture.doc_date && read.docDate) fill.docDate = read.docDate;
     if (!capture.truck_no && read.truckNo) fill.truckNo = read.truckNo;

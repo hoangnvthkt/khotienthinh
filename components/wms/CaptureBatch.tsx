@@ -160,14 +160,16 @@ export const CaptureBatchPanel: React.FC<{
             {it.thumb ? <img src={it.thumb} alt="" className="h-full w-full object-cover" /> : <FileText size={18} className="m-auto mt-4 text-teal-700" />}
             <span className="absolute left-0 top-0 rounded-br-md bg-black/55 px-1 text-[10px] font-semibold tabular-nums text-white">{i + 1}</span></span>
           <span className="min-w-0 flex-1">
-            <span className={`block truncate ${c?.supplierName ? ENT : 'text-sm text-muted-foreground'}`}>{c?.supplierName || 'Phiếu giao'}</span>
+            <span className={`block truncate ${c?.supplierName ? ENT : 'text-sm text-muted-foreground'}`}>{c?.supplierPartnerName || c?.supplierName || 'Phiếu giao'}</span>
             <span className="block truncate text-[12px] text-muted-foreground">{it.state === 'merged' ? `Trang của ảnh ${num(it.mergedInto || '')}`
               : it.error && (it.state === 'failed' || it.state === 'manual') ? it.error
               : [c?.docNo && `Số ${c.docNo}`, c?.truckNo, lines ? `${lines} dòng` : '', c && c.photos.length > 1 ? `${c.photos.length} trang` : ''].filter(Boolean).join(' · ') || '—'}</span>
             <span className="mt-1 flex items-center gap-1.5">
               {it.state === 'read' || it.state === 'upload' ? <Loader2 size={13} className="animate-spin text-teal-600" /> : null}
               {it.state === 'failed' ? <AlertTriangle size={13} className="text-amber-600" /> : null}
-              <Badge className={st.cls}>{st.label}</Badge></span>
+              <Badge className={st.cls}>{st.label}</Badge>
+              {c && it.state !== 'merged' && (c.supplierMatch === 'new' ? <Badge className={WARN}>NCC mới</Badge>
+                : !c.supplierId && c.supplierName && it.state === 'done' ? <Badge className={WARN}>Chưa khớp NCC</Badge> : null)}</span>
           </span>
           {canOpen && <ChevronRight size={16} className="shrink-0 text-muted-foreground" />}
         </button>
