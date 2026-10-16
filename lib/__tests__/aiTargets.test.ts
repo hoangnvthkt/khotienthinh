@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { envEntries, isSafeEndpoint, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
+import { envEntries, isSafeEndpoint, parseJsonLoose, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
 
 const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const clock = () => { let t = 1000; return () => (t += 210); };
@@ -73,5 +73,13 @@ describe('aiTargets — thử kết nối', () => {
     expect(other).toHaveBeenCalledTimes(1);
     expect(readBalance({ data: { balance: '88' } })).toBe(88);
     expect(readBalance({ nope: 1 })).toBeNull();
+  });
+
+  it('đọc JSON cổng chuẩn OpenAI bọc ```json (RevidAPI 16/10) hoặc có câu dẫn; không có object thì AI_BAD_JSON', () => {
+    const fenced = '```json\n{\n  "supplierName": "CÔNG TY TNHH XÂY DỰNG VÀ ĐTTM HỢP THÀNH",\n  "lines": [{ "name": "Bê tông M250", "unit": "m³", "qty": 7.5 }]\n}\n```';
+    expect(parseJsonLoose(fenced)).toMatchObject({ supplierName: 'CÔNG TY TNHH XÂY DỰNG VÀ ĐTTM HỢP THÀNH', lines: [{ qty: 7.5 }] });
+    expect(parseJsonLoose('Kết quả: {"a":1} xong')).toEqual({ a: 1 });
+    expect(() => parseJsonLoose('không có gì')).toThrow('AI_BAD_JSON');
+    expect(() => parseJsonLoose('{ hỏng')).toThrow('AI_BAD_JSON');
   });
 });

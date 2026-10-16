@@ -176,3 +176,12 @@ export const probe = async (target: Pick<AiTarget, 'kind' | 'baseUrl' | 'apiKey'
   }
   return done({ ok: true, httpStatus: res.status, models: ids.length, modelIds: ids.slice(0, 300), code: missing ? 'MODEL_NOT_FOUND' : null, balance });
 };
+
+/** Cổng chuẩn OpenAI (VD RevidAPI) hay bọc JSON trong ```json … ``` hoặc thêm câu dẫn: lấy đúng object đầu tiên. */
+export const parseJsonLoose = (text: string): unknown => {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { return JSON.parse(trimmed); } catch { /* cắt object */ }
+  const start = trimmed.indexOf('{'); const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('AI_BAD_JSON');
+  try { return JSON.parse(trimmed.slice(start, end + 1)); } catch { throw new Error('AI_BAD_JSON'); }
+};

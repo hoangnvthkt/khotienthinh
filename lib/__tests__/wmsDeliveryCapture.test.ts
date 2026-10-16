@@ -82,7 +82,10 @@ describe('máy chủ: chụp trước, đơn sau', () => {
   it('AI đổi được nhà cung cấp, chưa có khóa thì nhập tay', () => {
     const fn = read('supabase/functions/wms-doc-reader/index.ts');
     expect(fn).toContain("Deno.env.get('WMS_AI_PROVIDER')");
-    expect(fn).toContain("return json({ code: 'AI_NOT_CONFIGURED' })");
+    expect(fn).toContain("return json({ code: 'AI_NOT_CONFIGURED', reason:");
+    // Cổng chuẩn OpenAI (RevidAPI) bọc JSON trong ```json — đọc lỏng, không JSON.parse thẳng.
+    expect(fn).not.toContain("return JSON.parse(text)");
+    expect(fn).toContain("integration_secret_v1");
     expect(fn).toContain("fallbacks: 'default'");
     expect(read('supabase/config.toml')).toContain('[functions.wms-doc-reader]');
   });

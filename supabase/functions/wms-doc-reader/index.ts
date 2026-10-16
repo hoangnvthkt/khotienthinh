@@ -8,7 +8,7 @@
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import { DOC_PROMPT, DOC_SCHEMA, normalizeRead, type DocRead } from './prompt.ts';
-import { DEFAULT_BASE_URL, targetFromConnection, type AiTarget } from '../_shared/aiTargets.ts';
+import { DEFAULT_BASE_URL, parseJsonLoose, targetFromConnection, type AiTarget } from '../_shared/aiTargets.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
@@ -51,7 +51,7 @@ async function readWithAnthropic({ apiKey: key, model, baseUrl }: AiTarget, page
   if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
   const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
   if (!text) throw new Error('AI_EMPTY');
-  return JSON.parse(text);
+  return parseJsonLoose(text);
 }
 
 async function readWithGemini({ apiKey: key, model, baseUrl }: AiTarget, pages: Page[]): Promise<unknown> {
@@ -66,7 +66,7 @@ async function readWithGemini({ apiKey: key, model, baseUrl }: AiTarget, pages: 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('');
   if (!text) throw new Error('AI_EMPTY');
-  return JSON.parse(text);
+  return parseJsonLoose(text);
 }
 
 async function readWithOpenAI({ apiKey: key, model, baseUrl, kind }: AiTarget, pages: Page[]): Promise<unknown> {
@@ -85,7 +85,7 @@ async function readWithOpenAI({ apiKey: key, model, baseUrl, kind }: AiTarget, p
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error('AI_EMPTY');
-  return JSON.parse(text);
+  return parseJsonLoose(text);
 }
 
 Deno.serve(async request => {
@@ -111,7 +111,8 @@ Deno.serve(async request => {
   const target: AiTarget | null = (!linked.error && targetFromConnection(linked.data, 'fast'))
     || (env.key && ['anthropic', 'gemini', 'openai'].includes(env.provider)
       ? { kind: env.provider, baseUrl: DEFAULT_BASE_URL[env.provider], apiKey: env.key, model: env.model, source: 'secrets', name: env.provider } : null);
-  if (!target) return json({ code: 'AI_NOT_CONFIGURED' });
+  // reason giúp chẩn đoán (16/10: màn báo "Chưa bật AI" mà không rõ vì sao).
+  if (!target) return json({ code: 'AI_NOT_CONFIGURED', reason: linked.error ? 'connection_read_failed' : linked.data ? 'connection_without_key' : 'no_connection_no_secret' });
   const provider = target.kind; const model = target.model;
 
   const { data: capture, error } = await user.from('wms_delivery_captures').select('id,status,photos,supplier_name,doc_no,doc_date,truck_no,lines').eq('id', body.captureId).maybeSingle();

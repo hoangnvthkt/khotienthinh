@@ -265,9 +265,9 @@ export const KhoCapture: React.FC<{
     </div>
 
     {ai === 'reading' && <p className="flex items-center gap-2 rounded-xl bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-800 dark:bg-teal-950/40 dark:text-teal-200"><Loader2 size={15} className="animate-spin" />AI đang đọc phiếu…</p>}
-    {ai === 'off' && <p className="text-[12px] text-muted-foreground" title="Admin cấu hình khóa AI ở máy chủ để tự đọc phiếu">Chưa bật AI · nhập tay</p>}
+    {ai === 'off' && <p className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground" title="Admin gán kết nối AI ở Cài đặt → Kết nối để tự đọc phiếu">Chưa bật AI · nhập tay<button type="button" onClick={() => void read(cap)} className="inline-flex items-center gap-1 font-semibold text-teal-700 hover:underline dark:text-teal-300"><RefreshCw size={12} />Đọc lại</button></p>}
     {ai === 'failed' && <p className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" title={aiErr}>
-      <AlertTriangle size={15} />AI chưa đọc được · nhập tay<button type="button" onClick={() => void read(cap)} className="ml-auto inline-flex items-center gap-1 font-semibold hover:underline"><RefreshCw size={13} />Đọc lại</button></p>}
+      <AlertTriangle size={15} />AI chưa đọc được{aiErr ? `: ${aiErr}` : ''} · nhập tay<button type="button" onClick={() => void read(cap)} className="ml-auto inline-flex items-center gap-1 font-semibold hover:underline"><RefreshCw size={13} />Đọc lại</button></p>}
     {ai === 'done' && (lowCount > 0 || warnings.length > 0) && <div className={`rounded-xl border px-3 py-2 text-sm ${WARN}`}>
       <p className="flex items-center gap-2 font-semibold"><Sparkles size={14} />AI đã đọc{lowCount > 0 && ` · ${lowCount} ô vàng cần xem lại`}</p>
       {warnings.length > 0 && <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px]">{warnings.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}</ul>}</div>}
