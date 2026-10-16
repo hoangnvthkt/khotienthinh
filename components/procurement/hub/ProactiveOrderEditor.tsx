@@ -86,24 +86,28 @@ const fromOrder = (order: ProcurementOrderDetail): Line[] => {
   });
 };
 
+/** Lập đơn từ phiếu giao chờ (Mua hàng · Phiếu giao chờ): điền sẵn NCC + ghi chú số phiếu. */
+export interface ProactiveOrderSeed { vendor: { id: string; name: string }; note: string }
+
 export const ProactiveOrderEditor: React.FC<{
   order?: ProcurementOrderDetail | null;
+  seed?: ProactiveOrderSeed;
   onClose: () => void;
   onSaved: (purchaseOrderId: string, poNumber: string) => void;
-}> = ({ order = null, onClose, onSaved }) => {
+}> = ({ order = null, seed, onClose, onSaved }) => {
   const [projects, setProjects] = useState<ProcurementProactiveProject[] | null>(null);
   const [stockWarehouses, setStockWarehouses] = useState<Array<{ id: string; name: string }>>([]);
   const [purpose, setPurpose] = useState<'project' | 'stock'>(order?.proactive?.purpose === 'stock' ? 'stock' : 'project');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState(order?.projectId || '');
   const [warehouseId, setWarehouseId] = useState(order?.targetWarehouseId || '');
-  const [vendor, setVendor] = useState<VendorValue>(order?.vendorId ? { id: order.vendorId, name: order.vendorName || '' } : null);
+  const [vendor, setVendor] = useState<VendorValue>(order?.vendorId ? { id: order.vendorId, name: order.vendorName || '' } : seed?.vendor || null);
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
   const [orderDate, setOrderDate] = useState(order?.orderDate || vnToday());
   const [orderDateTouched, setOrderDateTouched] = useState(false);
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
-  const [note, setNote] = useState(order?.note || '');
+  const [note, setNote] = useState(order?.note || seed?.note || '');
   const [reasonCode, setReasonCode] = useState<ProcurementProactiveReason | ''>(order?.proactive?.reasonCode || '');
   const [reason, setReason] = useState(order?.proactive?.reason || '');
   const [overReason, setOverReason] = useState(order?.proactive?.overBoqReason || '');

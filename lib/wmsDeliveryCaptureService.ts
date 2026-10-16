@@ -39,6 +39,8 @@ const ERRORS: Record<string, string> = {
   CAPTURE_DUPLICATE: 'Phiếu giao này (cùng số phiếu, xe, ngày) đã nhận vào đơn rồi.',
   CAPTURE_PO_LINE_INVALID: 'Dòng đơn không còn trong đơn — tải lại gợi ý.',
   CAPTURE_LINES_REQUIRED: 'Chưa có dòng nào có số lượng nhận.',
+  PARTNER_NAME_REQUIRED: 'Nhập tên NCC.',
+  PROCUREMENT_VIEW_DENIED: 'Bạn chưa có quyền xem Mua hàng.',
   CAPTURE_SUPPLIER_INVALID: 'NCC không còn trong danh mục — chọn lại.',
   CAPTURE_PAYLOAD_INVALID: 'Dữ liệu phiếu không hợp lệ.',
   CAPTURE_NO_PHOTO: 'Phiếu chưa có ảnh.',
@@ -112,12 +114,34 @@ const waitForRead = async (capture: DeliveryCapture, since: number, tries = 6, g
   return null;
 };
 
+/** Mua hàng nhận phiếu giao chờ: supplier = cần tạo / chọn NCC, order = đã biết NCC nhưng chưa có đơn mở về kho. */
+export type CaptureQueueItem = DeliveryCapture & { queue: 'supplier' | 'order'; warehouseName: string };
+export interface CaptureQueue { canManage: boolean; today: string; items: CaptureQueueItem[] }
+/** Tạo NCC trùng với NCC đang có (MST trùng / tên rất giống) — Mua hàng chọn NCC đó hoặc vẫn tạo. */
+export class PartnerDuplicateError extends Error {
+  constructor(public partner: { id: string; name: string; reason: 'tax' | 'learned' | 'name' }) { super('PARTNER_DUPLICATE'); }
+}
+
 export const wmsDeliveryCaptureService = {
   list: (warehouseId?: string) => rpc<DeliveryCapture[]>('list_delivery_captures_v1', { p: warehouseId ? { warehouseId } : {} }),
   create: (warehouseId: string) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { newId: uid(), warehouseId } }),
   save: (id: string, patch: CaptureSavePatch) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { id, ...patch } }),
   discard: (id: string, reason: string) => rpc<DeliveryCapture>('discard_delivery_capture_v1', { p: { id, reason } }),
   suppliers: (captureId: string, q?: string) => rpc<CaptureSupplierOption[]>('suggest_capture_suppliers_v1', { p: q ? { captureId, q } : { captureId } }),
+  queue: () => rpc<CaptureQueue>('list_capture_queue_v1', {}),
+  resolveSupplier: (captureId: string, supplierId: string) => rpc<DeliveryCapture & { linked: number }>('resolve_capture_supplier_v1', { p: { captureId, supplierId } }),
+  async createSupplier(input: { captureId: string; name: string; taxCode?: string; address?: string; force?: boolean }): Promise<DeliveryCapture & { linked: number; partnerCode: string }> {
+    const { data, error } = await supabase.rpc('create_supplier_from_capture_v1', { p: input });
+    if (error) {
+      if (error.message?.includes('PARTNER_DUPLICATE')) {
+        let partner = { id: '', name: '', reason: 'name' as const };
+        try { partner = JSON.parse(error.details || '{}'); } catch { /* chi tiết hỏng: báo chung */ }
+        throw new PartnerDuplicateError(partner);
+      }
+      throw new Error(captureErrorMessage(error));
+    }
+    return data as DeliveryCapture & { linked: number; partnerCode: string };
+  },
   suggest: (id: string) => rpc<CaptureSuggestion[]>('suggest_capture_orders_v1', { p_capture_id: id }),
   receive: (input: { captureId: string; purchaseOrderId: string; lines: Array<{ captureIndex: number; poLineId: string; qty: number }> }) =>
     rpc<DeliveryCapture>('receive_capture_v1', { p: input }),

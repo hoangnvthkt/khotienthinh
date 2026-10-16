@@ -17,7 +17,8 @@ import { dateVi, fmt, useGroupAccordion } from '../../project/work-plan/workPlan
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from './hubUi';
 import { OrderDrawer } from './OrderDrawer';
 import { OrderEditor } from './OrderEditor';
-import { ProactiveOrderEditor } from './ProactiveOrderEditor';
+import { ProactiveOrderEditor, type ProactiveOrderSeed } from './ProactiveOrderEditor';
+import { CaptureQueueView, useCaptureQueue } from './CaptureQueueView';
 import { OrdersView } from './OrdersView';
 import { ContractsView } from './ContractsView';
 import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView';
@@ -372,7 +373,9 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const askReason = useReasonConfirm();
   const { items, warehouses } = useApp();
   const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : initialMode === 'orders' && initialProjectId ? 'ordered' : 'intake');
-  const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile'>(initialContractId || initialMode === 'contracts' ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
+  const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile' | 'captures'>(initialContractId || initialMode === 'contracts' ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'captures' ? 'captures' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
+  // Phiếu giao thủ kho chụp mà chưa nhận được: NCC mới / chưa có đơn (chủ SP 16/10).
+  const capQueue = useCaptureQueue();
   const [hotPrefill, setHotPrefill] = useState<HotPurchasePrefill | null>(null);
   const [filter, setFilter] = useState<Required<ProcurementInboxFilter>>(EMPTY_FILTER);
   const [searchText, setSearchText] = useState('');
@@ -384,7 +387,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [openSnap, setOpenSnap] = useState<ProcurementInboxDocument | null>(null);
   const [editor, setEditor] = useState<{ sources: ProcurementSourceRef[]; order: ProcurementOrderDetail | null; lineKeys?: string[] } | null>(null);
-  const [proactive, setProactive] = useState<{ order: ProcurementOrderDetail | null } | null>(null);
+  const [proactive, setProactive] = useState<{ order: ProcurementOrderDetail | null; seed?: ProactiveOrderSeed } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(initialOrderId);
   const [ordersReload, setOrdersReload] = useState(0);
 
@@ -496,11 +499,15 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
         : !inbox ? <StateBox kind="loading" title="Đang tải nhu cầu mua hàng…" />
           : <>
             <div className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Hình thức mua">
-              {([['orders', 'Đơn hàng (PO)'], ['contracts', 'Hợp đồng nguyên tắc'], ['hot', 'Mua nóng'], ['reconcile', 'Đối chiếu nhận hàng']] as const).map(([k, l]) =>
-                <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
-                  className={`whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>)}
+              {([['orders', 'Đơn hàng (PO)'], ['contracts', 'Hợp đồng nguyên tắc'], ['hot', 'Mua nóng'], ['reconcile', 'Đối chiếu nhận hàng'], ['captures', 'Phiếu giao chờ']] as const).map(([k, l]) => {
+                const n = k === 'captures' ? capQueue.queue?.items.length || 0 : 0;
+                return <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => { setMode(k); if (k === 'captures') void capQueue.load(); }}
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>{l}
+                  {n > 0 && <span className={`rounded-full px-1.5 text-xs tabular-nums ${mode === k ? 'bg-white/20' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-100'}`}>{n}</span>}</button>; })}
             </div>
-            {mode === 'reconcile' ? <ReceiptReconciliationView currentUserId={currentUserId} />
+            {mode === 'captures' ? <CaptureQueueView queue={capQueue.queue} error={capQueue.error} onReload={capQueue.load}
+                onCreateOrder={seed => setProactive({ order: null, seed })} />
+              : mode === 'reconcile' ? <ReceiptReconciliationView currentUserId={currentUserId} />
               : mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} prefill={hotPrefill} onPrefillUsed={() => setHotPrefill(null)} showSettings />
               : mode === 'contracts' ? <ContractsView projects={inbox.projects} warehouses={warehouses} initialContractId={initialContractId} currentUserId={currentUserId} /> : <>
             <StageStrip inbox={inbox} stage={stage} onStage={setStage} />
@@ -615,7 +622,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
         setEditor(null); setSelected(new Set()); setOpenSnap(null); setOrderId(id); refreshAll();
       }} />}
 
-    {proactive && <ProactiveOrderEditor order={proactive.order} onClose={() => setProactive(null)}
+    {proactive && <ProactiveOrderEditor order={proactive.order} seed={proactive.seed} onClose={() => setProactive(null)}
       onSaved={(id, poNumber) => {
         toast.success(proactive.order ? `Đã lưu ${poNumber}` : `Đã lập đơn chủ động nháp ${poNumber}`, 'Chọn người duyệt rồi bấm Gửi duyệt.');
         setProactive(null); setStage('drafting'); setOrderId(id); refreshAll();
