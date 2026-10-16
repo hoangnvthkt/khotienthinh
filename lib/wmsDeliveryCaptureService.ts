@@ -35,6 +35,18 @@ const ERRORS: Record<string, string> = {
   CAPTURE_PO_LINE_INVALID: 'Dòng đơn không còn trong đơn — tải lại gợi ý.',
   CAPTURE_LINES_REQUIRED: 'Chưa có dòng nào có số lượng nhận.',
   CAPTURE_PAYLOAD_INVALID: 'Dữ liệu phiếu không hợp lệ.',
+  CAPTURE_NO_PHOTO: 'Phiếu chưa có ảnh.',
+  PHOTO_READ_FAILED: 'Không mở được ảnh phiếu.',
+  PHOTO_TOO_LARGE: 'Ảnh quá lớn (trên 8 MB).',
+  AI_BAD_JSON: 'AI trả kết quả không đúng dạng.',
+  AI_PDF_UNSUPPORTED: 'Kết nối AI này chưa đọc PDF — chụp ảnh phiếu.',
+  AI_MODEL_REQUIRED: 'Kết nối AI chưa chọn model.',
+  AI_HTTP_401: 'Sai khóa AI — kiểm tra ở Cài đặt → Kết nối.',
+  AI_HTTP_402: 'Hết credit nhà cung cấp AI.',
+  AI_HTTP_429: 'Nhà cung cấp AI đang giới hạn — thử lại sau.',
+  AI_REFUSED: 'AI từ chối đọc ảnh này.',
+  AI_EMPTY: 'AI không trả kết quả.',
+  AI_FAILED: 'AI chưa đọc được phiếu.',
 };
 
 export const captureErrorMessage = (e: unknown, fallback = 'Chưa lưu được phiếu giao.') => {
@@ -123,15 +135,17 @@ export const wmsDeliveryCaptureService = {
   async read(id: string): Promise<CaptureReadResult> {
     const { data, error } = await supabase.functions.invoke('wms-doc-reader', { body: { captureId: id } });
     if (error) {
-      // Hàm chưa triển khai (404) cũng coi như chưa bật AI.
-      const status = (error as { context?: { status?: number } }).context?.status;
-      if (status === 404) return { code: 'AI_NOT_CONFIGURED' };
-      return { code: 'AI_FAILED', error: captureErrorMessage(error, 'AI chưa đọc được phiếu.') };
+      const ctx = (error as { context?: Response }).context;
+      let code = '';
+      try { code = (await ctx?.clone?.().json?.())?.error || ''; } catch { code = ''; }
+      // Chỉ 404 không kèm mã lỗi (hàm chưa triển khai) mới là "chưa bật AI"; 404 CAPTURE_NOT_FOUND… là lỗi thật, phải báo.
+      if (ctx?.status === 404 && !code) return { code: 'AI_NOT_CONFIGURED' };
+      return { code: 'AI_FAILED', error: captureErrorMessage(code ? new Error(code) : error, 'AI chưa đọc được phiếu.') };
     }
     const out = data as { code?: string; capture?: DeliveryCapture; error?: string };
     if (out?.code === 'OK' && out.capture) return { code: 'OK', capture: out.capture };
     if (out?.code === 'AI_NOT_CONFIGURED') return { code: 'AI_NOT_CONFIGURED' };
-    return { code: 'AI_FAILED', error: out?.error || 'AI_FAILED' };
+    return { code: 'AI_FAILED', error: captureErrorMessage(new Error(out?.error || ''), 'AI chưa đọc được phiếu.') };
   },
 };
 
