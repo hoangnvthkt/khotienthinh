@@ -216,6 +216,7 @@ const aiCalls: Array<Record<string, unknown>> = [];
 const aiStatus = (configured: boolean) => ({
   deployed: true, configured, provider: 'gemini' as const, providerSource: 'AI_PROVIDER' as const, models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
   keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['center_question', 'morning_brief'],
+  targets: { fast: null, reasoning: null },
 });
 const assistantHooks: AssistantHooks = {
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI === 'gemini')), 40)),

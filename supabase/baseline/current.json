@@ -323,7 +323,8 @@
     "20261014100000_purchase_receipt_guards.sql",
     "20261015100000_progress_single_source.sql",
     "20261015180000_progress_actual_dates_from_log.sql",
-    "20261015200000_project_schedule_changes.sql"
+    "20261015200000_project_schedule_changes.sql",
+    "20261016090000_integration_connections.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -21,7 +21,8 @@ const OVERVIEW = {
   ],
 };
 const STATUS_NO_KEY = { code: 'OK', configured: false, provider: 'anthropic', providerSource: 'default', models: { fast: 'claude-haiku-5-5', reasoning: 'claude-opus-5-5' }, keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['text_summary', 'gateway_check'] };
-const STATUS_GEMINI = { ...STATUS_NO_KEY, configured: true, provider: 'gemini', providerSource: 'AI_PROVIDER', models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' } };
+const STATUS_GEMINI = { ...STATUS_NO_KEY, configured: true, provider: 'gemini', providerSource: 'connection', models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
+  targets: { fast: { source: 'connection', name: 'Gemini chính', kind: 'gemini', label: 'Google (Gemini)', model: 'gemini-2.5-flash' }, reasoning: { source: 'secrets', name: 'Gemini (Secrets)', kind: 'gemini', label: 'Google (Gemini)', model: 'gemini-2.5-pro' } } };
 
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -91,7 +92,8 @@ test('đã cấu hình Gemini: hiện nhà cung cấp và model; Thử kết n�
   await mock(page, { status: STATUS_GEMINI, run: { code: 'OK', runId: 'r1', result: { ok: true, note: 'Xin chào từ Gemini' }, model: 'gemini-2.5-flash', provider: 'gemini', usage: { tokensIn: 40, tokensOut: 12, costUsd: null, durationMs: 640 } }, calls });
   await page.goto(base);
   await expect(page.getByText('Đang dùng Google (Gemini)')).toBeVisible();
-  await expect(page.getByText('Model nhanh:')).toContainText('gemini-2.5-flash · suy luận: gemini-2.5-pro');
+  await expect(page.getByText('Model nhanh:')).toContainText('gemini-2.5-flash · kết nối Gemini chính');
+  await expect(page.getByText('Model suy luận:')).toContainText('gemini-2.5-pro · Secrets');
   await expect(page.getByText(/AI_PRICE_IN_PER_M/)).toBeVisible();
   await page.getByRole('button', { name: 'Thử kết nối' }).click();
   await expect(page.getByTestId('check-result')).toHaveText('OK · gemini-2.5-flash · 640 ms · Xin chào từ Gemini');

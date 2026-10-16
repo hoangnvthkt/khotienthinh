@@ -19,7 +19,8 @@ const STATUS_TONE: Record<string, string> = {
   refused: 'border-rose-200 bg-rose-50 text-rose-700', error: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 const chip = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold';
-const SKILL_SOURCE_LABEL: Record<string, string> = { AI_PROVIDER: 'AI_PROVIDER', WMS_AI_PROVIDER: 'WMS_AI_PROVIDER (dùng chung Kho)', default: 'mặc định', unknown: '' };
+const SKILL_SOURCE_LABEL: Record<string, string> = { AI_PROVIDER: 'AI_PROVIDER', WMS_AI_PROVIDER: 'WMS_AI_PROVIDER (dùng chung Kho)', default: 'mặc định', connection: 'Cài đặt → Kết nối', unknown: '' };
+const targetText = (t: AiGatewayStatus['targets']['fast']) => t ? `${t.model || '—'} · ${t.source === 'connection' ? `kết nối ${t.name}` : 'Secrets'}` : '—';
 
 const Card: React.FC<{ title: string; icon: React.ElementType; right?: React.ReactNode; children: React.ReactNode }> = ({ title, icon: Icon, right, children }) =>
   <section className="rounded-2xl border border-border bg-card shadow-sm" aria-label={title}>
@@ -137,11 +138,12 @@ const SettingsAiGateway: React.FC = () => {
                     Nhà cung cấp: <b className="text-foreground">{AI_PROVIDER_LABELS[status.provider]}</b>
                     {SKILL_SOURCE_LABEL[status.providerSource] ? <span> · {SKILL_SOURCE_LABEL[status.providerSource]}</span> : null}
                   </p>
-                  <p className="text-muted-foreground">Model nhanh: <b className="text-foreground">{status.models.fast || '—'}</b> · suy luận: <b className="text-foreground">{status.models.reasoning || '—'}</b></p>
+                  <p className="text-muted-foreground">Model nhanh: <b className="text-foreground">{targetText(status.targets.fast)}</b></p>
+                  <p className="text-muted-foreground">Model suy luận: <b className="text-foreground">{targetText(status.targets.reasoning)}</b></p>
                   <p className="text-muted-foreground">Khóa có sẵn trong secrets: <b className="text-foreground">{keys.length ? keys.map(k => AI_PROVIDER_LABELS[k]).join(', ') : 'chưa có'}</b></p>
                   {!status.configured && (
                     <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-                      Để bật: đặt <code className="font-mono">ANTHROPIC_API_KEY</code>{status.keysPresent.gemini ? <>, hoặc <code className="font-mono">AI_PROVIDER=gemini</code> để dùng khóa Gemini có sẵn</> : null} trong Supabase → Edge Functions → Secrets, rồi bấm Thử kết nối.
+                      Để bật: thêm kết nối ở <b>Cài đặt → Kết nối</b> rồi gán cho Trợ lý{status.keysPresent.gemini ? <>, hoặc đặt <code className="font-mono">AI_PROVIDER=gemini</code> trong Secrets để dùng khóa Gemini có sẵn</> : null}.
                     </p>
                   )}
                   {status.configured && !status.priceKnown && <p className="text-xs text-muted-foreground">Chi phí mỗi lượt sẽ hiện "—" cho tới khi đặt <code className="font-mono">AI_PRICE_IN_PER_M</code> / <code className="font-mono">AI_PRICE_OUT_PER_M</code> (USD mỗi triệu token).</p>}
