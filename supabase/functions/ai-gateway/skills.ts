@@ -183,7 +183,71 @@ const mrPhotoLines: SkillDef = {
   summary: (input, output) => `đọc ${input.pages} ảnh phiếu đề xuất → ${(output.lines as unknown[]).length} dòng, ${(output.warnings as unknown[]).length} cảnh báo`,
 };
 
+// Mua hàng · Lập đơn chủ động từ báo giá (chủ SP 16/10): ảnh báo giá / bảng kê / tin Zalo của NCC → dòng như file Excel nhập đơn.
+// Khớp mã + quy đổi đơn vị mua ↔ kho làm ở màn xem trước của "Nhập từ Excel" (lib/procurementExcelImport). Không đặt giá thay người.
+const quoteInput = (raw: unknown): { text: string; images: ImagePart[] } => {
+  const o = asObject(raw);
+  const text = clampText(o.text, 6000).trim();
+  const images = Array.isArray(o.images) && o.images.length ? mrImages(raw) : [];
+  if (!images.length && text.length < 10) throw new Error('AI_BAD_INPUT');
+  return { text, images };
+};
+const QUOTE_LINE_SCHEMA = { type: 'object', additionalProperties: false, required: ['sku', 'name', 'spec', 'unit', 'qty', 'unitPrice', 'amount', 'note'], properties: {
+  sku: { type: ['string', 'null'] }, name: { type: 'string' }, spec: { type: ['string', 'null'] }, unit: { type: ['string', 'null'] },
+  qty: { type: ['number', 'null'] }, unitPrice: { type: ['number', 'null'] }, amount: { type: ['number', 'null'] }, note: { type: ['string', 'null'] },
+} };
+/** Số AI trả (thường là number; chuỗi thì nhận kiểu Việt "21.490,1" / "14.930" và kiểu Anh "21,490.1"). */
+const numOrNull = (v: unknown) => {
+  let n = typeof v === 'number' ? v : NaN;
+  if (typeof v === 'string' && !/^\s*-/.test(v)) {
+    let t = v.replace(/[^\d.,]/g, '');
+    const dot = t.lastIndexOf('.'); const comma = t.lastIndexOf(',');
+    if (dot >= 0 && comma >= 0) t = comma > dot ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+    else if (comma >= 0) t = /^\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, '') : t.replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    n = t ? Number(t) : NaN;
+  }
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+const poQuoteLines: SkillDef = {
+  code: 'po_quote_lines',
+  maxInputChars: 6000,
+  maxOutputTokens: 4000,
+  parseInput: raw => { const q = quoteInput(raw); return { text: q.text, pages: String(q.images.length) }; },
+  images: raw => quoteInput(raw).images,
+  system: 'Đọc báo giá / bảng kê / phiếu đặt hàng của nhà cung cấp (ảnh chụp, ảnh màn hình Excel, chữ dán từ Zalo) để lập đơn mua. Lấy mọi dòng hàng, giữ thứ tự; bỏ dòng tiêu đề nhóm, dòng cộng, thuế, chữ ký. name: tên hàng như trên báo giá; spec: quy cách / mác / thương hiệu (tên nhóm như "Thép Shengli CB500" ghi vào spec nếu dòng không ghi); sku: mã hàng nếu có. QUAN TRỌNG: qty và unit là số lượng theo ĐÚNG đơn vị mà đơn giá áp dụng (thép bán theo kg thì qty = trọng lượng kg, unit "kg"); số cây / tấm / bó kèm theo ghi vào note dạng "3115 cây". unitPrice: đơn giá chưa VAT; amount: thành tiền của dòng. Số: nhận ra kiểu Việt (1.234,5) hay kiểu Anh (1,234.5) theo cả bảng. Kiểm chéo qty × unitPrice với amount, lệch thì thêm warning (VD do khối lượng hiển thị làm tròn). vendorName, vendorTaxCode: bên BÁN (không lấy Tiến Thịnh). vatRate: % thuế VAT nếu ghi; subtotal, vatAmount, total: số trên báo giá. Không đọc được thì null — không đoán.',
+  user: input => `${input.text ? wrapData('bao_gia', input.text) + '\n' : ''}${Number(input.pages) ? `Ảnh: ${input.pages} trang báo giá.\n` : ''}Trả JSON: {"vendorName": null, "vendorTaxCode": null, "docNo": null, "docDate": null, "vatRate": null, "lines": [{"sku": null, "name": "<tên>", "spec": null, "unit": null, "qty": null, "unitPrice": null, "amount": null, "note": null}], "subtotal": null, "vatAmount": null, "total": null, "warnings": []}`,
+  schema: {
+    type: 'object', additionalProperties: false, required: ['vendorName', 'vendorTaxCode', 'docNo', 'docDate', 'vatRate', 'lines', 'subtotal', 'vatAmount', 'total', 'warnings'],
+    properties: {
+      vendorName: { type: ['string', 'null'] }, vendorTaxCode: { type: ['string', 'null'] }, docNo: { type: ['string', 'null'] }, docDate: { type: ['string', 'null'] },
+      vatRate: { type: ['number', 'null'] }, lines: { type: 'array', items: QUOTE_LINE_SCHEMA },
+      subtotal: { type: ['number', 'null'] }, vatAmount: { type: ['number', 'null'] }, total: { type: ['number', 'null'] }, warnings: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(Array.isArray(raw) ? raw[0] : raw);
+    const date = strOrNull(o.docDate, 10);
+    const vat = numOrNull(o.vatRate);
+    return {
+      vendorName: strOrNull(o.vendorName, 200), vendorTaxCode: strOrNull(o.vendorTaxCode, 20)?.replace(/[^0-9-]/g, '') || null,
+      docNo: strOrNull(o.docNo, 60), docDate: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
+      vatRate: vat != null && vat <= 100 ? vat : null,
+      lines: (Array.isArray(o.lines) ? o.lines : []).slice(0, 80).flatMap(l => {
+        const x = asObject(l); const name = strOrNull(x.name, 200);
+        if (!name) return [];
+        return [{ sku: strOrNull(x.sku, 40), name, spec: strOrNull(x.spec, 120), unit: strOrNull(x.unit, 20), qty: numOrNull(x.qty),
+          unitPrice: numOrNull(x.unitPrice), amount: numOrNull(x.amount), note: strOrNull(x.note, 200) }];
+      }),
+      subtotal: numOrNull(o.subtotal), vatAmount: numOrNull(o.vatAmount), total: numOrNull(o.total),
+      warnings: strings(o.warnings, 10).map(w => w.slice(0, 240)),
+    };
+  },
+  summary: (input, output) => `báo giá ${input.pages} ảnh + ${input.text.length} ký tự → ${(output.lines as unknown[]).length} dòng`,
+};
+
 export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
   [poReviewBrief.code]: poReviewBrief, [mrTextLines.code]: mrTextLines, [mrPhotoLines.code]: mrPhotoLines,
+  [poQuoteLines.code]: poQuoteLines,
 };

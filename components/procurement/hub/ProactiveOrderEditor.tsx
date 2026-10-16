@@ -11,7 +11,9 @@ import { SpecInput } from '../../material/SpecInput';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
 import PoExcelImport from './PoExcelImport';
-import type { ImportedPoLine } from '../../../lib/procurementExcelImport';
+import { nameSimilarity, type ImportedPoLine } from '../../../lib/procurementExcelImport';
+import type { QuoteMeta } from '../../../lib/procurementQuoteRead';
+import { useToast } from '../../../context/ToastContext';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { QuickCreateItemDialog } from '../../wms/QuickCreateItemDialog';
 import { wmsCatalogService } from '../../../lib/wmsCatalogService';
@@ -187,13 +189,30 @@ export const ProactiveOrderEditor: React.FC<{
   };
   const patch = (key: string, p: Partial<Line>) => setLines(cur => cur.map(l => l.key === key ? { ...l, ...p } : l));
   /** Từ Excel: vật tư mới thì thêm dòng, vật tư đã có thì cập nhật SL, đơn giá (và quy cách nếu file có). */
+  const toast = useToast();
+  // Báo giá AI đọc: VAT theo báo giá; chưa chọn NCC thì tìm NCC theo MST / tên trên báo giá (bỏ chữ chung "công ty", "TNHH"…).
+  const applyQuoteMeta = async (meta?: QuoteMeta) => {
+    if (!meta) return;
+    if (meta.vatRate != null && String(meta.vatRate) !== vat) { setVat(String(meta.vatRate)); setHeaderTouched(true); }
+    if (vendor || !(meta.vendorName || meta.vendorTaxCode)) return;
+    const query = meta.vendorTaxCode || (meta.vendorName || '').replace(/c[ôo]ng ty|tnhh|c[ổo] ph[ầa]n|\bcp\b|vi[ệe]t nam|th[ưu][ơo]ng m[ạa]i|d[ịi]ch v[ụu]|x[âa]y d[ựu]ng|s[ảa]n xu[ấa]t/gi, ' ').replace(/\s+/g, ' ').trim();
+    const found = query ? await procurementInboxService.vendors(query).catch(() => []) : [];
+    const tax = (meta.vendorTaxCode || '').replace(/\D/g, '');
+    const best = (tax && found.find(v => (v.taxCode || '').replace(/\D/g, '') === tax)) || found.find(v => nameSimilarity(v.name, meta.vendorName || '') >= 0.5);
+    if (best) { setVendor({ id: best.id, name: best.name }); toast.success('Đã chọn NCC theo báo giá', best.name); }
+    else toast.info('Chưa tìm thấy NCC trên báo giá', `${meta.vendorName || meta.vendorTaxCode} — chọn NCC ở ô Nhà cung cấp.`);
+  };
+
   const importLines = (imported: ImportedPoLine[]) => setLines(cur => {
     const next = [...cur];
-    imported.forEach(({ item, spec, stockQty, altUnit, price }) => {
+    imported.forEach(({ item, spec, stockQty, altUnit, purchaseQty, price }) => {
+      const factor = item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1;
+      // Báo giá ghi cả SL kho lẫn SL mua (thép: cây + kg) không khớp hệ số → giữ SL mua đã ghi để tiền đúng báo giá.
+      const keepPurchase = altUnit && purchaseQty != null && Math.abs(purchaseQty * factor - stockQty) > 0.002;
       const values = {
         // Đơn giá trong file đi theo ĐVT trong file → cách tính đơn vị của dòng phải theo file.
-        stockQty: qtyInput(stockQty), price: price == null ? '' : qtyInput(price), purchaseQty: '', altUnit,
-        ...(altUnit ? { purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1 } : {}),
+        stockQty: qtyInput(stockQty), price: price == null ? '' : qtyInput(price), purchaseQty: keepPurchase ? qtyInput(purchaseQty) : '', altUnit,
+        ...(altUnit ? { purchaseUnit: item.purchaseUnit || '', factor } : {}),
       };
       // File có quy cách → khớp đúng dòng cùng mã + quy cách, khác quy cách thì thêm dòng mới.
       const at = next.findIndex(l => l.itemId === item.id && (!spec || specKey(l.spec) === specKey(spec)));
@@ -372,7 +391,7 @@ export const ProactiveOrderEditor: React.FC<{
                     return [l.sku || '', l.name, l.spec, alt ? l.purchaseUnit : l.unit || '',
                       qty == null || Number.isNaN(qty) ? '' : alt ? purchaseQtyOf(l, qty) : qty, priceCell(l.price)];
                   })}
-                  onImport={importLines} />
+                  onImport={(imported, meta) => { importLines(imported); void applyQuoteMeta(meta); }} />
               </div>
               <div className="flex gap-2">
               <div className="relative min-w-0 flex-1">

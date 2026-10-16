@@ -1,6 +1,7 @@
 // Nhập danh sách vật tư từ Excel cho đơn mua (đơn chủ động): đọc file → khớp danh mục vật tư → quy đổi đơn vị.
 import type { ProcurementCatalogItem } from './procurementInboxService';
 import { normalizeHeader, parseLooseNumber, type TableImportResult } from './excelTableImport';
+import { qtyInUnit } from './materialRequestText';
 
 export const PO_IMPORT_COLUMNS = ['Mã vật tư', 'Tên vật tư', 'Quy cách', 'Đơn vị tính', 'Số lượng', 'Đơn giá'];
 /** Tên cột hay gặp trong báo giá / bảng kê. Không dùng từ quá ngắn ("mã", "giá") vì dễ khớp nhầm cột khác. */
@@ -18,6 +19,8 @@ export interface PoImportRow {
   index: number;
   sku: string; name: string; spec: string; unit: string;
   qty: number | null; price: number | null;
+  /** Ghi chú của dòng (báo giá AI đọc: "3115 cây" khi bán theo kg) — dùng để đối chiếu quy đổi. */
+  note?: string | null;
 }
 
 export const readPoImportRows = (result: TableImportResult): PoImportRow[] =>
@@ -42,16 +45,25 @@ export const nameSimilarity = (a: string, b: string): number => {
 export type MatchConfidence = 'sku' | 'name' | 'suggested';
 export interface CatalogMatch { item: ProcurementCatalogItem | null; confidence: MatchConfidence | null; options: ProcurementCatalogItem[] }
 
+/** Mác thép phân định loại: CB300 trở lên (vằn) không phải "tròn trơn"; CB240 là tròn trơn (TCVN 1651). */
+const steelGradePenalty = (text: string, itemName: string): number => {
+  const t = normalizeHeader(text); const n = normalizeHeader(itemName);
+  if (/\bcb ?[3-6]\d\d\b|\bsd ?\d{3}\b|\bvan\b/.test(t) && /tron tron/.test(n)) return 0.15;
+  if (/\bcb ?240\b/.test(t) && /\bvan\b/.test(n)) return 0.15;
+  return 0;
+};
+
 /** Chọn vật tư cho một dòng: trùng mã > trùng tên > tên gần giống (≥ 50% từ trùng). */
-export const pickCatalogMatch = (row: Pick<PoImportRow, 'sku' | 'name'>, candidates: ProcurementCatalogItem[]): CatalogMatch => {
+export const pickCatalogMatch = (row: Pick<PoImportRow, 'sku' | 'name'> & { spec?: string }, candidates: ProcurementCatalogItem[]): CatalogMatch => {
   const unique = Array.from(new Map(candidates.map(item => [item.id, item])).values());
   const sku = normalizeHeader(row.sku);
   if (sku) {
     const bySku = unique.find(item => normalizeHeader(item.sku) === sku);
     if (bySku) return { item: bySku, confidence: 'sku', options: [bySku] };
   }
+  const gradeText = `${row.name} ${row.spec || ''}`;
   const ranked = unique
-    .map(item => ({ item, score: nameSimilarity(row.name, item.name) }))
+    .map(item => ({ item, score: nameSimilarity(row.name, item.name) - steelGradePenalty(gradeText, item.name) }))
     .filter(entry => entry.score > 0)
     .sort((x, y) => y.score - x.score || Number(y.item.inBoq) - Number(x.item.inBoq));
   const options = ranked.slice(0, 6).map(entry => entry.item);
@@ -100,9 +112,17 @@ export const toImportedLine = (row: PoImportRow, item: ProcurementCatalogItem): 
   }
   if (row.qty == null || !(row.qty > 0)) warnings.push('Chưa có số lượng hợp lệ.');
   const qty = row.qty && row.qty > 0 ? row.qty : 0;
+  const converted = asPurchase ? Math.round(qty * factor * 1000) / 1000 : qty;
+  // Báo giá bán theo ĐV mua mà ghi kèm số theo ĐV kho ("21.490 kg · 3115 cây"): kho nhận theo số NCC ghi, tiền theo SL mua —
+  // không quy đổi lại theo hệ số danh mục (thép thiếu cân / barem khác). Lệch > 2% thì báo để người mua kiểm.
+  const stated = asPurchase && qty > 0 ? qtyInUnit({ note: row.note ?? null, spec: null, raw: '' }, item.unit) : null;
+  if (stated != null && converted > 0 && Math.abs(stated - converted) / stated > 0.02) {
+    const vi = (n: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
+    warnings.push(`Báo giá ghi ${vi(stated)} ${item.unit}; hệ số danh mục ra ${vi(converted)} ${item.unit} (lệch ${vi(Math.abs(stated - converted) / stated * 100)}%) — đơn lấy ${vi(stated)} ${item.unit} theo báo giá, kiểm barem / cân thực tế.`);
+  }
   return {
     item, spec: row.spec,
-    stockQty: asPurchase ? Math.round(qty * factor * 1000) / 1000 : qty,
+    stockQty: stated ?? converted,
     altUnit: asPurchase, purchaseQty: asPurchase ? qty : null,
     price: row.price != null && row.price >= 0 ? row.price : null,
     warnings, sourceRows: [row.index],
