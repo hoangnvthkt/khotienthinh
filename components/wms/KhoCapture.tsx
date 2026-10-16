@@ -403,7 +403,7 @@ export const CaptureButton: React.FC<{ onFiles: (files: File[]) => void; classNa
       className={className || primaryBtn}>{children || <><Camera size={15} />Chụp phiếu giao</>}</button>
     <input ref={albumRef} type="file" accept={CAPTURE_ACCEPT} multiple className="sr-only" tabIndex={-1} aria-hidden="true"
       onChange={e => { const list = Array.from(e.target.files || []); e.target.value = ''; if (list.length) onFiles(list); }} />
-    {menu && createPortal(<div className="fixed inset-0 z-[250]" onClick={() => setMenu(null)}>
+    {menu && createPortal(<div className="fixed inset-x-0 inset-y-0 z-[250]" onClick={() => setMenu(null)}>
       <div className="absolute inset-0 bg-black/30 sm:bg-transparent" />
       <div role="menu" aria-label="Chụp phiếu giao" onClick={e => e.stopPropagation()}
         style={window.innerWidth >= 640 ? { top: menu.bottom + 6, right: Math.max(8, window.innerWidth - menu.right) } : undefined}
