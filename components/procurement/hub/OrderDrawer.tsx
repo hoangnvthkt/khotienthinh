@@ -8,6 +8,7 @@ import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../..
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
 import { GroupSitesSection } from './GroupSitesSection';
+import { PoReviewCard } from './PoReviewCard';
 import { Badge, Drawer, PoPaymentChip, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 
 const EVENT_LABELS: Record<string, string> = {
@@ -83,6 +84,7 @@ export const OrderDrawer: React.FC<{
   const [returnToNeed, setReturnToNeed] = useState(true);
   const [payment, setPayment] = useState<ProcurementPoPayment | null>(null);
   const [prices, setPrices] = useState<ProcurementPoPriceSettlement[]>([]);
+  const [reviewShown, setReviewShown] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -188,7 +190,8 @@ export const OrderDrawer: React.FC<{
     </> : <h2 className="text-lg font-bold">Đơn hàng</h2>}>
     {order?.requestSource?.kind === 'asset' && <p className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-200">Tài sản sẽ được tạo theo số lượng thực nhận. Sau khi nhận hàng, mở Tài sản → Cấp phát để xác nhận bàn giao cho người dùng.</p>}
     {error ? <StateBox kind="error" message={error} onRetry={load} /> : !order ? <StateBox kind="loading" title="Đang tải đơn hàng…" /> : <>
-      {order.budgetApproval && order.status === 'sent' && <p className={`flex gap-2 rounded-xl border px-3 py-2.5 text-sm ${order.budgetApproval.status === 'approved' ? 'border-leaf-200 bg-leaf-50 text-leaf-900 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-100' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100'}`}>
+      {order.status === 'sent' && <PoReviewCard order={order} canApprove={Boolean(perms?.canApprove)} onShown={setReviewShown} />}
+      {order.budgetApproval && order.status === 'sent' && !reviewShown && <p className={`flex gap-2 rounded-xl border px-3 py-2.5 text-sm ${order.budgetApproval.status === 'approved' ? 'border-leaf-200 bg-leaf-50 text-leaf-900 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-100' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100'}`}>
         <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>{order.budgetApproval.status === 'approved' ? `Đã duyệt vượt ngân sách${order.budgetApproval.decidedByName ? ` (${order.budgetApproval.decidedByName})` : ''}` : 'Vượt dự toán vật tư — chờ duyệt vượt ngân sách'}:</b> sau đơn này vật tư {order.budgetApproval.projectCode || ''} dùng {money(order.budgetApproval.projected)} đ / dự toán {money(order.budgetApproval.budget)} đ.
           {order.budgetApproval.status === 'pending' && ` ${(order.budgetApproval.approverNames || []).join(', ') || 'Người duyệt vượt ngân sách'} duyệt ở Tài chính trước, sau đó mới duyệt được đơn.`}</span></p>}
       {order.status === 'returned' && order.returnReason && <p role="alert" className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
