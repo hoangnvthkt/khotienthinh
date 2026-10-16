@@ -203,14 +203,17 @@ export const KhoCapture: React.FC<{
     const cur = sumBy.get(map[i]) || { qty: 0, n: 0 };
     sumBy.set(map[i], { qty: cur.qty + q, n: cur.n + 1 });
   });
+  // Mua nóng nhận cả phiếu theo số đã duyệt: không gán / so từng dòng.
   const rows = form.lines.map((l, i) => {
-    const pl = poLine(map[i] || '');
+    const pl = sug?.kind === 'hot' ? undefined : poLine(map[i] || '');
     const qty = parseQuantityInput(l.qty);
     const sum = pl ? sumBy.get(pl.poLineId) : undefined;
     return { pl, qty, sum, over: !!pl && !!sum && sum.qty > pl.remaining + 0.0005, unitDiff: !!pl && !sameUnit(l.unit, pl.unit) };
   });
   const toReceive = rows.filter((r, i) => r.pl && Number.isFinite(r.qty) && r.qty > 0 && form.lines[i].name.trim());
-  const blocker = !sug ? 'Chọn đơn mua' : !sug.approved ? 'Đơn chờ duyệt — Mua hàng duyệt xong mới nhận được'
+  const isHot = sug?.kind === 'hot';
+  const blocker = !sug ? 'Chọn đơn mua' : isHot ? (sug.approved ? '' : 'Mua nóng vượt số duyệt — chờ CHT xác nhận')
+    : !sug.approved ? 'Đơn chờ duyệt — Mua hàng duyệt xong mới nhận được'
     : toReceive.length === 0 ? 'Gán dòng đơn cho hàng trên phiếu' : rows.some(r => r.over) ? 'Số nhận vượt phần đơn còn lại' : '';
 
   const receive = async () => {
@@ -223,6 +226,17 @@ export const KhoCapture: React.FC<{
     const c = dirty ? await save(true) : cap;
     if (!c) return;
     setBusy('receive');
+    // Mua nóng: nhận cả phiếu theo số đã duyệt (luật M2c), không gán từng dòng.
+    if (isHot) {
+      try {
+        const done = await svc.receiveHot(c.id, sug.purchaseOrderId);
+        accept(done);
+        toast.success(`Đã nhận Mua nóng ${sug.poNumber}`, done.wmsTransactionId ? 'Phiếu nhập kho đã ghi sổ.' : 'Phiếu chỉ có CCDC — đã vào sổ CCDC.');
+        if (done.wmsTransactionId) onOpenTx(done.wmsTransactionId);
+      } catch (e) { toast.error('Chưa nhận được Mua nóng', captureErrorMessage(e)); }
+      finally { setBusy(''); }
+      return;
+    }
     try {
       const done = await svc.receive({ captureId: c.id, purchaseOrderId: sug.purchaseOrderId, lines });
       accept(done);
@@ -280,7 +294,7 @@ export const KhoCapture: React.FC<{
       <button type="button" onClick={() => void discard()} className="mr-auto text-sm font-semibold text-rose-700 hover:underline dark:text-rose-300">Bỏ phiếu</button>
       <button type="button" onClick={() => void save()} disabled={!!busy} className={secondaryBtn}>{busy === 'save' ? <Loader2 size={15} className="animate-spin" /> : null}Lưu, nhận sau</button>
       <button type="button" onClick={() => void receive()} disabled={!!blocker || !!busy} title={blocker || undefined} className={`${primaryBtn} flex-1 md:flex-none`}>
-        {busy === 'receive' ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}Nhận hàng</button>
+        {busy === 'receive' ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}{isHot ? 'Nhận Mua nóng' : 'Nhận hàng'}</button>
     </>}>
     <div className="flex gap-2 overflow-x-auto pb-1">
       {cap.photos.map(p => <Photo key={p.path} p={p} onRemove={cap.photos.length > 1 ? () => void removePhoto(p) : undefined}
@@ -316,10 +330,12 @@ export const KhoCapture: React.FC<{
           return <li key={s.purchaseOrderId}><button type="button" aria-pressed={on} onClick={() => { setPoId(s.purchaseOrderId); setMap(form.lines.map((_, i) => initialMapping(cap, s)[i]?.poLineId || '')); }}
             className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left ${on ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-500/20 dark:bg-teal-950/30' : 'border-border hover:border-teal-300'}`}>
             <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 ${on ? 'border-teal-600' : 'border-slate-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-teal-600" />}</span>
-            <span className="min-w-0 flex-1"><span className="font-mono text-sm font-semibold text-teal-700 dark:text-teal-300">{s.poNumber}</span>
+            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-1.5"><span className="font-mono text-sm font-semibold text-teal-700 dark:text-teal-300">{s.poNumber}</span>
+                <Badge className={s.kind === 'hot' ? WARN : s.kind === 'contract' ? TEAL : GREY} title={s.kind === 'hot' ? 'Mua nóng: nhận cả phiếu theo số đã duyệt' : s.kind === 'contract' ? 'Gọi hàng theo hợp đồng nguyên tắc' : 'Đơn hàng PO'}>
+                  {s.kind === 'hot' ? 'Mua nóng' : s.kind === 'contract' ? `HĐ${s.contractCode ? ` ${s.contractCode}` : ' nguyên tắc'}` : 'PO'}</Badge></span>
               <span className="block truncate text-[12px] text-muted-foreground">{s.vendorName}</span></span>
             <span className="text-right text-[12px]">{form.lines.length > 0 && <span className="block">khớp <b className="tabular-nums">{hit}/{s.lines.length || form.lines.length}</b></span>}
-              {!s.approved && <Badge className={WARN}>Chờ duyệt</Badge>}</span>
+              {!s.approved && <Badge className={WARN}>{s.kind === 'hot' ? 'Chờ xác nhận' : 'Chờ duyệt'}</Badge>}</span>
           </button></li>; })}</ul>}
     </Section>
 
@@ -339,7 +355,7 @@ export const KhoCapture: React.FC<{
             <input value={l.unit} onChange={e => editLine(i, { unit: e.target.value })} placeholder="ĐVT" aria-label="Đơn vị" className={`w-20 ${inputCls}`} />
             {l.note && <span className="min-w-0 truncate text-[12px] text-muted-foreground" title={l.note}>{l.note}</span>}
           </div>
-          {sug && <div className="mt-1.5">
+          {sug && !isHot && <div className="mt-1.5">
             <select value={map[i] || ''} onChange={e => setMap(m => { const n = [...m]; n[i] = e.target.value; return n; })} aria-label="Dòng đơn"
               className={`w-full ${inputCls} ${map[i] ? '' : 'text-muted-foreground'}`}>
               <option value="">Không nhận dòng này</option>
@@ -356,7 +372,13 @@ export const KhoCapture: React.FC<{
         {form.lines.length === 0 && <li><button type="button" onClick={addLine} className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-border py-3 text-sm font-semibold text-teal-700 dark:text-teal-300"><Plus size={14} />Thêm dòng hàng</button></li>}
       </ul>
     </Section>
-    {sug && !sug.approved && <p className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${WARN}`}><AlertTriangle size={15} />{sug.poNumber} chờ duyệt · lưu phiếu, nhận khi Mua hàng duyệt</p>}
+    {sug && isHot && <Section title={<>Nhận theo Mua nóng <span className="font-mono text-teal-700 dark:text-teal-300">{sug.poNumber}</span></>}>
+      <ul className="divide-y divide-border rounded-xl border border-border">{sug.poLines.map(pl =>
+        <li key={pl.poLineId} className="flex items-baseline justify-between gap-2 px-3 py-2 text-sm"><span className="min-w-0">{pl.itemName}</span>
+          <span className="whitespace-nowrap"><b className={NUM}>{fmtQty(pl.remaining)}</b> <span className="text-[12px] text-muted-foreground">{pl.unit}</span></span></li>)}</ul>
+      <p className="mt-1 text-[12px] text-muted-foreground">Nhận đúng số đã duyệt của phiếu Mua nóng · thiếu / sai báo Mua hàng sửa phiếu trước</p>
+    </Section>}
+    {sug && !sug.approved && <p className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${WARN}`}><AlertTriangle size={15} />{isHot ? `${sug.poNumber} vượt số duyệt · chờ CHT xác nhận rồi nhận` : `${sug.poNumber} chờ duyệt · lưu phiếu, nhận khi Mua hàng duyệt`}</p>}
   </Panel>;
 };
 

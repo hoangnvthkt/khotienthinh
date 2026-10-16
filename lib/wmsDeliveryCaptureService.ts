@@ -12,7 +12,7 @@ export interface DeliveryCapture {
   supplierName: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null;
   lines: CaptureLine[]; photos: CapturePhoto[]; ai: CaptureAi | null; note: string | null;
   supplierId?: string | null; supplierMatch?: 'auto' | 'picked' | 'new' | null; supplierPartnerName?: string | null;
-  supplierTaxCode?: string | null; supplierAddress?: string | null;
+  supplierTaxCode?: string | null; supplierAddress?: string | null; hotPurchaseId?: string | null;
   purchaseOrderId: string | null; poNumber: string | null; deliveryBatchId: string | null; wmsTransactionId: string | null; code: string | null;
   createdBy: string | null; createdAt: string; receivedAt: string | null; receivedBy: string | null; deliveryNo?: number;
 }
@@ -21,6 +21,8 @@ export interface CaptureMatchLine extends Partial<CapturePoLine> { captureIndex:
 export interface CaptureSuggestion {
   purchaseOrderId: string; poNumber: string; status: string; approved: boolean; vendorName: string; createdAt: string;
   supplierScore: number; score: number; lines: CaptureMatchLine[]; poLines: CapturePoLine[];
+  /** po = đơn PO, contract = gọi hàng theo HĐ nguyên tắc, hot = Mua nóng đã mua (nhận cả phiếu theo số đã duyệt). */
+  kind?: 'po' | 'contract' | 'hot'; contractCode?: string | null;
 }
 export type CaptureSavePatch = Partial<Pick<DeliveryCapture, 'supplierName' | 'docNo' | 'docDate' | 'docTime' | 'truckNo' | 'lines' | 'photos' | 'note'
   | 'supplierId' | 'supplierTaxCode' | 'supplierAddress'>> & { supplierMatch?: 'new' };
@@ -39,6 +41,10 @@ const ERRORS: Record<string, string> = {
   CAPTURE_DUPLICATE: 'Phiếu giao này (cùng số phiếu, xe, ngày) đã nhận vào đơn rồi.',
   CAPTURE_PO_LINE_INVALID: 'Dòng đơn không còn trong đơn — tải lại gợi ý.',
   CAPTURE_LINES_REQUIRED: 'Chưa có dòng nào có số lượng nhận.',
+  HOT_PURCHASE_STATE: 'Mua nóng chưa ở bước Đã mua — chưa nhận được.',
+  HOT_PURCHASE_OVERRUN_PENDING: 'Mua nóng vượt số duyệt, chờ CHT xác nhận.',
+  HOT_PURCHASE_RECEIVE_KEEPER_REQUIRED: 'Cần quyền thủ kho của kho nhận để nhập Mua nóng.',
+  HOT_PURCHASE_DENIED: 'Bạn chưa có quyền nhận Mua nóng này.',
   PARTNER_NAME_REQUIRED: 'Nhập tên NCC.',
   PROCUREMENT_VIEW_DENIED: 'Bạn chưa có quyền xem Mua hàng.',
   CAPTURE_SUPPLIER_INVALID: 'NCC không còn trong danh mục — chọn lại.',
@@ -128,6 +134,7 @@ export const wmsDeliveryCaptureService = {
   save: (id: string, patch: CaptureSavePatch) => rpc<DeliveryCapture>('save_delivery_capture_v1', { p: { id, ...patch } }),
   discard: (id: string, reason: string) => rpc<DeliveryCapture>('discard_delivery_capture_v1', { p: { id, reason } }),
   suppliers: (captureId: string, q?: string) => rpc<CaptureSupplierOption[]>('suggest_capture_suppliers_v1', { p: q ? { captureId, q } : { captureId } }),
+  receiveHot: (captureId: string, hotPurchaseId: string) => rpc<DeliveryCapture>('receive_capture_hot_v1', { p: { captureId, hotPurchaseId } }),
   queue: () => rpc<CaptureQueue>('list_capture_queue_v1', {}),
   resolveSupplier: (captureId: string, supplierId: string) => rpc<DeliveryCapture & { linked: number }>('resolve_capture_supplier_v1', { p: { captureId, supplierId } }),
   async createSupplier(input: { captureId: string; name: string; taxCode?: string; address?: string; force?: boolean }): Promise<DeliveryCapture & { linked: number; partnerCode: string }> {
