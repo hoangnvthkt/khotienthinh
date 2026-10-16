@@ -66,12 +66,12 @@ export const ROSTER_FIELDS: RosterFieldDef[] = [
   { key: 'permanentAddress', label: 'Địa chỉ thường trú', group: 'personal', type: 'text', editable: true, width: 240 },
   { key: 'education', label: 'Trình độ', group: 'personal', type: 'select', catalog: 'education', editable: true, width: 90 },
   { key: 'institution', label: 'Nơi đào tạo', group: 'personal', type: 'text', editable: true, width: 160 },
-  { key: 'p1', label: 'Lương cơ bản (P1)', group: 'pay', type: 'money', editable: true, width: 110, align: 'right' },
-  { key: 'pctn', label: 'PCTN (P2)', group: 'pay', type: 'money', editable: true, width: 96, align: 'right' },
-  { key: 'phoneAllowance', label: 'PC điện thoại', group: 'pay', type: 'money', editable: true, width: 96, align: 'right' },
-  { key: 'p3', label: 'P3 tiêu chuẩn', group: 'pay', type: 'money', editable: true, width: 104, align: 'right' },
-  { key: 'vehicleAllowance', label: 'PC giữ gìn xe', group: 'pay', type: 'money', editable: true, width: 96, align: 'right' },
-  { key: 'seniorityAllowance', label: 'Thâm niên (đ)', group: 'pay', type: 'money', editable: true, width: 96, align: 'right' },
+  { key: 'p1', label: 'Lương cơ bản (P1)', group: 'pay', type: 'money', editable: true, width: 116, align: 'right' },
+  { key: 'pctn', label: 'PCTN (P2)', group: 'pay', type: 'money', editable: true, width: 108, align: 'right' },
+  { key: 'phoneAllowance', label: 'PC điện thoại', group: 'pay', type: 'money', editable: true, width: 108, align: 'right' },
+  { key: 'p3', label: 'P3 tiêu chuẩn', group: 'pay', type: 'money', editable: true, width: 116, align: 'right' },
+  { key: 'vehicleAllowance', label: 'PC giữ gìn xe', group: 'pay', type: 'money', editable: true, width: 108, align: 'right' },
+  { key: 'seniorityAllowance', label: 'Thâm niên (đ)', group: 'pay', type: 'money', editable: true, width: 108, align: 'right' },
   { key: 'note', label: 'Ghi chú (HR Manage)', group: 'other', type: 'text', editable: true, width: 220, payOnly: true },
   { key: 'legacyCode', label: 'Mã NV cũ', group: 'other', type: 'text', editable: false, width: 84 },
 ];
@@ -161,6 +161,20 @@ export interface RosterRow {
   values: Partial<Record<RosterFieldKey, RosterValue>>;
   /** Changes waiting for approval, per field. */
   pending: Partial<Record<RosterFieldKey | 'fullName', RosterPending>>;
+  /** 3P of the person — HR Manage only; null when not placed yet. */
+  pay3p?: RosterPay3p | null;
+}
+
+/** Phân bổ 3P in force today, else the next one planned. */
+export interface RosterPay3p {
+  grade: string;
+  /** null = chưa xếp dải: P3 tiêu chuẩn follows the Data until the formulas are in Vioo. */
+  band: string | null;
+  from: string;
+  to: string | null;
+  review: 'pending' | 'approved' | 'needs_review';
+  note: string | null;
+  source: string;
 }
 
 export interface RosterCapabilities {
@@ -250,6 +264,21 @@ export const dateVi = (iso: RosterValue): string => {
 export const moneyVi = (value: RosterValue): string => typeof value === 'number' && Number.isFinite(value)
   ? new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(value)) : '';
 
+/** First day of the month of an ISO date — pay changes take effect per month. */
+export const monthStartOf = (iso: string): string => `${iso.slice(0, 7)}-01`;
+
+/** P3 thực tế comes from KPI each pay period; until the formulas exist the cell shows P3 tiêu chuẩn faded. */
+export const P3_ACTUAL_HINT = 'Chưa có công thức KPI — đang hiện mờ P3 tiêu chuẩn.';
+
+/** "E5 · Chưa xếp dải", "E5 · B3 · từ 01/11/2026 · cần xem"; null when the person is not in 3P yet. */
+export const pay3pLabel = (pay3p: RosterPay3p | null | undefined, today: string): string | null => {
+  if (!pay3p) return null;
+  const parts = [pay3p.grade, pay3p.band || 'Chưa xếp dải'];
+  if (pay3p.from > today) parts.push(`từ ${dateVi(pay3p.from)}`);
+  if (pay3p.review === 'needs_review') parts.push('cần xem');
+  return parts.join(' · ');
+};
+
 const catalogLabel = (catalogs: RosterCatalogs, catalog: RosterCatalogKey, value: RosterValue): string => {
   if (value == null || value === '') return '';
   const id = String(value);
@@ -288,7 +317,7 @@ export const seniorityLabel = (months: number | null): string => {
   return rest ? `${years} n ${rest} th` : `${years} năm`;
 };
 
-/** Monthly total = P1 + PCTN + PC điện thoại + P3 + PC giữ xe; null when nothing is known. */
+/** Tổng lương thỏa thuận = P1 + PCTN + PC điện thoại + P3 tiêu chuẩn + PC giữ xe; null when nothing is known. */
 export const salaryTotal = (values: Partial<Record<RosterFieldKey, RosterValue>>): number | null => {
   const parts = (['p1', 'pctn', 'phoneAllowance', 'p3', 'vehicleAllowance'] as const).map(key => values[key]);
   if (parts.every(part => part == null)) return null;

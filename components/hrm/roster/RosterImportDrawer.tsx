@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, FileSpreadsheet, Send, UserPlus, UserX } from 'lucide-react';
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import {
-  MATCH_LABEL, dateVi, fieldLabel, importItemsFor, matchRosterImport, readRosterWorkbook, resolveImportValues,
+  MATCH_LABEL, dateVi, fieldLabel, importItemsFor, matchRosterImport, monthStartOf, readRosterWorkbook, resolveImportValues,
   type RosterChangeItem, type RosterData, type RosterImportMatch, type RosterImportPlan, type RosterRow,
 } from '../../../lib/hrmRoster';
 import { BatchItems } from './RosterBatches';
@@ -30,7 +30,8 @@ export const RosterImportDrawer: React.FC<{
   const [choices, setChoices] = useState<Record<number, Choice>>({});
   const [tab, setTab] = useState<Tab>('confirm');
   const [reason, setReason] = useState('');
-  const [effectiveDate, setEffectiveDate] = useState(data.today);
+  // Pay changes count per month: a file brought in mid-month applies from the 1st.
+  const [effectiveDate, setEffectiveDate] = useState(monthStartOf(data.today));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -131,7 +132,8 @@ export const RosterImportDrawer: React.FC<{
     </>}
     footer={plan ? <div className="flex w-full flex-wrap items-end gap-2">
       <label className="block w-40"><span className="mb-1 block text-xs font-semibold text-muted-foreground">Hiệu lực từ</span>
-        <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value || data.today)} className={`w-full ${inputCls}`} /></label>
+        <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value || monthStartOf(data.today))}
+          title="Lương và Level vào phân bổ 3P từ ngày này" className={`w-full ${inputCls}`} /></label>
       <label className="block min-w-[14rem] flex-1"><span className="mb-1 block text-xs font-semibold text-muted-foreground">Lý do <span className="text-amber-600">*</span></span>
         <input value={reason} onChange={e => setReason(e.target.value)} className={`w-full ${inputCls}`} /></label>
       <span className="flex items-center gap-2">

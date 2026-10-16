@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  codeFromIdNumber, importItemsFor, matchRosterImport, missingFields, parseRosterDate, parseRosterSheet,
-  seniorityMonths, uniqueCodeFromIdNumber, type RosterCatalogs, type RosterRow,
+  codeFromIdNumber, importItemsFor, matchRosterImport, missingFields, monthStartOf, parseRosterDate, parseRosterSheet, pay3pLabel,
+  salaryTotal, seniorityMonths, uniqueCodeFromIdNumber, type RosterCatalogs, type RosterRow,
 } from '../hrmRoster';
 
 const catalogs: RosterCatalogs = {
@@ -145,5 +145,22 @@ describe('codes and helpers', () => {
     expect(seniorityMonths('2011-04-15', '2026-10-16')).toBe(186);
     expect(seniorityMonths('2026-10-17', '2026-10-16')).toBe(0);
     expect(seniorityMonths(null, '2026-10-16')).toBeNull();
+  });
+});
+
+describe('3P', () => {
+  it('adds up the agreed total from P3 tiêu chuẩn, and stays unknown when no pay is known', () => {
+    expect(salaryTotal({ p1: 6600000, pctn: 450000, phoneAllowance: 450000, p3: 8000000 })).toBe(15500000);
+    expect(salaryTotal({ p1: null, p3: null })).toBeNull();
+  });
+  it('labels the bậc and dải, an upcoming start and rows HR must check', () => {
+    const base = { grade: 'E5', band: null, from: '2026-10-01', to: null, review: 'approved' as const, note: null, source: 'roster_data' };
+    expect(pay3pLabel(base, '2026-10-16')).toBe('E5 · Chưa xếp dải');
+    expect(pay3pLabel({ ...base, band: 'B3', from: '2026-11-01' }, '2026-10-16')).toBe('E5 · B3 · từ 01/11/2026');
+    expect(pay3pLabel({ ...base, review: 'needs_review' }, '2026-10-16')).toBe('E5 · Chưa xếp dải · cần xem');
+    expect(pay3pLabel(null, '2026-10-16')).toBeNull();
+  });
+  it('starts pay changes on the 1st of the month', () => {
+    expect(monthStartOf('2026-10-16')).toBe('2026-10-01');
   });
 });

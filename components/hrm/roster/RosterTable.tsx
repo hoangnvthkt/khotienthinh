@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight, Clock3, PencilLine } from 'lucide-react';
 import {
-  ROSTER_GROUPS, fieldDef, formatValue, isPayField, rosterFields, isPlaceholderPhone, missingFields, moneyVi, positionOf, salaryTotal, seniorityLabel, seniorityMonths,
+  P3_ACTUAL_HINT, ROSTER_GROUPS, dateVi, fieldDef, formatValue, isPayField, rosterFields, isPlaceholderPhone, missingFields, moneyVi, positionOf, salaryTotal,
+  seniorityLabel, seniorityMonths,
   type RosterData, type RosterFieldKey, type RosterGroupKey, type RosterRow, type RosterValue,
 } from '../../../lib/hrmRoster';
 import { DRAFT_CELL, ENT, MISSING_CHIP, NUM, PENDING_CELL } from './rosterUi';
@@ -28,7 +29,7 @@ export const rosterColumns = (data: RosterData, groups: RosterGroupKey[]): Colum
   ROSTER_GROUPS.forEach(group => {
     if (!allowed(group.key)) return;
     if (group.key === 'pay') {
-      columns.push({ key: 'salaryTotal', label: 'Tổng lương', group: 'pay', width: 110, align: 'right',
+      columns.push({ key: 'salaryTotal', label: 'Tổng lương thỏa thuận', group: 'pay', width: 156, align: 'right',
         render: (_row, values) => { const total = salaryTotal(values); return total == null ? null : <span className={NUM}>{moneyVi(total)}</span>; } });
     }
     // Bộ phận is the row group, so it is not repeated as a column.
@@ -37,6 +38,11 @@ export const rosterColumns = (data: RosterData, groups: RosterGroupKey[]): Colum
       if (field.key === 'position') {
         columns.push({ key: 'positionGroup', label: 'Nhóm', group: 'position', width: 64,
           render: (_row, values) => { const p = data.catalogs.positions.find(item => item.id === values.position); return p?.groupCode || null; } });
+      }
+      if (field.key === 'p3') {
+        columns.push({ key: 'p3Actual', label: 'P3 thực tế (KPI)', group: 'pay', width: 120, align: 'right',
+          render: (_row, values) => typeof values.p3 === 'number'
+            ? <span className="tabular-nums text-slate-400 dark:text-slate-500" title={P3_ACTUAL_HINT}>{moneyVi(values.p3)}</span> : null });
       }
       if (field.key === 'officialDate') {
         columns.push({ key: 'seniority', label: 'Thâm niên', group: 'contract', width: 84,
@@ -51,9 +57,25 @@ export const rosterColumns = (data: RosterData, groups: RosterGroupKey[]): Colum
           const seniority = typeof values.seniorityAllowance === 'number' ? values.seniorityAllowance : 0;
           return <span className={NUM}>{moneyVi(total + seniority)}</span>;
         } });
+      columns.push({ key: 'pay3p', label: 'Bậc · dải 3P', group: 'pay', width: 184,
+        render: row => <Pay3pCell row={row} today={data.today} /> });
     }
   });
   return columns;
+};
+
+/** Bậc and dải the person is paid on; "Chưa xếp dải" until the P3 formulas are in Vioo. */
+const Pay3pCell: React.FC<{ row: RosterRow; today: string }> = ({ row, today }) => {
+  const p = row.pay3p;
+  if (!p) return <span className="text-muted-foreground/60" title="Chưa có Level hoặc chưa duyệt lương theo Data">Chưa vào 3P</span>;
+  const title = [`Hiệu lực từ ${dateVi(p.from)}${p.to ? ` đến ${dateVi(p.to)}` : ''}`, p.band ? null : 'P3 tiêu chuẩn theo Data, chưa có công thức xếp dải', p.note]
+    .filter(Boolean).join(' · ');
+  return <span className="flex items-center gap-1.5 truncate" title={title}>
+    <span className={ENT}>{p.grade}</span>
+    {p.band ? <span className="font-semibold text-foreground">{p.band}</span> : <span className="text-muted-foreground">Chưa xếp dải</span>}
+    {p.from > today && <span className="text-[11px] text-muted-foreground">từ {dateVi(p.from).slice(0, 5)}</span>}
+    {p.review === 'needs_review' && <span className={MISSING_CHIP}>Cần xem</span>}
+  </span>;
 };
 
 const levelRank = (row: RosterRow) => {
