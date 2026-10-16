@@ -61,6 +61,7 @@ Chỉ tạo component mới khi bảng trên không có thứ phù hợp. Khi t�
 - Trên iPhone, Chrome và mọi trình duyệt khác đều chạy lõi Safari (WebKit). "Chrome máy tính chạy được" **không** chứng minh gì cho điện thoại.
 - Màn có nhiều phần tử động hoặc danh sách dài: đo bằng Playwright WebKit (`document.getAnimations().length`, CPU tiến trình WebContent khi trang đứng yên phải ≈ 0–2%). Cách tái hiện với dữ liệu thật: build production → `vite preview` → `webkit.launchPersistentContext(..., { headless: false })` → chủ sản phẩm tự đăng nhập trong cửa sổ "Playwright".
 - Thư viện JS mới phải chạy được trên Safari iOS cũ (iOS 16 trở lên). Tránh thư viện chỉ hỗ trợ trình duyệt rất mới. Bài học pdf.js 6 ở #116/#117.
+- `index.css` có luật toàn cục cho điện thoại (≤ 768px): chữ `.text-xs` / `.text-[10px]` nằm trong `.grid > div` bị ép **một dòng + "…"**; `div[class*="border-t"]` trong hộp `.fixed.inset-0.z-50` thành chân dính. Câu cảnh báo / diễn giải cần xuống dòng trong lưới thì thêm `!whitespace-normal !overflow-visible`; viền màu dùng `border-l-…` thay `border-teal-…` (17/10/2026, Đọc báo giá).
 - Ảnh người dùng có thể là data URL base64 lớn (tới ~4 MB). Không nhân bản chúng hàng loạt trong DOM.
 
 ## 7. Quy trình làm một màn
