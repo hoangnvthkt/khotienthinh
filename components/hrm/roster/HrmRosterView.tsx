@@ -26,11 +26,13 @@ const sameValue = (a: RosterValue | undefined, b: RosterValue | undefined) => (a
 const HrmRosterView: React.FC<{
   initialTab?: 'roster' | 'batches';
   initialBatchId?: string | null;
+  /** Opened from a person's profile ("Đổi ở Bảng nhân sự"): show that person and open their change form. */
+  initialPersonId?: string | null;
   /** Inside the Hồ sơ nhân sự page: no own background / padding. */
   embedded?: boolean;
   /** Called after an approval changed people, so other screens reload. */
   onDataChanged?: () => void;
-}> = ({ initialTab = 'roster', initialBatchId = null, embedded = false, onDataChanged }) => {
+}> = ({ initialTab = 'roster', initialBatchId = null, initialPersonId = null, embedded = false, onDataChanged }) => {
   const toast = useToast();
   const [data, setData] = useState<RosterData | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'denied'>('loading');
@@ -65,6 +67,16 @@ const HrmRosterView: React.FC<{
     } finally { setRefreshing(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  const personOpened = useRef(false);
+  useEffect(() => {
+    if (!data || !initialPersonId || personOpened.current) return;
+    personOpened.current = true;
+    const row = data.rows.find(item => item.employeeId === initialPersonId);
+    if (!row) return;
+    if (row.status !== 'Đang làm việc') setShowLeft(true);
+    setQuery(row.employeeCode || row.fullName);
+    if (data.can.edit) setEditing({ ids: [row.employeeId], field: null });
+  }, [data, initialPersonId]);
   const onCounts = useCallback((pending: number, mine: number) => setBatchCounts({ pending, mine }), []);
   useEffect(() => {
     if (!data) return;

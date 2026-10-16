@@ -44,7 +44,7 @@ const Employees: React.FC = () => {
     const setPageView = (view: 'roster' | 'directory') => setSearchParams(current => {
         const next = new URLSearchParams(current);
         next.set('view', view);
-        next.delete('tab'); next.delete('batch');
+        next.delete('tab'); next.delete('batch'); next.delete('person');
         return next;
     }, { replace: true });
     const [searchTerm, setSearchTerm] = useState('');
@@ -237,7 +237,8 @@ const Employees: React.FC = () => {
             <div className="flex h-full flex-col space-y-4">
                 {isHr && <ViewSwitch view="roster" onChange={setPageView} />}
                 <HrmRosterView embedded initialTab={searchParams.get('tab') === 'batches' ? 'batches' : 'roster'}
-                    initialBatchId={searchParams.get('batch')} onDataChanged={() => loadModuleData('hrm', true)} />
+                    initialBatchId={searchParams.get('batch')} initialPersonId={searchParams.get('person')}
+                    onDataChanged={() => loadModuleData('hrm', true)} />
             </div>
         );
     }
