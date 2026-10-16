@@ -12,17 +12,29 @@ from public.users u where u.is_active and u.auth_id is not null and app_private.
   and u.id::text <> current_setting('test.p.a_id') order by u.name limit 1;
 select set_config('test.p.hr_auth', u.auth_id::text, true)
 from public.users u where u.is_active and u.auth_id is not null and app_private.hrm_roster_access(u.id) = 'HR' order by u.name limit 1;
-select set_config('test.p.e1', e.id::text, true), set_config('test.p.e1_seed', a.id::text, true)
-from public.hrm_employee_compensation_assignments a join public.employees e on e.id = a.employee_id
-left join public.users u on u.id = e.user_id
-where a.source = 'excel_seed' and a.effective_to is null and a.review_status = 'approved' and e.status = 'Đang làm việc'
-  and (u.id is null or app_private.hrm_roster_access(u.id) is null)
+-- Two subjects; their 3P rows are rebuilt here (rolled back) so the test does not depend on what HR imported.
+select set_config('test.p.e1', e.id::text, true)
+from public.employees e left join public.users u on u.id = e.user_id
+where e.status = 'Đang làm việc' and (u.id is null or app_private.hrm_roster_access(u.id) is null)
+  and e.employee_code not in ('TT033', 'TT035')
 order by e.employee_code limit 1;
 select set_config('test.p.e2', e.id::text, true)
 from public.employees e left join public.users u on u.id = e.user_id
 where e.status = 'Đang làm việc' and (u.id is null or app_private.hrm_roster_access(u.id) is null)
-  and not exists (select 1 from public.hrm_employee_compensation_assignments a where a.employee_id = e.id)
-order by e.employee_code limit 1;
+  and e.employee_code not in ('TT033', 'TT035') and e.id::text <> current_setting('test.p.e1')
+order by e.employee_code desc limit 1;
+delete from public.hrm_employee_compensation_assignments
+where employee_id in (current_setting('test.p.e1')::uuid, current_setting('test.p.e2')::uuid);
+insert into public.hrm_employee_compensation_assignments (employee_id, employee_code_snapshot, employee_name_snapshot, plan_id,
+  salary_grade_id, p3_band_id, effective_from, status, source, review_status, p1_amount, p3_standard_amount)
+select e.id, e.employee_code, e.full_name, plan.id, grade.id, band.id, plan.effective_from, 'active', 'excel_seed', 'approved', grade.p1_salary_amount, 1000000
+from public.employees e
+join public.hrm_compensation_plans plan on plan.code = '3P_2026'
+join public.salary_grades grade on grade.plan_id = plan.id and grade.code = 'E4'
+join public.hrm_3p_bands band on band.plan_id = plan.id and band.code = 'B3'
+where e.id = current_setting('test.p.e1')::uuid;
+select set_config('test.p.e1_seed', (select id::text from public.hrm_employee_compensation_assignments
+  where employee_id = current_setting('test.p.e1')::uuid), true);
 select set_config('test.p.d0', date_trunc('month', app_private.hrm_vn_today())::date::text, true);
 select set_config('test.p.d_mid', (date_trunc('month', app_private.hrm_vn_today())::date + 14)::text, true);
 select set_config('test.p.d_next', (date_trunc('month', app_private.hrm_vn_today()) + interval '1 month')::date::text, true);

@@ -12,7 +12,8 @@ where u.is_active and u.auth_id is not null and app_private.hrm_roster_access(u.
 select set_config('test.r.b_auth', u.auth_id::text, true), set_config('test.r.b_id', u.id::text, true)
 from public.users u where u.is_active and u.auth_id is not null and app_private.hrm_roster_access(u.id) = 'HR_MANAGE'
   and u.id::text <> current_setting('test.r.a_id') order by u.name limit 1;
-select set_config('test.r.e1', e.id::text, true), set_config('test.r.e1_code', e.employee_code, true)
+select set_config('test.r.e1', e.id::text, true), set_config('test.r.e1_code', e.employee_code, true),
+  set_config('test.r.e1_legacy', coalesce(e.legacy_code, e.employee_code), true)
 from public.employees e left join public.users u on u.id = e.user_id
 where e.status = 'Đang làm việc' and (u.id is null or app_private.hrm_roster_access(u.id) is null) order by e.employee_code limit 1;
 select set_config('test.r.e2', e.id::text, true)
@@ -163,7 +164,7 @@ do $$
 declare v_e1 public.employees%rowtype; v_new public.employees%rowtype; v_values jsonb;
 begin
   select * into v_e1 from public.employees where id = current_setting('test.r.e1')::uuid;
-  if v_e1.employee_code <> 'TT678901' or v_e1.legacy_code <> current_setting('test.r.e1_code') then raise exception 'ROSTER_CODE_NOT_APPLIED % %', v_e1.employee_code, v_e1.legacy_code; end if;
+  if v_e1.employee_code <> 'TT678901' or v_e1.legacy_code <> current_setting('test.r.e1_legacy') then raise exception 'ROSTER_CODE_NOT_APPLIED % %', v_e1.employee_code, v_e1.legacy_code; end if;
   if v_e1.position_id::text <> current_setting('test.r.pos') or v_e1.org_unit_id::text <> current_setting('test.r.unit')
     or v_e1.level_code <> 'E3' or v_e1.title <> 'Cán bộ điện nước' then raise exception 'ROSTER_POSITION_NOT_APPLIED'; end if;
   v_values := app_private.hrm_roster_values(v_e1.id, true);
