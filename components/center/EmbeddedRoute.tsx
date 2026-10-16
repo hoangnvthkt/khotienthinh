@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { MemoryRouter, Route, Routes, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 
@@ -24,6 +24,21 @@ const EmbedExit: React.FC<{ onExit?: (path: string) => void }> = ({ onExit }) =>
   );
 };
 
+/** Link thô <a href="#/..."> trong trang module: đi trong tab thay vì đổi hash cửa sổ (đổi hash = popstate,
+ *  Center tưởng là nút Back → đóng lớp và kéo về /center). Ctrl/⌘-click, target khác vẫn để trình duyệt xử lý. */
+const HashLinkBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const onClickCapture = (event: React.MouseEvent) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    const href = anchor?.getAttribute('href');
+    if (!anchor || !href?.startsWith('#/') || (anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) return;
+    event.preventDefault();
+    navigate(href.slice(1));
+  };
+  return <div style={{ display: 'contents' }} onClickCapture={onClickCapture}>{children}</div>;
+};
+
 const NO_LOCATION = null as unknown as React.ContextType<typeof UNSAFE_LocationContext>;
 const NO_ROUTE: React.ContextType<typeof UNSAFE_RouteContext> = { outlet: null, matches: [], isDataRoute: false };
 
@@ -32,14 +47,16 @@ const RouteRenderer: React.FC<{ path: string; state?: unknown; routes: React.Rea
   <UNSAFE_LocationContext.Provider value={NO_LOCATION}>
     <UNSAFE_RouteContext.Provider value={NO_ROUTE}>
       <MemoryRouter initialEntries={[state === undefined ? path : { pathname: path.split('?')[0], search: path.includes('?') ? `?${path.split('?').slice(1).join('?')}` : '', state }]}>
-        <Suspense fallback={<StateBox kind="loading" title="Đang mở màn…" />}>
-          <Gate>
-            <Routes>
-              {routes}
-              <Route path="*" element={<EmbedExit onExit={onExit} />} />
-            </Routes>
-          </Gate>
-        </Suspense>
+        <HashLinkBridge>
+          <Suspense fallback={<StateBox kind="loading" title="Đang mở màn…" />}>
+            <Gate>
+              <Routes>
+                {routes}
+                <Route path="*" element={<EmbedExit onExit={onExit} />} />
+              </Routes>
+            </Gate>
+          </Suspense>
+        </HashLinkBridge>
       </MemoryRouter>
     </UNSAFE_RouteContext.Provider>
   </UNSAFE_LocationContext.Provider>

@@ -16,6 +16,7 @@ const FakeLeave: React.FC = () => {
       <button type="button" onClick={() => setParams({ request: 'np-42' })}>Chọn đơn khác</button>
       <button type="button" onClick={() => navigate('/work/tasks/VW-1')}>Sang việc</button>
       <button type="button" onClick={() => navigate('/hrm/payroll')}>Sang bảng lương</button>
+      <a href="#/work/tasks/VW-2">Link thô sang việc</a>
     </div>
   );
 };
