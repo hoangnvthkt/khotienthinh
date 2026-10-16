@@ -8,7 +8,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -35,6 +35,7 @@ import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
 import SettingsSuggestionStats from './settings/SettingsSuggestionStats';
 import SettingsAiGateway from './settings/SettingsAiGateway';
+import SettingsConnections from './settings/SettingsConnections';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -1140,6 +1141,7 @@ const Settings: React.FC = () => {
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
+    { id: 'connections', label: 'Kết nối', icon: Link2, adminOnly: true },
     { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
     { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
@@ -1160,6 +1162,7 @@ const Settings: React.FC = () => {
     && activeSettingsTab !== 'attendance-locations'
     && activeSettingsTab !== 'suggestion-stats'
     && activeSettingsTab !== 'ai-gateway'
+    && activeSettingsTab !== 'connections'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
     && activeSettingsTab !== 'project-room-templates'
@@ -2441,6 +2444,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'ai-gateway' && (
             <SettingsAiGateway />
+          )}
+
+          {activeSettingsTab === 'connections' && (
+            <SettingsConnections />
           )}
     </div>
   );

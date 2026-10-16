@@ -63,3 +63,4 @@ service-account*.json
 /.po-prefill-test-results/
 /.suggestion-stats-test-results/
 /.ai-gateway-test-results/
+/.connections-test-results/

@@ -3,10 +3,12 @@
 //   WMS_AI_PROVIDER = anthropic | gemini | openai   (mặc định anthropic)
 //   WMS_AI_MODEL    = tên model (anthropic mặc định claude-opus-5-5; gemini mặc định gemini-2.5-flash; openai bắt buộc khai báo)
 //   ANTHROPIC_API_KEY | GEMINI_API_KEY | OPENAI_API_KEY
+// Kết nối Admin gán cho "Kho · đọc ảnh phiếu giao" ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên hơn các biến trên.
 // Chưa cấu hình → trả { code: 'AI_NOT_CONFIGURED' } (màn Kho chuyển sang nhập tay). AI không ghi sổ: chỉ điền số liệu để người xem lại.
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import { DOC_PROMPT, DOC_SCHEMA, normalizeRead, type DocRead } from './prompt.ts';
+import { DEFAULT_BASE_URL, targetFromConnection, type AiTarget } from '../_shared/aiTargets.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
@@ -29,8 +31,8 @@ const toB64 = (bytes: Uint8Array) => {
   return btoa(s);
 };
 
-async function readWithAnthropic(key: string, model: string, pages: Page[]): Promise<unknown> {
-  const client = new Anthropic({ apiKey: key });
+async function readWithAnthropic({ apiKey: key, model, baseUrl }: AiTarget, pages: Page[]): Promise<unknown> {
+  const client = new Anthropic({ apiKey: key, baseURL: baseUrl });
   const content: Anthropic.Beta.BetaContentBlockParam[] = [
     ...pages.map(p => p.mime === 'application/pdf'
       ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: p.b64 } }
@@ -52,9 +54,9 @@ async function readWithAnthropic(key: string, model: string, pages: Page[]): Pro
   return JSON.parse(text);
 }
 
-async function readWithGemini(key: string, model: string, pages: Page[]): Promise<unknown> {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${key}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+async function readWithGemini({ apiKey: key, model, baseUrl }: AiTarget, pages: Page[]): Promise<unknown> {
+  const res = await fetch(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [...pages.map(p => ({ inline_data: { mime_type: p.mime, data: p.b64 } })), { text: DOC_PROMPT }] }],
       generationConfig: { temperature: 0, responseMimeType: 'application/json' },
@@ -67,14 +69,15 @@ async function readWithGemini(key: string, model: string, pages: Page[]): Promis
   return JSON.parse(text);
 }
 
-async function readWithOpenAI(key: string, model: string, pages: Page[]): Promise<unknown> {
+async function readWithOpenAI({ apiKey: key, model, baseUrl, kind }: AiTarget, pages: Page[]): Promise<unknown> {
+  const compatible = kind === 'openai_compatible';
   if (!model) throw new Error('AI_MODEL_REQUIRED');
   if (pages.some(p => p.mime === 'application/pdf')) throw new Error('AI_PDF_UNSUPPORTED');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model,
-      response_format: { type: 'json_schema', json_schema: { name: 'delivery_doc', schema: DOC_SCHEMA, strict: true } },
+      response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'delivery_doc', schema: DOC_SCHEMA, strict: true } },
       messages: [{ role: 'user', content: [...pages.map(p => ({ type: 'image_url', image_url: { url: `data:${p.mime};base64,${p.b64}` } })), { type: 'text', text: DOC_PROMPT }] }],
     }),
   });
@@ -100,8 +103,16 @@ Deno.serve(async request => {
   });
   if ((await user.auth.getUser(token)).error) return json({ error: 'Unauthorized' }, 401);
 
-  const { provider, key, model } = config();
-  if (!key || !['anthropic', 'gemini', 'openai'].includes(provider)) return json({ code: 'AI_NOT_CONFIGURED' });
+  // Kết nối đã gán (service_role chỉ để giải mã đúng một khóa) → không có thì Secrets như cũ.
+  const service = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const linked = await service.rpc('integration_secret_v1', { p_id: null, p_feature: 'wms.doc_reader' });
+  if (linked.error) console.error('wms-doc-reader connection read failed', linked.error.message);
+  const env = config();
+  const target: AiTarget | null = (!linked.error && targetFromConnection(linked.data, 'fast'))
+    || (env.key && ['anthropic', 'gemini', 'openai'].includes(env.provider)
+      ? { kind: env.provider, baseUrl: DEFAULT_BASE_URL[env.provider], apiKey: env.key, model: env.model, source: 'secrets', name: env.provider } : null);
+  if (!target) return json({ code: 'AI_NOT_CONFIGURED' });
+  const provider = target.kind; const model = target.model;
 
   const { data: capture, error } = await user.from('wms_delivery_captures').select('id,status,photos,supplier_name,doc_no,doc_date,truck_no,lines').eq('id', body.captureId).maybeSingle();
   if (error || !capture) return json({ error: 'CAPTURE_NOT_FOUND' }, 404);
@@ -119,8 +130,8 @@ Deno.serve(async request => {
       pages.push({ mime: p.mimeType || file.data.type || 'image/jpeg', b64: toB64(new Uint8Array(await file.data.arrayBuffer())) });
     }
     const started = Date.now();
-    const raw = provider === 'anthropic' ? await readWithAnthropic(key, model, pages)
-      : provider === 'gemini' ? await readWithGemini(key, model, pages) : await readWithOpenAI(key, model, pages);
+    const raw = provider === 'anthropic' ? await readWithAnthropic(target, pages)
+      : provider === 'gemini' ? await readWithGemini(target, pages) : await readWithOpenAI(target, pages);
     const read: DocRead = normalizeRead(raw);
     // Không ghi đè ô người đã nhập: chỉ điền ô còn trống; dòng hàng chỉ điền khi phiếu chưa có dòng.
     const fill: Record<string, unknown> = { id: capture.id, ai: { provider, model, ms: Date.now() - started, readAt: new Date().toISOString(), result: read } };

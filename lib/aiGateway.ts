@@ -2,7 +2,7 @@
 // máy chủ (edge function ai-gateway) giữ quyền, hạn mức, nhật ký và nhà cung cấp. Chưa có khóa → AI_NOT_CONFIGURED, màn hình làm tay như thường.
 import { supabase } from './supabase';
 
-export type AiProvider = 'anthropic' | 'gemini' | 'openai';
+export type AiProvider = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
 export type AiGatewayCode = 'OK' | 'AI_NOT_CONFIGURED' | 'AI_DENIED' | 'AI_OFF' | 'AI_SKILL_OFF' | 'AI_SKILL_UNKNOWN' | 'AI_QUOTA' | 'AI_REFUSED' | 'AI_FAILED';
 export type AiGatewayErrorCode = Exclude<AiGatewayCode, 'OK'>;
 
@@ -16,7 +16,9 @@ export const AI_GATEWAY_MESSAGES: Record<AiGatewayErrorCode, string> = {
   AI_REFUSED: 'AI từ chối nội dung này.',
   AI_FAILED: 'AI chưa trả lời được.',
 };
-export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI' };
+export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI' };
+/** Đích đang dùng cho một lớp model: kết nối ở Cài đặt → Kết nối, hoặc khóa trong Secrets. */
+export interface AiTargetInfo { source: 'connection' | 'secrets'; name: string; kind: AiProvider; label: string; model: string }
 export const AI_TIER_LABELS: Record<string, string> = { base: 'Nền', ops: 'Nghiệp vụ', analysis: 'Phân tích', executive: 'Điều hành' };
 export const AI_MODE_LABELS: Record<string, string> = { read: 'Đọc', draft: 'Nháp', auto: 'Tự chạy' };
 export const AI_RUN_STATUS_LABELS: Record<string, string> = {
@@ -28,9 +30,10 @@ export interface AiGatewayStatus {
   deployed: boolean;
   configured: boolean;
   provider: AiProvider;
-  providerSource: 'AI_PROVIDER' | 'WMS_AI_PROVIDER' | 'default' | 'unknown';
+  providerSource: 'AI_PROVIDER' | 'WMS_AI_PROVIDER' | 'default' | 'connection' | 'unknown';
+  targets: { fast: AiTargetInfo | null; reasoning: AiTargetInfo | null };
   models: { fast: string; reasoning: string };
-  keysPresent: Record<AiProvider, boolean>;
+  keysPresent: Record<'anthropic' | 'gemini' | 'openai', boolean>;
   priceKnown: boolean;
   skills: string[];
 }
@@ -59,7 +62,7 @@ export interface AiGatewayOverview {
 }
 
 const NOT_DEPLOYED: AiGatewayStatus = {
-  deployed: false, configured: false, provider: 'anthropic', providerSource: 'unknown', models: { fast: '', reasoning: '' },
+  deployed: false, configured: false, provider: 'anthropic', providerSource: 'unknown', models: { fast: '', reasoning: '' }, targets: { fast: null, reasoning: null },
   keysPresent: { anthropic: false, gemini: false, openai: false }, priceKnown: false, skills: [],
 };
 
@@ -95,6 +98,7 @@ export const aiGateway = {
       providerSource: (d.providerSource as AiGatewayStatus['providerSource']) || 'unknown',
       models: { fast: String(d.models?.fast || ''), reasoning: String(d.models?.reasoning || '') },
       keysPresent: { anthropic: Boolean(d.keysPresent?.anthropic), gemini: Boolean(d.keysPresent?.gemini), openai: Boolean(d.keysPresent?.openai) },
+      targets: { fast: (d.targets?.fast as AiTargetInfo) || null, reasoning: (d.targets?.reasoning as AiTargetInfo) || null },
       priceKnown: Boolean(d.priceKnown), skills: Array.isArray(d.skills) ? d.skills.map(String) : [],
     };
   },

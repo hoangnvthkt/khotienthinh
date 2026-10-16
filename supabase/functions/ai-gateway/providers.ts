@@ -3,10 +3,12 @@
 //   AI_MODEL_FAST / AI_MODEL_REASONING = model theo lớp skill (openai bắt buộc khai báo)
 //   ANTHROPIC_API_KEY | GEMINI_API_KEY | OPENAI_API_KEY (dùng chung với wms-doc-reader)
 //   AI_PRICE_IN_PER_M / AI_PRICE_OUT_PER_M = USD mỗi triệu token (không đặt → chi phí ghi "chưa rõ")
+//   Kết nối Admin thêm ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên; chưa gán thì dùng các biến trên (index.ts chọn đích).
 import Anthropic from '@anthropic-ai/sdk';
+import { DEFAULT_BASE_URL, KIND_LABEL, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
-export type ModelClass = 'fast' | 'reasoning';
+export type { ModelClass };
 export interface Usage { tokensIn: number | null; tokensOut: number | null }
 export interface Completion { text: string; usage: Usage }
 export interface CompletionRequest { system: string; user: string; schema: Record<string, unknown>; maxTokens: number }
@@ -50,10 +52,15 @@ export const costUsd = (usage: Usage, price: GatewayConfig['price']) =>
   usage.tokensIn == null || usage.tokensOut == null || price.inPerM == null || price.outPerM == null
     ? null : Math.round(((usage.tokensIn * price.inPerM + usage.tokensOut * price.outPerM) / 1e6) * 1e5) / 1e5;
 
-async function withAnthropic(key: string, model: string, req: CompletionRequest): Promise<Completion> {
-  const client = new Anthropic({ apiKey: key });
+/** Đích từ Secrets (chưa gán kết nối). */
+export const envTarget = (config: GatewayConfig, modelClass: ModelClass): AiTarget | null => config.key
+  ? { kind: config.provider, baseUrl: DEFAULT_BASE_URL[config.provider], apiKey: config.key, model: config.models[modelClass], source: 'secrets', name: `${KIND_LABEL[config.provider]} (Secrets)` }
+  : null;
+
+async function withAnthropic(t: AiTarget, req: CompletionRequest): Promise<Completion> {
+  const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
   const response = await client.messages.create({
-    model, max_tokens: req.maxTokens, system: req.system,
+    model: t.model, max_tokens: req.maxTokens, system: req.system,
     messages: [{ role: 'user', content: req.user }],
   });
   if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
@@ -62,9 +69,9 @@ async function withAnthropic(key: string, model: string, req: CompletionRequest)
   return { text, usage: { tokensIn: response.usage?.input_tokens ?? null, tokensOut: response.usage?.output_tokens ?? null } };
 }
 
-async function withGemini(key: string, model: string, req: CompletionRequest): Promise<Completion> {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, signal: AbortSignal.timeout(55000),
+async function withGemini(t: AiTarget, req: CompletionRequest): Promise<Completion> {
+  const res = await fetch(`${t.baseUrl}/v1beta/models/${encodeURIComponent(t.model)}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(55000),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
       contents: [{ role: 'user', parts: [{ text: req.user }] }],
@@ -79,13 +86,15 @@ async function withGemini(key: string, model: string, req: CompletionRequest): P
   return { text, usage: { tokensIn: data?.usageMetadata?.promptTokenCount ?? null, tokensOut: data?.usageMetadata?.candidatesTokenCount ?? null } };
 }
 
-async function withOpenAI(key: string, model: string, req: CompletionRequest): Promise<Completion> {
-  if (!model) throw new Error('AI_MODEL_REQUIRED');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(55000),
+async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completion> {
+  if (!t.model) throw new Error('AI_MODEL_REQUIRED');
+  // Cổng chuẩn OpenAI khác (9Router, OpenRouter…) thường chưa hỗ trợ json_schema strict / max_completion_tokens: dùng json_object + max_tokens.
+  const compatible = t.kind === 'openai_compatible';
+  const res = await fetch(`${t.baseUrl}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(55000),
     body: JSON.stringify({
-      model, max_completion_tokens: req.maxTokens,
-      response_format: { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
+      model: t.model, ...(compatible ? { max_tokens: req.maxTokens } : { max_completion_tokens: req.maxTokens }),
+      response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
       messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.user }],
     }),
   });
@@ -97,8 +106,5 @@ async function withOpenAI(key: string, model: string, req: CompletionRequest): P
   return { text, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
 }
 
-export const complete = (config: GatewayConfig, model: string, req: CompletionRequest): Promise<Completion> => {
-  if (!config.key) throw new Error('AI_NOT_CONFIGURED');
-  return config.provider === 'anthropic' ? withAnthropic(config.key, model, req)
-    : config.provider === 'gemini' ? withGemini(config.key, model, req) : withOpenAI(config.key, model, req);
-};
+export const complete = (target: AiTarget, req: CompletionRequest): Promise<Completion> =>
+  target.kind === 'anthropic' ? withAnthropic(target, req) : target.kind === 'gemini' ? withGemini(target, req) : withOpenAI(target, req);

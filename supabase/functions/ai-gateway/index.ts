@@ -7,7 +7,8 @@
 // Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
-import { complete, costUsd, readConfig } from './providers.ts';
+import { complete, costUsd, envTarget, readConfig } from './providers.ts';
+import { KIND_LABEL, targetFromConnection, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -28,11 +29,24 @@ Deno.serve(async request => {
   if ((await user.auth.getUser(token)).error) return json({ error: 'Unauthorized' }, 401);
 
   const config = readConfig(name => Deno.env.get(name));
+  // Đích theo lớp model: kết nối Admin gán (Cài đặt → Kết nối, khóa trong Vault) → Secrets → (suy luận) kết nối của lớp nhanh.
+  // service_role chỉ dùng để giải mã đúng một khóa qua integration_secret_v1; mọi dữ liệu khác vẫn đi bằng JWT người dùng.
+  const service = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const assigned = async (feature: 'ai.fast' | 'ai.reasoning', cls: ModelClass) => {
+    const r = await service.rpc('integration_secret_v1', { p_id: null, p_feature: feature });
+    if (r.error) { console.error('ai-gateway connection read failed', r.error.message); return null; }
+    return targetFromConnection(r.data, cls);
+  };
+  const resolveTarget = async (cls: ModelClass): Promise<AiTarget | null> =>
+    (await assigned(cls === 'reasoning' ? 'ai.reasoning' : 'ai.fast', cls)) ?? envTarget(config, cls) ?? (cls === 'reasoning' ? await assigned('ai.fast', cls) : null);
+  const describe = (t: AiTarget | null) => t ? { source: t.source, name: t.name, kind: t.kind, label: KIND_LABEL[t.kind], model: t.model } : null;
 
   if (body?.action === 'status') {
+    const [fast, reasoning] = await Promise.all([resolveTarget('fast'), resolveTarget('reasoning')]);
     return json({
-      code: 'OK', configured: Boolean(config.key), provider: config.provider, providerSource: config.providerSource,
-      models: config.models, keysPresent: config.keysPresent, priceKnown: config.price.inPerM != null && config.price.outPerM != null,
+      code: 'OK', configured: Boolean(fast), provider: fast?.kind ?? config.provider, providerSource: fast?.source === 'connection' ? 'connection' : config.providerSource,
+      models: { fast: fast?.model || '', reasoning: reasoning?.model || '' }, targets: { fast: describe(fast), reasoning: describe(reasoning) },
+      keysPresent: config.keysPresent, priceKnown: config.price.inPerM != null && config.price.outPerM != null,
       skills: Object.keys(SKILLS),
     });
   }
@@ -50,12 +64,14 @@ Deno.serve(async request => {
 
   const def = SKILLS[body.skill];
   if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }
-  if (!config.key) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
+  const target = await resolveTarget(opened.skill?.modelClass || 'fast');
+  if (!target) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
 
-  const model = config.models[opened.skill?.modelClass || 'fast'];
+  const model = target.model;
+  const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
   const started = Date.now();
   let input: Record<string, string>;
-  try { input = def.parseInput(body.input); } catch { await finish({ status: 'error', provider: config.provider, model, error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', error: 'AI_BAD_INPUT' }); }
+  try { input = def.parseInput(body.input); } catch { await finish({ status: 'error', provider, model, error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', error: 'AI_BAD_INPUT' }); }
 
   // Che dữ liệu nhạy cảm từng ô rồi mới dựng prompt; số lượt che ghi vào tóm tắt nhật ký.
   const masked: Record<string, string> = {}; const hits: Record<string, number> = {};
@@ -67,17 +83,17 @@ Deno.serve(async request => {
   const inputChars = userText.length;
 
   try {
-    const out = await complete(config, model, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens });
+    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens });
     const result = def.parseOutput(parseJsonLoose(out.text));
     const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
     const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };
-    await finish({ status: 'ok', provider: config.provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}` });
-    return json({ code: 'OK', runId, result, model, provider: config.provider, usage });
+    await finish({ status: 'ok', provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}` });
+    return json({ code: 'OK', runId, result, model, provider: target.kind, usage });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'AI_FAILED';
     const code = message === 'AI_REFUSED' ? 'refused' : 'error';
-    console.error('ai-gateway failed', config.provider, model, message);
-    await finish({ status: code, provider: config.provider, model, inputChars, durationMs: Date.now() - started, error: message.slice(0, 200) });
+    console.error('ai-gateway failed', provider, model, message);
+    await finish({ status: code, provider, model, inputChars, durationMs: Date.now() - started, error: message.slice(0, 200) });
     return json({ code: message === 'AI_REFUSED' ? 'AI_REFUSED' : 'AI_FAILED', runId, error: message.startsWith('AI_') ? message : 'AI_FAILED' });
   }
 });
