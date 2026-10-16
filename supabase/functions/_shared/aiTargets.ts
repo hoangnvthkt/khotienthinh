@@ -90,6 +90,8 @@ export interface ProbeResult {
   /** BAD_KEY · BAD_ENDPOINT · RATE_LIMIT · UNREACHABLE · UNSAFE_ENDPOINT · HTTP_5xx · MODEL_NOT_FOUND (vẫn ok) */
   code: string | null;
   message: string;
+  /** Số dư nhà cung cấp trả về (VD RevidAPI: credit) — null khi không biết. */
+  balance?: { amount: number; unit: string } | null;
 }
 
 const MESSAGES: Record<string, string> = {
@@ -100,6 +102,26 @@ const MESSAGES: Record<string, string> = {
   UNSAFE_ENDPOINT: 'Endpoint phải là https công khai',
   MODEL_NOT_FOUND: 'Kết nối được nhưng không thấy model đã chọn',
 };
+/**
+ * Cổng có danh sách model công khai (không cần khóa) → phải gọi thêm một lệnh bắt buộc khóa, không thì khóa sai vẫn báo "Kết nối được".
+ * RevidAPI (16/10): GET /v1/models trả 200 cả khi không khóa; GET /v1/credits trả 401 khi khóa sai và trả số dư khi đúng.
+ */
+const KEY_CHECKS: Array<{ host: RegExp; path: string; unit: string }> = [
+  { host: /(^|\.)revidapi\.com$/i, path: '/v1/credits', unit: 'credit' },
+];
+
+/** Lấy số dư trong JSON trả về (tên trường mỗi nhà cung cấp một kiểu). */
+export const readBalance = (data: unknown): number | null => {
+  const o = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  for (const key of ['credits', 'balance', 'remaining', 'credit', 'remaining_credits', 'available']) {
+    const v = o[key];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  }
+  const inner = o.data && typeof o.data === 'object' && !Array.isArray(o.data) ? o.data : null;
+  return inner ? readBalance(inner) : null;
+};
+
 export const probeMessage = (code: string | null, httpStatus: number | null) =>
   code ? MESSAGES[code] || `Nhà cung cấp trả lỗi ${httpStatus ?? ''}`.trim() : 'Kết nối được';
 
@@ -135,5 +157,22 @@ export const probe = async (target: Pick<AiTarget, 'kind' | 'baseUrl' | 'apiKey'
   const ids = (Array.isArray(raw) ? raw : []).map(m => String(m.id || m.name || '').replace(/^models\//, '')).filter(Boolean);
   const wanted = (target.model || '').trim();
   const missing = wanted && ids.length > 0 && !ids.includes(wanted);
-  return done({ ok: true, httpStatus: res.status, models: ids.length, modelIds: ids.slice(0, 300), code: missing ? 'MODEL_NOT_FOUND' : null });
+  let balance: ProbeResult['balance'] = null;
+  const check = KEY_CHECKS.find(c => c.host.test(new URL(base).hostname));
+  if (check) {
+    let keyRes: Response;
+    try {
+      keyRes = await fetchFn(`${new URL(base).origin}${check.path}`, { method: 'GET', headers: { Authorization: `Bearer ${target.apiKey}` }, signal: AbortSignal.timeout(15000), redirect: 'error' });
+    } catch {
+      return done({ code: 'UNREACHABLE', models: ids.length, modelIds: ids.slice(0, 300) });
+    }
+    if (keyRes.status === 401 || keyRes.status === 403) return done({ httpStatus: keyRes.status, code: 'BAD_KEY', models: ids.length, modelIds: ids.slice(0, 300) });
+    if (keyRes.ok) {
+      let body: unknown = null;
+      try { body = await keyRes.json(); } catch { body = null; }
+      const amount = readBalance(body);
+      balance = amount == null ? null : { amount, unit: check.unit };
+    }
+  }
+  return done({ ok: true, httpStatus: res.status, models: ids.length, modelIds: ids.slice(0, 300), code: missing ? 'MODEL_NOT_FOUND' : null, balance });
 };
