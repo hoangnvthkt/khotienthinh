@@ -11,6 +11,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 const TEMPLATE = `
 <div class="s3d-stage" data-s3d="stage"></div>
@@ -32,6 +37,7 @@ const TEMPLATE = `
   <span data-s3d="viewBtns" style="display:contents"></span>
   <button type="button" data-s3d="btnGhost" aria-pressed="true">Hình hoàn thành</button>
   <button type="button" data-s3d="btnMotion" aria-pressed="false" title="Công nhân đi lại, máy làm việc, xe ra vào công trường">Chuyển động</button>
+  <button type="button" data-s3d="btnHq" aria-pressed="false" hidden title="Bầu trời, ánh sáng và bóng đổ như ảnh phối cảnh (cần máy có card đồ hoạ)">Chất lượng cao</button>
   <button type="button" data-s3d="btnModels" hidden title="Tải lên / thay mô hình thiết kế và kết cấu thép">Mô hình</button>
   <span class="s3d-pill" data-s3d="realStatus"></span>
 </div>
@@ -133,11 +139,13 @@ export function createSiteScene(opts) {
   Object.assign(labels.domElement.style, { position: 'absolute', top: '0', left: '0', pointerEvents: 'none' }); stage.appendChild(labels.domElement);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.47; controls.minDistance = 6; controls.maxDistance = 520; controls.autoRotateSpeed = 0.35;
-  scene.add(new THREE.HemisphereLight('#ffffff', '#a9b7a0', 1.0));
+  const hemi = new THREE.HemisphereLight('#ffffff', '#a9b7a0', 1.0); scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff4e0', 1.7); sun.position.set(-90, 160, 110); sun.castShadow = true;
   sun.shadow.mapSize.set(HIGH ? 4096 : 2048, HIGH ? 4096 : 2048); Object.assign(sun.shadow.camera, { left: -170, right: 170, top: 170, bottom: -170, near: 10, far: 520 }); sun.shadow.bias = -0.0004; scene.add(sun); scene.add(sun.target); sun.target.position.set(0, 0, -50);
 
   let raf = 0, inTick = false, active = false, motion = false, lastTs = 0, extraFrames = 0, frames = 0, frameNo = 0, t = 0;
+  // Chất lượng cao (máy tính): bầu trời + mặt trời, ánh sáng môi trường từ trời, tone mapping điện ảnh, GTAO (bóng ở góc khuất), khử răng cưa MSAA.
+  let hq = false, composer = null, roomEnv = null, slowMs = 0;
   // Có việc đổi (bấm, xoay, đổi ngày): vẽ thêm vài khung rồi dừng. Đang chuyển động / bay camera / phát tiến độ thì vẽ liên tục.
   function invalidate(n = 2) { extraFrames = Math.max(extraFrames, n); if (!raf && !inTick && active && !disposed) raf = requestAnimationFrame(tick); }
 
@@ -147,6 +155,10 @@ export function createSiteScene(opts) {
   const speckle = (base, dots, n = 2500, sz = 2) => (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let i = 0; i < n; i += 1) { g.fillStyle = dots[i % dots.length]; g.fillRect(Math.random() * w, Math.random() * h, sz * Math.random() + 0.5, sz * Math.random() + 0.5); } };
   const TX = {
     grass: canvasTex(256, 256, speckle('#7fae5b', ['#6f9e4d', '#8fbd68', '#76a553', '#9cc574']), 120, 120),
+    // Cỏ chất lượng cao: mảng đậm nhạt lớn + hạt nhỏ, ô 50 m để không thấy lặp.
+    grassHq: HIGH ? canvasTex(1024, 1024, (g, w, h) => { g.fillStyle = '#86b25f'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 160; i += 1) { const r = 40 + Math.random() * 140, x = Math.random() * w, y = Math.random() * h; const gr = g.createRadialGradient(x, y, 0, x, y, r); const c = ['#6f9e4a', '#92bd66', '#7aa851', '#9cc272'][i % 4]; gr.addColorStop(0, c + 'aa'); gr.addColorStop(1, c + '00'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+      for (let i = 0; i < 26000; i += 1) { g.fillStyle = ['#6a9947', '#a3cc78', '#77a650', '#5f8c40', '#b4d48a'][i % 5]; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2.5); } }, 48, 48) : null,
     dirt: canvasTex(256, 256, speckle('#b79a72', ['#a88a63', '#c4a983', '#9c7f5a', '#cdb48f'], 4000)),
     sand: canvasTex(256, 256, speckle('#d9c69c', ['#cdb98d', '#e4d3ad', '#c9b384'], 3000)),
     gravel: canvasTex(256, 256, speckle('#9a9a96', ['#7f7f7b', '#b3b3ae', '#8c8a84', '#c2c0ba', '#6e6d69'], 6000, 3)),
@@ -261,9 +273,12 @@ export function createSiteScene(opts) {
     const pts = []; let guard = 0;
     while (pts.length < (HIGH ? 480 : 240) && guard < 8000) { guard += 1; const x = -330 + Math.random() * 640, z = -260 + Math.random() * 520;
       if (x > SITE.x0 - 8 && x < SITE.x1 + 6 && z > SITE.z0 - 6 && z < SITE.z1 + 6) continue; if (onRoad(x, z)) continue; pts.push([x, z, 0.8 + Math.random() * 0.9]); }
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.4, 3, 6), M.trunk, pts.length), c1 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, 1), M.leaf, pts.length), c2 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9, 1), M.leaf2, pts.length);
-    pts.forEach(([x, z, sc], i) => { trunk.setMatrixAt(i, mtx(x, 1.5 * sc, z, sc, sc, sc)); c1.setMatrixAt(i, mtx(x, 4.2 * sc, z, sc * 1.1, sc * 1.25, sc * 1.1)); c2.setMatrixAt(i, mtx(x + 0.9 * sc, 5.6 * sc, z + 0.4 * sc, sc, sc, sc)); });
-    for (const m of [trunk, c1, c2]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
+    // Mỗi cây: thân thon + 3 tán lệch nhau, màu lá hơi khác nhau từng cây (instanceColor).
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.42, 3.2, 7), M.trunk, pts.length), c1 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, HIGH ? 2 : 1), M.leaf, pts.length), c2 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9, HIGH ? 2 : 1), M.leaf2, pts.length), c3 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, HIGH ? 2 : 1), M.leaf3, pts.length);
+    const tint = new THREE.Color();
+    pts.forEach(([x, z, sc], i) => { const ry = Math.random() * Math.PI * 2; trunk.setMatrixAt(i, mtx(x, 1.6 * sc, z, sc, sc, sc)); c1.setMatrixAt(i, mtx(x, 4.3 * sc, z, sc * 1.1, sc * 1.3, sc * 1.1, ry)); c2.setMatrixAt(i, mtx(x + 0.9 * sc, 5.5 * sc, z + 0.5 * sc, sc, sc * 0.9, sc, ry)); c3.setMatrixAt(i, mtx(x - 0.8 * sc, 5.2 * sc, z - 0.6 * sc, sc, sc, sc, ry));
+      tint.setHSL(0.26 + Math.random() * 0.06, 0.45 + Math.random() * 0.2, 0.42 + Math.random() * 0.14); c1.setColorAt(i, tint); c2.setColorAt(i, tint.clone().offsetHSL(0.01, 0, 0.05)); c3.setColorAt(i, tint.clone().offsetHSL(-0.01, 0, -0.04)); });
+    for (const m of [trunk, c1, c2, c3]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
   }
 
   /* ───────── Hình hoàn thành (bóng mờ theo phối cảnh) ───────── */
@@ -415,6 +430,15 @@ export function createSiteScene(opts) {
     return g;
   }
 
+  // Cây cau / dừa cảnh: thân cong nhẹ, 9 tàu lá rủ.
+  function palm(parent, x, z, h = 6) {
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = Math.random() * Math.PI * 2; parent.add(g);
+    const tr = cyl(0.14, 0.26, h, M.trunk, 0, h / 2, 0, g, 8); tr.rotation.z = 0.06;
+    for (let i = 0; i < 9; i += 1) { const f = new THREE.Group(); f.position.set(0, h, 0); f.rotation.y = (i / 9) * Math.PI * 2; f.rotation.z = -0.35 - (i % 3) * 0.18; g.add(f);
+      const leaf = mesh(new THREE.PlaneGeometry(0.9, 3.8), i % 2 ? M.leaf : M.leaf3, 0, 0, 1.9, f); leaf.rotation.x = -Math.PI / 2 + 0.55; leaf.castShadow = true; }
+    cyl(0.3, 0.3, 0.3, M.brown, 0, h, 0, g, 8);
+    return g;
+  }
   const FH = 3.6;
   // Dựng trong khung cục bộ (bề rộng theo x, chiều dài theo z) rồi xoay 90° về đúng chỗ trên mặt bằng thật:
   // x thật = z cục bộ + tx, z thật = tz − x cục bộ. Trả về các nhóm phần tử đã dựng (để ẩn khi mô hình thiết kế đã hiện thật).
@@ -529,6 +553,8 @@ export function createSiteScene(opts) {
     const stair = boxM(0.9, 0.1, 3.4, M.grey, -81.6, 1.3, 33.5, tempG); stair.rotation.x = 0.75;
     signBoard(tempG, -85, 5.2 + 1.9, 32, 7.5, 1.5);
     const bch = label('Ban chỉ huy công trường<small>container văn phòng · kho · nhà vệ sinh</small>'); bch.position.set(-83, 10.2, 32); tempG.add(bch);
+    // Khi hoàn thiện: cây cau cảnh quanh hồ và dọc lối vào (ảnh phối cảnh; mô hình SketchUp đã bỏ cây vì quá nặng).
+    for (const [x, z, h] of [[-91, -14, 7], [-79, -11, 6], [-93, -37, 6.5], [-77, -39, 7.5], [-90, 6, 6], [-90, 16, 7], [-82, 2, 5.5], [-70, 0, 6.5]]) palm(finishG, x, z, h);
   }
   }
 
@@ -1397,8 +1423,8 @@ export function createSiteScene(opts) {
       if (disposed) return;
       if (!arch) { REAL.loading = false; btnGhost.hidden = FINISHED; setStatus(canManage ? 'Chưa có mô hình thiết kế' : ''); return; }
       setStatus('Đang dựng mô hình thiết kế…');
-      const pm = new THREE.PMREMGenerator(renderer); const envTex = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose(); TEXTURES.push(envTex);
-      scene.environment = envTex; scene.environmentIntensity = 0.45;
+      const pm = new THREE.PMREMGenerator(renderer); roomEnv = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose(); TEXTURES.push(roomEnv);
+      if (!hq) { scene.environment = roomEnv; scene.environmentIntensity = 0.45; }
       const g = await parse(arch); if (disposed) return;
       g.scene.position.y = SITE_KEY === 'SMB' ? 0 : -0.3; scene.add(g.scene); g.scene.updateMatrixWorld(true); MODEL_ROOTS.push(g.scene); ctxG.visible = false;
       const tuned = new Set();
@@ -1424,7 +1450,7 @@ export function createSiteScene(opts) {
         }
       } catch (e) { console.warn('Site3D structure model failed:', e); }
       if (disposed) return;
-      REAL.loaded = true; setStatus('');
+      REAL.loaded = true; setStatus(''); tuneModelMaterials();
       btnGhost.hidden = FINISHED; btnGhost.textContent = btnGhostLabel[REAL.mode]; btnGhost.setAttribute('aria-pressed', 'true');
       btnGhost.onclick = () => { REAL.mode = REAL.mode === 'ghost' ? 'full' : REAL.mode === 'full' ? 'steel' : REAL.mode === 'steel' ? 'off' : 'ghost'; btnGhost.textContent = btnGhostLabel[REAL.mode]; btnGhost.setAttribute('aria-pressed', String(REAL.mode !== 'off')); setDay(DAY); };
       setDay(DAY);
@@ -1437,6 +1463,54 @@ export function createSiteScene(opts) {
     UPDATERS.push(d => applyReal(d));
     if (loadModel) { if (autoLoadModels) loadReal(); else setStatus('', 'Tải mô hình thiết kế (≈15 MB)', () => loadReal()); }
   }
+
+  /* ───────── Chất lượng cao (trình chiếu trên máy tính) ───────── */
+  // Vật liệu mô hình thiết kế theo chế độ: kính phản chiếu trời, mái tôn / kim loại bóng nhẹ.
+  const tunedMats = new Map();
+  function tuneModelMaterials() {
+    for (const o of REAL.meshes) { const m = o.userData.orig; if (!m || tunedMats.get(m) === hq) continue; tunedMats.set(m, hq);
+      const nm = (m.name || '').toLowerCase();
+      if (m.transparent) { if (hq) { m.opacity = 0.42; m.roughness = 0.03; m.metalness = 0.55; m.color.set('#b9d3ea'); } else { m.opacity = 0.32; m.roughness = 0.05; m.metalness = 0.15; m.color.set('#cfe3f3'); } m.needsUpdate = true; }
+      else if (/metal|ton\b|tôn|seamed|corrogated|zincalume|steel|alu|color_h08/.test(nm)) { m.metalness = hq ? HQP.metal : 0; m.roughness = hq ? 0.45 : 0.85; m.needsUpdate = true; } }
+  }
+  const sky = new Sky(); sky.scale.setScalar(3000); sky.visible = false; scene.add(sky);
+  const SUN_DIR = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(42), THREE.MathUtils.degToRad(-48));
+  const skyU = sky.material.uniforms; skyU.sunPosition.value.copy(SUN_DIR); skyU.turbidity.value = 3; skyU.rayleigh.value = 1.4; skyU.mieCoefficient.value = 0.004; skyU.mieDirectionalG.value = 0.8;
+  let skyEnv = null, gtao = null;
+  const canHq = HIGH && !!renderer.capabilities.isWebGL2;
+  // Vẽ bằng phần mềm (máy ảo, trình duyệt headless, máy không có card đồ hoạ): không tự bật khi trình chiếu, chỉ bật tay.
+  const swGl = (() => { try { const gl = renderer.getContext(), d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? /swiftshader|llvmpipe|software|mesa offscreen/i.test(String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL))) : false; } catch { return false; } })();
+  // Tham số chất lượng cao (chỉnh được khi thử: debug.hqTune).
+  const HQP = { exposure: 1.15, sun: 3.0, env: 0.65, hemi: 0.3, ao: 0.55, aoRadius: 1.8, metal: 0.12 };
+  function applyHqParams() {
+    if (!hq) return;
+    renderer.toneMappingExposure = HQP.exposure; sun.intensity = HQP.sun; scene.environmentIntensity = HQP.env; hemi.intensity = HQP.hemi;
+    if (gtao) { gtao.blendIntensity = HQP.ao; gtao.updateGtaoMaterial({ radius: HQP.aoRadius }); }
+    for (const m of tunedMats.keys()) tunedMats.set(m, null); tuneModelMaterials(); invalidate();
+  }
+  function setHq(on) {
+    on = !!on && canHq; if (on === hq) return; hq = on;
+    sky.visible = hq; scene.background = hq ? null : new THREE.Color('#dbe7f1'); scene.fog.color.set(hq ? '#d5e1ec' : '#dbe7f1');
+    renderer.toneMapping = hq ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping; renderer.toneMappingExposure = HQP.exposure;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); renderer.setSize(W, H);
+    if (hq) {
+      if (!skyEnv) { const pm = new THREE.PMREMGenerator(renderer); skyEnv = pm.fromScene(sky).texture; pm.dispose(); TEXTURES.push(skyEnv); }
+      scene.environment = skyEnv; scene.environmentIntensity = HQP.env;
+      sun.position.copy(SUN_DIR).multiplyScalar(420); sun.target.position.set(0, 0, 0); sun.intensity = HQP.sun; sun.color.set('#fff1d6'); sun.shadow.normalBias = 0.03; hemi.intensity = HQP.hemi;
+      M.grass.map = TX.grassHq || TX.grass; M.grass.needsUpdate = true;
+      const target = new THREE.WebGLRenderTarget(W, H, { samples: 4, type: THREE.HalfFloatType });
+      composer = new EffectComposer(renderer, target); composer.addPass(new RenderPass(scene, camera));
+      gtao = new GTAOPass(scene, camera, W, H, undefined, { radius: HQP.aoRadius, distanceExponent: 1, thickness: 1.2, scale: 1.1, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
+      gtao.blendIntensity = HQP.ao; composer.addPass(gtao); composer.addPass(new OutputPass()); composer.setSize(W, H);
+    } else {
+      scene.environment = roomEnv; scene.environmentIntensity = roomEnv ? 0.45 : 1;
+      sun.position.set(-90, 160, 110); sun.target.position.set(0, 0, -50); sun.intensity = 1.7; sun.color.set('#fff4e0'); sun.shadow.normalBias = 0; hemi.intensity = 1.0;
+      M.grass.map = TX.grass; M.grass.needsUpdate = true;
+      if (composer) { for (const p of composer.passes) p.dispose?.(); composer.dispose(); composer = null; gtao = null; }
+    }
+    tuneModelMaterials(); btnHq.setAttribute('aria-pressed', String(hq)); invalidate();
+  }
+  const btnHq = $('btnHq'); btnHq.hidden = !canHq; btnHq.onclick = () => setHq(!hq);
 
   /* ───────── Chuyển động, ẩn thông tin, trình chiếu ───────── */
   const btnMotion = $('btnMotion'), btnInfo = $('btnInfo'), btnInfo2 = $('btnInfo2'), btnTour = $('btnTour');
@@ -1479,14 +1553,14 @@ export function createSiteScene(opts) {
     if (on === presenting) return;
     presenting = on;
     if (on) {
-      before = { motion, infoHidden };
-      host.classList.add('s3d-presenting'); setInfoHidden(true); setMotion(true, false); tour.i = 0; tourStart();
+      before = { motion, infoHidden, hq };
+      host.classList.add('s3d-presenting'); setInfoHidden(true); setMotion(true, false); if (canHq && !swGl) setHq(true); tour.i = 0; tourStart();
       const req = frame.requestFullscreen || frame.webkitRequestFullscreen;
       let full = false; try { if (req) { await req.call(frame); full = true; } } catch { full = false; }
       if (!full) frame.classList.add('s3d-frame-present'); // iPhone / khung nhúng không cho toàn màn hình
     } else {
       host.classList.remove('s3d-presenting'); frame.classList.remove('s3d-frame-present'); tourStop();
-      if (before) { setInfoHidden(before.infoHidden); setMotion(before.motion, false); }
+      if (before) { setInfoHidden(before.infoHidden); setMotion(before.motion, false); setHq(before.hq); }
       if (fsElement() === frame) { try { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch { /* đã thoát */ } }
     }
     resize(); invalidate();
@@ -1522,7 +1596,10 @@ export function createSiteScene(opts) {
     if (tour.on) { busy = true; tour.t += dt; if (camT >= 1) controls.autoRotate = true; if (tour.t > tour.dwell) { tour.t = 0; tour.i += 1; controls.autoRotate = false; goView(VIEW_LIST[tour.i % VIEW_LIST.length][0]); } }
     if (controls.update(dt)) busy = true;
     if (!motion || frameNo % 8 === 0) lod();
-    renderer.render(scene, camera); labels.render(scene, camera); frames += 1;
+    if (hq && composer) composer.render(); else renderer.render(scene, camera);
+    labels.render(scene, camera); frames += 1;
+    // Máy yếu: chuyển động ở chất lượng cao dưới ~14 khung / giây liên tục 3 giây thì tự tắt, báo một dòng.
+    if (hq && motion) { slowMs = dt > 0.07 ? slowMs + dt * 1000 : 0; if (slowMs > 3000) { slowMs = 0; setHq(false); toast('Máy chậm, đã tắt Chất lượng cao'); } }
     if (busy) extraFrames = 2; else extraFrames -= 1;
     inTick = false;
     if (extraFrames > 0 && active && !disposed) raf = requestAnimationFrame(tick); else { extraFrames = 0; lastTs = 0; }
@@ -1530,7 +1607,7 @@ export function createSiteScene(opts) {
   function resize() {
     const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
     if (w === W && h === H) return; W = w; H = h;
-    camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.setSize(W, H); labels.setSize(W, H); invalidate();
+    camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.setSize(W, H); labels.setSize(W, H); composer?.setSize(W, H); invalidate();
   }
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => resize()) : null; ro?.observe(stage);
 
@@ -1550,13 +1627,14 @@ export function createSiteScene(opts) {
     for (const g of geos) g.dispose();
     for (const m of mats) { for (const v of Object.values(m)) if (v && v.isTexture) v.dispose(); m.dispose(); }
     for (const tx of TEXTURES) tx.dispose();
+    if (composer) { for (const p of composer.passes) p.dispose?.(); composer.dispose(); } sky.material.dispose(); sky.geometry.dispose();
     scene.environment = null; renderer.dispose(); renderer.forceContextLoss?.();
     host.innerHTML = ''; host.classList.remove('s3d', 's3d-noinfo', 's3d-presenting');
   }
   return {
-    setActive, setMotion: on => setMotion(on, false), present, dispose, loadModels: () => loadReal(),
+    setActive, setMotion: on => setMotion(on, false), present, dispose, loadModels: () => loadReal(), setHq,
     debug: {
-      setDay, day: () => DAY, frames: () => frames, finished: () => FINISHED, setFinished: on => setFinished(on), presenting: () => presenting, infoHidden: () => infoHidden, motion: () => motion,
+      setDay, day: () => DAY, frames: () => frames, finished: () => FINISHED, setFinished: on => setFinished(on), setHq, hq: () => hq, softwareGl: () => swGl, hqTune: p => { Object.assign(HQP, p); applyHqParams(); }, presenting: () => presenting, infoHidden: () => infoHidden, motion: () => motion,
       view: v => { goView(v); camT = 1; camera.position.copy(camTo.p); controls.target.copy(camTo.t); controls.update(); invalidate(); },
       focus: (x, y, z, dist, ax = -1, ay = 0.6, az = 1) => { camT = 1; controls.target.set(x, y, z); camera.position.set(x + ax * dist, y + ay * dist, z + az * dist); controls.update(); invalidate(); },
       real: () => ({ loaded: REAL.loaded, meshes: REAL.meshes.length, tekla: TEKLA.length, mode: REAL.mode }),
