@@ -79,6 +79,7 @@ button:hover{background:#f2f2f2}button[aria-pressed=true]{border-color:var(--acc
   <span id="viewBtns" style="display:contents"></span>
   <button id="btnGhost" aria-pressed="true">Hình hoàn thành</button>
   <button id="btnRotate" aria-pressed="false">Tự xoay</button>
+  <span id="realStatus" class="pill" style="align-self:center"></span>
 </div>
 
 <aside class="card right" id="info"></aside>
@@ -241,7 +242,8 @@ const k = (n, p) => Math.round(n * Math.max(0, Math.min(100, p)) / 100);
 /* ───────── Mặt bằng (đơn vị m; x đông, z nam; đường lớn phía nam) ─────────
    Kích thước theo khối lượng BOQ trong Vioo: NX1 = NX2 = 1.980 m² (30 × 66), NX3 = 5.550 m² hai zone (66 × 83), nhà văn phòng ~400 m² sàn (24 × 17), 4 tầng + tum. */
 const kidsOf = w => (TASK[w] ? TASK[w].kids.map(t => t.wbs) : []);
-const SITE = SITE_KEY === 'SMB' ? { x0: -52, x1: 50, z0: -172, z1: 62 } : { x0: -66, x1: 80, z0: -178, z1: 52 };
+const SITE = SITE_KEY === 'SMB' ? { x0: -52, x1: 50, z0: -172, z1: 62 } : { x0: -110, x1: 111, z0: -129, z1: 129 };
+const ZONE = { x0: -105, x1: 78, z0: -112, z1: -1 }; // phần đất thi công giai đoạn 2 (XinHai)
 const BLD = SITE_KEY === 'SMB' ? {
   NVP: { name: 'Nhà văn phòng', short: 'Văn phòng', x0: -40, x1: -16, z0: 8, z1: 25, roots: ['1', '2', '3', '4'] },
   NX1: { name: 'Nhà xưởng 1', short: 'Xưởng 1', x0: 0, x1: 30, z0: -50, z1: 16, roots: ['5', '6', '7', '8'] },
@@ -249,18 +251,19 @@ const BLD = SITE_KEY === 'SMB' ? {
   NX3: { name: 'Nhà xưởng 3', short: 'Xưởng 3', x0: -38, x1: 28, z0: -160, z1: -77, roots: ['13', '14', '15', '16'] },
   HT: { name: 'Hạ tầng', short: 'Hạ tầng', x0: SITE.x0, x1: SITE.x1, z0: SITE.z0, z1: SITE.z1, roots: ['17'] },
 } : {
-  COC: { name: 'Phần cọc', short: 'Cọc', x0: 0, x1: 60, z0: -115, z1: 20, roots: kidsOf('1'), noLabel: true },
-  NVP: { name: 'Nhà văn phòng (nhà điều hành)', short: 'Văn phòng', x0: 4, x1: 40.3, z0: -147, z1: -115, roots: kidsOf('2') },
-  NNC: { name: 'Nhà nghỉ ca', short: 'Nghỉ ca', x0: -30, x1: -12, z0: -4, z1: 12, roots: kidsOf('3') },
-  NX: { name: 'Xưởng sản xuất chính + kho', short: 'Xưởng', x0: 0, x1: 60, z0: -115, z1: 20, roots: kidsOf('4') },
+  COC: { name: 'Phần cọc', short: 'Cọc', x0: -84.5, x1: 57, z0: -57.2, z1: -2.9, roots: kidsOf('1'), noLabel: true },
+  NVP: { name: 'Nhà văn phòng (nhà điều hành)', short: 'Văn phòng', x0: 57.5, x1: 75.6, z0: -59, z1: -3, roots: kidsOf('2') },
+  NNC: { name: 'Nhà nghỉ ca', short: 'Nghỉ ca', x0: -88.4, x1: -67, z0: -85.1, z1: -68, roots: kidsOf('3') },
+  NX: { name: 'Xưởng sản xuất chính + kho', short: 'Xưởng', x0: -84.5, x1: 57, z0: -57.2, z1: -2.9, roots: kidsOf('4') },
   PHU: { name: 'WC + khí nén, trạm biến áp, hồ PCCC, nhà xe', short: 'Hạng mục phụ', x0: -60, x1: 78, z0: -140, z1: -10, roots: ['5', '6', '7'], noLabel: true },
   HT: { name: 'Hạ tầng, cây xanh, bàn giao', short: 'Hạ tầng', x0: SITE.x0, x1: SITE.x1, z0: SITE.z0, z1: SITE.z1, roots: ['8', '9'], noLabel: true },
 };
 const CFG = SITE_KEY === 'SMB' ? { title: 'Công trường Sơn Miền Bắc', code: 'SMB-2026', warehouse: 'Kho Sơn Miền Bắc' } : { title: 'Công trường XinHai (Thú nhồi bông GĐ2)', code: 'DA29', warehouse: 'Kho Xin Hai Vina' };
 
 /* ───────── Đất, đường lớn, rừng cây xung quanh ───────── */
-flat(2400, 2400, M.grass, 0, -0.02, 0);
-const siteGround = flat(SITE.x1 - SITE.x0, SITE.z1 - SITE.z0, M.dirt, (SITE.x0 + SITE.x1) / 2, 0.01, (SITE.z0 + SITE.z1) / 2);
+flat(2400, 2400, M.grass, 0, SITE_KEY === 'DA29' ? -0.9 : -0.02, 0);
+const GR = SITE_KEY === 'SMB' ? SITE : ZONE;
+const siteGround = flat(GR.x1 - GR.x0, GR.z1 - GR.z0, M.dirt, (GR.x0 + GR.x1) / 2, 0.01, (GR.z0 + GR.z1) / 2);
 siteGround.userData.site = true;
 const onRoad = (x, z) => (SITE_KEY === 'SMB' ? Math.abs(z - 80) < 17 : Math.abs(x + 80) < 9);
 if (SITE_KEY === 'SMB') {
@@ -270,18 +273,8 @@ if (SITE_KEY === 'SMB') {
   flat(1600, 9, M.asphalt, 0, 0.03, ROAD_Z - 7); flat(1600, 9, M.asphalt, 0, 0.03, ROAD_Z + 7); flat(1600, 5, M.grass, 0, 0.035, ROAD_Z);
   for (let x = -780; x < 780; x += 9) { flat(4, 0.25, M.white, x, 0.045, ROAD_Z - 7); flat(4, 0.25, M.white, x, 0.045, ROAD_Z + 7); }
   flat(1600, 4, M.concrete, 0, 0.04, ROAD_Z - 13.5);
-} else {
-  // Đường nhựa 2 làn phía tây (ảnh flycam), ao cá bên kia đường, nhà xưởng hàng xóm mái đỏ phía đông.
-  const rd = flat(10, 1600, mat('#ffffff', { map: rep(TX.asphalt, 2, 160) }), -80, 0.03, 0); for (let z = -780; z < 780; z += 9) flat(0.25, 4, mat('#f0d24a'), -80, 0.045, z);
-  for (const [x, z, w, d] of [[-125, -40, 60, 120], [-130, 90, 70, 70], [-120, -170, 50, 80]]) flat(w, d, M.water, x, 0.0, z);
-  const red = mat('#c0392b', { roughness: 0.6 }), wall = mat('#e8e6e1');
-  for (const [x0, x1, z0, z1, h] of [[86, 106, -60, 60, 7], [86, 104, -112, -76, 6], [112, 200, -262, -112, 10]]) { boxM(x1 - x0, h, z1 - z0, wall, (x0 + x1) / 2, h / 2, (z0 + z1) / 2);
-    const sh = new THREE.Shape(); sh.moveTo(-(x1 - x0) / 2 - 0.4, 0); sh.lineTo((x1 - x0) / 2 + 0.4, 0); sh.lineTo(0, 2.6); sh.closePath(); const r2 = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: z1 - z0, bevelEnabled: false }), x0 > 115 ? mat('#9aa7b4', { metalness: 0.4 }) : red); r2.position.set((x0 + x1) / 2, h, z0); r2.castShadow = true; scene.add(r2); }
-  boxM(6, 4, 120, mat('#d7dade'), -70.5, 2, -100); boxM(7, 0.3, 121, mat('#8d98a3'), -70.5, 4.15, -100);
-  const gd1 = label('Nhà máy hiện có (giai đoạn 1)'); gd1.position.set(96, 12, 0); scene.add(gd1);
-  flat(300, 9, mat('#ffffff', { map: rep(TX.asphalt, 30, 1) }), 70, 0.03, 64);
 }
-{ // Rừng cây quanh khu đất: 3 InstancedMesh (thân + 2 tán) cho vài trăm cây.
+if (SITE_KEY === 'SMB') { // Rừng cây quanh khu đất: 3 InstancedMesh (thân + 2 tán) cho vài trăm cây.
   const pts = []; let guard = 0;
   while (pts.length < 520 && guard < 8000) { guard += 1; const x = -330 + Math.random() * 660, z = -360 + Math.random() * 520;
     if (x > SITE.x0 - 6 && x < SITE.x1 + 6 && z > SITE.z0 - 6 && z < SITE.z1 + 4) continue; if (onRoad(x, z)) continue; pts.push([x, z, 0.8 + Math.random() * 0.9]); }
@@ -796,7 +789,9 @@ if (SITE_KEY === 'SMB') {
 /* ───────── XinHai (DA29): bố cục theo ảnh flycam (đường lớn phía tây, BCH cạnh cổng, nhà xưởng 3 phân đoạn từ trước ra sau); hình dạng nhà tham khảo Sơn Miền Bắc ───────── */
 // Nhà khung bê tông n tầng: móng → cột / sàn từng tầng → tường từng tầng; dùng cho nhà văn phòng và nhà nghỉ ca.
 const ANOMALIES = {};
-function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH }) {
+const REPLACE = {};
+function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH, noGhost }) {
+  const n0 = ELEMS.length;
   const xs = Array.from({ length: nx + 1 }, (_, i) => b.x0 + (b.x1 - b.x0) * i / nx), zs = Array.from({ length: nz + 1 }, (_, j) => b.z1 - (b.z1 - b.z0) * j / nz);
   const pos = []; zs.forEach(z => xs.forEach(x => pos.push([x, z])));
   foundation(pos, found, { xs, zs });
@@ -811,27 +806,31 @@ function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH 
     ANOMALIES[key] = notes; });
   if (tum) { const y0 = floors.length * fh, tp = [[b.x0, b.z0], [b.x0 + 6, b.z0], [b.x0, b.z0 + 6], [b.x0 + 6, b.z0 + 6]];
     columns(tp, y0, y0 + 3, 0.35, tum.col); slab([{ x0: b.x0 - 0.2, x1: b.x0 + 6.2, z0: b.z0 - 0.2, z1: b.z0 + 6.2 }], y0 + 3.1, 0.15, tum.slab, 2.9); if (tum.wall) walls(perimeter({ x0: b.x0, x1: b.x0 + 6, z0: b.z0, z1: b.z0 + 6 }, 1, 1, 0.1), y0 + 0.1, 2.8, M.brick, tum.wall); }
-  ghostBox(b.x1 - b.x0, ghostH, b.z1 - b.z0, (b.x0 + b.x1) / 2, ghostH / 2, (b.z0 + b.z1) / 2);
+  if (!noGhost) ghostBox(b.x1 - b.x0, ghostH, b.z1 - b.z0, (b.x0 + b.x1) / 2, ghostH / 2, (b.z0 + b.z1) / 2);
+  REPLACE[key] = ELEMS.slice(n0);
 }
-// Nhà xưởng khung thép 2 tầng (sàn deck), chia phân đoạn theo trục.
-function steelFactoryDA(b, segs) {
-  const xs = [0, 10, 20, 30, 40, 50, 60], BAY = 7.5;
+// Nhà xưởng khung thép 2 tầng (sàn deck), 18 bước cột, chia 3 phân đoạn theo trục. Dựng trong khung cục bộ (trục dọc = z) rồi xoay 90° về trục x thật.
+function steelFactoryDA(segs) {
+  const W0 = 2.9, W1 = 57.2, xs = Array.from({ length: 7 }, (_, i) => W0 + (W1 - W0) * i / 6), BAY = 141.5 / 18, mid = (W0 + W1) / 2;
+  const R = new THREE.Matrix4().makeRotationY(Math.PI / 2);
   for (const sg of segs) {
+    const n0 = ELEMS.length;
     const frameZ = []; for (let z = sg.z1; z >= sg.z0 - 0.5; z -= BAY) frameZ.push(Math.round(z * 100) / 100);
     const pos = []; frameZ.forEach(z => xs.forEach(x => pos.push([x, z])));
-    const r = { x0: b.x0, x1: b.x1, z0: sg.z0, z1: sg.z1 }, c = sg.c;
-    foundation(pos, { pile: '1.2.1', dig: c.dig, reb: c.reb, form: c.form, pad: c.conc, tie: c.conc, tieReb: c.reb, tieForm: c.form, backfill: c.fill }, { xs, zs: frameZ });
+    const r = { x0: W0, x1: W1, z0: sg.z0, z1: sg.z1 }, c = sg.c;
+    foundation(pos, { pile: '1.2.1', dig: c.dig, reb: c.reb, form: c.form, pad: c.conc, tie: c.conc, backfill: c.fill }, { xs, zs: frameZ });
     walls(perimeter(r, frameZ.length - 1, 6), 0, 0.5, M.concrete, c.plinth, 0.25);
     groundFloor(r, frameZ.length - 1, { sand: c.fill, base: c.base, mesh: c.floorReb, conc: c.floor });
-    const icol = new Elems(new THREE.ExtrudeGeometry(iShape(0.4, 0.2, 0.01, 0.015), { depth: 6.0, bevelEnabled: false }).rotateX(-Math.PI / 2), M.steelRed, pos.filter(([x]) => x !== b.x0 && x !== b.x1).map(([x, z]) => mtx(x, 0.4, z)), '4.3.1');
+    const icol = new Elems(new THREE.ExtrudeGeometry(iShape(0.4, 0.2, 0.01, 0.015), { depth: 6.0, bevelEnabled: false }).rotateX(-Math.PI / 2), M.steelRed, pos.map(([x, z]) => mtx(x, 0.4, z)), '4.3.1');
     UPDATERS.push(d => icol.frac(pAt('4.3.1', d)));
     const bays = []; for (let j = 0; j < frameZ.length - 1; j += 1) for (let i = 0; i < xs.length - 1; i += 1) bays.push({ x0: xs[i], x1: xs[i + 1], z0: frameZ[j + 1], z1: frameZ[j] });
     slab(bays, 6.45, 0.14, { form: '4.3.1', reb: c.deckReb, conc: c.deck }, 6.0, { formMat: M.deck, noProps: true });
     walls(perimeter(r, frameZ.length - 1, 6, 0.1), 0.5, 5.8, M.brick, c.wall);
-    steelRoof(r, [{ x0: 0, x1: 30 }, { x0: 30, x1: 60 }], frameZ, 0.4, 12, 14.4, { steel: '4.3.1', roof: c.roof, clad: c.clad });
-    const lab = label(sg.name, 'mach'); lab.position.set(b.x1 + 3, 1.5, (sg.z0 + sg.z1) / 2); scene.add(lab);
+    steelRoof(r, [{ x0: W0, x1: mid }, { x0: mid, x1: W1 }], frameZ, 0.4, 12, 14.4, { steel: '4.3.1', roof: c.roof, clad: c.clad });
+    const made = ELEMS.slice(n0); for (const e of made) { e.mats = e.mats.map(m => R.clone().multiply(m)); const f = e.from, t = e.to; e.from = -1; e.range(f, t); }
+    REPLACE['NX:' + sg.key] = made;
+    const lab = label(sg.name, 'mach'); lab.position.copy(v3(W0 - 3, 1.5, (sg.z0 + sg.z1) / 2).applyMatrix4(R)); scene.add(lab);
   }
-  ghostGable({ x0: 0, x1: 30, z0: b.z0, z1: b.z1 }, 12, 14.4); ghostGable({ x0: 30, x1: 60, z0: b.z0, z1: b.z1 }, 12, 14.4);
 }
 function pilePress() { // robot ép cọc tĩnh (loại 260 t): 2 dầm đi bộ, khung kẹp cọc, đối trọng khối bê tông, cabin, cẩu phụ cầm cọc
   const g = new THREE.Group();
@@ -868,40 +867,28 @@ function spunPiles(x, z, n, items) { // cọc ly tâm D300 dài 10 m xếp tần
 
 if (SITE_KEY === 'DA29') {
   const R = re => stockOf(re);
-  frameBuilding(BLD.NVP, { key: 'NVP', nx: 4, nz: 4, fh: 4.2, ghostH: 12, found: { pile: '1.2.1', dig: '2.1.1', reb: '2.1.4', form: '2.1.5', pad: '2.1.6', tie: '2.1.6', backfill: '2.2.1', plinth: '2.1.7' }, ground: { sand: '2.2.1', base: '2.2.2' },
+  frameBuilding(BLD.NVP, { key: 'NVP', nx: 2, nz: 6, fh: 4.2, ghostH: 12, noGhost: true, found: { pile: '1.2.1', dig: '2.1.1', reb: '2.1.4', form: '2.1.5', pad: '2.1.6', tie: '2.1.6', backfill: '2.2.1', plinth: '2.1.7' }, ground: { sand: '2.2.1', base: '2.2.2' },
     floors: [{ col: { reb: '2.3.1', form: '2.3.2', conc: '2.3.3' }, slab: { form: '2.3.4', reb: '2.3.5', conc: '2.3.6' }, wall: '2.5.1' }, { col: { reb: '2.4.1', form: '2.4.2', conc: '2.4.3' }, slab: { form: '2.4.4', reb: '2.4.5', conc: '2.4.6' }, wall: '2.5.2' }] });
-  frameBuilding(BLD.NNC, { key: 'NNC', nx: 3, nz: 2, fh: 3.6, ghostH: 14, found: { pile: '1.2.1', dig: '3.1.1', reb: '3.1.4', form: '3.1.5', pad: '3.1.6', tie: '3.1.6', backfill: '3.2.1', plinth: '3.1.7' }, ground: { sand: '3.2.1', base: '3.2.2' },
+  frameBuilding(BLD.NNC, { key: 'NNC', nx: 3, nz: 2, fh: 3.6, ghostH: 14, noGhost: true, found: { pile: '1.2.1', dig: '3.1.1', reb: '3.1.4', form: '3.1.5', pad: '3.1.6', tie: '3.1.6', backfill: '3.2.1', plinth: '3.1.7' }, ground: { sand: '3.2.1', base: '3.2.2' },
     floors: [{ col: { reb: '3.3.1', form: '3.3.2', conc: '3.3.3' }, slab: { form: '3.3.4', reb: '3.3.5', conc: '3.3.8' }, wall: '3.7.1' }, { col: { reb: '3.4.1', form: '3.4.2', conc: '3.4.3' }, slab: { form: '3.4.4', reb: '3.4.5', conc: '3.4.8' }, wall: '3.7.2' },
       { col: { reb: '3.5.1', form: '3.5.2', conc: '3.5.3' }, slab: { form: '3.5.4', reb: '3.5.5', conc: '3.5.8' }, wall: '3.7.3' }],
     tum: { col: { reb: '3.6.1', form: '3.6.2', conc: '3.6.3' }, slab: { form: '3.6.4', reb: '3.6.5', conc: '3.6.8' }, wall: '3.7.4' } });
-  steelFactoryDA(BLD.NX, [
-    { name: 'Phân đoạn 3 (trục 15–19)', z0: -10, z1: 20, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
-    { name: 'Phân đoạn 2 (trục 6–15)', z0: -85, z1: -10, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
-    { name: 'Phân đoạn 1 (trục 1–5)', z0: -115, z1: -85, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
+  steelFactoryDA([
+    { key: 'PD3', name: 'Phân đoạn 3 (trục 15–19)', z0: -84.5, z1: -84.5 + 4 * 141.5 / 18, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
+    { key: 'PD2', name: 'Phân đoạn 2 (trục 6–15)', z0: -84.5 + 4 * 141.5 / 18, z1: -84.5 + 14 * 141.5 / 18, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
+    { key: 'PD1', name: 'Phân đoạn 1 (trục 1–5)', z0: -84.5 + 14 * 141.5 / 18, z1: 57, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
   ]);
-  // Hạng mục chưa làm (0%): chỉ hiện bóng mờ.
-  const GI = [['Nhà xe công nhân (5C)', 844.2, 6.25, 3.5, 135, -61.5, -107.5], ['Nhà xe công nhân (5D)', 294.0, 49, 3.5, 6, 34.5, 47], ['Nhà lán xe (5E)', 99.8, 10, 3.5, 10, 71, 32],
-    ['Hồ nước PCCC (24)', 235.0, 19, 0.5, 12.4, -40, -60], ['Nhà vệ sinh công nhân (6A)', 105.8, 10.6, 3.6, 10, -45, -152], ['Nhà vệ sinh công nhân (6B)', 110.7, 10.5, 3.6, 10.5, -30, -152],
-    ['Phòng khí nén (25)', 52.5, 7.5, 3.6, 7, -15, -152], ['Phòng máy phát điện (26)', 66.3, 8.3, 3.6, 8, -45, -168], ['Trạm biến áp bổ sung (27)', 36.7, 6, 3, 6.1, -30, -168],
-    ['Nhà nồi hơi (7A)', 40.2, 6.7, 4, 6, -15, -168], ['Chòi hút thuốc (29)', 11.0, 3.3, 2.8, 3.3, 71, 4], ['Công viên cây xanh (28)', null, 16, 0.3, 175, 71, -80]];
-  for (const [name, area, w, h, d, x, z] of GI) ghostItem(w, h, d, x, z, name, area);
-  ghostBox(0.25, 12, 0.25, -27, 6, -48); ghostBox(0.25, 10, 0.25, -25, 5, -48); ghostBox(0.25, 10, 0.25, -29, 5, -48); // cột cờ
-  // Rào, cổng, nhà bảo vệ mái đỏ, đường tạm, BCH (nhà dài mái tôn xanh trắng), khu gia công lưới xanh, bãi vật tư.
-  const fence = []; for (let z = SITE.z1; z > SITE.z0; z -= 3) { if (!(z < -28 && z > -41)) fence.push([SITE.x0, z, SITE.x0, z - 3]); fence.push([SITE.x1, z, SITE.x1, z - 3]); }
-  for (let x = SITE.x0; x < SITE.x1; x += 3) { fence.push([x, SITE.z0, x + 3, SITE.z0]); fence.push([x, SITE.z1, x + 3, SITE.z1]); }
-  const fl = fence.map(([ax, az, bx, bz]) => mtx((ax + bx) / 2, 1.0, (az + bz) / 2, Math.hypot(bx - ax, bz - az), 2.0, 0.22, -Math.atan2(bz - az, bx - ax)));
-  const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat('#cfd2d4'), fl.length); fl.forEach((m, i) => fm.setMatrixAt(i, m)); fm.castShadow = true; scene.add(fm);
-  const gh = new THREE.Group(); gh.position.set(-61, 0, -46); scene.add(gh); boxM(4, 2.8, 3.5, M.white, 0, 1.4, 0, gh); const gr = new THREE.Mesh(new THREE.ConeGeometry(3.4, 1.6, 4), mat('#c0392b')); gr.rotation.y = Math.PI / 4; gr.position.y = 3.6; gr.castShadow = true; gh.add(gr);
-  flat(74, 8, M.pit, -40, 0.02, -34); flat(8, 196, M.pit, -6, 0.02, -72); flat(72, 8, M.pit, 26, 0.02, 30);
-  const bch = new THREE.Group(); bch.position.set(-55, 0, -6); bch.rotation.y = Math.PI / 2; scene.add(bch); boxM(28, 3.2, 10, M.white, 0, 1.6, 0, bch);
+  // Công trình tạm (không có trong mô hình thiết kế): BCH nhà dài mái tôn cạnh đường chính, đường đất thi công, khu gia công lưới xanh, bãi vật tư.
+  flat(8, 52, M.pit, -30, 0.03, -86); flat(176, 8, M.pit, -14, 0.03, -63);
+  const bch = new THREE.Group(); bch.position.set(-50, 0, -97); scene.add(bch); boxM(28, 3.2, 10, M.white, 0, 1.6, 0, bch);
   for (let i = -6; i <= 6; i += 2) boxM(1.4, 1.1, 0.06, M.cab, i * 2, 1.9, 5.03, bch);
   const shp = new THREE.Shape(); shp.moveTo(-5.6, 0); shp.lineTo(5.6, 0); shp.lineTo(0, 1.6); shp.closePath(); const rf = new THREE.Mesh(new THREE.ExtrudeGeometry(shp, { depth: 29, bevelEnabled: false }), mat('#eef2f5', { metalness: 0.3 })); rf.rotation.y = Math.PI / 2; rf.position.set(-14.5, 3.2, 0); rf.castShadow = true; bch.add(rf);
-  boxM(29, 0.1, 0.5, M.blue, 0, 3.45, 5.3, bch); const bl = label('Ban chỉ huy công trường<small>nhà điều hành tạm · kho</small>'); bl.position.set(0, 7, 0); bch.add(bl);
-  const net = new THREE.Mesh(new THREE.BoxGeometry(12, 3.4, 9), new THREE.MeshStandardMaterial({ color: '#1f9d55', transparent: true, opacity: 0.35, side: THREE.DoubleSide })); net.position.set(-56, 1.7, 36); scene.add(net);
-  spunPiles(-44, 30, 12, R(/Cọc ly tâm|Mũi cọc/)); spunPiles(-38, 30, 10, R(/Cọc ly tâm|Mũi cọc/));
-  rebarRack(-43, 12, R(/^Thép XD D/));
-  pile(-30, -18, 3.4, 2.2, M.gravel, 'Base B (cấp phối đá dăm)', R(/Base B/));
-  palletStack(-36, 15, M.scaffold, 2, 8, 1, 1.0, 0.08, 1.7, 'Thang giáo', R(/Thang giáo/), 0.06);
+  boxM(29, 0.1, 0.5, M.blue, 0, 3.45, 5.3, bch); const bl = label('Ban chỉ huy công trường<small>nhà điều hành tạm · kho (công trình tạm)</small>'); bl.position.set(0, 7, 0); bch.add(bl);
+  const net = new THREE.Mesh(new THREE.BoxGeometry(12, 3.4, 9), new THREE.MeshStandardMaterial({ color: '#1f9d55', transparent: true, opacity: 0.35, side: THREE.DoubleSide })); net.position.set(-98, 1.7, -96); scene.add(net);
+  spunPiles(-60, -80, 12, R(/Cọc ly tâm|Mũi cọc/)); spunPiles(-54, -80, 10, R(/Cọc ly tâm|Mũi cọc/));
+  rebarRack(-46, -80, R(/^Thép XD D/));
+  pile(-36, -74, 3.4, 2.2, M.gravel, 'Base B (cấp phối đá dăm)', R(/Base B/));
+  palletStack(-40, -88, M.scaffold, 2, 8, 1, 1.0, 0.08, 1.7, 'Thang giáo', R(/Thang giáo/), 0.06);
 }
 /* ───────── Công nhân và máy theo nhật ký ngày ───────── */
 const crew = new THREE.Group(); scene.add(crew);
@@ -911,10 +898,10 @@ function worker(x, y, z, helmet = M.helmetY) { const g = new THREE.Group(); g.po
   for (const s of [-1, 1]) { const arm = mesh(armGeo, M.vest, s * 0.27, 1.02, 0.06, g); arm.rotation.z = s * 0.18; arm.rotation.x = -0.35; }
   g.userData.phase = Math.random() * 6; crew.add(g); return g; }
 const TEAM_PLACES = SITE_KEY === 'DA29' ? [
-  { re: /nghỉ/i, at: () => [-21, 3.75, 4], name: 'Nhà nghỉ ca' },
-  { re: /bch/i, at: () => [-44, 0, -6], name: 'BCH' },
-  { re: /đào|lấp đất/i, at: () => [30, 0, -100], name: 'Phân đoạn 1' },
-  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [30, 0, -47], name: 'Nhà xưởng PĐ2' },
+  { re: /nghỉ/i, at: () => [-77.7, 3.75, -76.5], name: 'Nhà nghỉ ca' },
+  { re: /bch/i, at: () => [-50, 0, -88], name: 'BCH' },
+  { re: /đào|lấp đất/i, at: () => [41, 0, -30], name: 'Phân đoạn 1' },
+  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2' },
 ] : [
   { re: /alc|xây tường bao|xây alc/i, at: () => [-10.6, 0, -20], name: 'Xây ALC' },
   { re: /kc|kết cấu|lắp dựng/i, at: () => [15, 11.6, -10], name: 'Lắp dựng kết cấu', up: true },
@@ -925,9 +912,9 @@ const TEAM_PLACES = SITE_KEY === 'DA29' ? [
   { re: /văn phòng|nvp|cốt thép|vk|ván|bt|bê tông/i, at: () => [-28, 4 * FH + 0.1, 16], name: 'BT, cốt thép, ván khuôn' },
 ];
 const MACH_PLACES = SITE_KEY === 'DA29'
-  ? { crane: [-36, 0, -8, 0], excavator: [30, 0, -100, 0.6], roller: [30, 0, 5, Math.PI / 2], dozer: [15, 0, 40, 1.2], rammer: [20, 0, -40, 0], truck: [-6, 0, -55, 0], pilepress: [20, 0, -60, 0], bender: [-56, 0, 37, 0] }
+  ? { crane: [-60, 0, -70, Math.PI / 2], excavator: [41, 0, -30, 0.6], roller: [-69, 0, -30, 0], dozer: [-20, 0, -72, 1.2], rammer: [0, 0, -40, 0], truck: [-30, 0, -80, 0], pilepress: [10, 0, -30, 0], bender: [-98, 0, -96, 0] }
   : { crane: [34.5, 0, -12, -Math.PI / 2], excavator: [45, 0, -70, 0.4], roller: [40.5, 0, -110, 0], dozer: [-25, 0, -95, 1.2], rammer: [44.2, 0, -48, 0], truck: [20, 0, 46, Math.PI / 2] };
-const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['x', 30, 22, 0.25], dozer: ['x', 15, 8, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
+const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['z', -30, 20, 0.25], dozer: ['x', -20, 10, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
 const machines = {}; const machLabels = {};
 const BUILDERS = { crane: () => mobileCrane(12), excavator, roller, dozer, rammer, truck: () => dumpTruck(M.blue), pilepress: pilePress, bender: rebarBench };
 for (const [k2, place2] of Object.entries(MACH_PLACES)) {
@@ -944,8 +931,8 @@ function machinesNear(d) { const set = new Map(); for (const l of DATA.logs) if 
 function pourOn(d) { // Đổ bê tông có % tăng trong ngày d → xe bơm + 2 xe bồn tới nhà đó.
   let best = null; for (const t of Object.values(TASK)) { if (!/^Đổ bê tông/.test(t.name) || t.kids.length) continue; const a = pAt(t.wbs, d - 1), b = pAt(t.wbs, d); if (b - a > 0.5 && (!best || b - a > best.gain)) best = { t, gain: b - a }; } return best; }
 const bldOf = wbs => Object.entries(BLD).find(([, b]) => b.roots.some(r => wbs === r || wbs.startsWith(r + '.')))?.[0];
-const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [48, -131, 0], NNC: [-21, 20, Math.PI / 2], NX: [66, -47, 0], COC: [-6, -47, 0], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
-const BCENTER = SITE_KEY === 'DA29' ? { NVP: [22, 0, -131], NNC: [-21, 3.75, 4], NX: [30, 0, -47], COC: [30, 0, -47], PHU: [-35, 0, -155], HT: [-6, 0, -60] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
+const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [84, -31, 0], NNC: [-62, -76, 0], NX: [-14, -66, Math.PI / 2], COC: [-14, -66, Math.PI / 2], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
+const BCENTER = SITE_KEY === 'DA29' ? { NVP: [66, 0, -31], NNC: [-77.7, 3.75, -76.5], NX: [-14, 0, -30], COC: [-14, 0, -30], PHU: [-20, 0, 20], HT: [0, 0, -50] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
 function activeBuildings(d) { const g = {}; for (const t of Object.values(TASK)) { if (t.kids.length) continue; const gain = pAt(t.wbs, d) - pAt(t.wbs, d - 7); if (gain > 0.5) { const b = bldOf(t.wbs); if (b) g[b] = (g[b] || 0) + gain; } } return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([b]) => b); }
 function cluster(x, y, z, count, text) { for (let i = 0; i < Math.min(count, 16); i += 1) worker(x + (i % 4) * 1.3 - 2, y, z + Math.floor(i / 4) * 1.3 - 1.5, i === 0 ? M.helmetW : M.helmetY);
   const l = label(text, 'team'); l.position.set(x, y + 3.2, z); scene.add(l); teamLabels.push(l); }
@@ -1015,7 +1002,7 @@ function showDay() {
     <div class="sec">Tiến triển 7 ngày qua</div>${recent.length ? recent.map(({ t, gain }) => `<button type="button" class="task" data-task="${t.wbs}"><span>${esc(t.wbs)} · ${esc(t.name)}</span><span class="pct ok">+${Math.round(gain)}%</span></button>`).join('') : '<p class="sub">Không có đầu việc tăng %.</p>'}`;
 }
 info.addEventListener('click', e => { const tk = e.target.closest('[data-task]'); if (tk) selectTask(tk.dataset.task); const bk = e.target.closest('[data-back]'); if (bk) { selTask = null; selBld = null; clearHL(); showDay(); } });
-const CENTER = SITE_KEY === 'DA29' ? { NVP: [22, 4, -131, 70], NNC: [-21, 5, 4, 45], NX: [30, 4, -47, 180], COC: [30, 4, -47, 180], PHU: [-35, 0, -150, 120], HT: [5, 0, -60, 240] } : { NVP: [-28, 6, 16, 55], NX1: [15, 6, -17, 80], NX2: [-25, 6, -27, 80], NX3: [-5, 6, -118, 120], HT: [0, 0, -50, 230] };
+const CENTER = SITE_KEY === 'DA29' ? { NVP: [66, 4, -31, 70], NNC: [-77.7, 5, -76.5, 50], NX: [-14, 4, -30, 190], COC: [-14, 4, -30, 190], PHU: [0, 0, 0, 230], HT: [0, 0, -20, 260] } : { NVP: [-28, 6, 16, 55], NX1: [15, 6, -17, 80], NX2: [-25, 6, -27, 80], NX3: [-5, 6, -118, 120], HT: [0, 0, -50, 230] };
 function selectBuilding(key, fly = true) {
   selBld = key; const b = BLD[key], ts = b.roots.map(r => TASK[r]);
   info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${b.name}</h2><p class="sub">${dd(DAY)} · thực tế so với kế hoạch</p>
@@ -1041,7 +1028,7 @@ function selectTask(wbs) {
 }
 
 /* ───────── Camera, chọn trong cảnh, thời gian ───────── */
-const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-170, 150, 120], [10, 0, -65]], NNC: [[-55, 18, 38], [-21, 4, 4]], NVP: [[-35, 32, -92], [22, 3, -131]], NX: [[-95, 85, 40], [30, 3, -47]], NX_PD2: [[-40, 32, -15], [30, 1, -47]], yard: [[-80, 22, 48], [-42, 1, 10]] } : { overview: [[-150, 120, 140], [-5, 0, -55]], NVP: [[-62, 22, 62], [-28, 6, 16]], NX1: [[62, 30, 40], [15, 5, -17]], NX2: [[-82, 30, 20], [-25, 5, -27]], NX3: [[-110, 55, -40], [-5, 5, -118]], yard: [[40, 18, 58], [18, 1, 28]] };
+const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-200, 150, -250], [10, 0, -20]], NNC: [[-48, 2.2, -99], [-79, 8, -77]], NVP: [[105, 6, -95], [70, 7, -40]], NX: [[-150, 90, -160], [-14, 3, -30]], NX_PD2: [[-40, 55, -125], [-14, 1, -30]], yard: [[-30, 25, -120], [-52, 1, -80]] } : { overview: [[-150, 120, 140], [-5, 0, -55]], NVP: [[-62, 22, 62], [-28, 6, 16]], NX1: [[62, 30, 40], [15, 5, -17]], NX2: [[-82, 30, 20], [-25, 5, -27]], NX3: [[-110, 55, -40], [-5, 5, -118]], yard: [[40, 18, 58], [18, 1, 28]] };
 let camFrom = null, camTo = null, camT = 1;
 function flyTo(target, dist) { const dir = camera.position.clone().sub(controls.target).normalize(); camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: target.clone().add(dir.multiplyScalar(dist)), t: target.clone() }; camT = 0; }
 function goView(v) { const [p, t] = VIEWS[v]; camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: v3(...p), t: v3(...t) }; camT = 0; document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v))); }
@@ -1062,6 +1049,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   for (const h of ray.intersectObjects(scene.children, true)) {
     if (!h.object.visible || ghosts.children.includes(h.object)) continue;
     const u = h.object.userData;
+    if (u.k) { const key = u.k.part === 'NNC' ? 'NNC' : u.k.part === 'NVP' ? 'NVP' : u.k.part === 'NX' ? 'NX' : null; if (key) { selectBuilding(key); return; } continue; }
     if (u.elems) { selectTask(u.elems.task); return; }
     if (u.stock) { const { title, rows } = u.stock; info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${esc(title)}</h2><p class="sub">Tồn theo sổ ${CFG.warehouse} trong Vioo (14/10)</p>${rows.length ? rows.map(([n, un, q]) => `<div class="row"><span>${esc(n)}</span><b>${Number(q).toLocaleString('vi-VN')} ${esc(un || '')}</b></div>`).join('') : '<p class="sub">Không có dòng tồn.</p>'}${SITE_KEY === 'SMB' ? '<p class="sub" style="margin-top:8px">Sổ kho còn ghi cả vật tư đã dùng hết (ví dụ bê tông 1.272 m³) — cần đối soát xuất dùng.</p>' : ''}`; return; }
     if (u.machine) { const near = machinesNear(DAY); info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${MACH_NAME[u.machine]}</h2><p class="sub">${esc(near.get(u.machine) || '')}</p><p class="sub">Có trong nhật ký công trường 7 ngày tới ${dd(DAY)}. Vị trí trên mô hình là minh họa theo việc đang làm.</p>`; return; }
@@ -1090,6 +1078,67 @@ function lod() { const far = camera.position.distanceTo(controls.target) > 170;
   for (const l of [...teamLabels, ...Object.values(machLabels), pourLabel]) { l.getWorldPosition(lodV); l.visible = far || lodV.distanceTo(controls.target) < 70; }
   for (const l of ghostLabels) { l.getWorldPosition(lodV); l.visible = ghosts.visible && camera.position.distanceTo(lodV) < 150; } }
 window.siteDebug.focus = (x, y, z, dist, ax = -1, ay = 0.6, az = 1) => { camT = 1; controls.target.set(x, y, z); camera.position.set(x + ax * dist, y + ay * dist, z + az * dist); controls.update(); };
+/* ───────── Mô hình thiết kế XinHai (SketchUp → GLB nén meshopt) ───────── */
+const REAL = { meshes: [], mode: 'ghost', loaded: false };
+const ghostMat = new THREE.MeshBasicMaterial({ color: '#8fb3e6', transparent: true, opacity: 0.1, depthWrite: false });
+const done = (w, d) => (TASK[w] ? pAt(w, d) >= 99.5 : false);
+const allDone = (list, d) => list.length > 0 && list.every(w => done(w, d));
+const rootDone = (r, d) => (TASK[r] ? groupAt(TASK[r], d) >= 99.5 : false);
+const NNC_WALL = ['3.7.1', '3.7.2', '3.7.3', '3.7.4'], NVP_WALL = ['2.5.1', '2.5.2', '2.5.3', '2.5.3'];
+const STRUCT = new Set(['Slab', 'Column', 'Beam', 'StairFlight', 'Stair', 'Member', 'Footing', 'Roof', 'Building']);
+const segOf = xbin => (xbin < 4 ? 'PD3' : xbin < 14 ? 'PD2' : 'PD1');
+const SEG_ENV = { PD3: ['4.5.3', '4.6.3', '4.4.3'], PD2: ['4.5.2', '4.6.2', '4.4.2'], PD1: ['4.5.1', '4.6.1', '4.4.1'] };
+// 'real' | 'ghost' | 'hide' cho một khối của mô hình thiết kế tại ngày d.
+function realState(k, d) {
+  if (REAL.mode === 'full') return 'real';
+  if (k.part === 'GD1' || k.part === 'DIAHINH' || k.part === 'NEN' || k.part === '') return 'real';
+  let ok = false;
+  if (k.part === 'NEN_GD2') ok = rootDone('8', d);
+  else if (k.part === 'NNC' || k.part === 'NVP') { const wall = (k.part === 'NNC' ? NNC_WALL : NVP_WALL)[Math.min(k.lv, 3)];
+    ok = STRUCT.has(k.cat) || k.cat === 'Wall' || k.cat === 'CurtainWall' ? done(wall, d) : done(k.part === 'NNC' ? '3.11' : '2.9', d); }
+  else if (k.part === 'NX') ok = allDone(SEG_ENV[segOf(k.xbin)], d);
+  else if (['XE5C', 'XE_TRUOC', 'XE_GOC', 'SAN_TRUOC'].includes(k.part)) ok = rootDone('7', d);
+  else if (k.part === 'CONG' || k.part === 'BAOVE') ok = rootDone('8', d);
+  else if (k.part === 'PHU_DONG') ok = rootDone('5', d) && rootDone('6', d);
+  return ok ? 'real' : REAL.mode === 'off' ? 'hide' : 'ghost';
+}
+function applyReal(d) {
+  if (!REAL.loaded) return;
+  const floorReal = { NNC: [false, false, false, false], NVP: [false, false, false, false] };
+  for (const o of REAL.meshes) { const st = realState(o.userData.k, d); o.visible = st !== 'hide'; o.material = st === 'real' ? o.userData.orig : ghostMat; o.castShadow = st === 'real' && !o.userData.orig.transparent;
+    const k = o.userData.k; if (st === 'real' && (k.part === 'NNC' || k.part === 'NVP') && STRUCT.has(k.cat)) floorReal[k.part][Math.min(k.lv, 3)] = true; }
+  // Nhà / phân đoạn đã hiện mô hình thật thì ẩn phần dựng tiến độ trùng chỗ.
+  if (REAL.mode === 'full') { for (const list of Object.values(REPLACE)) for (const e of list) e.range(0, 0); siteGround.visible = false; return; }
+  siteGround.visible = true;
+  for (const seg of ['PD1', 'PD2', 'PD3']) if (allDone(SEG_ENV[seg], d)) for (const e of REPLACE['NX:' + seg] || []) e.range(0, 0);
+  for (const key of ['NNC', 'NVP']) if (floorReal[key].every((v, i) => v || i > 0) && floorReal[key][0] && done((key === 'NNC' ? NNC_WALL : NVP_WALL)[0], d) && rootDone(key === 'NNC' ? '3' : '2', d)) for (const e of REPLACE[key] || []) e.range(0, 0);
+}
+const btnGhostLabel = { ghost: 'Thiết kế: mờ', full: 'Thiết kế: hoàn thiện', off: 'Thiết kế: ẩn' };
+async function loadReal() {
+  const st = document.getElementById('realStatus'); st.textContent = 'Đang tải mô hình thiết kế…';
+  const [{ GLTFLoader }, { MeshoptDecoder }, { RoomEnvironment }] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/environments/RoomEnvironment.js')]);
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
+  const g = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('xinhai/xinhai.glb', e => { if (e.total) st.textContent = `Đang tải mô hình thiết kế ${Math.round(e.loaded / e.total * 100)}%`; });
+  g.scene.position.y = -0.3; scene.add(g.scene); g.scene.updateMatrixWorld(true);
+  const tuned = new Set(), bb = new THREE.Box3();
+  g.scene.traverse(o => { if (!o.isMesh) return; const [part, cat, lv, xbin] = (o.name || '').split('|'); o.userData.k = { part: part || '', cat: cat || '', lv: +lv || 0, xbin: +xbin || 0 }; o.userData.orig = o.material; o.receiveShadow = true;
+    const m = o.material; if (m.transparent && !tuned.has(m)) { tuned.add(m); m.color.lerp(new THREE.Color('#cfe3f3'), 0.65); m.opacity = 0.32; m.roughness = 0.05; m.metalness = 0.15; m.depthWrite = false; }
+    // Bấm chọn theo hộp bao (nhanh hơn dò từng tam giác của 2,5 triệu tam giác).
+    o.geometry.computeBoundingBox(); const box = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); o.userData.box = box;
+    o.raycast = function (rc, out) { if (!this.visible) return; const p = rc.ray.intersectBox(this.userData.box, new THREE.Vector3()); if (p) out.push({ distance: rc.ray.origin.distanceTo(p), point: p, object: this }); };
+    REAL.meshes.push(o); });
+  try { const bushes = await (await fetch('xinhai/xinhai-bushes.json')).json(); const pts = []; for (const [x, z, sx, sy, sz] of bushes) { const long = Math.max(sx, sz), n = Math.max(1, Math.round(long / 1.1)); for (let i = 0; i < n; i += 1) { const f = (i + 0.5) / n - 0.5; pts.push([x + (sx >= sz ? f * sx : 0), z + (sx < sz ? f * sz : 0), Math.min(sy, 1.4)]); } }
+    const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.6, 1), mat('#3f7f3a'), pts.length); pts.forEach(([x, z, h], i) => im.setMatrixAt(i, mtx(x, h * 0.45 - 0.3, z, 1, h / 1.2, 1))); im.castShadow = true; scene.add(im); } catch {}
+  REAL.loaded = true; st.textContent = ''; setDay(DAY);
+}
+if (SITE_KEY === 'DA29') {
+  btnGhost.textContent = btnGhostLabel.ghost;
+  btnGhost.onclick = () => { REAL.mode = REAL.mode === 'ghost' ? 'full' : REAL.mode === 'full' ? 'off' : 'ghost'; btnGhost.textContent = btnGhostLabel[REAL.mode]; btnGhost.setAttribute('aria-pressed', String(REAL.mode !== 'off')); setDay(DAY); };
+  UPDATERS.push(d => applyReal(d));
+  loadReal().catch(e => { document.getElementById('realStatus').textContent = 'Chưa tải được mô hình thiết kế'; console.error(e); });
+}
+window.siteDebug.real = () => ({ loaded: REAL.loaded, meshes: REAL.meshes.length, mode: REAL.mode });
+window.siteDebug.mode = m => { REAL.mode = m; btnGhost.textContent = btnGhostLabel[m]; setDay(DAY); };
 buildTree(); setDay(TODAY);
 const clock = new THREE.Clock(); let t = 0, frame = 0;
 function animate() {

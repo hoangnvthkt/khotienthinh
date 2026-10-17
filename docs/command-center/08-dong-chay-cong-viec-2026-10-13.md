@@ -402,3 +402,22 @@ chưa đổ (DA29: "2.4.2 ván khuôn cột tầng 2 14% nhưng 2.3.3 đổ bê 
   để đặt chính xác.
 
 Ảnh thay mới: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong,hang-muc-phu}.jpg`.
+
+**Mô hình thiết kế thật từ SketchUp (17/10).** Chủ SP gửi `TMB+NM_V1.skp` (SketchUp 2022, dựng từ Revit — có tên IFC: tường gạch 110/220, cửa, lan can kính,
+cầu thang thép, đèn, mái sảnh, tầng 1 → đỉnh mái; toàn bộ ở Layer0, chưa chia lớp) rồi xuất lại COLLADA `.dae` 73 MB + 52 ảnh vật liệu theo hướng dẫn.
+Chuyển đổi (scratchpad `conv/`, chạy trong Chrome không giao diện): ColladaLoader → xoay thẳng −14,33° theo trục khu đất → bỏ nhóm cây chi tiết (8 triệu tam giác,
+thay bằng bụi cây đơn giản theo đúng vị trí) → **tự tách theo nhà bằng vị trí** (nhóm gốc + toạ độ: nhà nghỉ ca, xưởng, nhà điều hành = phần đầu xưởng x > 57 m,
+nhà máy giai đoạn 1, nhà xe 5C/trước/góc, cổng, bảo vệ, nhà phụ phía đông, nền trong / ngoài vùng thi công, địa hình) → gộp theo nhà + loại IFC + tầng + bước cột
+(xưởng chia 18 bước để khớp 3 phân đoạn) → GLB, nén meshopt + lượng tử hoá; phần ngữ cảnh bỏ pháp tuyến / UV để hàn đỉnh và giảm tam giác (nhà nghỉ ca, nhà điều hành
+giữ đủ chi tiết). Kết quả `mockups/xinhai/xinhai.glb` **13,9 MB, 1,32 triệu tam giác, 718 khối**, tải ~9 s trong trình duyệt không GPU.
+
+Trên trang XinHai mô hình thiết kế thay cho hình khối tự dựng, nút 3 trạng thái: **Thiết kế: mờ** (mặc định — phần đã xong theo tiến độ hiện thật, phần chưa xong mờ,
+phần đang thi công vẫn là cột / thép / ván khuôn / máy / người theo nhật ký), **hoàn thiện** (toàn bộ như render, để trình chiếu), **ẩn**. Quy tắc "đã xong": nhà nghỉ
+ca / nhà điều hành theo tầng (xây tường tầng đó 100%), cửa theo đầu việc lắp cửa; xưởng theo phân đoạn (tôn mái + tôn thưng + xây tường của phân đoạn 100%);
+nhà xe / sân / cổng / nhà phụ / nền theo nhóm hạng mục 5–8. Nhà / phân đoạn đã hiện thật thì ẩn phần dựng tiến độ trùng chỗ. Nhà máy giai đoạn 1, đường, kênh,
+địa hình luôn hiện thật. BCH, đường đất, bãi vật tư, khu gia công là công trình tạm, không có trong thiết kế nên vẫn dựng tay. Bấm vào mô hình thật → bảng nhà đó.
+Toạ độ mọi nhà, máy, tổ đội, góc nhìn đã chuyển theo mô hình thật (đường chính phía trước, đường nhánh bên phải).
+
+Ảnh: `mockups/site-3d-xinhai-thiet-ke-{hom-nay,hoan-thien,nha-nghi-ca,nha-nghi-ca-hoan-thien,nha-van-phong-hoan-thien,mong-pd2}.jpg`.
+Việc tiếp: thép xưởng từ Tekla (IFC) để gắn tiến độ lắp dựng tới từng cấu kiện; chia lớp theo nhà / tầng ngay trong SketchUp thì bỏ được bước tách theo toạ độ;
+Sơn Miền Bắc làm tương tự khi có file.
