@@ -85,7 +85,7 @@ Deno.serve(async request => {
   const inputChars = userText.length;
 
   try {
-    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images });
+    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images, noThinking: def.noThinking });
     const result = def.parseOutput(parseJsonLoose(out.text));
     const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
     const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };

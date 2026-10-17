@@ -13,7 +13,13 @@ export interface Usage { tokensIn: number | null; tokensOut: number | null }
 export interface Completion { text: string; usage: Usage }
 import type { ImagePart } from './images.ts';
 export type { ImagePart };
-export interface CompletionRequest { system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[] }
+export interface CompletionRequest {
+  system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[];
+  /** Skill chép lại chứng từ, không cần suy luận: cổng chuẩn OpenAI gửi reasoning_effort "none" (báo giá 41–61 s → 11 s, 17/10/2026). */
+  noThinking?: boolean;
+}
+/** Ảnh: model đọc lâu hơn (báo giá nhiều dòng 40–60 s) — chờ tới 100 s; chữ 55 s. Hàm Edge còn dư thời gian trước mốc cắt. */
+const timeoutMs = (req: CompletionRequest) => (req.images?.length ? 100_000 : 55_000);
 
 const DEFAULT_MODELS: Record<Provider, Record<ModelClass, string>> = {
   anthropic: { fast: 'claude-haiku-5-5', reasoning: 'claude-opus-5-5' },
@@ -75,7 +81,7 @@ async function withAnthropic(t: AiTarget, req: CompletionRequest): Promise<Compl
 
 async function withGemini(t: AiTarget, req: CompletionRequest): Promise<Completion> {
   const res = await fetch(`${t.baseUrl}/v1beta/models/${encodeURIComponent(t.model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(55000),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(timeoutMs(req)),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
       contents: [{ role: 'user', parts: [...(req.images || []).map(i => ({ inline_data: { mime_type: i.mime, data: i.b64 } })), { text: req.user }] }],
@@ -94,16 +100,20 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
   if (!t.model) throw new Error('AI_MODEL_REQUIRED');
   // Cổng chuẩn OpenAI khác (9Router, OpenRouter…) thường chưa hỗ trợ json_schema strict / max_completion_tokens: dùng json_object + max_tokens.
   const compatible = t.kind === 'openai_compatible';
-  const res = await fetch(`${t.baseUrl}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(55000),
+  const send = (noThinking: boolean) => fetch(`${t.baseUrl}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(timeoutMs(req)),
     body: JSON.stringify({
-      model: t.model, ...(compatible ? { max_tokens: outputTokenCap(t.kind, req.maxTokens) } : { max_completion_tokens: outputTokenCap(t.kind, req.maxTokens) }),
+      model: t.model, ...(noThinking ? { reasoning_effort: 'none' } : {}), ...(compatible ? { max_tokens: outputTokenCap(t.kind, req.maxTokens) } : { max_completion_tokens: outputTokenCap(t.kind, req.maxTokens) }),
       response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
       messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.images?.length
         ? [...req.images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text: req.user }]
         : req.user }],
     }),
   });
+  const thinkingOff = compatible && Boolean(req.noThinking);
+  let res = await send(thinkingOff);
+  // Cổng không nhận reasoning_effort → gửi lại một lần như thường.
+  if (thinkingOff && res.status === 400) res = await send(false);
   if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
   const data = await res.json();
   if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');

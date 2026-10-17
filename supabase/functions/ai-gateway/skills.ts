@@ -21,6 +21,8 @@ export interface SkillDef {
   summary: (input: Record<string, string>, output: Record<string, unknown>) => string;
   /** Skill đọc ảnh: lấy ảnh hợp lệ từ đầu vào (sai thì ném AI_BAD_INPUT); cổng gửi sang kết nối đọc ảnh (Cài đặt → Kết nối). */
   images?: (raw: unknown) => ImagePart[];
+  /** Chỉ chép lại chứng từ (không suy luận, không tính toán): tắt phần suy nghĩ của model để trả lời nhanh. */
+  noThinking?: boolean;
 }
 
 const asObject = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {});
@@ -215,7 +217,8 @@ const poQuoteLines: SkillDef = {
   maxOutputTokens: 4000,
   parseInput: raw => { const q = quoteInput(raw); return { text: q.text, pages: String(q.images.length) }; },
   images: raw => quoteInput(raw).images,
-  system: 'Đọc báo giá / bảng kê / phiếu đặt hàng của nhà cung cấp (ảnh chụp, ảnh màn hình Excel, chữ dán từ Zalo) để lập đơn mua. Lấy mọi dòng hàng, giữ thứ tự; bỏ dòng tiêu đề nhóm, dòng cộng, thuế, chữ ký. name: tên hàng như trên báo giá; spec: quy cách / mác / thương hiệu (tên nhóm như "Thép Shengli CB500" ghi vào spec nếu dòng không ghi); sku: mã hàng nếu có. QUAN TRỌNG: qty và unit là số lượng theo ĐÚNG đơn vị mà đơn giá áp dụng (thép bán theo kg thì qty = trọng lượng kg, unit "kg"); số cây / tấm / bó kèm theo ghi vào note dạng "3115 cây". unitPrice: đơn giá chưa VAT; amount: thành tiền của dòng. Số: nhận ra kiểu Việt (1.234,5) hay kiểu Anh (1,234.5) theo cả bảng. Kiểm chéo qty × unitPrice với amount, lệch thì thêm warning (VD do khối lượng hiển thị làm tròn). vendorName, vendorTaxCode: bên BÁN (không lấy Tiến Thịnh). vatRate: % thuế VAT nếu ghi; subtotal, vatAmount, total: số trên báo giá. Không đọc được thì null — không đoán.',
+  noThinking: true,
+  system: 'Chép lại báo giá / bảng kê / phiếu đặt hàng của nhà cung cấp (ảnh chụp, ảnh màn hình Excel, chữ dán từ Zalo) thành dữ liệu để lập đơn mua. Lấy mọi dòng hàng, giữ thứ tự; bỏ dòng tiêu đề nhóm, dòng cộng, thuế, chữ ký. name: tên hàng như trên dòng (giữ mác ghi ở dòng, VD "Thép D8 CB240"); spec: thương hiệu / quy cách riêng của dòng — tên nhóm như "Thép Shengli CB500" chỉ lấy thương hiệu ("Shengli"), không chép mác của nhóm khi dòng đã ghi mác; sku: mã hàng nếu có. QUAN TRỌNG: qty và unit là số lượng theo ĐÚNG đơn vị mà đơn giá áp dụng (thép bán theo kg thì qty = trọng lượng kg, unit "kg"; "2,5 tấn" giá theo kg thì qty 2500); số cây / tấm / bó kèm theo ghi vào note dạng "3115 cây". unitPrice: đơn giá chưa VAT ("22k" = 22000); amount: thành tiền của dòng. Số: nhận ra kiểu Việt (1.234,5) hay kiểu Anh (1,234.5) theo cả bảng. Chép đúng số trên chứng từ, KHÔNG tự nhân / cộng / kiểm chéo (hệ thống tự kiểm). vendorName, vendorTaxCode: công ty bán / cung cấp hàng ghi trên chứng từ (không lấy Tiến Thịnh, không lấy tên công trình / dự án); không có tên công ty nào thì null. vatRate: % thuế VAT nếu ghi; subtotal, vatAmount, total: số trên chứng từ. Không đọc được thì null — không đoán. warnings: tối đa 5 câu ngắn, chỉ về chữ / số mờ, viết đè hoặc không chắc.',
   user: input => `${input.text ? wrapData('bao_gia', input.text) + '\n' : ''}${Number(input.pages) ? `Ảnh: ${input.pages} trang báo giá.\n` : ''}Trả JSON: {"vendorName": null, "vendorTaxCode": null, "docNo": null, "docDate": null, "vatRate": null, "lines": [{"sku": null, "name": "<tên>", "spec": null, "unit": null, "qty": null, "unitPrice": null, "amount": null, "note": null}], "subtotal": null, "vatAmount": null, "total": null, "warnings": []}`,
   schema: {
     type: 'object', additionalProperties: false, required: ['vendorName', 'vendorTaxCode', 'docNo', 'docDate', 'vatRate', 'lines', 'subtotal', 'vatAmount', 'total', 'warnings'],

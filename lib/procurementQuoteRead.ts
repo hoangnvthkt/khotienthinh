@@ -19,9 +19,17 @@ export const quoteRows = (read: QuoteRead): PoImportRow[] => read.lines.map((l, 
 
 const vi = (n: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n));
 
-/** Kiểm số trên báo giá: cộng thành tiền các dòng so với "Cộng", VAT = cộng × %. Lệch ≤ 1.000 đ (làm tròn) chỉ ghi chú. */
+/** Kiểm số trên báo giá (AI chỉ chép, không tính): SL × đơn giá từng dòng so với thành tiền (cho lệch do SL hiển thị làm tròn),
+ *  cộng thành tiền các dòng so với "Cộng", VAT = cộng × %. Lệch ≤ 1.000 đ (làm tròn) chỉ ghi chú. */
 export const quoteChecks = (read: QuoteRead): Array<{ level: 'ok' | 'warn'; text: string }> => {
   const out: Array<{ level: 'ok' | 'warn'; text: string }> = [];
+  read.lines.forEach((l, i) => {
+    if (l.qty == null || l.unitPrice == null || l.amount == null) return;
+    const calc = l.qty * l.unitPrice;
+    if (Math.abs(calc - l.amount) > Math.max(1000, l.unitPrice * 0.5)) {
+      out.push({ level: 'warn', text: `Dòng ${i + 1} ${l.name}: SL × đơn giá = ${vi(calc)} đ, thành tiền ghi ${vi(l.amount)} đ — kiểm SL / đơn giá` });
+    }
+  });
   const amounts = read.lines.map(l => l.amount).filter((a): a is number => a != null);
   if (amounts.length === read.lines.length && amounts.length && read.subtotal != null) {
     const sum = amounts.reduce((a, b) => a + b, 0); const d = Math.abs(sum - read.subtotal);
