@@ -73,7 +73,8 @@ const EVENT_LABEL: Record<string, string> = {
   transfer_receipt: 'Nhận điều chuyển', transfer_issue: 'Điều chuyển đi', warehouse_transfer: 'Điều chuyển kho', construction_issue: 'Xuất thi công',
   project_issue: 'Xuất cho dự án', project_return_receipt: 'Công trường trả về kho', loss_issue: 'Hao hụt', adjustment_in: 'Điều chỉnh tăng',
   adjustment_out: 'Điều chỉnh giảm', inventory_adjustment: 'Kiểm kê điều chỉnh', warehouse_loss: 'Hao hụt kho', direct_manual_receipt: 'Nhập tay',
-  legacy_direct_receipt: 'Nhập (dữ liệu cũ)', legacy_direct_issue: 'Xuất (dữ liệu cũ)', reversal: 'Đảo phiếu',
+  legacy_direct_receipt: 'Nhập (dữ liệu cũ)', legacy_direct_issue: 'Xuất (dữ liệu cũ)', reversal: 'Đảo phiếu', opening_balance: 'Tồn đầu kỳ',
+  office_supply_issue: 'Cấp VPP', office_supply_return: 'Trả lại VPP', office_supply_receipt: 'Nhập VPP',
   // Trạng thái đơn mua / đợt giao
   sent: 'Đã gửi NCC', confirmed: 'NCC đã xác nhận', in_transit: 'Đang giao', partial: 'Giao một phần', planned: 'Đã lên lịch giao',
   waiting_delivery: 'Chờ giao', wms_pending: 'Chờ nhập kho', receiving: 'Đang nhận', quality_approved: 'Đã kiểm đạt', supplemental_pending: 'Chờ duyệt bổ sung',

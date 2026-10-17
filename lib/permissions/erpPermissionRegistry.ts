@@ -178,6 +178,11 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['manage', 'Kế toán kho', 10, ['global']],
         ['close_period', 'Khóa kỳ', 20, ['global']],
       ])),
+      // Văn phòng phẩm (17/10/2026): đề xuất / duyệt theo dữ liệu, thủ kho = wms.transaction.keeper; hai quyền dưới cho quản trị và báo cáo.
+      module('wms.office_supply', 'Văn phòng phẩm', 'WMS', [], 50, actions('wms.office_supply', 'WMS', '/vpp', WMS_SCOPE, [
+        ['manage', 'Quản trị VPP', 10, ['global']],
+        ['report', 'Xem báo cáo VPP', 20, ['global']],
+      ])),
     ],
   },
   {

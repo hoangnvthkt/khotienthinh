@@ -10,7 +10,7 @@ import {
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
   IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
-  PanelsTopLeft, Search
+  PanelsTopLeft, Search, Paperclip
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -71,6 +71,7 @@ const MODULE_CONFIG = [
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners', gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
   { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq', gradient: 'from-indigo-600 to-purple-700', shadow: 'shadow-indigo-600/25' },
   { key: 'VEHICLE_BOOKING' as const, icon: Car, label: 'Đặt xe', shortLabel: 'CAR', route: '/booking/vehicle', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25' },
+  { key: 'VPP' as const, icon: Paperclip, label: 'Văn phòng phẩm', shortLabel: 'VPP', route: '/vpp', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -82,6 +83,8 @@ export const SIDEBAR_MODULES: readonly NavigationModule[] = MODULE_CONFIG;
 export const navigationModulesFor = (user: Parameters<typeof canAccessNavigationModule>[0]): NavigationModule[] => {
   const allowed = MODULE_CONFIG.filter(m => {
     if (m.key === 'work.module' && !isViooWorkEnabled) return false;
+    // Văn phòng phẩm: mọi nhân viên đề xuất được (route mở, máy chủ lọc dữ liệu).
+    if (m.key === 'VPP') return canAccessRoute(user, m.route);
     return canAccessNavigationModule(user, m.key, m.route);
   });
   let order: string[] = [];
@@ -209,6 +212,7 @@ export const useModuleNavigation = () => {
       { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
       { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
     ],
+    VPP: [{ to: '/vpp', icon: Paperclip, label: 'Văn phòng phẩm' }],
     VEHICLE_BOOKING: [
       { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
       { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
@@ -278,6 +282,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p === '/office' || p.startsWith('/office/')) return 'office.module';
     if (p === '/work' || p.startsWith('/work/')) return 'work.module';
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
+    if (p === '/vpp') return 'VPP';
     if (p.startsWith('/hrm') || p === '/my-profile' || p === '/my-payroll' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';

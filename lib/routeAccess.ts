@@ -20,6 +20,8 @@ const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/my-payroll',
   // Quỹ công trường của tôi: máy chủ chỉ trả quỹ mà người dùng đang giữ.
   '/site-fund',
+  // Văn phòng phẩm: mọi nhân viên đề xuất; máy chủ chỉ trả phiếu người đó được xem.
+  '/vpp',
   // Tài chính dự án: máy chủ chỉ trả dự án người dùng được xem (Tài chính — Xem hoặc công tắc xem tài chính dự án).
   '/finance/project',
   '/employee-dashboard',

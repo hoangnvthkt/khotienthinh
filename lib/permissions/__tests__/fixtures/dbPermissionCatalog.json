@@ -2805,6 +2805,18 @@
       ]
     },
     {
+      "permissionCode": "wms.office_supply.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.office_supply.report",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "wms.purchase_order.return_supplier",
       "scopeTypes": [
         "global",
