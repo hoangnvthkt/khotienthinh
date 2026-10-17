@@ -18,8 +18,8 @@ export interface CompletionRequest {
   /** Skill chép lại chứng từ, không cần suy luận: cổng chuẩn OpenAI gửi reasoning_effort "none" (báo giá 41–61 s → 11 s, 17/10/2026). */
   noThinking?: boolean;
 }
-/** Ảnh: model đọc lâu hơn (báo giá nhiều dòng 40–60 s) — chờ tới 100 s; chữ 55 s. Hàm Edge còn dư thời gian trước mốc cắt. */
-const timeoutMs = (req: CompletionRequest) => (req.images?.length ? 100_000 : 55_000);
+/** Ảnh hoặc đầu ra dài (báo giá nhiều dòng, nhật ký nhiều ngày 40–60 s) — chờ tới 100 s; còn lại 55 s. Hàm Edge còn dư thời gian trước mốc cắt. */
+const timeoutMs = (req: CompletionRequest) => (req.images?.length || req.maxTokens >= 6000 ? 100_000 : 55_000);
 
 const DEFAULT_MODELS: Record<Provider, Record<ModelClass, string>> = {
   anthropic: { fast: 'claude-haiku-5-5', reasoning: 'claude-opus-5-5' },
