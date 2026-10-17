@@ -228,6 +228,7 @@ class Elems {
     this.from = -1; this.to = -1; this.range(0, 0); scene.add(this.mesh); ELEMS.push(this);
   }
   range(from, to) {
+    if (this.disabled) { from = 0; to = 0; }
     from = Math.max(0, Math.min(this.n, Math.round(from))); to = Math.max(from, Math.min(this.n, Math.round(to)));
     if (from === this.from && to === this.to) return;
     this.from = from; this.to = to;
@@ -893,15 +894,58 @@ if (SITE_KEY === 'DA29') {
 /* ───────── Công nhân và máy theo nhật ký ngày ───────── */
 const crew = new THREE.Group(); scene.add(crew);
 const bodyGeo = new THREE.CapsuleGeometry(0.21, 0.6, 4, 10), headGeo = new THREE.SphereGeometry(0.17, 12, 10), helmGeo = new THREE.SphereGeometry(0.2, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), legGeo = new THREE.CapsuleGeometry(0.09, 0.5, 3, 6), armGeo = new THREE.CapsuleGeometry(0.065, 0.42, 3, 6);
-function worker(x, y, z, helmet = M.helmetY) { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.random() * Math.PI * 2;
-  for (const s of [-0.1, 0.1]) mesh(legGeo, M.jeans, s, 0.35, 0, g); mesh(bodyGeo, M.vest, 0, 1.0, 0, g); mesh(headGeo, M.skin, 0, 1.55, 0, g); mesh(helmGeo, helmet, 0, 1.6, 0, g);
-  for (const s of [-1, 1]) { const arm = mesh(armGeo, M.vest, s * 0.27, 1.02, 0.06, g); arm.rotation.z = s * 0.18; arm.rotation.x = -0.35; }
-  g.userData.phase = Math.random() * 6; crew.add(g); return g; }
+const toolGeo = new THREE.BoxGeometry(0.05, 0.05, 0.35), barGeo = new THREE.CylinderGeometry(0.018, 0.018, 3.2, 5).rotateZ(Math.PI / 2), boardGeo = new THREE.BoxGeometry(1.6, 0.03, 0.3), bagGeo = new THREE.BoxGeometry(0.45, 0.16, 0.32);
+const CARRY_YARD = SITE_KEY === 'DA29' ? { x0: -62, x1: -38, z0: -90, z1: -76 } : { x0: 4, x1: 34, z0: 20, z1: 35 };
+const rnd = (a, b) => a + Math.random() * (b - a);
+// Người: chân, tay xoay quanh hông / vai để bước đi, vung tay, gõ búa; có thể vác thép / ván / bao.
+function worker(x, y, z, helmet = M.helmetY, area = null, carrier = false) {
+  const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.random() * Math.PI * 2;
+  const legs = [-0.1, 0.1].map(sx => { const hip = new THREE.Group(); hip.position.set(sx, 0.62, 0); g.add(hip); mesh(legGeo, M.jeans, 0, -0.3, 0, hip); return hip; });
+  mesh(bodyGeo, M.vest, 0, 1.0, 0, g); mesh(headGeo, M.skin, 0, 1.55, 0, g); mesh(helmGeo, helmet, 0, 1.6, 0, g);
+  const arms = [-1, 1].map(sx => { const sh = new THREE.Group(); sh.position.set(sx * 0.27, 1.3, 0); sh.rotation.z = sx * 0.12; g.add(sh); mesh(armGeo, M.vest, 0, -0.26, 0, sh); return sh; });
+  const tool = mesh(toolGeo, M.black, 0, -0.5, 0.12, arms[1]); tool.castShadow = false;
+  const kinds = [barGeo, boardGeo, bagGeo], kind = Math.floor(Math.random() * 3), load = new THREE.Group(); load.position.set(0, 1.62, 0); g.add(load);
+  if (kind === 0) for (let i = 0; i < 6; i += 1) mesh(barGeo, M.rebar, 0, (i % 2) * 0.04, (Math.floor(i / 2) - 1) * 0.04, load); else mesh(kinds[kind], kind === 1 ? M.plywood : M.bag, 0, 0, 0, load);
+  load.visible = false;
+  g.userData = { phase: Math.random() * 6, legs, arms, tool, load, area, carrier, y, state: 'work', timer: rnd(0.5, 5), speed: rnd(1.0, 1.45), ph: 0, toArea: true, tx: x, tz: z };
+  crew.add(g); return g;
+}
+function pickIn(a) { if (a.rect) return [rnd(a.rect.x0, a.rect.x1), rnd(a.rect.z0, a.rect.z1)]; const ang = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * a.r; return [a.cx + Math.cos(ang) * r, a.cz + Math.sin(ang) * r]; }
+function nextTarget(w) {
+  const u = w.userData, a = u.area; if (!a) return;
+  if (u.carrier && !u.toArea) { u.tx = rnd(CARRY_YARD.x0, CARRY_YARD.x1); u.tz = rnd(CARRY_YARD.z0, CARRY_YARD.z1); }
+  else { [u.tx, u.tz] = pickIn(a); }
+  u.state = 'walk';
+}
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
+function stepCrew(dt, t) {
+  for (const w of crew.children) {
+    const u = w.userData; if (!u.legs) continue;
+    if (u.state === 'walk') {
+      const dx = u.tx - w.position.x, dz = u.tz - w.position.z, d = Math.hypot(dx, dz);
+      if (d < 0.2) {
+        if (u.carrier) { u.load.visible = !u.toArea ? true : false; if (u.toArea) { u.timer = rnd(2.5, 5); } else { u.timer = rnd(1.2, 2.2); } u.toArea = !u.toArea; } else u.timer = rnd(3, 9);
+        u.state = 'work'; continue;
+      }
+      const step = Math.min(d, u.speed * dt); w.position.x += dx / d * step; w.position.z += dz / d * step;
+      w.rotation.y += angDiff(Math.atan2(dx, dz), w.rotation.y) * Math.min(1, dt * 8);
+      u.ph += dt * u.speed * 5.2; const sw = Math.sin(u.ph) * 0.55;
+      u.legs[0].rotation.x = sw; u.legs[1].rotation.x = -sw;
+      if (u.load.visible) { u.arms[0].rotation.x = u.arms[1].rotation.x = -2.6; } else { u.arms[0].rotation.x = -sw * 0.7; u.arms[1].rotation.x = sw * 0.7; }
+      w.position.y = u.y + Math.abs(Math.cos(u.ph)) * 0.035; u.tool.visible = false;
+    } else {
+      u.timer -= dt; u.legs[0].rotation.x *= 0.85; u.legs[1].rotation.x *= 0.85; w.position.y = u.y;
+      if (u.carrier && u.load.visible) { u.arms[0].rotation.x = u.arms[1].rotation.x = -2.6; u.tool.visible = false; }
+      else { u.tool.visible = true; u.arms[1].rotation.x = -1.25 + Math.sin(t * 7.5 + u.phase) * 0.55; u.arms[0].rotation.x = -0.7 + Math.sin(t * 3 + u.phase) * 0.15; }
+      if (u.timer <= 0) nextTarget(w);
+    }
+  }
+}
 const TEAM_PLACES = SITE_KEY === 'DA29' ? [
-  { re: /nghỉ/i, at: () => [-77.7, 3.75, -76.5], name: 'Nhà nghỉ ca' },
-  { re: /bch/i, at: () => [-50, 0, -88], name: 'BCH' },
-  { re: /đào|lấp đất/i, at: () => [41, 0, -30], name: 'Phân đoạn 1' },
-  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2' },
+  { re: /nghỉ/i, at: () => [-77.7, 3.75, -76.5], name: 'Nhà nghỉ ca', rect: { x0: -87, x1: -68.5, z0: -84, z1: -69 } },
+  { re: /bch/i, at: () => [-50, 0, -88], name: 'BCH', rect: { x0: -64, x1: -36, z0: -91, z1: -80 } },
+  { re: /đào|lấp đất/i, at: () => [41, 0, -30], name: 'Phân đoạn 1', rect: { x0: 26, x1: 56, z0: -55, z1: -5 } },
+  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2', rect: { x0: -52, x1: 24, z0: -55, z1: -5 } },
 ] : [
   { re: /alc|xây tường bao|xây alc/i, at: () => [-10.6, 0, -20], name: 'Xây ALC' },
   { re: /kc|kết cấu|lắp dựng/i, at: () => [15, 11.6, -10], name: 'Lắp dựng kết cấu', up: true },
@@ -934,7 +978,8 @@ const bldOf = wbs => Object.entries(BLD).find(([, b]) => b.roots.some(r => wbs =
 const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [84, -31, 0], NNC: [-62, -76, 0], NX: [-14, -66, Math.PI / 2], COC: [-14, -66, Math.PI / 2], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
 const BCENTER = SITE_KEY === 'DA29' ? { NVP: [66, 0, -31], NNC: [-77.7, 3.75, -76.5], NX: [-14, 0, -30], COC: [-14, 0, -30], PHU: [-20, 0, 20], HT: [0, 0, -50] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
 function activeBuildings(d) { const g = {}; for (const t of Object.values(TASK)) { if (t.kids.length) continue; const gain = pAt(t.wbs, d) - pAt(t.wbs, d - 7); if (gain > 0.5) { const b = bldOf(t.wbs); if (b) g[b] = (g[b] || 0) + gain; } } return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([b]) => b); }
-function cluster(x, y, z, count, text) { for (let i = 0; i < Math.min(count, 16); i += 1) worker(x + (i % 4) * 1.3 - 2, y, z + Math.floor(i / 4) * 1.3 - 1.5, i === 0 ? M.helmetW : M.helmetY);
+function cluster(x, y, z, count, text, rect = null) { const n = Math.min(count, 24), area = rect ? { cx: (rect.x0 + rect.x1) / 2, cz: (rect.z0 + rect.z1) / 2, rect } : { cx: x, cz: z, r: y > 0.5 ? 4 : Math.min(12, 4 + n * 0.5) };
+  for (let i = 0; i < n; i += 1) { const [px, pz] = pickIn(area); const w = worker(px, y, pz, i === 0 ? M.helmetW : M.helmetY, area, y < 0.5 && i > 0 && i % 4 === 3); if (i % 2) nextTarget(w); }
   const l = label(text, 'team'); l.position.set(x, y + 3.2, z); scene.add(l); teamLabels.push(l); }
 function updateCrew(d) {
   crew.clear(); for (const l of teamLabels) l.parent?.remove(l); teamLabels.length = 0;
@@ -943,7 +988,7 @@ function updateCrew(d) {
   for (const [task, count] of log[4]) { if (!(count > 0)) continue; const place = TEAM_PLACES.find(p => p.re.test(task)); if (place && !/^tổ đội$/i.test(task.trim())) named.push([task, count, place]); else generic.count += count; }
   if (!named.length && !generic.count && log[1] > 0) generic.count = log[1];
   const used = new Map();
-  for (const [task, count, place] of named) { const [x, y, z] = place.at(); const off = used.get(place.name) || 0; used.set(place.name, off + 1); cluster(x + off * 6, y, z, count, `${task} · ${count} người`); }
+  for (const [task, count, place] of named) { const [x, y, z] = place.at(); const off = used.get(place.name) || 0; used.set(place.name, off + 1); cluster(x + off * 6, y, z, count, `${task} · ${count} người`, place.rect || null); }
   // Nhật ký chỉ ghi "Tổ đội": chia người cho các nhà có đầu việc tăng % trong 7 ngày.
   if (generic.count) { const act = activeBuildings(d).slice(0, 3); const list = act.length ? act : ['NVP']; const per = Math.ceil(generic.count / list.length);
     list.forEach((b, i) => { const [x, y, z] = BCENTER[b]; const n = Math.min(per, generic.count - per * i); if (n > 0) cluster(x, y, z, n, `Tổ đội · ${n} người · ${BLD[b].short}`); }); }
@@ -1049,6 +1094,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   for (const h of ray.intersectObjects(scene.children, true)) {
     if (!h.object.visible || ghosts.children.includes(h.object)) continue;
     const u = h.object.userData;
+    if (u.tk) { const seg = tkSeg(u.tk.bay), ax = u.tk.bay + 1; info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${TK_NAME[u.tk.st] || 'Kết cấu thép'} · trục ${ax}–${ax + 1}</h2><p class="sub">Mô hình Tekla · ${seg === 'NVP' ? 'Nhà văn phòng' : 'Nhà xưởng ' + seg.replace('PD', 'PĐ')}</p><div class="row"><span>Đầu việc</span><b>${u.tk.st === 'neo' ? TK_NEO[seg] + ' · ' + esc(TASK[TK_NEO[seg]]?.name || '') : '4.3.1 · ' + esc(TASK['4.3.1']?.name || '')}</b></div><div class="row"><span>Thực tế ${dd(DAY)}</span><b>${pct(pAt(u.tk.st === 'neo' ? TK_NEO[seg] : '4.3.1', DAY))}</b></div><div class="row"><span>Kế hoạch</span><b>${TASK['4.3.1'] ? dd(TASK['4.3.1'].ps) + ' → ' + dd(TASK['4.3.1'].pe) : '—'}</b></div>`; return; }
     if (u.k) { const key = u.k.part === 'NNC' ? 'NNC' : u.k.part === 'NVP' ? 'NVP' : u.k.part === 'NX' ? 'NX' : null; if (key) { selectBuilding(key); return; } continue; }
     if (u.elems) { selectTask(u.elems.task); return; }
     if (u.stock) { const { title, rows } = u.stock; info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${esc(title)}</h2><p class="sub">Tồn theo sổ ${CFG.warehouse} trong Vioo (14/10)</p>${rows.length ? rows.map(([n, un, q]) => `<div class="row"><span>${esc(n)}</span><b>${Number(q).toLocaleString('vi-VN')} ${esc(un || '')}</b></div>`).join('') : '<p class="sub">Không có dòng tồn.</p>'}${SITE_KEY === 'SMB' ? '<p class="sub" style="margin-top:8px">Sổ kho còn ghi cả vật tư đã dùng hết (ví dụ bê tông 1.272 m³) — cần đối soát xuất dùng.</p>' : ''}`; return; }
@@ -1091,6 +1137,7 @@ const SEG_ENV = { PD3: ['4.5.3', '4.6.3', '4.4.3'], PD2: ['4.5.2', '4.6.2', '4.4
 // 'real' | 'ghost' | 'hide' cho một khối của mô hình thiết kế tại ngày d.
 function realState(k, d) {
   if (REAL.mode === 'full') return 'real';
+  if (REAL.mode === 'steel') return k.part === 'NX' || k.part === 'NVP' ? 'hide' : 'real';
   if (k.part === 'GD1' || k.part === 'DIAHINH' || k.part === 'NEN' || k.part === '') return 'real';
   let ok = false;
   if (k.part === 'NEN_GD2') ok = rootDone('8', d);
@@ -1108,12 +1155,29 @@ function applyReal(d) {
   for (const o of REAL.meshes) { const st = realState(o.userData.k, d); o.visible = st !== 'hide'; o.material = st === 'real' ? o.userData.orig : ghostMat; o.castShadow = st === 'real' && !o.userData.orig.transparent;
     const k = o.userData.k; if (st === 'real' && (k.part === 'NNC' || k.part === 'NVP') && STRUCT.has(k.cat)) floorReal[k.part][Math.min(k.lv, 3)] = true; }
   // Nhà / phân đoạn đã hiện mô hình thật thì ẩn phần dựng tiến độ trùng chỗ.
-  if (REAL.mode === 'full') { for (const list of Object.values(REPLACE)) for (const e of list) e.range(0, 0); siteGround.visible = false; return; }
+  applyTekla(d);
+  if (REAL.mode === 'full' || REAL.mode === 'steel') { for (const list of Object.values(REPLACE)) for (const e of list) e.range(0, 0); siteGround.visible = REAL.mode === 'steel'; return; }
   siteGround.visible = true;
   for (const seg of ['PD1', 'PD2', 'PD3']) if (allDone(SEG_ENV[seg], d)) for (const e of REPLACE['NX:' + seg] || []) e.range(0, 0);
   for (const key of ['NNC', 'NVP']) if (floorReal[key].every((v, i) => v || i > 0) && floorReal[key][0] && done((key === 'NNC' ? NNC_WALL : NVP_WALL)[0], d) && rootDone(key === 'NNC' ? '3' : '2', d)) for (const e of REPLACE[key] || []) e.range(0, 0);
 }
-const btnGhostLabel = { ghost: 'Thiết kế: mờ', full: 'Thiết kế: hoàn thiện', off: 'Thiết kế: ẩn' };
+const btnGhostLabel = { ghost: 'Thiết kế: mờ', full: 'Thiết kế: hoàn thiện', steel: 'Thiết kế: khung thép', off: 'Thiết kế: ẩn' };
+const TEKLA = [];
+// Trục Tekla 1 → 21 (m, gốc trục 1). Phân đoạn theo dữ liệu Vioo: PĐ3 đầu cổng, PĐ1 giáp nhà văn phòng; trục 19–21 là khung mái nhà văn phòng.
+const TK_AX = [0, 8.5, 17, 25.2, 33.4, 41.6, 49.8, 58, 66, 66.4, 74.4, 82.6, 90.8, 99, 107.2, 115.4, 123.6, 131.8, 140, 150, 160];
+const tkSeg = bay => (TK_AX[bay] >= 140 ? 'NVP' : TK_AX[bay] < 31.4 ? 'PD3' : TK_AX[bay] < 110 ? 'PD2' : 'PD1');
+const TK_NEO = { PD3: '4.1.3.4', PD2: '4.1.2.4', PD1: '4.1.1.4', NVP: '2.1.4' };
+// Đầu việc 4.3.1 (lắp dựng kết cấu thép, sàn deck) chia giai đoạn: cột → kèo, dầm → giằng, xà gồ → tôn sàn deck → cầu thang; mỗi giai đoạn lắp dần từ đầu cổng vào.
+const TK_STAGE = { cot: [0, 40], keo: [20, 65], giang: [40, 85], deck: [60, 100], thang: [80, 100] };
+const TK_NAME = { neo: 'Bu lông neo', cot: 'Cột thép', keo: 'Kèo, dầm thép', giang: 'Giằng, xà gồ', deck: 'Tôn sàn deck', thang: 'Cầu thang, lan can thép' };
+function applyTekla(d) {
+  const p = pAt('4.3.1', d);
+  for (const o of TEKLA) { const { st: stg, bay } = o.userData.tk; let vis;
+    if (REAL.mode === 'full' || REAL.mode === 'steel') vis = true;
+    else if (stg === 'neo') vis = done(TK_NEO[tkSeg(bay)], d);
+    else { const [a, b] = TK_STAGE[stg] || [0, 100], f = Math.max(0, Math.min(1, (p - a) / (b - a))); vis = bay < Math.round(f * TK_AX.length - 1e-9) + (f >= 1 ? 1 : 0); }
+    o.visible = vis; }
+}
 async function loadReal() {
   const st = document.getElementById('realStatus'); st.textContent = 'Đang tải mô hình thiết kế…';
   const [{ GLTFLoader }, { MeshoptDecoder }, { RoomEnvironment }] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/environments/RoomEnvironment.js')]);
@@ -1129,11 +1193,19 @@ async function loadReal() {
     REAL.meshes.push(o); });
   try { const bushes = await (await fetch('xinhai/xinhai-bushes.json')).json(); const pts = []; for (const [x, z, sx, sy, sz] of bushes) { const long = Math.max(sx, sz), n = Math.max(1, Math.round(long / 1.1)); for (let i = 0; i < n; i += 1) { const f = (i + 0.5) / n - 0.5; pts.push([x + (sx >= sz ? f * sx : 0), z + (sx < sz ? f * sz : 0), Math.min(sy, 1.4)]); } }
     const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.6, 1), mat('#3f7f3a'), pts.length); pts.forEach(([x, z, h], i) => im.setMatrixAt(i, mtx(x, h * 0.45 - 0.3, z, 1, h / 1.2, 1))); im.castShadow = true; scene.add(im); } catch {}
+  try {
+    const tk = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('xinhai/xinhai-tekla.glb'); tk.scene.position.set(-84.5, -0.3, -2.9); scene.add(tk.scene); tk.scene.updateMatrixWorld(true);
+    tk.scene.traverse(o => { if (!o.isMesh) return; const [, stg, bay] = o.name.split('|'); o.userData.tk = { st: stg, bay: +bay }; o.castShadow = true; o.receiveShadow = true;
+      o.geometry.computeBoundingBox(); const box = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); o.userData.box = box;
+      o.raycast = function (rc, out) { if (!this.visible) return; const p = rc.ray.intersectBox(this.userData.box, new THREE.Vector3()); if (p) out.push({ distance: rc.ray.origin.distanceTo(p), point: p, object: this }); };
+      TEKLA.push(o); });
+    for (const key of ['NX:PD1', 'NX:PD2', 'NX:PD3']) for (const e of REPLACE[key] || []) if (e.task === '4.3.1') { e.disabled = true; e.range(0, 0); }
+  } catch (e) { console.warn('Tekla', e); }
   REAL.loaded = true; st.textContent = ''; setDay(DAY);
 }
 if (SITE_KEY === 'DA29') {
   btnGhost.textContent = btnGhostLabel.ghost;
-  btnGhost.onclick = () => { REAL.mode = REAL.mode === 'ghost' ? 'full' : REAL.mode === 'full' ? 'off' : 'ghost'; btnGhost.textContent = btnGhostLabel[REAL.mode]; btnGhost.setAttribute('aria-pressed', String(REAL.mode !== 'off')); setDay(DAY); };
+  btnGhost.onclick = () => { REAL.mode = REAL.mode === 'ghost' ? 'full' : REAL.mode === 'full' ? 'steel' : REAL.mode === 'steel' ? 'off' : 'ghost'; btnGhost.textContent = btnGhostLabel[REAL.mode]; btnGhost.setAttribute('aria-pressed', String(REAL.mode !== 'off')); setDay(DAY); };
   UPDATERS.push(d => applyReal(d));
   loadReal().catch(e => { document.getElementById('realStatus').textContent = 'Chưa tải được mô hình thiết kế'; console.error(e); });
 }
@@ -1148,7 +1220,7 @@ function animate() {
   for (const g of [...Object.values(machines), pour.pump, ...pour.mixers]) if (g.visible && g.userData.anim) g.userData.anim(t);
   if (machines.crane?.userData.hook) machines.crane.userData.hook.visible = machines.crane.visible;
   for (const [k2, [ax, base, amp, sp]] of Object.entries(MACH_MOVE)) if (machines[k2]) machines[k2].position[ax] = base + Math.sin(t * sp) * amp;
-  for (const w of crew.children) { w.position.y += Math.sin(t * 6 + w.userData.phase) * 0.0015; w.rotation.y += Math.sin(t * 0.8 + w.userData.phase) * 0.004; }
+  stepCrew(dt, t);
   if (hlList.length) { const on = performance.now() < hlUntil && Math.floor(performance.now() / 280) % 2 === 0; for (const e of hlList) e.mesh.material = on ? M.hl : e.base; if (performance.now() >= hlUntil) { for (const e of hlList) e.mesh.material = e.base; } }
   if (camT < 1) { camT = Math.min(1, camT + dt * 0.8); const e = camT < 0.5 ? 2 * camT * camT : -1 + (4 - 2 * camT) * camT; camera.position.lerpVectors(camFrom.p, camTo.p, e); controls.target.lerpVectors(camFrom.t, camTo.t, e); }
   if (frame % 8 === 0) lod();

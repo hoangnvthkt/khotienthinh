@@ -421,3 +421,21 @@ Toạ độ mọi nhà, máy, tổ đội, góc nhìn đã chuyển theo mô hì
 Ảnh: `mockups/site-3d-xinhai-thiet-ke-{hom-nay,hoan-thien,nha-nghi-ca,nha-nghi-ca-hoan-thien,nha-van-phong-hoan-thien,mong-pd2}.jpg`.
 Việc tiếp: thép xưởng từ Tekla (IFC) để gắn tiến độ lắp dựng tới từng cấu kiện; chia lớp theo nhà / tầng ngay trong SketchUp thì bỏ được bước tách theo toạ độ;
 Sơn Miền Bắc làm tương tự khi có file.
+
+**Kết cấu thép Tekla + công nhân đi lại (17/10).** Chủ SP gửi `3D XIN HAI.ifc` (Tekla Structures 2017, IFC2X3, 88 MB, 1,2 triệu bản ghi). Đọc bằng web-ifc trong Node
+(scratchpad `conv/ifc2glb.mjs`): bỏ đinh chống cắt (28.682), bu lông / đai ốc / long đen, tôn bao và sê nô (đã có ở mô hình kiến trúc) → còn ~9.000 cấu kiện, 0,54 triệu
+tam giác → `mockups/xinhai/xinhai-tekla.glb` **1,1 MB**. Lưới trục Tekla 1 → 21 (trục 1 tại x = 0, trục 19 = 140 m là hết xưởng, trục 19–21 là khung mái nhà văn phòng),
+A → F cách 10,8 m (54 m) — khớp vỏ SketchUp 141,5 × 54,3 m khi dời (−84,5; −2,9), không cần lật. Cấu kiện chia **giai đoạn × bước trục**: bu lông neo (hiện khi thép
+móng của phân đoạn xong), cột (0–40% đầu việc 4.3.1), kèo / dầm (20–65%), giằng / xà gồ / ty (40–85%), tôn sàn deck (60–100%), cầu thang thép (80–100%); mỗi giai
+đoạn lắp dần từ đầu cổng vào. Khi có Tekla, thép tự dựng của xưởng tắt. Nút thiết kế thêm chế độ **khung thép** (ẩn vỏ xưởng / văn phòng, hiện toàn bộ Tekla).
+Bấm vào thép → giai đoạn, trục, đầu việc, % thực tế, kế hoạch. Hôm nay 4.3.1 = 0% (kế hoạch 23/10 → 26/11) nên chỉ hiện bu lông neo PĐ3.
+
+**Cần chủ SP kiểm tra — số liệu phân đoạn ngược trục?** Tekla: trục 1 ở đầu cổng (gần nhà nghỉ ca), trục 19–21 giáp nhà văn phòng. WBS ghi PĐ1 = trục 1–5, PĐ3 = trục 15–19.
+Ảnh flycam: đầu cổng đã lấp + lu nền, đầu giáp văn phòng mới đào. Vioo lại ghi PĐ3 (trục 15–19) xong móng 100%, PĐ1 (trục 1–5) mới đào 30% → hoặc công trường đánh
+số phân đoạn từ đầu văn phòng, hoặc đang nhập % nhầm phân đoạn. Mô hình đang theo **số liệu Vioo + ảnh** (đầu cổng = PĐ3).
+
+**Công nhân đi lại làm việc** (cả hai công trường): người có chân / tay xoay quanh hông / vai — bước đi, vung tay, dừng lại gõ búa 3–9 s rồi đi tiếp tới điểm khác trong
+khu làm việc; cứ 4 người có 1 người khuân vật tư (bó thép, tấm ván, bao xi măng) đi lại giữa bãi vật tư và chỗ làm. Khu làm việc theo việc ghi trong nhật ký: XinHai — buộc
+thép móng rải khắp PĐ2, lấp đất ở PĐ1, nhà nghỉ ca trên sàn, BCH; Sơn Miền Bắc giữ khu cũ (vòng bán kính theo số người). Tối đa 24 người / tổ.
+
+Ảnh: `mockups/site-3d-xinhai-{tekla-steel,tekla-steel-close,cong-nhan}.jpg`.
