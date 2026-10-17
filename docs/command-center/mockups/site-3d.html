@@ -812,11 +812,12 @@ function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH,
 }
 // Nhà xưởng khung thép 2 tầng (sàn deck), 18 bước cột, chia 3 phân đoạn theo trục. Dựng trong khung cục bộ (trục dọc = z) rồi xoay 90° về trục x thật.
 function steelFactoryDA(segs) {
-  const W0 = 2.9, W1 = 57.2, xs = Array.from({ length: 7 }, (_, i) => W0 + (W1 - W0) * i / 6), BAY = 141.5 / 18, mid = (W0 + W1) / 2;
+  const W0 = 2.9, W1 = 57.2, xs = Array.from({ length: 7 }, (_, i) => W0 + (W1 - W0) * i / 6), mid = (W0 + W1) / 2;
+  const AXZ = [0, 8.5, 17, 25.2, 33.4, 41.6, 49.8, 58, 66.4, 74.4, 82.6, 90.8, 99, 107.2, 115.4, 123.6, 131.8, 140].map(x => -84.5 + x);
   const R = new THREE.Matrix4().makeRotationY(Math.PI / 2);
   for (const sg of segs) {
     const n0 = ELEMS.length;
-    const frameZ = []; for (let z = sg.z1; z >= sg.z0 - 0.5; z -= BAY) frameZ.push(Math.round(z * 100) / 100);
+    const frameZ = AXZ.filter(z => z >= sg.z0 - 0.01 && z <= sg.z1 + 0.01).sort((a, b) => b - a); if (sg.z1 > frameZ[0] + 0.5) frameZ.unshift(sg.z1);
     const pos = []; frameZ.forEach(z => xs.forEach(x => pos.push([x, z])));
     const r = { x0: W0, x1: W1, z0: sg.z0, z1: sg.z1 }, c = sg.c;
     foundation(pos, { pile: '1.2.1', dig: c.dig, reb: c.reb, form: c.form, pad: c.conc, tie: c.conc, backfill: c.fill }, { xs, zs: frameZ });
@@ -875,9 +876,9 @@ if (SITE_KEY === 'DA29') {
       { col: { reb: '3.5.1', form: '3.5.2', conc: '3.5.3' }, slab: { form: '3.5.4', reb: '3.5.5', conc: '3.5.8' }, wall: '3.7.3' }],
     tum: { col: { reb: '3.6.1', form: '3.6.2', conc: '3.6.3' }, slab: { form: '3.6.4', reb: '3.6.5', conc: '3.6.8' }, wall: '3.7.4' } });
   steelFactoryDA([
-    { key: 'PD3', name: 'Phân đoạn 3 (trục 15–19)', z0: -84.5, z1: -84.5 + 4 * 141.5 / 18, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
-    { key: 'PD2', name: 'Phân đoạn 2 (trục 6–15)', z0: -84.5 + 4 * 141.5 / 18, z1: -84.5 + 14 * 141.5 / 18, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
-    { key: 'PD1', name: 'Phân đoạn 1 (trục 1–5)', z0: -84.5 + 14 * 141.5 / 18, z1: 57, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
+    { key: 'PD1', name: 'Phân đoạn 1 (trục 1–5)', z0: -84.5, z1: -84.5 + 33.4, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
+    { key: 'PD2', name: 'Phân đoạn 2 (trục 6–15)', z0: -84.5 + 33.4, z1: -84.5 + 107.2, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
+    { key: 'PD3', name: 'Phân đoạn 3 (trục 15–19)', z0: -84.5 + 107.2, z1: 57, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
   ]);
   // Công trình tạm (không có trong mô hình thiết kế): BCH nhà dài mái tôn cạnh đường chính, đường đất thi công, khu gia công lưới xanh, bãi vật tư.
   flat(8, 52, M.pit, -30, 0.03, -86); flat(176, 8, M.pit, -14, 0.03, -63);
@@ -944,8 +945,9 @@ function stepCrew(dt, t) {
 const TEAM_PLACES = SITE_KEY === 'DA29' ? [
   { re: /nghỉ/i, at: () => [-77.7, 3.75, -76.5], name: 'Nhà nghỉ ca', rect: { x0: -87, x1: -68.5, z0: -84, z1: -69 } },
   { re: /bch/i, at: () => [-50, 0, -88], name: 'BCH', rect: { x0: -64, x1: -36, z0: -91, z1: -80 } },
-  { re: /đào|lấp đất/i, at: () => [41, 0, -30], name: 'Phân đoạn 1', rect: { x0: 26, x1: 56, z0: -55, z1: -5 } },
-  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2', rect: { x0: -52, x1: 24, z0: -55, z1: -5 } },
+  { re: /lấp đất/i, at: () => [39, 0, -30], name: 'Phân đoạn 3', rect: { x0: 24, x1: 55, z0: -55, z1: -5 } },
+  { re: /đào/i, at: () => [-68, 0, -30], name: 'Phân đoạn 1', rect: { x0: -83, x1: -52, z0: -55, z1: -5 } },
+  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2', rect: { x0: -50, x1: 22, z0: -55, z1: -5 } },
 ] : [
   { re: /alc|xây tường bao|xây alc/i, at: () => [-10.6, 0, -20], name: 'Xây ALC' },
   { re: /kc|kết cấu|lắp dựng/i, at: () => [15, 11.6, -10], name: 'Lắp dựng kết cấu', up: true },
@@ -956,7 +958,7 @@ const TEAM_PLACES = SITE_KEY === 'DA29' ? [
   { re: /văn phòng|nvp|cốt thép|vk|ván|bt|bê tông/i, at: () => [-28, 4 * FH + 0.1, 16], name: 'BT, cốt thép, ván khuôn' },
 ];
 const MACH_PLACES = SITE_KEY === 'DA29'
-  ? { crane: [-60, 0, -70, Math.PI / 2], excavator: [41, 0, -30, 0.6], roller: [-69, 0, -30, 0], dozer: [-20, 0, -72, 1.2], rammer: [0, 0, -40, 0], truck: [-30, 0, -80, 0], pilepress: [10, 0, -30, 0], bender: [-98, 0, -96, 0] }
+  ? { crane: [-60, 0, -70, Math.PI / 2], excavator: [-68, 0, -30, 0.6], roller: [39, 0, -30, 0], dozer: [-20, 0, -72, 1.2], rammer: [0, 0, -40, 0], truck: [-30, 0, -80, 0], pilepress: [10, 0, -30, 0], bender: [-98, 0, -96, 0] }
   : { crane: [34.5, 0, -12, -Math.PI / 2], excavator: [45, 0, -70, 0.4], roller: [40.5, 0, -110, 0], dozer: [-25, 0, -95, 1.2], rammer: [44.2, 0, -48, 0], truck: [20, 0, 46, Math.PI / 2] };
 const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['z', -30, 20, 0.25], dozer: ['x', -20, 10, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
 const machines = {}; const machLabels = {};
@@ -1128,11 +1130,14 @@ window.siteDebug.focus = (x, y, z, dist, ax = -1, ay = 0.6, az = 1) => { camT = 
 const REAL = { meshes: [], mode: 'ghost', loaded: false };
 const ghostMat = new THREE.MeshBasicMaterial({ color: '#8fb3e6', transparent: true, opacity: 0.1, depthWrite: false });
 const done = (w, d) => (TASK[w] ? pAt(w, d) >= 99.5 : false);
+if (SITE_KEY === 'DA29') UPDATERS.push(d => { const segs = [['PĐ1 (trục 1–5, đầu cổng)', '4.1.1'], ['PĐ2 (trục 6–15)', '4.1.2'], ['PĐ3 (trục 15–19, giáp văn phòng)', '4.1.3']].map(([n, w]) => ({ n, w, ps: TASK[w]?.ps ?? 0, p: TASK[w] ? groupAt(TASK[w], d) : 0 })).sort((a, b) => a.ps - b.ps);
+  const notes = []; for (let i = 0; i < segs.length; i += 1) for (let j = i + 1; j < segs.length; j += 1) if (segs[j].p - segs[i].p >= 40) notes.push(`Móng ${segs[j].n} ghi ${Math.round(segs[j].p)}% nhưng ${segs[i].n} (kế hoạch làm trước) mới ${Math.round(segs[i].p)}% — ảnh flycam 09/10 cho thấy đầu cổng đã lu nền: kiểm tra có nhập % nhầm phân đoạn không.`);
+  ANOMALIES.NX = notes; });
 const allDone = (list, d) => list.length > 0 && list.every(w => done(w, d));
 const rootDone = (r, d) => (TASK[r] ? groupAt(TASK[r], d) >= 99.5 : false);
 const NNC_WALL = ['3.7.1', '3.7.2', '3.7.3', '3.7.4'], NVP_WALL = ['2.5.1', '2.5.2', '2.5.3', '2.5.3'];
 const STRUCT = new Set(['Slab', 'Column', 'Beam', 'StairFlight', 'Stair', 'Member', 'Footing', 'Roof', 'Building']);
-const segOf = xbin => (xbin < 4 ? 'PD3' : xbin < 14 ? 'PD2' : 'PD1');
+const segOf = xbin => (xbin * 141.5 / 18 < 33.4 ? 'PD1' : xbin * 141.5 / 18 < 107.2 ? 'PD2' : 'PD3');
 const SEG_ENV = { PD3: ['4.5.3', '4.6.3', '4.4.3'], PD2: ['4.5.2', '4.6.2', '4.4.2'], PD1: ['4.5.1', '4.6.1', '4.4.1'] };
 // 'real' | 'ghost' | 'hide' cho một khối của mô hình thiết kế tại ngày d.
 function realState(k, d) {
@@ -1163,9 +1168,9 @@ function applyReal(d) {
 }
 const btnGhostLabel = { ghost: 'Thiết kế: mờ', full: 'Thiết kế: hoàn thiện', steel: 'Thiết kế: khung thép', off: 'Thiết kế: ẩn' };
 const TEKLA = [];
-// Trục Tekla 1 → 21 (m, gốc trục 1). Phân đoạn theo dữ liệu Vioo: PĐ3 đầu cổng, PĐ1 giáp nhà văn phòng; trục 19–21 là khung mái nhà văn phòng.
+// Trục Tekla 1 → 21 (m, gốc trục 1 ở đầu cổng — chủ SP xác nhận 17/10). PĐ1 trục 1–5, PĐ2 trục 5–15, PĐ3 trục 15–19; trục 19–21 là khung mái nhà văn phòng.
 const TK_AX = [0, 8.5, 17, 25.2, 33.4, 41.6, 49.8, 58, 66, 66.4, 74.4, 82.6, 90.8, 99, 107.2, 115.4, 123.6, 131.8, 140, 150, 160];
-const tkSeg = bay => (TK_AX[bay] >= 140 ? 'NVP' : TK_AX[bay] < 31.4 ? 'PD3' : TK_AX[bay] < 110 ? 'PD2' : 'PD1');
+const tkSeg = bay => (TK_AX[bay] >= 140 ? 'NVP' : TK_AX[bay] < 33.4 ? 'PD1' : TK_AX[bay] < 107.2 ? 'PD2' : 'PD3');
 const TK_NEO = { PD3: '4.1.3.4', PD2: '4.1.2.4', PD1: '4.1.1.4', NVP: '2.1.4' };
 // Đầu việc 4.3.1 (lắp dựng kết cấu thép, sàn deck) chia giai đoạn: cột → kèo, dầm → giằng, xà gồ → tôn sàn deck → cầu thang; mỗi giai đoạn lắp dần từ đầu cổng vào.
 const TK_STAGE = { cot: [0, 40], keo: [20, 65], giang: [40, 85], deck: [60, 100], thang: [80, 100] };

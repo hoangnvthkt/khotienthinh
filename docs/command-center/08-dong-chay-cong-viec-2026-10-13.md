@@ -439,3 +439,9 @@ khu làm việc; cứ 4 người có 1 người khuân vật tư (bó thép, t�
 thép móng rải khắp PĐ2, lấp đất ở PĐ1, nhà nghỉ ca trên sàn, BCH; Sơn Miền Bắc giữ khu cũ (vòng bán kính theo số người). Tối đa 24 người / tổ.
 
 Ảnh: `mockups/site-3d-xinhai-{tekla-steel,tekla-steel-close,cong-nhan}.jpg`.
+
+**17/10 — chủ SP xác nhận trục 1 ở đầu cổng (Tekla đúng).** Mô hình đổi: PĐ1 = trục 1–5 ở đầu cổng, PĐ2 = trục 5–15, PĐ3 = trục 15–19 giáp nhà văn phòng; khung tự dựng của xưởng
+đặt đúng vị trí trục Tekla (bước không đều 8,2–8,5 m, khe lún trục 9–10). Vì mô hình hiển thị theo số liệu Vioo, hôm nay đầu giáp văn phòng (PĐ3) hiện móng đã lấp còn
+đầu cổng (PĐ1) mới đào — **ngược ảnh flycam** → bảng Nhà xưởng có kiểm tra tự động "Cần kiểm tra số liệu": phân đoạn kế hoạch làm sau mà ghi % cao hơn phân đoạn làm
+trước ≥ 40 điểm. Nhiều khả năng công trường nhập % của PĐ1 vào dòng PĐ3: cần BCH sửa trong Nhật ký (dùng điều chỉnh có duyệt #193), mô hình tự đúng theo.
+Ảnh `mockups/site-3d-xinhai-phan-doan-theo-truc.jpg`.
