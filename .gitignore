@@ -61,6 +61,7 @@ service-account*.json
 
 .office-run-logs/
 /.daily-log-prefill-test-results/
+/.daily-log-review-test-results/
 /.po-prefill-test-results/
 /.suggestion-stats-test-results/
 /.ai-gateway-test-results/

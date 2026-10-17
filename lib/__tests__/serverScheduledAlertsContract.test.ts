@@ -10,13 +10,17 @@ const migration = migrationName
   ? readFileSync(join(root, 'supabase', 'migrations', migrationName), 'utf8')
   : '';
 const read = (file: string) => readFileSync(join(root, file), 'utf8');
+// Nhật ký (17/10/2026): tin gộp + nhắc ghi cuối ngày chạy trong alert_daily_log_digest_v1 (run_scheduled_alerts mục 6).
+const dailyLogDigestName = readdirSync(join(root, 'supabase', 'migrations')).find(name => name.endsWith('_daily_log_fast_review.sql'));
+const dailyLogDigest = dailyLogDigestName ? read(join('supabase', 'migrations', dailyLogDigestName)) : '';
 
 describe('server scheduled alerts (P2.2 group 2)', () => {
   it('evaluates every alert rule on the server', () => {
     expect(migrationName).toBeDefined();
     for (const rule of DEFAULT_ALERT_RULES) {
-      expect(migration).toContain(`alert_key = '${rule.alertKey}'`);
+      expect(`${migration}\n${dailyLogDigest}`).toContain(`alert_key = '${rule.alertKey}'`);
     }
+    expect(dailyLogDigest).toContain('v_counts := v_counts || app_private.alert_daily_log_digest_v1();');
   });
 
   it('maps project alerts to their Rooms and finance viewers', () => {

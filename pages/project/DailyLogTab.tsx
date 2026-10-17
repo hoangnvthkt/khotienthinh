@@ -56,6 +56,8 @@ import {
 } from '../../lib/dailyLogWorkflow';
 import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
 import { DailyLogTodayBoard } from '../../components/project/daily-log/DailyLogTodayBoard';
+import { DailyLogReviewQueueBar, DailyLogReviewQueueCard, type OtherProjectGroup } from '../../components/project/daily-log/DailyLogReviewQueue';
+import { EMPTY_REVIEW_QUEUE, dailyLogReviewQueueService, nextReviewItem, otherProjects, scopeQueue, type DailyLogReviewItem, type DailyLogReviewQueue } from '../../lib/dailyLogReviewQueue';
 import { calendarDayState, calendarDayTask, type CalendarDayState } from '../../lib/dailyLogTodayBoard';
 import type { DailyLogCalendarDay } from '../../lib/dailyLogWbsService';
 
@@ -412,6 +414,8 @@ interface DailyLogViewerProps {
     wbsWorkspace?: React.ReactNode;
     wbsReportReady?: boolean;
     revisionActions?: React.ReactNode;
+    /** Dải duyệt lần lượt (PR-1 Duyệt nhanh): hiện khi phiếu đang mở nằm trong hàng chờ của người xem. */
+    reviewQueue?: React.ReactNode;
 }
 
 const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
@@ -443,6 +447,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     wbsWorkspace,
     wbsReportReady = true,
     revisionActions,
+    reviewQueue,
 }) => {
     const [showSourceLogs, setShowSourceLogs] = useState(false);
     const materialRows = log.materials || [];
@@ -467,6 +472,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     // Only the WBS branch uses the new report shell. Preserve the legacy viewer.
     if(wbsWorkspace) return <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={event=>event.target===event.currentTarget && !busy && onClose()}>
         <div className="h-[92dvh] w-[96vw] max-w-[1180px] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+            {reviewQueue}
             {!wbsReportReady && <DailyLogDocumentHeader title="Bản tổng hợp thi công ngày" date={log.date}
                 authorName={log.summarizedByName || log.createdBy || ''} mode="review" statusLabel={STATUS_CFG[status].label}
                 onClose={onClose} closeDisabled={busy} />}
@@ -495,6 +501,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         <X size={18} />
                     </button>
                 </div>
+                {reviewQueue}
 
                 <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
                     {revisionActions}
@@ -1392,6 +1399,83 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const viewingLog = useMemo(() => (
         viewLogId ? logs.find(log => log.id === viewLogId) || null : null
     ), [logs, viewLogId]);
+
+    // Duyệt nhanh (PR-1, 17/10/2026): hàng chờ duyệt của tôi + phiếu treo tôi được duyệt thay; tải lại sau mỗi lần danh sách đổi.
+    const [reviewQueue, setReviewQueue] = useState<DailyLogReviewQueue>(EMPTY_REVIEW_QUEUE);
+    const [reviewTakeoverBusy, setReviewTakeoverBusy] = useState(false);
+    const refreshReviewQueue = useCallback(async () => {
+        try {
+            const queue = await dailyLogReviewQueueService.get();
+            setReviewQueue(queue);
+            return queue;
+        } catch (error) {
+            console.warn('Daily log review queue failed:', error);
+            return null;
+        }
+    }, []);
+    useEffect(() => { if (user?.id) void refreshReviewQueue(); }, [logs, refreshReviewQueue, user?.id]);
+    const reviewMineHere = useMemo(() => scopeQueue(reviewQueue.mine, projectId, constructionSiteId), [reviewQueue.mine, projectId, constructionSiteId]);
+    const reviewTakeoverHere = useMemo(() => scopeQueue(reviewQueue.takeover, projectId, constructionSiteId), [reviewQueue.takeover, projectId, constructionSiteId]);
+    const reviewOthers = useMemo(() => otherProjects([...reviewQueue.mine, ...reviewQueue.takeover], projectId, constructionSiteId), [reviewQueue, projectId, constructionSiteId]);
+    const reviewOtherLink = useCallback((group: OtherProjectGroup) => {
+        const params = new URLSearchParams();
+        if (group.projectId) params.set('projectId', group.projectId);
+        if (group.siteId) params.set('siteId', group.siteId);
+        params.set('tab', 'dailylog');
+        params.set('dailyLogId', group.firstId);
+        return `#/da?${params.toString()}`;
+    }, []);
+    const openReviewItem = useCallback((item: DailyLogReviewItem) => {
+        if (logs.some(log => log.id === item.id)) setViewLogId(item.id);
+        else toast.info('Phiếu chưa có trong danh sách', 'Tải lại trang Nhật ký rồi mở lại.');
+    }, [logs, toast]);
+    /** Xử lý xong một phiếu trong hàng → mở ngay phiếu kế tiếp; hết hàng thì đóng và báo. */
+    const advanceReview = useCallback(async (doneId: string): Promise<boolean> => {
+        const list = reviewMineHere.some(item => item.id === doneId) ? reviewMineHere
+            : reviewTakeoverHere.some(item => item.id === doneId) ? reviewTakeoverHere : null;
+        if (!list) return false;
+        const next = nextReviewItem(list, doneId);
+        void refreshReviewQueue();
+        if (next) {
+            setViewLogId(next.id);
+        } else {
+            setViewLogId(null);
+            toast.success('Đã xử lý hết nhật ký chờ duyệt ở dự án này');
+        }
+        return true;
+    }, [refreshReviewQueue, reviewMineHere, reviewTakeoverHere, toast]);
+    const takeOverReview = useCallback(async (item: DailyLogReviewItem) => {
+        const reason = await reasonConfirm({
+            title: 'Duyệt thay nhật ký',
+            targetName: `Nhật ký ${new Date(item.date).toLocaleDateString('vi-VN')} · ${item.projectCode}`,
+            warningText: `${item.assigneeName || 'Người được giao'} sẽ nhận thông báo kèm lý do. Sau khi nhận, bạn duyệt hoặc trả lại như người được giao.`,
+            reasonPlaceholder: 'VD: Anh Sơn đi công tác, phiếu treo 7 ngày',
+            actionLabel: 'Nhận duyệt thay',
+            intent: 'warning',
+        });
+        if (!reason) return;
+        setReviewTakeoverBusy(true);
+        try {
+            await dailyLogReviewQueueService.takeOver(item.id, reason);
+            await reloadDailyLogRecords();
+            await refreshReviewQueue();
+            setReviewWbsRetry(value => value + 1);
+            toast.success('Đã nhận duyệt thay', `Bấm ${item.permission === 'approve' ? 'Duyệt' : 'Xác nhận'} hoặc Trả lại như bình thường.`);
+        } catch (error) {
+            toast.error('Chưa nhận duyệt thay được', error instanceof Error ? error.message : 'Thử lại.');
+        } finally {
+            setReviewTakeoverBusy(false);
+        }
+    }, [reasonConfirm, refreshReviewQueue, reloadDailyLogRecords, toast]);
+    const viewingReviewBar = useMemo(() => {
+        if (!viewingLog) return null;
+        const mode = reviewMineHere.some(item => item.id === viewingLog.id) ? 'mine'
+            : reviewTakeoverHere.some(item => item.id === viewingLog.id) ? 'takeover' : null;
+        if (!mode) return null;
+        return <DailyLogReviewQueueBar items={mode === 'mine' ? reviewMineHere : reviewTakeoverHere} currentId={viewingLog.id} mode={mode}
+            takeoverDays={reviewQueue.takeoverDays} busy={reviewTakeoverBusy || busyLogIds.has(viewingLog.id)}
+            onOpen={openReviewItem} onTakeOver={takeOverReview} />;
+    }, [busyLogIds, openReviewItem, reviewMineHere, reviewQueue.takeoverDays, reviewTakeoverBusy, reviewTakeoverHere, takeOverReview, viewingLog]);
 
     useEffect(() => {
         if (!viewingLog || !isSummaryDailyLog(viewingLog) || !effectiveId) {
@@ -2604,9 +2688,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         delete publishCommandIdsRef.current[log.id];
         await reloadDailyLogRecords();
         const outcome = getDailyLogPublicationOutcome(receipt);
-        if (outcome.closeReview) setViewLogId(null);
         toast.success(outcome.message);
-    }, [reloadDailyLogRecords, reviewWbsBundle?.summaryLog, toast]);
+        // Duyệt lần lượt: mở ngay ngày kế tiếp trong hàng chờ.
+        if (outcome.closeReview && !(await advanceReview(log.id))) setViewLogId(null);
+    }, [advanceReview, reloadDailyLogRecords, reviewWbsBundle?.summaryLog, toast]);
 
     const createSummaryRevision = async () => {
         const log = reviewWbsBundle?.summaryLog;
@@ -2772,6 +2857,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     return (
         <div className="space-y-6">
+            <DailyLogReviewQueueCard mine={reviewMineHere} takeover={reviewTakeoverHere} takeoverDays={reviewQueue.takeoverDays}
+                others={reviewOthers} onOpen={openReviewItem} otherLink={reviewOtherLink} />
             {/* Log List */}
             <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
@@ -3575,6 +3662,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 intent: 'warning',
                             });
                             if(reason && await handleStatusChange(viewingLog,'rejected',undefined,reason)) {
+                                if (await advanceReview(viewingLog.id)) return;
                                 const fresh=await dailyLogWbsService.getBundle({projectId:projectId || effectiveId,constructionSiteId:constructionSiteId || null,logDate:viewingLog.date,dailyLogId:viewingLog.id});
                                 setReviewWbsBundle(fresh);
                             }
@@ -3584,10 +3672,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             // Pilot: the CHT closes the day; official progress stays untouched.
                             if (!(await handleStatusChange(viewingLog, 'verified'))) return;
                             toast.success('Đã duyệt bản tổng hợp', 'Chế độ thí điểm: tiến độ chính thức chưa thay đổi.');
-                            setViewLogId(null);
+                            if (!(await advanceReview(viewingLog.id))) setViewLogId(null);
                         }}
                     /> : undefined}
                     busy={reviewWbsBusy || busyLogIds.has(viewingLog.id)}
+                    reviewQueue={viewingReviewBar}
                     onClose={() => {if(!reviewWbsBusy)setViewLogId(null);}}
                     onPreviewImage={(list, idx) => {
                         setGalleryAttachments(list);
@@ -3622,7 +3711,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         setViewLogId(null);
                         handleDelete(viewingLog.id);
                     }}
-                    onVerify={() => handleStatusChange(viewingLog, 'verified')}
+                    onVerify={async () => { if (await handleStatusChange(viewingLog, 'verified')) await advanceReview(viewingLog.id); }}
                     onReject={async () => {
                         const reason = await reasonConfirm({
                             title: 'Trả lại nhật ký',
@@ -3633,7 +3722,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             intent: 'danger',
                         });
                         if (!reason) return;
-                        handleStatusChange(viewingLog, 'rejected', undefined, reason);
+                        if (await handleStatusChange(viewingLog, 'rejected', undefined, reason)) await advanceReview(viewingLog.id);
                     }}
                     onReturnSourceLog={returnSourceLog}
                 />
