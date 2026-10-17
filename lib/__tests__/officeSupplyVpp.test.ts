@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { searchVpp, vppErrorMessage, type VppCatalogItem } from '../officeSupplyService';
 
 const read = (f: string) => readFileSync(new URL(`../../supabase/migrations/${f}`, import.meta.url), 'utf8');
-const opening = read('20261017230000_vpp_opening_balance.sql');
-const flow = read('20261017231000_vpp_requests.sql');
+const opening = read('20261018100000_vpp_opening_balance.sql');
+const flow = read('20261018100100_vpp_requests.sql');
 const baseline = JSON.parse(readFileSync(new URL('../../supabase/baseline/current.json', import.meta.url), 'utf8'));
 
 const seed = [...opening.matchAll(/\('(VPP\d{3})', '((?:[^']|'')+)', '([^']+)', (\d+), (\d+)\)/g)]
@@ -36,7 +36,7 @@ describe('VPP — tồn đầu kỳ 17/10/2026 khớp bảng XNT', () => {
 
 describe('VPP — luồng đề xuất / duyệt / cấp', () => {
   it('migration nằm trong allowlist', () => {
-    expect(baseline.allowedPostBaselineFiles).toEqual(expect.arrayContaining(['20261017230000_vpp_opening_balance.sql', '20261017231000_vpp_requests.sql']));
+    expect(baseline.allowedPostBaselineFiles).toEqual(expect.arrayContaining(['20261018100000_vpp_opening_balance.sql', '20261018100100_vpp_requests.sql']));
   });
   it('giữ mọi mục đích phiếu kho cũ, thêm 3 mục đích VPP', () => {
     const old = ['request_po_receipt', 'proactive_po_receipt', 'site_hot_purchase_receipt', 'direct_supplier_receipt', 'direct_manual_receipt',

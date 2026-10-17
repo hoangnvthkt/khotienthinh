@@ -6,7 +6,7 @@ import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import OfficeSupplies from '../../pages/vpp/OfficeSupplies';
 import { officeSupplyService, type VppDetail, type VppLine, type VppReceipt, type VppSettings, type VppStatus } from '../../lib/officeSupplyService';
-import seedSql from '../../supabase/migrations/20261017230000_vpp_opening_balance.sql?raw';
+import seedSql from '../../supabase/migrations/20261018100000_vpp_opening_balance.sql?raw';
 
 // Văn phòng phẩm — giả lập máy chủ trong trình duyệt, không gọi Cloud. ?as=staff | approver | keeper | admin
 // Danh mục + tồn lấy đúng 82 mã từ migration tồn đầu kỳ 17/10/2026.

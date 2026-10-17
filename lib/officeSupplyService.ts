@@ -3,7 +3,7 @@ import { uploadTransactionAttachments, cleanupTransactionAttachmentPaths } from 
 import { foldVi } from './wmsCatalogService';
 
 // Văn phòng phẩm (17/10/2026): Đề xuất → Duyệt (trưởng phòng, duyệt thay, vượt ngưỡng) → Cấp phát ở Kho VPP.
-// Máy chủ quyết định ai thấy gì (supabase/migrations/20261017231000_vpp_requests.sql); client chỉ hiển thị cờ `can`.
+// Máy chủ quyết định ai thấy gì (supabase/migrations/20261018100100_vpp_requests.sql); client chỉ hiển thị cờ `can`.
 
 export type VppStatus = 'pending' | 'pending_threshold' | 'returned' | 'approved' | 'partial' | 'issued' | 'closed' | 'rejected' | 'cancelled';
 export type VppView = 'mine' | 'approve' | 'issue' | 'all';
