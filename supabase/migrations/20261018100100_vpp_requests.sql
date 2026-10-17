@@ -1,7 +1,7 @@
 -- Văn phòng phẩm (17/10/2026): Đề xuất → Duyệt (trưởng phòng, duyệt thay, vượt ngưỡng) → Cấp phát ở Kho VPP.
 -- Mọi nhân viên đề xuất; báo cáo theo người + phòng ban (chụp phòng ban lúc gửi).
 -- Ghi sổ đi chung sổ kho: cấp = phiếu XUẤT office_supply_issue, trả lại = NHẬP office_supply_return,
--- mua về = NHẬP office_supply_receipt (thủ kho nhập kèm ảnh hóa đơn). Giá xuất do sổ kho tính bình quân.
+-- mua về = NHẬP office_supply_receipt (thủ kho nhập kèm ảnh hóa đơn). Giá xuất = bình quân gia quyền của kho lúc cấp.
 -- Quyền: người đề xuất / người duyệt theo dữ liệu (không cần cấp quyền); thủ kho = wms.transaction.keeper ở kho;
 -- wms.office_supply.manage (thiết lập, duyệt thay mọi phiếu); wms.office_supply.report (xem mọi phiếu, báo cáo).
 
@@ -44,7 +44,7 @@ create table public.office_supply_settings (
 );
 
 create table public.office_supply_approvers (
-  org_unit_id text primary key references public.org_units(id),
+  org_unit_id uuid primary key references public.org_units(id),
   approver_id uuid not null references public.users(id),
   deputy_id uuid references public.users(id),
   updated_by uuid references public.users(id),
@@ -57,7 +57,7 @@ create table public.office_supply_requests (
   code text not null unique,
   warehouse_id text not null references public.warehouses(id),
   requester_id uuid not null references public.users(id),
-  org_unit_id text references public.org_units(id),
+  org_unit_id uuid references public.org_units(id),
   org_unit_name text,
   note text,
   status text not null check (status in ('pending', 'pending_threshold', 'returned', 'approved', 'partial', 'issued', 'closed', 'rejected', 'cancelled')),
@@ -145,7 +145,7 @@ as $$
 $$;
 
 create or replace function app_private.vpp_org_unit(p_user uuid)
-returns text language sql stable security definer set search_path = ''
+returns uuid language sql stable security definer set search_path = ''
 as $$
   select e.org_unit_id from public.employees e
   where e.user_id = p_user and e.org_unit_id is not null and coalesce(e.status, '') <> 'Đã nghỉ việc'
@@ -160,7 +160,7 @@ $$;
 
 -- Người duyệt bước 1: người duyệt của phòng → quản lý trực tiếp (khi người đề xuất chính là người duyệt phòng / phòng chưa đặt)
 -- → người duyệt thay chung. Không bao giờ là chính người đề xuất.
-create or replace function app_private.vpp_resolve_approver(p_requester uuid, p_org_unit text, p_warehouse_id text)
+create or replace function app_private.vpp_resolve_approver(p_requester uuid, p_org_unit uuid, p_warehouse_id text)
 returns uuid language plpgsql stable security definer set search_path = ''
 as $$
 declare v uuid;
@@ -347,7 +347,7 @@ returns jsonb language plpgsql stable security definer set search_path = ''
 as $$
 declare
   v_actor uuid := public.current_app_user_id();
-  v_wh text; v_ou text; v_manager boolean; v_report boolean; v_keeper boolean;
+  v_wh text; v_ou uuid; v_manager boolean; v_report boolean; v_keeper boolean;
 begin
   if v_actor is null then raise exception using errcode = '42501', message = 'AUTH_REQUIRED'; end if;
   select s.warehouse_id into v_wh from public.office_supply_settings s join public.warehouses w on w.id = s.warehouse_id
@@ -430,7 +430,7 @@ as $$
 declare
   v_actor uuid := public.current_app_user_id();
   r public.office_supply_requests%rowtype;
-  v_wh text; v_ou text; v_line jsonb; v_no integer := 0; v_item public.items%rowtype;
+  v_wh text; v_ou uuid; v_line jsonb; v_no integer := 0; v_item public.items%rowtype;
   v_name text; v_unit text; v_qty numeric; v_new boolean := nullif(p->>'id', '') is null;
 begin
   if v_actor is null then raise exception using errcode = '42501', message = 'AUTH_REQUIRED'; end if;
@@ -660,8 +660,9 @@ begin
       raise exception using errcode = '22023', message = 'VPP_STOCK_SHORT',
         detail = (select i.sku || ' ' || i.name from public.items i where i.id = l.item_id); end if;
     update public.office_supply_request_lines set issued_qty = issued_qty + v_qty where id = l.id;
-    v_items := v_items || jsonb_build_array(jsonb_build_object('itemId', l.item_id, 'quantity', v_qty, 'unit', l.unit, 'price', 0,
-      'requestLineId', l.id, 'officeSupplyRequestId', r.id));
+    -- Sổ kho chỉ tự lấy bình quân cho chuyển kho; phiếu cấp VPP ghi giá vốn bình quân của kho tại lúc cấp.
+    v_items := v_items || jsonb_build_array(jsonb_build_object('itemId', l.item_id, 'quantity', v_qty, 'unit', l.unit,
+      'price', round(app_private.vpp_unit_cost(l.item_id, r.warehouse_id), 6), 'requestLineId', l.id, 'officeSupplyRequestId', r.id));
     v_ids := v_ids || l.item_id;
   end loop;
   if jsonb_array_length(v_items) = 0 then raise exception using errcode = '22023', message = 'VPP_LINES_REQUIRED'; end if;
@@ -889,11 +890,11 @@ begin
   if jsonb_typeof(p->'approvers') = 'array' then
     for v_a in select value from jsonb_array_elements(p->'approvers') loop
       if nullif(v_a->>'approverId', '') is null then
-        delete from public.office_supply_approvers where org_unit_id = v_a->>'orgUnitId';
+        delete from public.office_supply_approvers where org_unit_id = (v_a->>'orgUnitId')::uuid;
       else
         if nullif(v_a->>'deputyId', '') = v_a->>'approverId' then raise exception using errcode = '22023', message = 'VPP_DEPUTY_SAME'; end if;
         insert into public.office_supply_approvers (org_unit_id, approver_id, deputy_id, updated_by, updated_at)
-        values (v_a->>'orgUnitId', (v_a->>'approverId')::uuid, nullif(v_a->>'deputyId', '')::uuid, v_actor, now())
+        values ((v_a->>'orgUnitId')::uuid, (v_a->>'approverId')::uuid, nullif(v_a->>'deputyId', '')::uuid, v_actor, now())
         on conflict (org_unit_id) do update set approver_id = excluded.approver_id, deputy_id = excluded.deputy_id,
           updated_by = excluded.updated_by, updated_at = excluded.updated_at
         where (office_supply_approvers.approver_id, office_supply_approvers.deputy_id) is distinct from (excluded.approver_id, excluded.deputy_id);
@@ -919,7 +920,7 @@ end $$;
 -- Quyền gọi
 -- ---------------------------------------------------------------------------
 revoke all on function app_private.vpp_is_manager(uuid), app_private.vpp_can_report(uuid), app_private.vpp_is_keeper(text, uuid),
-  app_private.vpp_org_unit(uuid), app_private.vpp_active_user(uuid), app_private.vpp_resolve_approver(uuid, text, text),
+  app_private.vpp_org_unit(uuid), app_private.vpp_active_user(uuid), app_private.vpp_resolve_approver(uuid, uuid, text),
   app_private.vpp_approve_role(public.office_supply_requests, uuid), app_private.vpp_can_view(public.office_supply_requests, uuid),
   app_private.vpp_unit_cost(text, text), app_private.vpp_stock(text, text), app_private.vpp_estimate(uuid),
   app_private.vpp_log(uuid, text, text, jsonb, uuid), app_private.vpp_notify(uuid, text, text, public.office_supply_requests),

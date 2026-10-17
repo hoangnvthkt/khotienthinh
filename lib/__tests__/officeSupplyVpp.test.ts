@@ -63,6 +63,7 @@ describe('VPP — luồng đề xuất / duyệt / cấp', () => {
   it('cấp: chỉ thủ kho kho VPP, chặn vượt tồn, món chưa có mã phải gán mã', () => {
     for (const code of ['VPP_ISSUE_DENIED', 'VPP_STOCK_SHORT', 'VPP_ITEM_REQUIRED', 'VPP_ISSUE_QTY_INVALID']) expect(flow).toContain(code);
     expect(flow).toContain("app_private.wms_has_action('wms.transaction.keeper'");
+    expect(flow).toContain("'price', round(app_private.vpp_unit_cost(l.item_id, r.warehouse_id), 6)");
   });
   it('người đề xuất không thấy giá; danh mục chọn không gửi giá', () => {
     const home = flow.slice(flow.indexOf('create or replace function public.get_office_supply_home_v1'), flow.indexOf('create or replace function public.list_office_supply_requests_v1'));
