@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { THINKING_HEADROOM, emptyReplyError, envEntries, isSafeEndpoint, outputTokenCap, parseJsonLoose, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
+import { THINKING_HEADROOM, emptyReplyError, envEntries, isSafeEndpoint, outputTokenCap, parseJsonLoose, priceOf, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
 
 const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const clock = () => { let t = 1000; return () => (t += 210); };
@@ -56,6 +56,15 @@ describe('aiTargets — thử kết nối', () => {
       .toMatchObject({ kind: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-opus-5-5', source: 'connection', connectionId: 'c1' });
     expect(targetFromConnection(null, 'fast')).toBeNull();
     expect(targetFromConnection({ kind: 'gemini', apiKey: '' }, 'fast')).toBeNull();
+  });
+
+  it('giá theo kết nối (USD / 1 triệu token): đủ cả vào và ra mới dùng; thiếu một bên → null (dùng giá trong Secrets)', () => {
+    const row = { id: 'c2', kind: 'openai_compatible', name: 'RevidAPI', baseUrl: 'https://revidapi.com/v1', model: 'claude-sonnet-5-5', apiKey: 'sk' };
+    expect(targetFromConnection({ ...row, priceInPerM: '0.3275', priceOutPerM: 1.6378 }, 'reasoning')?.price).toEqual({ inPerM: 0.3275, outPerM: 1.6378 });
+    expect(targetFromConnection({ ...row, priceInPerM: 0.33, priceOutPerM: null }, 'reasoning')?.price).toBeNull();
+    expect(targetFromConnection(row, 'reasoning')?.price).toBeNull();
+    expect(priceOf(-1, 2)).toBeNull();
+    expect(priceOf(0, 0)).toEqual({ inPerM: 0, outPerM: 0 });
   });
 
   it('RevidAPI: danh sách model công khai → kiểm thêm /v1/credits; khóa sai báo BAD_KEY, khóa đúng hiện số credit', async () => {

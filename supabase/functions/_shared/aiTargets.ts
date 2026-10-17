@@ -14,6 +14,8 @@ export interface AiTarget {
   source: 'connection' | 'secrets';
   name: string;
   connectionId?: string;
+  /** Giá USD mỗi 1 triệu token khai ở Cài đặt → Kết nối (để tính chi phí và trần tháng); thiếu thì dùng AI_PRICE_* trong Secrets. */
+  price?: { inPerM: number; outPerM: number } | null;
 }
 
 export const DEFAULT_BASE_URL: Record<AiKind, string> = {
@@ -35,6 +37,12 @@ export const KIND_LABEL: Record<AiKind, string> = {
 };
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
+const priceNum = (v: unknown) => (v == null || v === '' ? NaN : Number(v));
+/** Giá của kết nối: cần đủ cả vào và ra mới dùng được. */
+export const priceOf = (inPerM: unknown, outPerM: unknown): { inPerM: number; outPerM: number } | null => {
+  const i = priceNum(inPerM); const o = priceNum(outPerM);
+  return Number.isFinite(i) && Number.isFinite(o) && i >= 0 && o >= 0 ? { inPerM: i, outPerM: o } : null;
+};
 
 /** Hàng từ integration_secret_v1 (service_role) → đích; thiếu khóa thì null. */
 export const targetFromConnection = (row: unknown, modelClass: ModelClass): AiTarget | null => {
@@ -44,6 +52,7 @@ export const targetFromConnection = (row: unknown, modelClass: ModelClass): AiTa
   return {
     kind, baseUrl: trimUrl(String(r.baseUrl || DEFAULT_BASE_URL[kind])), apiKey: String(r.apiKey),
     model: String(r.model || DEFAULT_MODELS[kind][modelClass] || ''), source: 'connection', name: String(r.name || KIND_LABEL[kind]), connectionId: String(r.id || ''),
+    price: priceOf(r.priceInPerM, r.priceOutPerM),
   };
 };
 
