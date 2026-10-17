@@ -340,7 +340,9 @@
     "20261017190000_ai_skill_mr_text_lines.sql",
     "20261017200000_ai_skill_mr_photo_lines.sql",
     "20261017210000_ai_skill_po_quote_lines.sql",
-    "20261017220000_center_site3d_v1.sql"
+    "20261017220000_center_site3d_v1.sql",
+    "20261017230000_vpp_opening_balance.sql",
+    "20261017231000_vpp_requests.sql"
   ],
   "forbidIncludeAll": true
 }

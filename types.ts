@@ -3914,7 +3914,10 @@ export type WmsBusinessEventType =
   | 'opening_balance'
   | 'reversal'
   | 'legacy_direct_receipt'
-  | 'legacy_direct_issue';
+  | 'legacy_direct_issue'
+  | 'office_supply_issue'
+  | 'office_supply_return'
+  | 'office_supply_receipt';
 
 export type InventoryLedgerTransactionType =
   | 'purchase_receipt'

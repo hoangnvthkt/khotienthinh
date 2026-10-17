@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Bot, CalendarCheck, CalendarClock, CalendarOff, CalendarRange, Car, CheckSquare,
-  ClipboardCheck, ClipboardList, Coins, DollarSign, FileSignature, FilePen, FileText, GitBranch, Handshake, HardHat, Hash, Inbox,
+  ClipboardCheck, ClipboardList, Coins, DollarSign, Paperclip, FileSignature, FilePen, FileText, GitBranch, Handshake, HardHat, Hash, Inbox,
   Landmark, LayoutGrid, ListChecks, MapPin, MessageSquarePlus, NotebookPen, Package, ShoppingCart, SunMoon, User, Wallet, Zap,
 } from 'lucide-react';
 import type { SearchEntry, SearchGroup, SearchKind, StatusTone } from '../../lib/search/searchTypes';
@@ -27,7 +27,7 @@ const ACTION_ICON: Record<string, IconType> = {
   'action:makeup': CalendarClock, 'action:timesheet': CalendarCheck, 'action:payslip': DollarSign, 'action:workflow': GitBranch,
   'action:task': ListChecks, 'action:compose': FilePen, 'action:hot': Zap, 'action:import': ArrowDownToLine,
   'action:export': ArrowUpFromLine, 'action:transfer': ArrowLeftRight, 'action:count': ClipboardCheck, 'action:new-code': Hash,
-  'action:work-plan': CalendarRange, 'action:site-fund': Coins, 'action:feedback': MessageSquarePlus, 'action:theme': SunMoon,
+  'action:work-plan': CalendarRange, 'action:site-fund': Coins, 'action:vpp': Paperclip, 'action:feedback': MessageSquarePlus, 'action:theme': SunMoon,
   'action:ask-ai': Bot,
 };
 
