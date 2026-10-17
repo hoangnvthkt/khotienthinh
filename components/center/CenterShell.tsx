@@ -25,6 +25,8 @@ import type { DashboardState } from '../dashboard/DashboardView';
 import type { FlowState } from '../flow/FlowView';
 import type { FlowQuery, FlowResult, FlowScope, LoadFlowItems, RemindFlow } from '../../lib/center/centerFlowService';
 import type { LoadMaterialMoves } from '../dashboard/StockTable';
+import type { Site3dHooks } from '../../lib/site3d/site3dService';
+import type { Site3dAccess } from '../../lib/site3d/site3dData';
 import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 import './center.css';
 
@@ -51,6 +53,9 @@ const LazyDashboard = React.lazy(() => import('../dashboard/DashboardView'));
 const FLOW_TAB: CenterWorkTab = { id: 'flow', title: 'Dòng chảy công việc', closable: false };
 const LazyFlow = React.lazy(() => import('../flow/FlowView'));
 const FLOW_REFRESH_MS = 60_000;
+// Công trường 3D (trình chiếu tiến độ): chỉ Admin và người Admin cấp quyền center.site3d.view (máy chủ kiểm, vcc_site3d_v1).
+const SITE3D_TAB: CenterWorkTab = { id: 'site3d', title: 'Công trường 3D', closable: false };
+const LazySite3d = React.lazy(() => import('../site3d/Site3dView'));
 
 interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
 
@@ -122,8 +127,12 @@ export interface CenterShellProps {
   loadFlow?: (query: FlowQuery) => Promise<FlowResult>;
   /** Kiểm có phạm vi xem không trước khi hiện tab (nhẹ, không tính số); không truyền = có loadFlow là hiện tab. */
   loadFlowAccess?: () => Promise<{ access: boolean; scope: FlowScope | null }>;
-  /** Mở thẳng tab Dòng chảy công việc (/center?view=flow). */
-  initialTab?: 'flow' | null;
+  /** Mở thẳng tab Dòng chảy công việc (/center?view=flow) hoặc Công trường 3D (/center?view=site3d). */
+  initialTab?: 'flow' | 'site3d' | null;
+  /** Công trường 3D: quyền + số liệu + mô hình; không truyền = chưa có tab. */
+  site3d?: Site3dHooks;
+  /** Bản thử nghiệm: gắn window.__site3d (điều khiển cảnh 3D) để kiểm bằng Playwright. */
+  exposeSite3dDebug?: boolean;
   /** Tab Trợ lý: tình trạng + gọi cổng AI (mặc định lib/aiGateway); fixture truyền bản giả lập. */
   assistant?: AssistantHooks;
   /** Danh sách phiếu đang chờ theo lọc + nhắc người giữ việc (Dòng chảy công việc PR-3). */
@@ -142,7 +151,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
   loadFlow, loadFlowAccess, initialTab = null, loadFlowItems, remindFlow,
-  assistant,
+  assistant, site3d, exposeSite3dDebug = false,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -349,6 +358,20 @@ const CenterShell: React.FC<CenterShellProps> = ({
     // flowWanted chỉ chuyển false → true một lần; tải lại theo flowQuery / flowAttempt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadFlow, flowWanted, flowQuery, flowAttempt]);
+  // Công trường 3D: kiểm quyền một lần (nhẹ), chỉ dựng cảnh khi mở tab lần đầu.
+  const [site3dAccess, setSite3dAccess] = useState<Site3dAccess | null>(null);
+  useEffect(() => {
+    if (!site3d) return undefined;
+    let alive = true;
+    site3d.loadAccess()
+      .then(result => { if (alive) setSite3dAccess(result); })
+      .catch(error => { console.warn('Site 3D access check failed:', error); if (alive) setSite3dAccess({ access: false, reason: 'error' }); });
+    return () => { alive = false; };
+  }, [site3d]);
+  const hasSite3d = !!site3d && site3dAccess?.access === true;
+  const [site3dMounted, setSite3dMounted] = useState(false);
+  useEffect(() => { if (activeTab === SITE3D_TAB.id && hasSite3d) setSite3dMounted(true); }, [activeTab, hasSite3d]);
+  useEffect(() => { if (initialTab === 'site3d' && hasSite3d) { setActiveTab(SITE3D_TAB.id); setMobilePane('today'); } }, [initialTab, hasSite3d, setActiveTab]);
   const flowShowing = activeTab === FLOW_TAB.id && flow?.status === 'ready' && !(narrow && mobilePane !== 'today');
   useEffect(() => {
     if (!loadFlow || !flowShowing) return undefined;
@@ -490,7 +513,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     onScroll: (event: React.UIEvent<HTMLDivElement>) => { scrollTops.current.set(id, event.currentTarget.scrollTop); },
   });
 
-  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ASSISTANT_TAB, ...openTabs];
+  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ...(hasSite3d ? [SITE3D_TAB] : []), ASSISTANT_TAB, ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
   // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
   const mobileRecord = narrow && mobilePane === 'today' && !!current;
@@ -622,6 +645,13 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 <LazyFlow state={flow} isDark={isDark} query={flowQuery} onQueryChange={setFlowQuery} refreshing={flowBusy} refreshNote={flowNote}
                   onRetry={() => setFlowAttempt(value => value + 1)} onOpen={openDashboardRoute} now={now}
                   loadItems={loadFlowItems} remind={remindFlow} onOpenItem={openItem} />
+              </React.Suspense>
+            </div>
+          )}
+          {hasSite3d && site3dMounted && site3dAccess?.access === true && (
+            <div {...panelProps(SITE3D_TAB.id)} style={{ overflow: 'hidden' }}>
+              <React.Suspense fallback={null}>
+                <LazySite3d hooks={site3d!} access={site3dAccess} active={activeTab === SITE3D_TAB.id && (!narrow || mobilePane === 'today')} storageOwner={userId} exposeDebug={exposeSite3dDebug} />
               </React.Suspense>
             </div>
           )}

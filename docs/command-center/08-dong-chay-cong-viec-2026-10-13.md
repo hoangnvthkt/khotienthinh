@@ -445,3 +445,43 @@ thép móng rải khắp PĐ2, lấp đất ở PĐ1, nhà nghỉ ca trên sàn,
 đầu cổng (PĐ1) mới đào — **ngược ảnh flycam** → bảng Nhà xưởng có kiểm tra tự động "Cần kiểm tra số liệu": phân đoạn kế hoạch làm sau mà ghi % cao hơn phân đoạn làm
 trước ≥ 40 điểm. Nhiều khả năng công trường nhập % của PĐ1 vào dòng PĐ3: cần BCH sửa trong Nhật ký (dùng điều chỉnh có duyệt #193), mô hình tự đúng theo.
 Ảnh `mockups/site-3d-xinhai-phan-doan-theo-truc.jpg`.
+
+## 16. Công trường 3D trong Trung tâm điều hành (17/10)
+
+Chủ SP: "1. thêm nút ẩn thông tin · 2. logo phía trước BCH · 3. máy móc như ô tô cũng di chuyển · 4. đưa 3D vào chế độ trình chiếu trong Trung tâm điều hành, Admin
+quyết định ai được xem" + "thêm chức năng preview công trình khi hoàn thiện".
+
+**Ai xem, xem gì.** Ban lãnh đạo / người Admin cấp quyền mở tab **Công trường 3D** (cạnh Dòng chảy công việc) để trình chiếu tiến độ trong họp: chọn công trường →
+kéo thanh thời gian / Phát → bấm hạng mục để xem → **Trình chiếu**. Số liệu đọc sống từ Vioo (không còn là bản chép 14/10 trong mockup).
+
+**Quyền.** `center.site3d.view` (toàn công ty, nhóm "Công trường 3D" của ứng dụng Trung tâm điều hành). Không nằm trong mẫu quyền nào: Admin cấp từng người ở màn Phân
+quyền; Admin luôn xem được. Người chưa có quyền không thấy tab (máy chủ kiểm, không chỉ ẩn nút).
+
+**Máy chủ (migration `20261017220000_center_site3d_v1`).** `vcc_site3d_v1(p_project_code)`: không truyền mã → kiểm quyền + danh sách dự án đang hoạt động; có mã →
+đầu việc (WBS, %, KH / TT, khối lượng BOQ), % theo ngày (chỉ điểm đổi), nhật ký một bản / ngày (đã duyệt > đã gửi > nháp, bỏ bản bị thay / từ chối; người, tổ, máy),
+tồn kho kho công trường. Thử trên Cloud (rollback): DA29 26 ms / 68 KB, SMB-2026 54 ms / 83 KB. Kho **site-models** riêng tư: `<project_id>/architecture.glb`
+(SketchUp) và `structure.glb` (Tekla); người có quyền xem tải qua link ký 1 giờ, chỉ Admin tải lên / thay (nút **Mô hình** trong tab). Mô hình giữ trong bộ nhớ của phiên,
+không lưu xuống máy.
+
+**Giao diện mới.**
+- **Ẩn thông tin**: ẩn bảng hạng mục + bảng ngày, chỉ còn mô hình, nút góc nhìn, thanh thời gian. Khung hẹp (máy tính bảng dọc, điện thoại) mặc định ẩn.
+- **Xem hoàn thiện**: XinHai hiện mô hình thiết kế hoàn thiện (SketchUp + Tekla đủ); Sơn Miền Bắc dựng mọi hạng mục ở 100%. Ẩn lán BCH, rào tôn, đường đất, bãi vật tư,
+  giàn giáo, cây chống, máy, người; hiện hồ cảnh quan, vườn, bãi đỗ, nhà bảo vệ, tường rào theo phối cảnh. Bảng bên phải: đã làm tới hôm nay bao nhiêu %, còn lại, ngày xong
+  theo kế hoạch của từng hạng mục. Kéo thời gian / Phát / Hôm nay là về tiến độ thực tế.
+- **Trình chiếu**: toàn màn hình (iPhone không cho thì phủ kín khung), ẩn bảng, tự tham quan lần lượt các góc nhìn (14 s / góc, xoay chậm), bật chuyển động; bảng tóm tắt góc
+  trái (logo, công trường, ngày, % thực tế / kế hoạch) và thanh điều khiển góc phải (Tham quan, Phát tiến độ, Xem hoàn thiện, Hiện thông tin, Thoát). Esc để thoát.
+- **Logo Tiến Thịnh trên BCH**: bảng hiệu hai mặt "BAN CHỈ HUY CÔNG TRƯỜNG" + logo + tên công trình trên nóc lán BCH XinHai (nhìn được từ cổng và từ công trường) và trên
+  container BCH Sơn Miền Bắc (hướng ra quốc lộ).
+- **Xe chạy** (bật Chuyển động): xe ben vào từ đường lớn qua cổng → dừng nâng ben đổ hàng → quay đầu ra (vào có hàng, ra xe rỗng); ngày đổ bê tông hai xe bồn thay nhau vào
+  chờ cạnh xe bơm (giữ khoảng cách, không đè nhau); xe con / xe khách / xe tải chạy hai chiều trên đường lớn; bánh xe quay theo quãng đường. Tuyến đi theo đường thật:
+  XinHai từ đường lớn phía bắc qua cổng (x ≈ −30) xuống đường đất; Sơn Miền Bắc từ quốc lộ (làn bắc) vào cổng đường tuyến 1.
+
+**Hiệu năng.** Vẽ theo yêu cầu: đứng yên không vẽ khung nào (0 requestAnimationFrame), rời tab là dừng; chỉ khi bật Chuyển động / bay camera / phát tiến độ mới vẽ liên tục.
+Mã 3D tải lười (tab chưa mở thì không tải; Site3dView 44 KB gzip + three.js dùng chung). Điện thoại: báo trước, bản nhẹ (bóng 2048, ít cây, ≤ 12 người / tổ), mô hình
+thiết kế (~15 MB) chỉ tải khi bấm.
+
+**Thêm công trường.** Bố cục mỗi công trường dựng trong `components/site3d/siteScene.ts` (vị trí nhà, mã WBS từng phần) + một dòng `SITE_LAYOUTS` trong `Site3dView.tsx`.
+Bộ chuyển đổi SketchUp / Tekla → GLB: `scripts/site3d/` (README).
+
+**Việc chờ chủ SP.** Duyệt áp migration lên prod + tải 2 mô hình XinHai lên kho (`architecture.glb` đã gắn bụi cây, 13,9 MB; `structure.glb` 1,1 MB); cấp quyền
+"Xem công trường 3D" cho người cần xem.
