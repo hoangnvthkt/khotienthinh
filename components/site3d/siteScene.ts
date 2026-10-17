@@ -219,17 +219,20 @@ export function createSiteScene(opts) {
     frac(p) { this.range(0, this.n * p / 100); }
   }
   const UPDATERS = [];
+  const ANOMALIES = {};
+  const REPLACE = {}; // phần dựng theo tiến độ của từng nhà (ẩn khi mô hình thiết kế nhà đó đã hiện thật)
   const k = (n, p) => Math.round(n * Math.max(0, Math.min(100, p)) / 100);
 
   /* ───────── Mặt bằng (đơn vị m; x đông, z nam) ───────── */
   const kidsOf = w => (TASK[w] ? TASK[w].kids.map(x => x.wbs) : []);
-  const SITE = SITE_KEY === 'SMB' ? { x0: -52, x1: 50, z0: -172, z1: 62 } : { x0: -110, x1: 111, z0: -129, z1: 129 };
+  // SMB: theo mô hình SketchUp thật (17/10), tâm khu đất = gốc toạ độ; đường lớn phía tây, cổng góc tây nam.
+  const SITE = SITE_KEY === 'SMB' ? { x0: -95.05, x1: 95.05, z0: -44.1, z1: 44.1 } : { x0: -110, x1: 111, z0: -129, z1: 129 };
   const ZONE = { x0: -105, x1: 78, z0: -112, z1: -1 }; // phần đất thi công giai đoạn 2 (XinHai)
   const BLD = SITE_KEY === 'SMB' ? {
-    NVP: { name: 'Nhà văn phòng', short: 'Văn phòng', x0: -40, x1: -16, z0: 8, z1: 25, roots: ['1', '2', '3', '4'] },
-    NX1: { name: 'Nhà xưởng 1', short: 'Xưởng 1', x0: 0, x1: 30, z0: -50, z1: 16, roots: ['5', '6', '7', '8'] },
-    NX2: { name: 'Nhà xưởng 2', short: 'Xưởng 2', x0: -40, x1: -10, z0: -60, z1: 6, roots: ['9', '10', '11', '12'] },
-    NX3: { name: 'Nhà xưởng 3', short: 'Xưởng 3', x0: -38, x1: 28, z0: -160, z1: -77, roots: ['13', '14', '15', '16'] },
+    NVP: { name: 'Nhà văn phòng', short: 'Văn phòng', x0: -71.45, x1: -54.85, z0: -42.3, z1: -6.2, roots: ['1', '2', '3', '4'] },
+    NX1: { name: 'Nhà xưởng 1', short: 'Xưởng 1', x0: -55.05, x1: 5.05, z0: -0.2, z1: 32.9, roots: ['5', '6', '7', '8'] },
+    NX2: { name: 'Nhà xưởng 2', short: 'Xưởng 2', x0: -55.05, x1: 4.95, z0: -41.2, z1: -8.1, roots: ['9', '10', '11', '12'] },
+    NX3: { name: 'Nhà xưởng 3', short: 'Xưởng 3', x0: 16.95, x1: 92.05, z0: -41.2, z1: 32.9, roots: ['13', '14', '15', '16'] },
     HT: { name: 'Hạ tầng', short: 'Hạ tầng', x0: SITE.x0, x1: SITE.x1, z0: SITE.z0, z1: SITE.z1, roots: ['17'] },
   } : {
     COC: { name: 'Phần cọc', short: 'Cọc', x0: -84.5, x1: 57, z0: -57.2, z1: -2.9, roots: kidsOf('1'), noLabel: true },
@@ -247,21 +250,19 @@ export function createSiteScene(opts) {
   const GR = SITE_KEY === 'SMB' ? SITE : ZONE;
   const siteGround = flat(GR.x1 - GR.x0, GR.z1 - GR.z0, M.dirt, (GR.x0 + GR.x1) / 2, 0.01, (GR.z0 + GR.z1) / 2);
   siteGround.userData.site = true;
-  const ROAD_Z = 80;
-  const onRoad = (x, z) => (SITE_KEY === 'SMB' ? Math.abs(z - ROAD_Z) < 17 : Math.abs(x + 80) < 9);
+  // Đường lớn phía tây SMB: đoạn trong mô hình (x ≈ −113 chạy bắc–nam, vòng về tây ở z ≈ −56) + nối dài ra ngoài mô hình.
+  const ROAD_X = -113, ROAD_ZN = -56;
+  const onRoad = (x, z) => (SITE_KEY === 'SMB' ? (Math.abs(x - ROAD_X) < 9 && z > ROAD_ZN - 6) || (Math.abs(z - ROAD_ZN) < 9 && x < ROAD_X + 6) : Math.abs(x + 80) < 9);
+  const ctxG = new THREE.Group(); scene.add(ctxG); // nền tạm cho phần mô hình thiết kế đã có (ẩn khi tải xong mô hình)
   if (SITE_KEY === 'SMB') {
-    for (const [x, z, r] of [[-130, -40, 38], [120, -120, 44], [140, 10, 30], [-150, -170, 50], [70, -230, 40], [-60, -240, 36], [-160, 60, 26], [180, -60, 30]]) { const w = new THREE.Mesh(new THREE.CircleGeometry(r, 40), M.water); w.rotation.x = -Math.PI / 2; w.position.set(x, 0.0, z); scene.add(w); }
-    // Quốc lộ hai chiều có dải phân cách trồng cây (ảnh phối cảnh).
-    flat(1600, 9, M.asphalt, 0, 0.03, ROAD_Z - 7); flat(1600, 9, M.asphalt, 0, 0.03, ROAD_Z + 7); flat(1600, 5, M.grass, 0, 0.035, ROAD_Z);
-    for (let x = -780; x < 780; x += 9) { flat(4, 0.25, M.white, x, 0.045, ROAD_Z - 7); flat(4, 0.25, M.white, x, 0.045, ROAD_Z + 7); }
-    flat(1600, 4, M.concrete, 0, 0.04, ROAD_Z - 13.5);
-    // Rừng cây quanh khu đất: 3 InstancedMesh (thân + 2 tán) cho vài trăm cây.
+    flat(8, 640, M.asphalt, ROAD_X, 0.02, 68 + 320); flat(640, 8, M.asphalt, -172 - 320, 0.02, ROAD_ZN);
+    flat(8, 128, M.asphalt, ROAD_X, 0.02, ROAD_ZN + 64, ctxG); flat(63, 8, M.asphalt, -140.5, 0.02, ROAD_ZN, ctxG); flat(20, 8, M.asphalt, -103, 0.02, 38.8, ctxG);
+    // Cây xanh quanh khu đất: 3 InstancedMesh (thân + 2 tán) cho vài trăm cây, chừa đường lớn.
     const pts = []; let guard = 0;
-    while (pts.length < (HIGH ? 520 : 260) && guard < 8000) { guard += 1; const x = -330 + Math.random() * 660, z = -360 + Math.random() * 520;
-      if (x > SITE.x0 - 6 && x < SITE.x1 + 6 && z > SITE.z0 - 6 && z < SITE.z1 + 4) continue; if (onRoad(x, z)) continue; pts.push([x, z, 0.8 + Math.random() * 0.9]); }
-    for (let x = -330; x < 330; x += 8) pts.push([x, 80, 0.55], [x + 4, 80 - 16.5, 0.5]);
+    while (pts.length < (HIGH ? 480 : 240) && guard < 8000) { guard += 1; const x = -330 + Math.random() * 640, z = -260 + Math.random() * 520;
+      if (x > SITE.x0 - 8 && x < SITE.x1 + 6 && z > SITE.z0 - 6 && z < SITE.z1 + 6) continue; if (onRoad(x, z)) continue; pts.push([x, z, 0.8 + Math.random() * 0.9]); }
     const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.4, 3, 6), M.trunk, pts.length), c1 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, 1), M.leaf, pts.length), c2 = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9, 1), M.leaf2, pts.length);
-    pts.forEach(([x, z, s], i) => { trunk.setMatrixAt(i, mtx(x, 1.5 * s, z, s, s, s)); c1.setMatrixAt(i, mtx(x, 4.2 * s, z, s * 1.1, s * 1.25, s * 1.1)); c2.setMatrixAt(i, mtx(x + 0.9 * s, 5.6 * s, z + 0.4 * s, s, s, s)); });
+    pts.forEach(([x, z, sc], i) => { trunk.setMatrixAt(i, mtx(x, 1.5 * sc, z, sc, sc, sc)); c1.setMatrixAt(i, mtx(x, 4.2 * sc, z, sc * 1.1, sc * 1.25, sc * 1.1)); c2.setMatrixAt(i, mtx(x + 0.9 * sc, 5.6 * sc, z + 0.4 * sc, sc, sc, sc)); });
     for (const m of [trunk, c1, c2]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
   }
 
@@ -415,134 +416,119 @@ export function createSiteScene(opts) {
   }
 
   const FH = 3.6;
+  // Dựng trong khung cục bộ (bề rộng theo x, chiều dài theo z) rồi xoay 90° về đúng chỗ trên mặt bằng thật:
+  // x thật = z cục bộ + tx, z thật = tz − x cục bộ. Trả về các nhóm phần tử đã dựng (để ẩn khi mô hình thiết kế đã hiện thật).
+  function placed(tx, tz, fn) {
+    const n0 = ELEMS.length, g0 = ghosts.children.length, M4 = new THREE.Matrix4().makeTranslation(tx, 0, tz).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+    fn();
+    const made = ELEMS.slice(n0); for (const e of made) { e.mats = e.mats.map(m => M4.clone().multiply(m)); const f = e.from, to = e.to; e.from = -1; e.range(f, to); }
+    for (const o of ghosts.children.slice(g0)) o.applyMatrix4(M4);
+    return made;
+  }
   if (SITE_KEY === 'SMB') {
-  /* ───────── Nhà văn phòng 4 tầng + tum ───────── */
+  /* ───────── Nhà văn phòng 4 tầng + tum (16,6 × 36,1 m, mặt tiền nhìn sân phía tây) ───────── */
   {
-    const b = BLD.NVP, xs = [-40, -32, -24, -16], zs = [8, 16.5, 25], pos = xs.flatMap(x => zs.map(z => [x, z])).sort((p, q) => q[1] - p[1] || p[0] - q[0]);
-    foundation(pos, { pile: '1.2', dig: '1.3', pad: '1.8', tie: '1.13', backfill: '1.9' }, { xs, zs });
-    groundFloor(b, 3, { sand: '1.16', base: '1.16' });
-    walls(perimeter(b, 2, 3), 0, 0.6, M.brick, '1.14', 0.22);
     const C = [['2.1', '2.2', '2.3'], ['2.8', '2.9', '2.10'], ['2.16', '2.17', '2.18'], ['2.24', '2.25', '2.26']];
     const S = [['2.4', '2.5', '2.6', '2.7', '2.15'], ['2.11', '2.12', '2.13', '2.14', '2.23'], ['2.19', '2.20', '2.21', '2.22', '2.31'], ['2.27', '2.28', '2.29', '2.30', '2.39']];
-    const bays = []; for (let j = 1; j >= 0; j -= 1) for (let i = 0; i < 3; i += 1) bays.push({ x0: xs[i], x1: xs[i + 1], z0: zs[j], z1: zs[j + 1] });
-    const bayPad = bays.map(q => ({ x0: q.x0 - (q.x0 === -40 ? 0.3 : 0), x1: q.x1 + (q.x1 === -16 ? 0.3 : 0), z0: q.z0 - (q.z0 === 8 ? 0.3 : 0), z1: q.z1 + (q.z1 === 25 ? 0.3 : 0) }));
-    for (let f = 0; f < 4; f += 1) {
-      columns(pos, f * FH, (f + 1) * FH - 0.15, 0.4, { reb: C[f][0], form: C[f][1], conc: C[f][2] });
-      slab(bayPad, (f + 1) * FH, 0.16, { props: S[f][0], form: S[f][1], reb: S[f][2], conc: S[f][3], strip: S[f][4] }, FH - 0.2);
-    }
-    // Tum thang bộ ở góc tây bắc.
-    const tumPos = [[-40, 8], [-34, 8], [-40, 13], [-34, 13]];
-    columns(tumPos, 4 * FH, 4 * FH + 3, 0.3, { reb: '2.32', form: '2.33', conc: '2.34' });
-    slab([{ x0: -40.2, x1: -33.8, z0: 7.8, z1: 13.2 }], 4 * FH + 3.1, 0.14, { props: '2.35', form: '2.36', reb: '2.37', conc: '2.38', strip: '2.39' }, 2.9);
-    ['3.1', '3.2', '3.3', '3.4'].forEach((c, f) => walls(perimeter(b, 2, 3, 0.15), f * FH + 0.16, FH - 0.45, M.brick, c));
-    outerScaffold(b, 4 * FH + 2, '3.11', null);
-    // Hoàn thiện mặt ngoài: kính mặt tiền, ốp xám, mảng nâu giữa, mái sảnh.
-    walls([[-31, 25.45, -25, 25.45]], 0.3, 4 * FH - 0.6, M.glass, '4.23', 0.1);
-    walls([[-40.3, 25.4, -31, 25.4], [-25, 25.4, -15.7, 25.4], [-40.4, 8, -40.4, 25.4], [-15.6, 8, -15.6, 25.4], [-40.3, 7.6, -15.7, 7.6]], 0.3, 4 * FH + 0.6, M.darkClad, '4.28', 0.12);
-    walls([[-30.8, 25.6, -25.2, 25.6]], 4 * FH - 0.3, 1.2, M.brown, '4.28', 0.15);
-    const can = new Elems(new THREE.BoxGeometry(8, 0.3, 4), M.lightGrey, [mtx(-28, 3.9, 27.5)], '4.35'); UPDATERS.push(d => can.frac(pAt('4.35', d)));
-    ghostBox(24, 4 * FH + 3, 17, -28, (4 * FH + 3) / 2, 16.5);
+    frameBuilding(BLD.NVP, { key: 'NVP', nx: 2, nz: 4, fh: FH, ghostH: 4 * FH + 3, noGhost: false,
+      found: { pile: '1.2', dig: '1.3', pad: '1.8', tie: '1.13', backfill: '1.9', plinth: '1.14' }, ground: { sand: '1.16', base: '1.16' },
+      floors: C.map((c, f) => ({ col: { reb: c[0], form: c[1], conc: c[2] }, slab: { props: S[f][0], form: S[f][1], reb: S[f][2], conc: S[f][3], strip: S[f][4] }, wall: ['3.1', '3.2', '3.3', '3.4'][f] })),
+      tum: { col: { reb: '2.32', form: '2.33', conc: '2.34' }, slab: { props: '2.35', form: '2.36', reb: '2.37', conc: '2.38', strip: '2.39' } } });
+    const n1 = ELEMS.length; outerScaffold(BLD.NVP, 4 * FH + 2, '3.11', null); REPLACE.NVP.push(...ELEMS.slice(n1));
   }
 
-  /* ───────── Nhà xưởng 1, 2 (30 × 66, 2 tầng bê tông + mái thép) ───────── */
-  const factorySmall = (key, c) => {
-    const b = BLD[key], xs = [b.x0, b.x0 + 15, b.x1], nz = 9, zs = Array.from({ length: nz }, (_, i) => b.z1 - (b.z1 - b.z0) * i / (nz - 1));
+  /* ───────── Nhà xưởng 1, 2 (60 × 33 m, sàn tầng 2 ở +3,75, khung thép mái) ───────── */
+  const factorySmall = (b, c) => {
+    const xs = [b.x0, b.x0 + 15, b.x1], nz = 9, zs = Array.from({ length: nz }, (_, i) => b.z1 - (b.z1 - b.z0) * i / (nz - 1));
     const pos = []; zs.forEach(z => xs.forEach(x => pos.push([x, z])));
     foundation(pos, { pile: c.pile, dig: c.dig, pad: c.pad, tie: c.tie, backfill: c.backfill }, { xs, zs });
     walls(perimeter(b, 8, 2), 0, 0.5, M.brick, c.plinth, 0.22);
     groundFloor(b, 8, { sand: c.sand, base: c.base2 || c.base, mesh: c.floorMesh, conc: c.floorConc });
-    // Cột tầng 1 chia theo khu trong tiến độ (S2 phía trước, S1, phần còn lại).
-    for (const grp of c.colLow) { const sel = pos.filter((p, i) => Math.floor(i / 3) >= grp.rows[0] && Math.floor(i / 3) <= grp.rows[1]); columns(sel, 0, grp.h, 0.5, grp); }
-    columns(pos, 3.5, 6.05, 0.5, c.colUp);
+    // Cột tầng 1 chia theo khu trong tiến độ.
+    for (const grp of c.colLow) { const sel = pos.filter((p, i) => Math.floor(i / 3) >= grp.rows[0] && Math.floor(i / 3) <= grp.rows[1]); columns(sel, 0, 3.55, 0.5, grp); }
+    columns(pos, 3.85, 6.4, 0.5, c.colUp);
     const bays = []; for (let j = 0; j < nz - 1; j += 1) for (let i = 0; i < 2; i += 1) bays.push({ x0: xs[i] - (i === 0 ? 0.3 : 0), x1: xs[i + 1] + (i === 1 ? 0.3 : 0), z0: zs[j + 1], z1: zs[j] + (j === 0 ? 0.3 : 0) });
-    slab(bays, 6.2, 0.2, c.slab2, 6.0);
-    if (c.mezS2) slab([{ x0: b.x0 + 0.3, x1: b.x0 + 15, z0: zs[2], z1: zs[0] }], 3.5, 0.15, c.mezS2, 3.3);
-    if (c.deckS1) { const deck = new Elems(new THREE.BoxGeometry(14.6, 0.12, zs[0] - zs[2]), M.steel, [mtx(b.x0 + 22.5, 2.5, (zs[0] + zs[2]) / 2)], c.deckS1); UPDATERS.push(d => deck.frac(pAt(c.deckS1, d))); }
-    walls(perimeter(b, 8, 2, 0.1), 0.5, 5.6, M.alc, c.alcOut);
+    slab(bays, 3.75, 0.2, c.slab2, 3.55);
+    walls(perimeter(b, 8, 2, 0.1), 0.5, 10.3, M.alc, c.alcOut);
     walls(zs.slice(1, -1).filter((_, i) => i % 2 === 1).map(z => [b.x0 + 0.5, z, b.x1 - 0.5, z]), 0.5, 5.4, M.alc, c.alcIn, 0.15);
-    steelRoof(b, [{ x0: b.x0, x1: b.x1 }], zs, 6.3, 11.5, 13.3, { steel: c.steel, roof: c.roof, clad: c.panel });
-    fireLines(b, [b.x0 + 7.5, b.x1 - 7.5], 5.6, c.pccc);
-    ghostGable(b, 11.5, 13.3);
+    steelRoof(b, [{ x0: b.x0, x1: b.x1 }], zs, 6.5, 12.4, 15.3, { steel: c.steel, roof: c.roof, clad: c.panel });
+    fireLines(b, [b.x0 + 7.5, b.x1 - 7.5], 9.6, c.pccc);
+    ghostGable(b, 12.4, 15.3);
   };
-  factorySmall('NX1', { pile: '5.1', dig: '5.2', pad: '5.7', tie: '5.12', backfill: '5.8', plinth: '5.13', sand: '5.16', base: '5.17', base2: '6.26',
-    colLow: [{ rows: [0, 1], h: 3.35, reb: '6.1', form: '6.2', conc: '6.3' }, { rows: [2, 3], h: 2.35, reb: '6.8', form: '6.9', conc: '6.10' }, { rows: [4, 8], h: 3.35, reb: '6.11', form: '6.12', conc: '6.13' }],
-    mezS2: { props: '6.4', form: '6.5', reb: '6.6', conc: '6.7' }, deckS1: '6.14', colUp: { reb: '6.18', form: '6.19', conc: '6.20' },
-    slab2: { props: '6.21', form: '6.22', reb: '6.23', conc: '6.24', strip: '6.25' }, floorMesh: '6.27', floorConc: '6.28', alcOut: '7.1', alcIn: '7.9', steel: '7.2', roof: '7.3', panel: '7.4', pccc: '7.7' });
-  factorySmall('NX2', { pile: '9.1', dig: '9.2', pad: '9.7', tie: '9.12', backfill: '9.8', plinth: '9.13', sand: '9.16', base: '9.17', base2: '10.20',
-    colLow: [{ rows: [0, 1], h: 3.35, reb: '10.1', form: '10.2', conc: '10.3' }, { rows: [2, 8], h: 3.35, reb: '10.9', form: '10.10', conc: '10.11' }],
-    mezS2: { props: '10.4', form: '10.5', reb: '10.6', conc: '10.7' }, deckS1: null, colUp: { reb: '10.12', form: '10.13', conc: '10.14' },
-    slab2: { props: '10.15', form: '10.16', reb: '10.17', conc: '10.18', strip: '10.19' }, floorMesh: '10.21', floorConc: '10.22', alcOut: '11.1', alcIn: '11.9', steel: '11.2', roof: '11.3', panel: '11.4', pccc: '11.7' });
+  // Xưởng 2 dính nhà văn phòng (phía bắc), xưởng 1 phía nam cạnh đường nội bộ (theo ảnh phối cảnh chủ SP ghi chú).
+  REPLACE.NX1 = placed(-55.05, 32.9, () => factorySmall({ x0: 0, x1: 33.1, z0: 0, z1: 60.1 }, { pile: '5.1', dig: '5.2', pad: '5.7', tie: '5.12', backfill: '5.8', plinth: '5.13', sand: '5.16', base: '5.17', base2: '6.26',
+    colLow: [{ rows: [0, 1], reb: '6.1', form: '6.2', conc: '6.3' }, { rows: [2, 3], reb: '6.8', form: '6.9', conc: '6.10' }, { rows: [4, 8], reb: '6.11', form: '6.12', conc: '6.13' }],
+    colUp: { reb: '6.18', form: '6.19', conc: '6.20' }, slab2: { props: '6.21', form: '6.22', reb: '6.23', conc: '6.24', strip: '6.25' },
+    floorMesh: '6.27', floorConc: '6.28', alcOut: '7.1', alcIn: '7.9', steel: '7.2', roof: '7.3', panel: '7.4', pccc: '7.7' }));
+  REPLACE.NX2 = placed(-55.05, -8.1, () => factorySmall({ x0: 0, x1: 33.1, z0: 0, z1: 60 }, { pile: '9.1', dig: '9.2', pad: '9.7', tie: '9.12', backfill: '9.8', plinth: '9.13', sand: '9.16', base: '9.17', base2: '10.20',
+    colLow: [{ rows: [0, 1], reb: '10.1', form: '10.2', conc: '10.3' }, { rows: [2, 8], reb: '10.9', form: '10.10', conc: '10.11' }],
+    colUp: { reb: '10.12', form: '10.13', conc: '10.14' }, slab2: { props: '10.15', form: '10.16', reb: '10.17', conc: '10.18', strip: '10.19' },
+    floorMesh: '10.21', floorConc: '10.22', alcOut: '11.1', alcIn: '11.9', steel: '11.2', roof: '11.3', panel: '11.4', pccc: '11.7' }));
 
-  /* ───────── Nhà xưởng 3 (66 × 83, hai zone / hai nhịp) ───────── */
-  {
-    const b = BLD.NX3, nz = 11, zs = Array.from({ length: nz }, (_, i) => b.z1 - (b.z1 - b.z0) * i / (nz - 1));
-    const Z = [{ xs: [-38, -27, -16, -5], code: { dig: '13.3', pad: '13.8', backfill: '13.9', tie: '13.13', plinth: '13.14', low: ['14.1', '14.2', '14.3'], up: ['14.5', '14.6', '14.7'], slab: ['14.8', '14.9', '14.10', '14.11', '14.12'], mesh: '14.26', conc: '14.27', alc: '15.1' } },
-               { xs: [6, 17, 28], x0: -5, code: { dig: '13.16', pad: '13.21', backfill: '13.22', tie: '13.26', plinth: '13.27', low: ['14.13', '14.14', '14.15'], up: ['14.17', '14.18', '14.19'], slab: ['14.20', '14.21', '14.22', '14.23', '14.24'], mesh: '14.28', conc: '14.29', alc: '15.2' } }];
+  /* ───────── Nhà xưởng 3 (75,1 × 74,1 m, hai nhịp; khung theo trục Tekla, đầu tây gần cổng) ───────── */
+  REPLACE.NX3 = placed(16.95, 32.9, () => {
+    const b = { x0: 0, x1: 74.1, z0: 0, z1: 75.1 }, zs = [75.1, 66, 56.5, 47, 37.5, 28, 18.5, 9, 0], nz = zs.length;
+    // Zone 1 = nhịp phía nam (giáp đường nội bộ), zone 2 = nhịp phía bắc.
+    const Z = [{ xs: [0, 12.35, 24.7, 37.05], code: { dig: '13.3', pad: '13.8', backfill: '13.9', tie: '13.13', plinth: '13.14', low: ['14.1', '14.2', '14.3'], up: ['14.5', '14.6', '14.7'], slab: ['14.8', '14.9', '14.10', '14.11', '14.12'], mesh: '14.26', conc: '14.27', alc: '15.1' } },
+               { xs: [49.4, 61.75, 74.1], x0: 37.05, code: { dig: '13.16', pad: '13.21', backfill: '13.22', tie: '13.26', plinth: '13.27', low: ['14.13', '14.14', '14.15'], up: ['14.17', '14.18', '14.19'], slab: ['14.20', '14.21', '14.22', '14.23', '14.24'], mesh: '14.28', conc: '14.29', alc: '15.2' } }];
     for (const zn of Z) {
       const c = zn.code, pos = []; zs.forEach(z => zn.xs.forEach(x => pos.push([x, z])));
       const allX = zn.x0 != null ? [zn.x0, ...zn.xs] : zn.xs;
       foundation(pos, { pile: '13.2', dig: c.dig, pad: c.pad, tie: c.tie, backfill: c.backfill }, { xs: zn.xs, zs });
-      columns(pos, 0, 3.35, 0.55, { reb: c.low[0], form: c.low[1], conc: c.low[2] });
-      columns(pos, 3.5, 6.05, 0.55, { reb: c.up[0], form: c.up[1], conc: c.up[2] });
+      columns(pos, 0, 3.55, 0.55, { reb: c.low[0], form: c.low[1], conc: c.low[2] });
+      columns(pos, 3.85, 6.4, 0.55, { reb: c.up[0], form: c.up[1], conc: c.up[2] });
       const bays = []; for (let j = 0; j < nz - 1; j += 1) for (let i = 0; i < allX.length - 1; i += 1) bays.push({ x0: allX[i], x1: allX[i + 1], z0: zs[j + 1], z1: zs[j] });
-      slab(bays, 6.2, 0.22, { props: c.slab[0], form: c.slab[1], reb: c.slab[2], conc: c.slab[3], strip: c.slab[4] }, 6.0);
+      slab(bays, 3.75, 0.22, { props: c.slab[0], form: c.slab[1], reb: c.slab[2], conc: c.slab[3], strip: c.slab[4] }, 3.55);
       const zb = { x0: allX[0], x1: allX[allX.length - 1], z0: b.z0, z1: b.z1 };
       groundFloor(zb, 10, { sand: '13.30', base: '14.25', mesh: c.mesh, conc: c.conc });
-      walls(perimeter(zb, 10, 3).filter(([ax, , bx]) => !(zn.x0 != null && ax === zb.x0 && bx === zb.x0) && !(zn.x0 == null && ax === zb.x1 && bx === zb.x1)), 0.4, 5.7, M.alc, c.alc);
+      walls(perimeter(zb, 10, 3).filter(([ax, , bx]) => !(zn.x0 != null && ax === zb.x0 && bx === zb.x0) && !(zn.x0 == null && ax === zb.x1 && bx === zb.x1)), 0.4, 10.4, M.alc, c.alc);
     }
-    steelRoof(b, [{ x0: -38, x1: -5 }, { x0: -5, x1: 28 }], zs, 6.4, 12, 14.4, { steel: '15.3', roof: '15.5', clad: '15.4' });
-    fireLines(b, [-27, -16, 6, 17], 5.6, '15.8');
-    ghostGable({ x0: -38, x1: -5, z0: b.z0, z1: b.z1 }, 12, 14.4); ghostGable({ x0: -5, x1: 28, z0: b.z0, z1: b.z1 }, 12, 14.4);
-  }
+    steelRoof(b, [{ x0: 0, x1: 37.05 }, { x0: 37.05, x1: 74.1 }], zs, 6.5, 12, 16.5, { steel: '15.3', roof: '15.5', clad: '15.4' });
+    fireLines(b, [12.35, 24.7, 49.4, 61.75], 9.6, '15.8');
+    ghostGable({ x0: 0, x1: 37.05, z0: b.z0, z1: b.z1 }, 12, 16.5); ghostGable({ x0: 37.05, x1: 74.1, z0: b.z0, z1: b.z1 }, 12, 16.5);
+  });
 
-  /* ───────── Hạ tầng: 4 tuyến đường, cống thoát nước ───────── */
+  /* ───────── Hạ tầng: đường nội bộ (đường phía nam, đường giữa hai khối xưởng, đường trước nhà văn phòng, đường dọc xưởng 1), cống ───────── */
   const ROUTES = [
-    { code: ['17.5', '17.6'], a: [40.5, 58], b: [40.5, -166] },
-    { code: ['17.7', '17.8'], a: [36, 39.5], b: [-44, 39.5] },
-    { code: ['17.9', '17.10'], a: [36, -72.5], b: [-48, -72.5] },
-    { code: ['17.11', '17.12'], a: [-45.5, -50], b: [-45.5, -166] },
+    { code: ['17.5', '17.6'], a: [-89, 38.8], b: [92, 38.8], w: 7 },
+    { code: ['17.7', '17.8'], a: [11, 35], b: [11, -43], w: 7 },
+    { code: ['17.9', '17.10'], a: [-76, 35], b: [-76, -40], w: 6 },
+    { code: ['17.11', '17.12'], a: [-59, 35], b: [-59, -4], w: 5 },
   ];
   for (const r of ROUTES) {
-    const n = 12, list = y => Array.from({ length: n }, (_, i) => { const f = (i + 0.5) / n, x = r.a[0] + (r.b[0] - r.a[0]) * f, z = r.a[1] + (r.b[1] - r.a[1]) * f, len = Math.hypot(r.b[0] - r.a[0], r.b[1] - r.a[1]) / n; return mtx(x, y, z, Math.abs(r.b[0] - r.a[0]) > 1 ? len : 7, 1, Math.abs(r.b[0] - r.a[0]) > 1 ? 7 : len); });
+    const n = 12, along = Math.abs(r.b[0] - r.a[0]) > 1, list = y => Array.from({ length: n }, (_, i) => { const f = (i + 0.5) / n, x = r.a[0] + (r.b[0] - r.a[0]) * f, z = r.a[1] + (r.b[1] - r.a[1]) * f, len = Math.hypot(r.b[0] - r.a[0], r.b[1] - r.a[1]) / n; return mtx(x, y, z, along ? len : r.w, 1, along ? r.w : len); });
     const pl = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     const base = new Elems(pl, M.gravel, list(0.06), r.code[0], { cast: false }), conc = new Elems(new THREE.BoxGeometry(1, 0.2, 1), M.floor, list(0.1), r.code[1], { cast: false });
     UPDATERS.push(d => { const kc = k(n, pAt(r.code[1], d)); conc.range(0, kc); base.range(kc, k(n, pAt(r.code[0], d))); });
   }
-  { // Cống bi D400 dọc đường tuyến 1 + hố ga: 650 md theo BOQ.
-    const list = []; for (let z = 50; z > -160; z -= 2.5) list.push(mtx(45.2, 0.25, z));
+  REPLACE.HT = ELEMS.slice(-ROUTES.length * 2);
+  { // Cống bi D400 dọc đường phía nam + hố ga: 650 md theo BOQ.
+    const list = []; for (let x = -88; x < 92; x += 2.5) list.push(mtx(x, 0.25, 42.6, 1, 1, 1, Math.PI / 2));
     const e = new Elems(new THREE.CylinderGeometry(0.25, 0.25, 2.4, 14, 1, true).rotateX(Math.PI / 2), M.pile, list, '17.1'); UPDATERS.push(d => e.frac(FINISHED ? 0 : pAt('17.1', d))); // cống chôn dưới đường khi xong
-    const trench = new Elems(new THREE.PlaneGeometry(1.4, 2.5).rotateX(-Math.PI / 2), M.pit, list.map(m => m.clone().setPosition(45.2, 0.02, new THREE.Vector3().setFromMatrixPosition(m).z)), '17.1', { cast: false });
+    const trench = new Elems(new THREE.PlaneGeometry(2.5, 1.4).rotateX(-Math.PI / 2), M.pit, list.map(m => new THREE.Matrix4().makeTranslation(new THREE.Vector3().setFromMatrixPosition(m).x, 0.02, 42.6)), '17.1', { cast: false });
     UPDATERS.push(d => (FINISHED ? trench.range(0, 0) : trench.range(0, Math.min(trench.n, k(trench.n, pAt('17.1', d)) + 6))));
   }
-  // Hạng mục ngoài tiến độ (theo phối cảnh, chỉ hiện ở hình hoàn thành): hồ cảnh quan, vườn, bãi đỗ, nhà bảo vệ.
-  ghostBox(26, 0.4, 12, -33, 0.2, 52); ghostBox(30, 0.3, 14, 17, 0.15, 27); ghostBox(28, 0.3, 8, 20, 0.15, 54); ghostBox(4, 3, 4, 46, 1.5, 58); ghostBox(4, 3, 4, -48, 1.5, 58);
-  ghostBox(9, 0.2, 4, -28, 3.9, 27.5);
 
-  /* ───────── Hàng rào + cổng, ban chỉ huy ───────── */
+  /* ───────── Hàng rào tôn tạm + cổng phía tây, ban chỉ huy cạnh cổng ───────── */
   {
-    const fence = []; for (let x = SITE.x0; x < SITE.x1; x += 3) if (!(x > 33 && x < 47)) fence.push([x, SITE.z1, x + 3, SITE.z1]);
-    for (let z = SITE.z1; z > SITE.z0; z -= 3) { fence.push([SITE.x0, z, SITE.x0, z - 3]); fence.push([SITE.x1, z, SITE.x1, z - 3]); }
-    for (let x = SITE.x0; x < SITE.x1; x += 3) fence.push([x, SITE.z0, x + 3, SITE.z0]);
+    const GATE = [27, 42]; // cổng trên ranh phía tây (z), xe vào từ đường lớn theo đường nội bộ phía nam
+    const fence = [];
+    for (let x = SITE.x0; x < SITE.x1 - 0.1; x += 3) { fence.push([x, SITE.z1, Math.min(SITE.x1, x + 3), SITE.z1]); fence.push([x, SITE.z0, Math.min(SITE.x1, x + 3), SITE.z0]); }
+    for (let z = SITE.z0; z < SITE.z1 - 0.1; z += 3) { const z2 = Math.min(SITE.z1, z + 3); fence.push([SITE.x1, z, SITE.x1, z2]); if (z2 <= GATE[0] || z >= GATE[1]) fence.push([SITE.x0, z, SITE.x0, z2]); }
     const list = fence.map(([ax, az, bx, bz]) => mtx((ax + bx) / 2, 1.1, (az + bz) / 2, Math.hypot(bx - ax, bz - az), 2.2, 0.2, -Math.atan2(bz - az, bx - ax)));
     const tole = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat('#2f6fb3'), list.length); list.forEach((m, i) => tole.setMatrixAt(i, m)); tole.castShadow = true; tempG.add(tole); // rào tôn tạm
     const sign = canvasTex(1024, 256, (g) => { g.fillStyle = '#1d4290'; g.fillRect(0, 0, 1024, 256); g.fillStyle = '#fff'; g.font = 'bold 74px Arial'; g.textAlign = 'center'; g.fillText('CÔNG TRÌNH SƠN MIỀN BẮC', 512, 110); g.font = '600 44px Arial'; g.fillText('Thi công: Tiến Thịnh Group', 512, 190); });
     sign.wrapS = sign.wrapT = THREE.ClampToEdgeWrapping;
     const boardMat = new THREE.MeshBasicMaterial({ map: sign }); MATS.push(boardMat);
-    mesh(new THREE.PlaneGeometry(10, 2.5), boardMat, 30, 3.6, SITE.z1 + 0.2, tempG); boxM(0.2, 4.8, 0.2, M.grey, 25.2, 2.4, SITE.z1 + 0.1, tempG); boxM(0.2, 4.8, 0.2, M.grey, 34.8, 2.4, SITE.z1 + 0.1, tempG);
-    boxM(2.6, 2.6, 2.6, M.white, 47.5, 1.3, 57, tempG); boxM(3.2, 0.2, 3.2, M.blue, 47.5, 2.7, 57, tempG); // chòi bảo vệ tạm
-    // Ban chỉ huy: container văn phòng 2 tầng, nhà vệ sinh, bồn nước, máy phát; bảng hiệu có logo trên nóc.
+    const board = mesh(new THREE.PlaneGeometry(10, 2.5), boardMat, SITE.x0 - 0.2, 3.6, 18, tempG); board.rotation.y = -Math.PI / 2;
+    boxM(0.2, 4.8, 0.2, M.grey, SITE.x0 - 0.1, 2.4, 13.2, tempG); boxM(0.2, 4.8, 0.2, M.grey, SITE.x0 - 0.1, 2.4, 22.8, tempG);
+    boxM(2.6, 2.6, 2.6, M.white, -91.5, 1.3, 24.5, tempG); boxM(3.2, 0.2, 3.2, M.blue, -91.5, 2.7, 24.5, tempG); // chòi bảo vệ tạm
+    // Ban chỉ huy: container văn phòng 2 tầng, nhà vệ sinh, bồn nước; bảng hiệu có logo trên nóc, nhìn ra đường nội bộ.
     const cont = (x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); boxM(6.06, 2.6, 2.44, M.white, 0, 1.3, 0, g); for (let i = -2; i <= 2; i += 1) boxM(0.08, 2.6, 2.5, M.lightGrey, i * 1.2, 1.3, 0, g); boxM(1.2, 0.9, 0.05, M.cab, -1.5, 1.6, 1.24, g); boxM(0.9, 2, 0.05, M.blue, 1.6, 1.0, 1.24, g); tempG.add(g); return g; };
-    cont(-42, 0, 48); cont(-42, 2.6, 48); cont(-35, 0, 48); boxM(1.4, 2.3, 1.4, M.blue, -30, 1.15, 48.5, tempG); cyl(1, 1, 2, M.white, -27.5, 3.2, 48, tempG); for (const x of [-28.3, -26.7]) boxM(0.15, 2.2, 0.15, M.grey, x, 1.1, 48, tempG);
-    const stair = boxM(0.9, 0.1, 3.4, M.grey, -38.6, 1.3, 49.5, tempG); stair.rotation.x = 0.75;
-    signBoard(tempG, -42, 5.2 + 1.9, 48, 7.5, 1.5);
-    const bch = label('Ban chỉ huy công trường<small>container văn phòng · kho · nhà vệ sinh</small>'); bch.position.set(-40, 10.2, 48); tempG.add(bch);
-    // Khi hoàn thiện (theo phối cảnh): hồ cảnh quan, vườn thay bãi vật tư, bãi đỗ xe, hai nhà bảo vệ, tường rào cố định.
-    { const lake = new THREE.Mesh(new THREE.PlaneGeometry(26, 12), M.water); lake.rotation.x = -Math.PI / 2; lake.position.set(-33, 0.08, 52); finishG.add(lake); boxM(26.6, 0.3, 0.3, M.concrete, -33, 0.15, 45.9, finishG); boxM(26.6, 0.3, 0.3, M.concrete, -33, 0.15, 58.1, finishG);
-      flat(30, 14, M.grass, 17, 0.06, 27, finishG); flat(28, 8, M.asphalt, 20, 0.06, 54, finishG); for (let i = 0; i < 9; i += 1) flat(0.15, 5, M.white, 8 + i * 3, 0.07, 54, finishG);
-      for (const x of [46, -48]) { boxM(4, 3, 4, M.white, x, 1.5, 58, finishG); boxM(4.6, 0.25, 4.6, M.blue, x, 3.1, 58, finishG); boxM(1.4, 0.9, 0.05, M.cab, x, 1.7, 60.03, finishG); }
-      for (const [x, z] of [[6, 22], [12, 32], [20, 24], [27, 31], [31, 22], [-42, 52], [-24, 52]]) { cyl(0.2, 0.3, 2.4, M.trunk, x, 1.2, z, finishG, 6); mesh(new THREE.IcosahedronGeometry(1.8, 1), M.leaf, x, 3.4, z, finishG); }
-      const wall = []; for (let x = SITE.x0; x < SITE.x1; x += 3) if (!(x > 33 && x < 47)) wall.push(mtx(x + 1.5, 0.9, SITE.z1, 3, 1.8, 0.25));
-      const fw = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.concrete, wall.length); wall.forEach((m, i) => fw.setMatrixAt(i, m)); fw.castShadow = true; finishG.add(fw); }
+    cont(-85, 0, 32); cont(-85, 2.6, 32); cont(-78, 0, 32); boxM(1.4, 2.3, 1.4, M.blue, -73.5, 1.15, 32.5, tempG); cyl(1, 1, 2, M.white, -71, 3.2, 32, tempG); for (const x of [-71.8, -70.2]) boxM(0.15, 2.2, 0.15, M.grey, x, 1.1, 32, tempG);
+    const stair = boxM(0.9, 0.1, 3.4, M.grey, -81.6, 1.3, 33.5, tempG); stair.rotation.x = 0.75;
+    signBoard(tempG, -85, 5.2 + 1.9, 32, 7.5, 1.5);
+    const bch = label('Ban chỉ huy công trường<small>container văn phòng · kho · nhà vệ sinh</small>'); bch.position.set(-83, 10.2, 32); tempG.add(bch);
   }
   }
 
@@ -802,27 +788,27 @@ export function createSiteScene(opts) {
   }
   if (SITE_KEY === 'SMB') {
     const R = re => stockOf(re);
-    rebarRack(8, 27, R(/^Thép XD D(1[0-9]|2[0-9]|10)/));
-    profileStack(14, 27.5, cShape(0.2, 0.065, 0.003), 9, 10, 6, M.purlin, 'Xà gồ C mạ kẽm', R(/Xà gồ/));
-    profileStack(18.5, 27.5, (() => { const s = new THREE.Shape(); s.moveTo(-0.025, -0.05); s.lineTo(0.025, -0.05); s.lineTo(0.025, 0.05); s.lineTo(-0.025, 0.05); s.closePath(); const h = new THREE.Path(); h.moveTo(-0.022, -0.047); h.lineTo(-0.022, 0.047); h.lineTo(0.022, 0.047); h.lineTo(0.022, -0.047); h.closePath(); s.holes.push(h); return s; })(), 6, 14, 6, M.purlin, 'Thép hộp mạ kẽm', R(/Thép hộp/), 0.06, 0.11);
-    palletStack(23, 23, mat('#c9c6be'), 2, 4, 1, 1.0, 0.36, 2.2, 'Lưới thép hàn D8', R(/Lưới thép hàn/));
-    for (let i = 0; i < 4; i += 1) palletStack(26 + (i % 2) * 2.6, 22 + Math.floor(i / 2) * 3.2, M.alc, 2, 6, 1, 0.6, 0.1, 2.0, 'Tấm ALC (100 mm)', R(/ALC/));
-    for (let i = 0; i < 6; i += 1) palletStack(6 + (i % 3) * 1.6, 21.5 + Math.floor(i / 3) * 1.6, M.brick, 3, 5, 3, 0.38, 0.2, 0.36, 'Gạch xây (rỗng, đặc, 6,5×10,5)', R(/Gạch/), 0.02);
-    for (let i = 0; i < 3; i += 1) palletStack(12 + i * 1.6, 21.5, M.bag, 2, 6, 3, 0.62, 0.14, 0.4, 'Xi măng PCB30 (bao 50 kg)', R(/Xi măng/), 0.02);
-    pile(31, 31, 2.6, 1.9, M.sand, 'Cát xây, trát', R(/Cát/)); pile(25, 33, 4.2, 2.6, M.gravel, 'Base B (cấp phối đá dăm)', R(/Base B/));
-    profileStack(20, 33.5, (() => { const s = new THREE.Shape(); s.absarc(0, 0, 0.04, 0, Math.PI * 2, false); return s; })(), 2.5, 16, 5, M.bamboo, 'Cọc tre 2,5 m', R(/Cọc tre/), 0.085, 0.08);
-    { const g = new THREE.Group(); g.position.set(36.5, 0, -40); scene.add(g); for (let i = 0; i < 9; i += 1) { const c = cyl(0.3, 0.3, 2.4, M.pile, (i % 3) * 0.65 - 0.65, 0.3 + Math.floor(i / 3) * 0.56, 0, g, 16); c.rotation.x = Math.PI / 2; } stackLabel(g, 'Cống bi D400 + đế cống', R(/ống|Đế cống/)); }
-    palletStack(16, 33.5, M.foil, 1, 8, 1, 1.0, 0.1, 2.4, 'Tấm cách nhiệt', R(/cách nhiệt/));
-    { const g = new THREE.Group(); g.position.set(-24, 0, 49); scene.add(g); for (let i = 0; i < 6; i += 1) cyl(0.29, 0.29, 0.88, M.drum, (i % 3) * 0.65, 0.44, Math.floor(i / 3) * 0.65, g, 14); stackLabel(g, 'Dầu Diezel / DO (phuy 200 L)', R(/Dầu/)); }
-    { const g = new THREE.Group(); g.position.set(9, 0, 33.5); scene.add(g); for (let i = 0; i < 6; i += 1) { const r = cyl(0.35, 0.35, 2.5, M.nylon, (i % 3) * 0.75, 0.35 + Math.floor(i / 3) * 0.7, 0, g, 14); r.rotation.z = Math.PI / 2; } stackLabel(g, 'Nilong lót nền', R(/[Nn]i ?long|Ni lông/)); }
-    palletStack(4.5, 33.5, mat('#9aa0a6'), 2, 2, 2, 0.5, 0.35, 0.5, 'Bu lông móng (thùng)', R(/[Bb]u ?long móng|Bu lông móng/));
-    palletStack(-21, 49, mat('#e5e7eb'), 2, 3, 2, 0.5, 0.45, 0.5, 'Sika (bao, thùng, can)', R(/Sika/));
+    // Bãi vật tư: dải đất giữa đường trước nhà văn phòng (x −76) và đường dọc xưởng 1 (x −59), từ z 2 tới 30 (chỗ bãi đỗ xe khi hoàn thiện).
+    const Y = (ox, oz) => [-72 + (oz - 21), 2 + (ox - 4)];
+    rebarRack(...Y(8, 27), R(/^Thép XD D(1[0-9]|2[0-9]|10)/));
+    profileStack(...Y(14, 27.5), cShape(0.2, 0.065, 0.003), 9, 10, 6, M.purlin, 'Xà gồ C mạ kẽm', R(/Xà gồ/));
+    profileStack(...Y(18.5, 27.5), (() => { const sh = new THREE.Shape(); sh.moveTo(-0.025, -0.05); sh.lineTo(0.025, -0.05); sh.lineTo(0.025, 0.05); sh.lineTo(-0.025, 0.05); sh.closePath(); const h = new THREE.Path(); h.moveTo(-0.022, -0.047); h.lineTo(-0.022, 0.047); h.lineTo(0.022, 0.047); h.lineTo(0.022, -0.047); h.closePath(); sh.holes.push(h); return sh; })(), 6, 14, 6, M.purlin, 'Thép hộp mạ kẽm', R(/Thép hộp/), 0.06, 0.11);
+    palletStack(...Y(23, 23), mat('#c9c6be'), 2, 4, 1, 1.0, 0.36, 2.2, 'Lưới thép hàn D8', R(/Lưới thép hàn/));
+    for (let i = 0; i < 4; i += 1) palletStack(...Y(26 + (i % 2) * 2.6, 22 + Math.floor(i / 2) * 3.2), M.alc, 2, 6, 1, 0.6, 0.1, 2.0, 'Tấm ALC (100 mm)', R(/ALC/));
+    for (let i = 0; i < 6; i += 1) palletStack(...Y(6 + (i % 3) * 1.6, 21.5 + Math.floor(i / 3) * 1.6), M.brick, 3, 5, 3, 0.38, 0.2, 0.36, 'Gạch xây (rỗng, đặc, 6,5×10,5)', R(/Gạch/), 0.02);
+    for (let i = 0; i < 3; i += 1) palletStack(...Y(12 + i * 1.6, 21.5), M.bag, 2, 6, 3, 0.62, 0.14, 0.4, 'Xi măng PCB30 (bao 50 kg)', R(/Xi măng/), 0.02);
+    pile(...Y(31, 31), 2.6, 1.9, M.sand, 'Cát xây, trát', R(/Cát/)); pile(...Y(25, 33), 3.6, 2.4, M.gravel, 'Base B (cấp phối đá dăm)', R(/Base B/));
+    profileStack(...Y(20, 33.5), (() => { const sh = new THREE.Shape(); sh.absarc(0, 0, 0.04, 0, Math.PI * 2, false); return sh; })(), 2.5, 16, 5, M.bamboo, 'Cọc tre 2,5 m', R(/Cọc tre/), 0.085, 0.08);
+    { const g = new THREE.Group(); g.position.set(-66, 0, 30); scene.add(g); for (let i = 0; i < 9; i += 1) { const c = cyl(0.3, 0.3, 2.4, M.pile, (i % 3) * 0.65 - 0.65, 0.3 + Math.floor(i / 3) * 0.56, 0, g, 16); c.rotation.x = Math.PI / 2; } stackLabel(g, 'Cống bi D400 + đế cống', R(/ống|Đế cống/)); }
+    palletStack(...Y(16, 33.5), M.foil, 1, 8, 1, 1.0, 0.1, 2.4, 'Tấm cách nhiệt', R(/cách nhiệt/));
+    { const g = new THREE.Group(); g.position.set(-74.5, 0, 34.5); scene.add(g); for (let i = 0; i < 6; i += 1) cyl(0.29, 0.29, 0.88, M.drum, (i % 3) * 0.65, 0.44, Math.floor(i / 3) * 0.65, g, 14); stackLabel(g, 'Dầu Diezel / DO (phuy 200 L)', R(/Dầu/)); }
+    { const g = new THREE.Group(); g.position.set(...(([x, z]) => [x, 0, z])(Y(9, 33.5))); scene.add(g); for (let i = 0; i < 6; i += 1) { const r = cyl(0.35, 0.35, 2.5, M.nylon, (i % 3) * 0.75, 0.35 + Math.floor(i / 3) * 0.7, 0, g, 14); r.rotation.z = Math.PI / 2; } stackLabel(g, 'Nilong lót nền', R(/[Nn]i ?long|Ni lông/)); }
+    palletStack(...Y(4.5, 33.5), mat('#9aa0a6'), 2, 2, 2, 0.5, 0.35, 0.5, 'Bu lông móng (thùng)', R(/[Bb]u ?long móng|Bu lông móng/));
+    palletStack(-71.5, 35, mat('#e5e7eb'), 2, 3, 2, 0.5, 0.45, 0.5, 'Sika (bao, thùng, can)', R(/Sika/));
   }
 
   /* ───────── XinHai (DA29): bố cục theo ảnh flycam + mô hình thiết kế ───────── */
   // Nhà khung bê tông n tầng: móng → cột / sàn từng tầng → tường từng tầng; dùng cho nhà văn phòng và nhà nghỉ ca.
-  const ANOMALIES = {};
-  const REPLACE = {};
   function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH, noGhost }) {
     const n0 = ELEMS.length;
     const xs = Array.from({ length: nx + 1 }, (_, i) => b.x0 + (b.x1 - b.x0) * i / nx), zs = Array.from({ length: nz + 1 }, (_, j) => b.z1 - (b.z1 - b.z0) * j / nz);
@@ -934,7 +920,7 @@ export function createSiteScene(opts) {
   const bodyGeo = new THREE.CapsuleGeometry(0.21, 0.6, 4, 10), headGeo = new THREE.SphereGeometry(0.17, 12, 10), helmGeo = new THREE.SphereGeometry(0.2, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), legGeo = new THREE.CapsuleGeometry(0.09, 0.5, 3, 6), armGeo = new THREE.CapsuleGeometry(0.065, 0.42, 3, 6);
   const toolGeo = new THREE.BoxGeometry(0.05, 0.05, 0.35), barGeo = new THREE.CylinderGeometry(0.018, 0.018, 3.2, 5).rotateZ(Math.PI / 2), boardGeo = new THREE.BoxGeometry(1.6, 0.03, 0.3), bagGeo = new THREE.BoxGeometry(0.45, 0.16, 0.32);
   const CREW_GEOS = [bodyGeo, headGeo, helmGeo, legGeo, armGeo, toolGeo, barGeo, boardGeo, bagGeo];
-  const CARRY_YARD = SITE_KEY === 'DA29' ? { x0: -62, x1: -40, z0: -90, z1: -76 } : { x0: 4, x1: 34, z0: 20, z1: 35 };
+  const CARRY_YARD = SITE_KEY === 'DA29' ? { x0: -62, x1: -40, z0: -90, z1: -76 } : { x0: -72, x1: -61, z0: 3, z1: 29 };
   const rnd = (a, b) => a + Math.random() * (b - a);
   // Người: chân, tay xoay quanh hông / vai để bước đi, vung tay, gõ búa; có thể vác thép / ván / bao.
   function worker(x, y, z, helmet = M.helmetY, area = null, carrier = false) {
@@ -987,18 +973,18 @@ export function createSiteScene(opts) {
     { re: /đào/i, at: () => [-68, 0, -30], name: 'Phân đoạn 1', rect: { x0: -83, x1: -52, z0: -55, z1: -5 } },
     { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [-14, 0, -30], name: 'Nhà xưởng PĐ2', rect: { x0: -50, x1: 22, z0: -55, z1: -5 } },
   ] : [
-    { re: /alc|xây tường bao|xây alc/i, at: () => [-10.6, 0, -20], name: 'Xây ALC' },
-    { re: /kc|kết cấu|lắp dựng/i, at: () => [15, 11.6, -10], name: 'Lắp dựng kết cấu', up: true },
-    { re: /pccc/i, at: () => [-25, 0, -30], name: 'PCCC' },
-    { re: /rào/i, at: () => [-20, 0, 60], name: 'Tường rào' },
-    { re: /hạ tầng|cống|đường/i, at: () => [44, 0, -60], name: 'Hạ tầng' },
-    { re: /sơn|bả/i, at: () => [-28, 0, 27], name: 'Sơn bả' },
-    { re: /văn phòng|nvp|cốt thép|vk|ván|bt|bê tông/i, at: () => [-28, 4 * FH + 0.1, 16], name: 'BT, cốt thép, ván khuôn' },
+    { re: /alc|xây tường bao|xây alc/i, at: () => [-25, 0, 16], name: 'Xây ALC', rect: { x0: -52, x1: 2, z0: 2, z1: 30 } },
+    { re: /kc|kết cấu|lắp dựng/i, at: () => [55, 12.6, -4], name: 'Lắp dựng kết cấu', up: true },
+    { re: /pccc/i, at: () => [-25, 0, -25], name: 'PCCC', rect: { x0: -52, x1: 2, z0: -39, z1: -10 } },
+    { re: /rào/i, at: () => [-92, 0, 0], name: 'Tường rào', rect: { x0: -94, x1: -90, z0: -40, z1: 24 } },
+    { re: /hạ tầng|cống|đường/i, at: () => [0, 0, 39], name: 'Hạ tầng', rect: { x0: -80, x1: 88, z0: 36, z1: 42 } },
+    { re: /sơn|bả/i, at: () => [-74, 0, -24], name: 'Sơn bả', rect: { x0: -75, x1: -72.5, z0: -40, z1: -8 } },
+    { re: /văn phòng|nvp|cốt thép|vk|ván|bt|bê tông/i, at: () => [-63, 4 * FH + 0.1, -24], name: 'BT, cốt thép, ván khuôn' },
   ];
   const MACH_PLACES = SITE_KEY === 'DA29'
     ? { crane: [-60, 0, -70, Math.PI / 2], excavator: [-68, 0, -30, 0.6], roller: [39, 0, -30, 0], dozer: [-20, 0, -72, 1.2], rammer: [0, 0, -40, 0], truck: [-30, 0, -82, 0], pilepress: [10, 0, -30, 0], bender: [-98, 0, -96, 0] }
-    : { crane: [34.5, 0, -12, -Math.PI / 2], excavator: [45, 0, -70, 0.4], roller: [40.5, 0, -110, 0], dozer: [-25, 0, -95, 1.2], rammer: [44.2, 0, -48, 0], truck: [20, 0, 46, Math.PI / 2] };
-  const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['z', -30, 20, 0.25], dozer: ['x', -20, 10, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
+    : { crane: [11, 0, -6, Math.PI], excavator: [70, 0, 41.5, -1.2], roller: [20, 0, 38.8, Math.PI / 2], dozer: [-40, 0, 40.2, Math.PI / 2], rammer: [11, 0, 22, 0], truck: [-66, 0, 24, 0] };
+  const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['z', -30, 20, 0.25], dozer: ['x', -20, 10, 0.2] } : { roller: ['x', 25, 22, 0.25], dozer: ['x', -40, 8, 0.2] };
   const machines = {}; const machLabels = {};
   const BUILDERS = { crane: () => mobileCrane(12), excavator, roller, dozer, rammer, truck: () => dumpTruck(M.blue), pilepress: pilePress, bender: rebarBench };
   for (const [k2, place2] of Object.entries(MACH_PLACES)) {
@@ -1013,14 +999,14 @@ export function createSiteScene(opts) {
   const pourLabel = label('', 'pour'); pourLabel.position.set(0, 6, 0); pour.pump.add(pourLabel);
 
   /* ───────── Xe chạy (bật Chuyển động): vào cổng → điểm dừng (đổ hàng / đổ bê tông) → quay đầu ra cổng; bánh quay theo quãng đường ───────── */
-  // Tuyến đi theo đường thật: SMB vào từ quốc lộ (làn bắc, chạy về tây) qua cổng đường tuyến 1; XinHai vào từ đường lớn phía bắc qua cổng (x ≈ −30) xuống đường đất.
+  // Tuyến đi theo đường thật: SMB vào từ đường lớn phía tây (đi lên phía bắc) rẽ phải qua cổng vào đường nội bộ phía nam; XinHai vào từ đường lớn phía bắc qua cổng (x ≈ −30) xuống đường đất.
   const ENTRY = SITE_KEY === 'DA29'
     ? [[-220, -175], [-95, -152], [-48, -144.5], [-33, -139], [-29, -128], [-29, -113], [-30, -96]]
-    : [[300, 72.5], [62, 72.5], [47, 70.5], [40.5, 63], [40.5, 46]];
-  const TRUCK_TAIL = SITE_KEY === 'DA29' ? [[-30, -73], [-27, -63.5], [-4, -63]] : [[37.5, 39.5], [13, 39.5]];
+    : [[ROAD_X, 160], [ROAD_X, 70], [ROAD_X, 46], [-109, 39], [-95, 38.8], [-86, 38.8]];
+  const TRUCK_TAIL = SITE_KEY === 'DA29' ? [[-30, -73], [-27, -63.5], [-4, -63]] : [[-66, 38.8]];
   const POUR_TAIL = SITE_KEY === 'DA29'
     ? { NX: [[-30, -73], [-27, -63.5], [-19, -63]], COC: [[-30, -73], [-27, -63.5], [-19, -63]], NVP: [[-30, -73], [-27, -63.5], [60, -63], [79, -58], [84, -44]], NNC: [[-33, -89.5], [-56, -89.5]] }
-    : { NVP: [[37.5, 39.5], [-36, 39.5]], NX1: [[40.5, 20], [40.5, -27]], NX2: [[37.5, 39.5], [-44, 39.5], [-47, 30], [-47, -14]], NX3: [[37.5, 39.5], [-44, 39.5], [-47, 30], [-47, -60], [-47, -102]], HT: [[37.5, 39.5], [28, 39.5]] };
+    : { NVP: [[-79, 38.8], [-76, 33], [-76, -8]], NX1: [[-40, 38.8]], NX2: [[6, 38.8], [11, 32], [11, -8]], NX3: [[40, 38.8]], HT: [[-15, 38.8]] };
   function makeRoute(points, lane = 1.4) {
     const off = pts => pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]; let hx = b[0] - a[0], hz = b[1] - a[1]; const l = Math.hypot(hx, hz) || 1; hx /= l; hz /= l; return new THREE.Vector3(p[0] - hz * lane, 0, p[1] + hx * lane); });
     const fwd = off(points), back = off([...points].reverse());
@@ -1066,23 +1052,31 @@ export function createSiteScene(opts) {
   // Giao thông trên đường lớn: xe con, xe khách, xe tải chạy liên tục hai chiều.
   const TRAFFIC = [];
   const TRAFFIC_LANES = SITE_KEY === 'DA29'
-    ? [{ a: [-330, -197.6], b: [170, -104], off: 2 }, { a: [170, -104], b: [-330, -197.6], off: 2 }]
-    : [{ a: [300, 71], b: [-300, 71] }, { a: [300, 75], b: [-300, 75] }, { a: [-300, 85], b: [300, 85] }, { a: [-300, 89], b: [300, 89] }];
+    ? [[[-330, -197.6], [170, -104]], [[170, -104], [-330, -197.6]]]
+    : [[[ROAD_X, 420], [ROAD_X, -24], [-117, -46], [-135, ROAD_ZN], [-520, ROAD_ZN]], [[-520, ROAD_ZN], [-135, ROAD_ZN], [-117, -46], [ROAD_X, -24], [ROAD_X, 420]]];
   {
     const kinds = [() => car('#e5e7eb'), () => car('#b91c1c'), () => car('#1f2937', true), () => dumpTruck(mat('#e5e7eb')), () => car('#2563eb'), () => car('#f8fafc', true)];
     let ki = 0;
     TRAFFIC_LANES.forEach((ln, li) => {
-      const dx = ln.b[0] - ln.a[0], dz = ln.b[1] - ln.a[1], len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len, o = ln.off || 0;
-      const ax = ln.a[0] - uz * o, az = ln.a[1] + ux * o; // lệch sang phải theo chiều chạy
-      const per = SITE_KEY === 'DA29' ? 3 : 4;
+      const path = lanePath(ln, 2), per = SITE_KEY === 'DA29' ? 3 : 4;
       for (let j = 0; j < per; j += 1) {
         const g = kinds[ki++ % kinds.length](); if (g.userData.setLoad) g.userData.setLoad(false); scene.add(g);
-        TRAFFIC.push({ g, ax, az, ux, uz, len, s: ((j + li * 0.37) / per) * len + rnd(0, 30), v: rnd(9, 14) });
+        TRAFFIC.push({ g, path, s: ((j + li * 0.37) / per) * path.len + rnd(0, 30), v: rnd(9, 14) });
       }
     });
     for (const c of TRAFFIC) placeTraffic(c, 0);
   }
-  function placeTraffic(c, ds) { c.s = (c.s + ds) % c.len; c.g.position.set(c.ax + c.ux * c.s, 0, c.az + c.uz * c.s); c.g.rotation.y = Math.atan2(c.ux, c.uz); for (const w of c.g.userData.wheels || []) w.m.rotation.x += ds / w.r; }
+  // Làn xe: đi qua các điểm (đường cong mềm), lệch sang phải theo chiều chạy.
+  function lanePath(points, lane) {
+    const pts3 = points.map((p, i) => { const a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)]; let hx = b[0] - a[0], hz = b[1] - a[1]; const l = Math.hypot(hx, hz) || 1; hx /= l; hz /= l; return new THREE.Vector3(p[0] - hz * lane, 0, p[1] + hx * lane); });
+    const curve = new THREE.CatmullRomCurve3(pts3, false, 'centripetal'); const len = curve.getLength(), n = Math.max(16, Math.ceil(len / 2));
+    return { pts: curve.getSpacedPoints(n), n, len };
+  }
+  function placeTraffic(c, ds) {
+    const P = c.path; c.s = (c.s + ds) % P.len; const f = c.s / P.len * P.n, i = Math.min(P.n - 1, Math.floor(f)), u = f - i, a = P.pts[i], b = P.pts[i + 1];
+    c.g.position.set(a.x + (b.x - a.x) * u, 0, a.z + (b.z - a.z) * u); c.g.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+    for (const w of c.g.userData.wheels || []) w.m.rotation.x += ds / w.r;
+  }
 
   const teamLabels = [];
   function logFor(d) { let best = null; for (const l of DATA.logs) { if (l[0] <= d && l[0] >= d - 7 && (l[1] > 0 || l[4].length)) best = l; } return best; }
@@ -1090,8 +1084,8 @@ export function createSiteScene(opts) {
   function pourOn(d) { // Đổ bê tông có % tăng trong ngày d → xe bơm + 2 xe bồn tới nhà đó.
     let best = null; for (const tk of Object.values(TASK)) { if (!/^Đổ bê tông/.test(tk.name) || tk.kids.length) continue; const a = pReal(tk.wbs, d - 1), b = pReal(tk.wbs, d); if (b - a > 0.5 && (!best || b - a > best.gain)) best = { t: tk, gain: b - a }; } return best; }
   const bldOf = wbs => Object.entries(BLD).find(([, b]) => b.roots.some(r => wbs === r || wbs.startsWith(r + '.')))?.[0];
-  const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [84, -31, 0], NNC: [-62, -76, 0], NX: [-14, -66, Math.PI / 2], COC: [-14, -66, Math.PI / 2], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
-  const BCENTER = SITE_KEY === 'DA29' ? { NVP: [66, 0, -31], NNC: [-77.7, 3.75, -76.5], NX: [-14, 0, -30], COC: [-14, 0, -30], PHU: [-20, 0, 20], HT: [0, 0, -50] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
+  const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [84, -31, 0], NNC: [-62, -76, 0], NX: [-14, -66, Math.PI / 2], COC: [-14, -66, Math.PI / 2], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-76, -24, 0], NX1: [-25, 35.5, Math.PI / 2], NX2: [11, -24, 0], NX3: [55, 35.5, Math.PI / 2], HT: [0, 35.5, Math.PI / 2] };
+  const BCENTER = SITE_KEY === 'DA29' ? { NVP: [66, 0, -31], NNC: [-77.7, 3.75, -76.5], NX: [-14, 0, -30], COC: [-14, 0, -30], PHU: [-20, 0, 20], HT: [0, 0, -50] } : { NVP: [-63, 0, -24], NX1: [-25, 0, 16], NX2: [-25, 0, -25], NX3: [55, 0, -4], HT: [0, 0, 39] };
   function activeBuildings(d) { const g = {}; for (const tk of Object.values(TASK)) { if (tk.kids.length) continue; const gain = pReal(tk.wbs, d) - pReal(tk.wbs, d - 7); if (gain > 0.5) { const b = bldOf(tk.wbs); if (b) g[b] = (g[b] || 0) + gain; } } return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([b]) => b); }
   function cluster(x, y, z, count, text, rect = null) { const n = Math.min(count, HIGH ? 24 : 12), area = rect ? { cx: (rect.x0 + rect.x1) / 2, cz: (rect.z0 + rect.z1) / 2, rect } : { cx: x, cz: z, r: y > 0.5 ? 4 : Math.min(12, 4 + n * 0.5) };
     for (let i = 0; i < n; i += 1) { const [px, pz] = pickIn(area); const w = worker(px, y, pz, i === 0 ? M.helmetW : M.helmetY, area, y < 0.5 && i > 0 && i % 4 === 3); if (i % 2) nextTarget(w); }
@@ -1124,7 +1118,7 @@ export function createSiteScene(opts) {
     if (b !== pourBld) { pourBld = b; const route = tail ? makeRoute([...ENTRY, ...tail]) : null; for (const md of mixerDrivers) { md.route = route; md.state = 'park'; } }
     pour.mixers.forEach((m, i) => {
       const md = mixerDrivers[i]; md.enabled = !!p;
-      md.park = () => { const [x, z, ry] = POUR_AT[b] || POUR_AT.HT; m.position.set(x + (ry ? 0 : 3.5 * (i + 1)), 0, z + (ry ? -10 - i * 9 : 12 + i * 9)); m.rotation.y = ry; };
+      md.park = () => { const [x, z, ry] = POUR_AT[b] || POUR_AT.HT; if (SITE_KEY === 'SMB') m.position.set(x - (ry ? 12 + i * 9 : 0), 0, z + (ry ? 0 : 12 + i * 9)); else m.position.set(x + (ry ? 0 : 3.5 * (i + 1)), 0, z + (ry ? -10 - i * 9 : 12 + i * 9)); m.rotation.y = ry; };
       if (!p) m.visible = false; else if (!motion || !md.route || md.state === 'park') parkDriver(md); else if (md.state === 'wait') m.visible = false;
     });
     return { near, pour: p };
@@ -1132,7 +1126,7 @@ export function createSiteScene(opts) {
 
   /* ───────── Nhãn nhà, cây hạng mục, bảng thông tin ───────── */
   const bldLabels = {};
-  for (const [key, b] of Object.entries(BLD)) { if (key === 'HT' || b.noLabel) continue; const l = label('', 'bld', () => selectBuilding(key)); l.position.set((b.x0 + b.x1) / 2, key === 'NVP' ? 19 : 17, (b.z0 + b.z1) / 2); scene.add(l); bldLabels[key] = l; }
+  for (const [key, b] of Object.entries(BLD)) { if (key === 'HT' || b.noLabel) continue; const l = label('', 'bld', () => selectBuilding(key)); l.position.set((b.x0 + b.x1) / 2, SITE_KEY === 'SMB' ? (key === 'NVP' ? 21 : 18.5) : key === 'NVP' ? 19 : 17, (b.z0 + b.z1) / 2); scene.add(l); bldLabels[key] = l; }
   const treeEl = $('tree'), info = $('info');
   let DAY = TODAY, selTask = null, selBld = null;
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -1179,7 +1173,7 @@ export function createSiteScene(opts) {
       <div class="s3d-sec">Tiến triển 7 ngày qua</div>${recent.length ? recent.map(({ t: x, gain }) => `<button type="button" class="s3d-task" data-task="${esc(x.wbs)}"><span>${esc(x.wbs)} · ${esc(x.name)}</span><span class="pct ok">+${Math.round(gain)}%</span></button>`).join('') : '<p class="s3d-sub">Không có đầu việc tăng %.</p>'}`;
   }
   listen(info, 'click', e => { const tk = e.target.closest('[data-task]'); if (tk) selectTask(tk.dataset.task); const bk = e.target.closest('[data-back]'); if (bk) { selTask = null; selBld = null; clearHL(); if (FINISHED) showFinished(); else showDay(); } if (e.target.closest('[data-unfinish]')) setFinished(false); });
-  const CENTER = SITE_KEY === 'DA29' ? { NVP: [66, 4, -31, 70], NNC: [-77.7, 5, -76.5, 50], NX: [-14, 4, -30, 190], COC: [-14, 4, -30, 190], PHU: [0, 0, 0, 230], HT: [0, 0, -20, 260] } : { NVP: [-28, 6, 16, 55], NX1: [15, 6, -17, 80], NX2: [-25, 6, -27, 80], NX3: [-5, 6, -118, 120], HT: [0, 0, -50, 230] };
+  const CENTER = SITE_KEY === 'DA29' ? { NVP: [66, 4, -31, 70], NNC: [-77.7, 5, -76.5, 50], NX: [-14, 4, -30, 190], COC: [-14, 4, -30, 190], PHU: [0, 0, 0, 230], HT: [0, 0, -20, 260] } : { NVP: [-63, 6, -24, 55], NX1: [-25, 6, 16, 80], NX2: [-25, 6, -25, 80], NX3: [55, 6, -4, 120], HT: [0, 0, 0, 230] };
   function selectBuilding(key, fly = true) {
     selBld = key; const b = BLD[key], ts = b.roots.map(r => TASK[r]);
     info.innerHTML = `${back}<h2>${b.name}</h2><p class="s3d-sub">${dd(DAY)} · thực tế so với kế hoạch</p>
@@ -1208,7 +1202,7 @@ export function createSiteScene(opts) {
   }
 
   /* ───────── Camera, chọn trong cảnh, thời gian ───────── */
-  const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-200, 150, -250], [10, 0, -20]], NNC: [[-48, 2.2, -99], [-79, 8, -77]], NVP: [[105, 6, -95], [70, 7, -40]], NX: [[-150, 90, -160], [-14, 3, -30]], NX_PD2: [[-40, 55, -125], [-14, 1, -30]], yard: [[-30, 25, -120], [-52, 1, -80]] } : { overview: [[-150, 120, 140], [-5, 0, -55]], NVP: [[-62, 22, 62], [-28, 6, 16]], NX1: [[62, 30, 40], [15, 5, -17]], NX2: [[-82, 30, 20], [-25, 5, -27]], NX3: [[-110, 55, -40], [-5, 5, -118]], yard: [[40, 18, 58], [18, 1, 28]] };
+  const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-200, 150, -250], [10, 0, -20]], NNC: [[-48, 2.2, -99], [-79, 8, -77]], NVP: [[105, 6, -95], [70, 7, -40]], NX: [[-150, 90, -160], [-14, 3, -30]], NX_PD2: [[-40, 55, -125], [-14, 1, -30]], yard: [[-30, 25, -120], [-52, 1, -80]] } : { overview: [[-170, 125, 165], [5, 0, 0]], NVP: [[-118, 24, -8], [-63, 8, -24]], NX1: [[-25, 34, 105], [-25, 5, 16]], NX2: [[-25, 45, -120], [-25, 5, -25]], NX3: [[135, 60, 95], [55, 5, -4]], yard: [[-30, 22, 62], [-66, 1, 16]] };
   const VIEW_LIST = SITE_KEY === 'DA29' ? [['overview', 'Toàn cảnh'], ['NNC', 'Nhà nghỉ ca'], ['NVP', 'Nhà văn phòng'], ['NX', 'Nhà xưởng'], ['NX_PD2', 'Móng PĐ2'], ['yard', 'Bãi vật tư']] : [['overview', 'Toàn cảnh'], ['NVP', 'Nhà văn phòng'], ['NX1', 'Nhà xưởng 1'], ['NX2', 'Nhà xưởng 2'], ['NX3', 'Nhà xưởng 3'], ['yard', 'Bãi vật tư']];
   let camFrom = null, camTo = null, camT = 1;
   function flyTo(target, dist) { const dir = camera.position.clone().sub(controls.target).normalize(); camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: target.clone().add(dir.multiplyScalar(dist)), t: target.clone() }; camT = 0; invalidate(); }
@@ -1222,8 +1216,8 @@ export function createSiteScene(opts) {
   host.querySelectorAll('[data-view]').forEach(b => { b.onclick = () => { tourStop(); goView(b.dataset.view); }; });
   const btnGhost = $('btnGhost');
   btnGhost.onclick = () => { ghosts.visible = !ghosts.visible; lod(); btnGhost.setAttribute('aria-pressed', String(ghosts.visible)); invalidate(); };
-  if (SITE_KEY === 'DA29') btnGhost.hidden = true; // XinHai: nút đổi thành chế độ mô hình thiết kế khi tải xong
-  const btnModels = $('btnModels'); btnModels.hidden = !(canManage && SITE_KEY === 'DA29' && onManageModels); btnModels.onclick = () => onManageModels?.();
+  if (loadModel) btnGhost.hidden = true; // có mô hình thiết kế: nút đổi thành chế độ mô hình khi tải xong
+  const btnModels = $('btnModels'); btnModels.hidden = !(canManage && onManageModels); btnModels.onclick = () => onManageModels?.();
   const ray = new THREE.Raycaster(), down = new THREE.Vector2();
   listen(renderer.domElement, 'pointerdown', e => down.set(e.clientX, e.clientY));
   listen(renderer.domElement, 'pointerup', e => {
@@ -1233,9 +1227,9 @@ export function createSiteScene(opts) {
     for (const h of ray.intersectObjects(scene.children, true)) {
       if (!h.object.visible || ghosts.children.includes(h.object)) continue;
       const u = h.object.userData;
-      if (u.tk) { const seg = tkSeg(u.tk.bay), ax = u.tk.bay + 1, w = u.tk.st === 'neo' ? TK_NEO[seg] : '4.3.1';
-        info.innerHTML = `${back}<h2>${TK_NAME[u.tk.st] || 'Kết cấu thép'} · trục ${ax}–${ax + 1}</h2><p class="s3d-sub">Mô hình Tekla · ${seg === 'NVP' ? 'Nhà văn phòng' : 'Nhà xưởng ' + seg.replace('PD', 'PĐ')}</p><div class="s3d-row"><span>Đầu việc</span><b>${esc(w)} · ${esc(taskName(w))}</b></div><div class="s3d-row"><span>Thực tế ${dd(DAY)}</span><b>${pct(pReal(w, DAY))}</b></div><div class="s3d-row"><span>Kế hoạch</span><b>${TASK['4.3.1'] ? `${dd(TASK['4.3.1'].ps)} → ${dd(TASK['4.3.1'].pe)}` : '—'}</b></div>`; invalidate(); return; }
-      if (u.k) { const key = u.k.part === 'NNC' ? 'NNC' : u.k.part === 'NVP' ? 'NVP' : u.k.part === 'NX' ? 'NX' : null; if (key && BLD[key].roots.length) { selectBuilding(key); return; } continue; }
+      if (u.tk) { const seg = tkSeg(u.tk.bay), ax = u.tk.bay + 1, w = u.tk.st === 'neo' ? TK_NEO[seg] : TK_TASK;
+        info.innerHTML = `${back}<h2>${TK_NAME[u.tk.st] || 'Kết cấu thép'} · ${SITE_KEY === 'SMB' ? 'bước khung' : 'trục'} ${ax}–${ax + 1}</h2><p class="s3d-sub">Mô hình Tekla · ${tkPlace(u.tk.bay)}</p><div class="s3d-row"><span>Đầu việc</span><b>${esc(w)} · ${esc(taskName(w))}</b></div><div class="s3d-row"><span>Thực tế ${dd(DAY)}</span><b>${pct(pReal(w, DAY))}</b></div><div class="s3d-row"><span>Kế hoạch</span><b>${TASK[TK_TASK] ? `${dd(TASK[TK_TASK].ps)} → ${dd(TASK[TK_TASK].pe)}` : '—'}</b></div>`; invalidate(); return; }
+      if (u.k) { const key = ['NNC', 'NVP', 'NX', 'NX1', 'NX2', 'NX3'].includes(u.k.part) ? u.k.part : null; if (key && BLD[key]?.roots.length) { selectBuilding(key); return; } continue; }
       if (u.elems) { if (TASK[u.elems.task]) { selectTask(u.elems.task); return; } continue; }
       if (u.stock) { const { title: st, rows } = u.stock; info.innerHTML = `${back}<h2>${esc(st)}</h2><p class="s3d-sub">Tồn kho công trường trong Vioo</p>${rows.length ? rows.map(([n, un, q]) => `<div class="s3d-row"><span>${esc(n)}</span><b>${Number(q).toLocaleString('vi-VN')} ${esc(un || '')}</b></div>`).join('') : '<p class="s3d-sub">Không có dòng tồn.</p>'}`; invalidate(); return; }
       if (u.machine) { const near = machinesNear(DAY); info.innerHTML = `${back}<h2>${MACH_NAME[u.machine]}</h2><p class="s3d-sub">${esc(near.get(u.machine) || '')}</p><p class="s3d-sub">Có trong nhật ký công trường 7 ngày tới ${dd(DAY)}. Vị trí trên mô hình là minh họa theo việc đang làm.</p>`; invalidate(); return; }
@@ -1315,8 +1309,25 @@ export function createSiteScene(opts) {
   const segOf = xbin => (xbin * 141.5 / 18 < 33.4 ? 'PD1' : xbin * 141.5 / 18 < 107.2 ? 'PD2' : 'PD3');
   const SEG_ENV = { PD3: ['4.5.3', '4.6.3', '4.4.3'], PD2: ['4.5.2', '4.6.2', '4.4.2'], PD1: ['4.5.1', '4.6.1', '4.4.1'] };
   // 'real' | 'ghost' | 'hide' cho một khối của mô hình thiết kế tại ngày d.
+  // SMB: mỗi nhà hiện thật theo phần (thân = tường xây xong, mái = lợp tôn xong, sàn = đổ bê tông sàn xong); văn phòng theo tầng.
+  const SMB_REAL = {
+    NVP: { walls: ['3.1', '3.2', '3.3', '3.4', '2.38'], facade: ['4.28', '4.23'], root: '2' },
+    NX1: { body: ['7.1'], roof: ['7.3'], slab: ['6.24'], frame: ['7.2'] },
+    NX2: { body: ['11.1'], roof: ['11.3'], slab: ['10.18'], frame: ['11.2'] },
+    NX3: { body: ['15.1', '15.2'], roof: ['15.5'], slab: ['14.11', '14.23'], frame: ['15.3'] },
+  };
+  function realStateSMB(kk, d) {
+    if (REAL.mode === 'steel') return kk.part === 'NX3' && kk.cat !== 'slab' ? 'hide' : 'real';
+    let ok = true;
+    const c = SMB_REAL[kk.part];
+    if (kk.part === 'NVP') ok = kk.cat === 'facade' ? allDone(c.facade, d) : done(c.walls[Math.min(kk.lv, 4)], d);
+    else if (c) ok = allDone(c[kk.cat] || c.body, d);
+    else if (kk.part === 'PHU' || kk.part === 'HT') ok = rootDone('17', d);
+    return ok ? 'real' : REAL.mode === 'off' ? 'hide' : 'ghost';
+  }
   function realState(kk, d) {
     if (REAL.mode === 'full' || FINISHED) return 'real';
+    if (SITE_KEY === 'SMB') return realStateSMB(kk, d);
     if (REAL.mode === 'steel') return kk.part === 'NX' || kk.part === 'NVP' ? 'hide' : 'real';
     if (kk.part === 'GD1' || kk.part === 'DIAHINH' || kk.part === 'NEN' || kk.part === '') return 'real';
     let ok = false;
@@ -1331,14 +1342,17 @@ export function createSiteScene(opts) {
   }
   const TEKLA = [];
   // Trục Tekla 1 → 21 (m, gốc trục 1 ở đầu cổng — chủ SP xác nhận 17/10). PĐ1 trục 1–5, PĐ2 trục 5–15, PĐ3 trục 15–19; trục 19–21 là khung mái nhà văn phòng.
-  const TK_AX = [0, 8.5, 17, 25.2, 33.4, 41.6, 49.8, 58, 66, 66.4, 74.4, 82.6, 90.8, 99, 107.2, 115.4, 123.6, 131.8, 140, 150, 160];
-  const tkSeg = bay => (TK_AX[bay] >= 140 ? 'NVP' : TK_AX[bay] < 33.4 ? 'PD1' : TK_AX[bay] < 107.2 ? 'PD2' : 'PD3');
-  const TK_NEO = { PD3: '4.1.3.4', PD2: '4.1.2.4', PD1: '4.1.1.4', NVP: '2.1.4' };
+  // SMB xưởng 3: khung theo chiều dài 75 m (trục Tekla z), đầu tây gần cổng lắp trước; đầu việc 15.3 (lắp dựng kết cấu thép xưởng 3).
+  const TK_AX = SITE_KEY === 'SMB' ? [0, 9, 18.5, 28, 37.5, 47, 56.5, 66, 75] : [0, 8.5, 17, 25.2, 33.4, 41.6, 49.8, 58, 66, 66.4, 74.4, 82.6, 90.8, 99, 107.2, 115.4, 123.6, 131.8, 140, 150, 160];
+  const TK_TASK = SITE_KEY === 'SMB' ? '15.3' : '4.3.1';
+  const tkSeg = bay => (SITE_KEY === 'SMB' ? 'NX3' : TK_AX[bay] >= 140 ? 'NVP' : TK_AX[bay] < 33.4 ? 'PD1' : TK_AX[bay] < 107.2 ? 'PD2' : 'PD3');
+  const TK_NEO = { PD3: '4.1.3.4', PD2: '4.1.2.4', PD1: '4.1.1.4', NVP: '2.1.4', NX3: '13.8' };
+  const tkPlace = bay => (SITE_KEY === 'SMB' ? 'Nhà xưởng 3' : tkSeg(bay) === 'NVP' ? 'Nhà văn phòng' : 'Nhà xưởng ' + tkSeg(bay).replace('PD', 'PĐ'));
   // Đầu việc 4.3.1 (lắp dựng kết cấu thép, sàn deck) chia giai đoạn: cột → kèo, dầm → giằng, xà gồ → tôn sàn deck → cầu thang; mỗi giai đoạn lắp dần từ đầu cổng vào.
   const TK_STAGE = { cot: [0, 40], keo: [20, 65], giang: [40, 85], deck: [60, 100], thang: [80, 100] };
   const TK_NAME = { neo: 'Bu lông neo', cot: 'Cột thép', keo: 'Kèo, dầm thép', giang: 'Giằng, xà gồ', deck: 'Tôn sàn deck', thang: 'Cầu thang, lan can thép' };
   function applyTekla(d) {
-    const p = pAt('4.3.1', d);
+    const p = pAt(TK_TASK, d);
     for (const o of TEKLA) { const { st: stg, bay } = o.userData.tk; let vis;
       if (REAL.mode === 'full' || REAL.mode === 'steel' || FINISHED) vis = true;
       else if (stg === 'neo') vis = done(TK_NEO[tkSeg(bay)], d);
@@ -1354,6 +1368,12 @@ export function createSiteScene(opts) {
     // Nhà / phân đoạn đã hiện mô hình thật thì ẩn phần dựng tiến độ trùng chỗ.
     if (REAL.mode === 'full' || REAL.mode === 'steel' || FINISHED) { for (const list of Object.values(REPLACE)) for (const e of list) e.range(0, 0); siteGround.visible = !FINISHED && REAL.mode === 'steel'; return; }
     siteGround.visible = true;
+    if (SITE_KEY === 'SMB') {
+      for (const key of ['NX1', 'NX2', 'NX3']) { const c = SMB_REAL[key]; if (allDone([...c.body, ...c.roof, ...c.slab], d)) for (const e of REPLACE[key] || []) e.range(0, 0); }
+      if (allDone(SMB_REAL.NVP.walls, d) && rootDone('2', d)) for (const e of REPLACE.NVP || []) e.range(0, 0);
+      if (rootDone('17', d)) for (const e of REPLACE.HT || []) e.range(0, 0);
+      return;
+    }
     for (const seg of ['PD1', 'PD2', 'PD3']) if (allDone(SEG_ENV[seg], d)) for (const e of REPLACE['NX:' + seg] || []) e.range(0, 0);
     for (const key of ['NNC', 'NVP']) if (floorReal[key][0] && done((key === 'NNC' ? NNC_WALL : NVP_WALL)[0], d) && rootDone(key === 'NNC' ? '3' : '2', d)) for (const e of REPLACE[key] || []) e.range(0, 0);
   }
@@ -1375,12 +1395,12 @@ export function createSiteScene(opts) {
       setStatus('Đang tải mô hình thiết kế…');
       const arch = await loadModel('architecture', f => setStatus(`Đang tải mô hình thiết kế ${Math.round(f * 100)}%`));
       if (disposed) return;
-      if (!arch) { REAL.loading = false; setStatus(canManage ? 'Chưa có mô hình thiết kế' : ''); return; }
+      if (!arch) { REAL.loading = false; btnGhost.hidden = FINISHED; setStatus(canManage ? 'Chưa có mô hình thiết kế' : ''); return; }
       setStatus('Đang dựng mô hình thiết kế…');
       const pm = new THREE.PMREMGenerator(renderer); const envTex = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose(); TEXTURES.push(envTex);
       scene.environment = envTex; scene.environmentIntensity = 0.45;
       const g = await parse(arch); if (disposed) return;
-      g.scene.position.y = -0.3; scene.add(g.scene); g.scene.updateMatrixWorld(true); MODEL_ROOTS.push(g.scene);
+      g.scene.position.y = SITE_KEY === 'SMB' ? 0 : -0.3; scene.add(g.scene); g.scene.updateMatrixWorld(true); MODEL_ROOTS.push(g.scene); ctxG.visible = false;
       const tuned = new Set();
       g.scene.traverse(o => { if (!o.isMesh) return; const [part, cat, lv, xbin] = (o.name || '').split('|'); o.userData.k = { part: part || '', cat: cat || '', lv: +lv || 0, xbin: +xbin || 0 }; o.userData.orig = o.material; o.receiveShadow = true;
         const m = o.material; if (m.transparent && !tuned.has(m)) { tuned.add(m); m.color.lerp(new THREE.Color('#cfe3f3'), 0.65); m.opacity = 0.32; m.roughness = 0.05; m.metalness = 0.15; m.depthWrite = false; }
@@ -1394,10 +1414,13 @@ export function createSiteScene(opts) {
       try {
         const tkBuf = await loadModel('structure', f => setStatus(`Đang tải kết cấu thép ${Math.round(f * 100)}%`));
         if (tkBuf && !disposed) {
-          const tk = await parse(tkBuf); tk.scene.position.set(-84.5, -0.3, -2.9); scene.add(tk.scene); tk.scene.updateMatrixWorld(true); MODEL_ROOTS.push(tk.scene);
+          const tk = await parse(tkBuf);
+          // XinHai: Tekla cùng hướng, dời về góc xưởng. SMB xưởng 3: Tekla xoay 90° (chiều dài Tekla z → x thật), góc tây nam xưởng.
+          if (SITE_KEY === 'SMB') { tk.scene.position.set(92.05, 0.3, 32.9); tk.scene.rotation.y = Math.PI / 2; } else tk.scene.position.set(-84.5, -0.3, -2.9);
+          scene.add(tk.scene); tk.scene.updateMatrixWorld(true); MODEL_ROOTS.push(tk.scene);
           tk.scene.traverse(o => { if (!o.isMesh) return; const [, stg, bay] = o.name.split('|'); o.userData.tk = { st: stg, bay: +bay }; o.castShadow = true; o.receiveShadow = true;
             o.geometry.computeBoundingBox(); o.userData.box = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); o.raycast = boxRaycast; TEKLA.push(o); });
-          for (const key of ['NX:PD1', 'NX:PD2', 'NX:PD3']) for (const e of REPLACE[key] || []) if (e.task === '4.3.1') { e.disabled = true; e.range(0, 0); }
+          for (const key of SITE_KEY === 'SMB' ? ['NX3'] : ['NX:PD1', 'NX:PD2', 'NX:PD3']) for (const e of REPLACE[key] || []) if (e.task === TK_TASK) { e.disabled = true; e.range(0, 0); }
         }
       } catch (e) { console.warn('Site3D structure model failed:', e); }
       if (disposed) return;
@@ -1410,7 +1433,7 @@ export function createSiteScene(opts) {
       if (!disposed) setStatus('Chưa tải được mô hình thiết kế', 'Thử lại', () => { REAL.loading = false; loadReal(); });
     } finally { REAL.loading = false; }
   }
-  if (SITE_KEY === 'DA29') {
+  {
     UPDATERS.push(d => applyReal(d));
     if (loadModel) { if (autoLoadModels) loadReal(); else setStatus('', 'Tải mô hình thiết kế (≈15 MB)', () => loadReal()); }
   }
@@ -1440,7 +1463,7 @@ export function createSiteScene(opts) {
     FINISHED = !!on;
     if (FINISHED) { setPlaying(false); ghostsBefore = ghosts.visible; ghosts.visible = false; selTask = null; selBld = null; clearHL(); } else ghosts.visible = ghostsBefore;
     tempG.visible = !FINISHED; finishG.visible = FINISHED; for (const g of stacks) g.visible = !FINISHED; siteGround.material = FINISHED ? M.paved : M.dirt;
-    btnGhost.hidden = FINISHED || (SITE_KEY === 'DA29' && !REAL.loaded);
+    btnGhost.hidden = FINISHED || (!!loadModel && !REAL.loaded);
     for (const b of [btnFinish, btnFinish2]) b.setAttribute('aria-pressed', String(FINISHED));
     host.classList.toggle('s3d-finished', FINISHED);
     if (redraw) setDay(DAY);

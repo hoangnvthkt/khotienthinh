@@ -485,3 +485,21 @@ Bộ chuyển đổi SketchUp / Tekla → GLB: `scripts/site3d/` (README).
 
 **Việc chờ chủ SP.** Duyệt áp migration lên prod + tải 2 mô hình XinHai lên kho (`architecture.glb` đã gắn bụi cây, 13,9 MB; `structure.glb` 1,1 MB); cấp quyền
 "Xem công trường 3D" cho người cần xem.
+
+## 17. Sơn Miền Bắc dùng mô hình thật (17/10)
+
+Chủ SP gửi `smb.zip` (SketchUp → COLLADA, 189 MB) và `IFC 3D X3.ifc` (Tekla xưởng 3, 42 MB).
+
+**Mặt bằng thật thay bố cục đoán.** Khu đất 190 × 88 m, đường lớn phía tây (vòng về tây ở đầu bắc), cổng góc tây nam, đường nội bộ chạy dọc phía nam. Nhà văn phòng
+16,6 × 36,1 m (4 tầng + tum, cao 18,5 m, mặt tiền nhìn sân hồ phía tây) dính đầu tây xưởng phía bắc; hai xưởng 60 × 33 m (= 1.980 m² đúng BOQ) xếp bắc – nam; xưởng 3
+75 × 74 m (≈ 5.550 m², hai nhịp) phía đông. Theo ảnh phối cảnh chủ SP ghi chú: **xưởng 1 = xưởng phía nam** (cạnh vườn, đường nội bộ), **xưởng 2 = xưởng dính nhà văn
+phòng** — cần chủ SP xác nhận (đổi chỉ là đổi ánh xạ). Toàn bộ phần dựng theo tiến độ (móng, cột, sàn, tường, khung mái), đường nội bộ, rào tôn tạm, BCH + bãi vật tư
+cạnh cổng, tuyến xe, chỗ tổ đội / máy, góc nhìn đã dời theo mặt bằng thật.
+
+**Mô hình.** Đọc COLLADA trong Node (tab Chrome hết bộ nhớ với tệp 189 MB): 7,9 triệu tam giác → bỏ vật trang trí nặng và xe đứng yên → 1,38 triệu, 11,5 MB.
+Phần hiện thật khi: văn phòng theo tầng (tường xây tầng xong), mặt dựng / kính khi ốp hoàn thiện xong; xưởng: thân khi xây tường ALC xong, mái khi lợp tôn xong, sàn khi đổ
+bê tông sàn tầng 2 xong; cổng, nhà bảo vệ, cảnh quan, đường khi hạ tầng (17) xong; còn lại mờ. Tekla xưởng 3: 0,59 MB, cột / kèo / xà gồ, giằng / thang, bu lông neo;
+xoay 90° khớp mặt bằng (mái che Tekla trùng mái che mặt nam SketchUp, thang leo mái cùng mặt tây); lắp theo đầu việc 15.3 từ đầu tây (gần cổng) vào, 8 bước khung.
+Zone 1 xưởng 3 = nhịp phía nam, zone 2 = nhịp phía bắc (giả định, cần xác nhận).
+
+**Việc chờ chủ SP.** Xác nhận xưởng 1 / xưởng 2 và zone xưởng 3; duyệt tải 2 mô hình lên kho dự án SMB-2026 và merge.

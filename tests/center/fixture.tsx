@@ -321,11 +321,13 @@ const site3dHooks: Site3dHooks | undefined = !SITE3D ? undefined : {
     if (SITE3D === 'error') reject(new Error('Máy chủ bận, thử lại sau ít phút.'));
     else resolve(parseSite3dResult({ ...site3dRaw(code), canManage: SITE3D === 'admin' }, new Date(2026, 9, 17, 9, 0)));
   }, 150)),
-  listModels: projectId => Promise.resolve<SiteModels>(params.get('site3dModel') === '1' && projectId.endsWith('d2') ? {
+  // XinHai: tệp trong repo. SMB: tệp không có trong repo → /__site3d/smb/<loại>.glb (bản thử tự cấp qua route của Playwright).
+  listModels: projectId => Promise.resolve<SiteModels>(params.get('site3dModel') === '1' ? {
     architecture: { kind: 'architecture', path: `${projectId}/architecture.glb`, size: 13_881_148, updatedAt: '2026-10-17T03:00:00Z' },
     structure: { kind: 'structure', path: `${projectId}/structure.glb`, size: 1_097_808, updatedAt: '2026-10-17T03:00:00Z' },
   } : {}),
-  fetchModel: (file, onProgress) => fetch(SITE3D_MODEL_URL[file.kind]).then(r => r.arrayBuffer()).then(buffer => { onProgress?.(1); return buffer; }),
+  fetchModel: (file, onProgress) => fetch(file.path.endsWith('d2/' + file.kind + '.glb') ? SITE3D_MODEL_URL[file.kind] : `/__site3d/smb/${file.kind}.glb`)
+    .then(r => { if (!r.ok) throw new Error(`Không tải được mô hình (${r.status}).`); return r.arrayBuffer(); }).then(buffer => { onProgress?.(1); return buffer; }),
   uploadModel: (projectId: string, kind: SiteModelKind, file: File) => new Promise<void>(resolve => setTimeout(() => {
     site3dUploads[`${projectId}/${kind}`] = { name: file.name, size: file.size };
     (window as unknown as { __site3dUploads: typeof site3dUploads }).__site3dUploads = site3dUploads;

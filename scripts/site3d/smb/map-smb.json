@@ -1,0 +1,55 @@
+{
+ "center": [
+  202.15,
+  371.6
+ ],
+ "parts": {
+  "group_1": "NVP",
+  "group_272": "NX2",
+  "group_323": "NX1",
+  "group_144": "NX3",
+  "group_397": "HT",
+  "group_688": "HT",
+  "group_362": "DIAHINH",
+  "group_363": "DIAHINH",
+  "group_0": "DIAHINH",
+  "group_364": "DIAHINH",
+  "group_393": "DIAHINH",
+  "group_394": "DIAHINH",
+  "group_395": "DIAHINH"
+ },
+ "defaultPart": "PHU",
+ "rules": {
+  "NVP": "floors",
+  "NX1": "factory",
+  "NX2": "factory",
+  "NX3": "factory"
+ },
+ "cats": {
+  "group_397": "fence",
+  "group_688": "paving",
+  "group_273": "frame",
+  "instance_438": "frame",
+  "group_148": "frame",
+  "group_274": "body",
+  "group_324": "body",
+  "group_145": "body"
+ },
+ "facade": "Translucent_Glass|_0136_Charcoal|Metal_Silver|Granite",
+ "floorH": 3.6,
+ "floorBase": 0.2,
+ "maxLevel": 4,
+ "drop": [
+  "group_714",
+  "group_913",
+  "group_919",
+  "instance_918",
+  "Untitled_composition_objects",
+  "Untitled_composition_2_objects",
+  "instance_939",
+  "instance_940",
+  "instance_957",
+  "instance_958",
+  "instance_959"
+ ]
+}
