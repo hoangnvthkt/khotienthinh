@@ -38,7 +38,7 @@ export const AllocationView: React.FC<{ onChanged: () => void }> = ({ onChanged 
   useEffect(load, [load]);
   if (error) return <StateBox kind="error" title="Chưa tải được phân bổ tháng" message={error} onRetry={load} />;
   if (!data) return <StateBox kind="loading" title="Đang tải phân bổ tháng…" />;
-  const run = data.run; const rd = data.readiness; const can = data.can;
+  const run = data.run; const rd = data.readiness; const vpp = rd.officeSupply; const can = data.can;
   const exec = async (fn: () => Promise<unknown>, msg: string) => { setBusy(true); try { await fn(); toast.success('Phân bổ tháng', msg); setEdit(null); setAdd(null); load(); onChanged(); } catch (e) { toast.error('Chưa thực hiện được', e instanceof Error ? e.message : ''); } finally { setBusy(false); } };
   const tsOk = rd.timesheet?.status === 'closed'; const payOk = rd.payroll.confirmed > 0;
   const months = data.lastClosableMonth >= data.firstMonth ? monthsBetween(data.firstMonth, data.lastClosableMonth) : [];
@@ -62,13 +62,16 @@ export const AllocationView: React.FC<{ onChanged: () => void }> = ({ onChanged 
     {data.lastClosableMonth < data.firstMonth && <p className="rounded-2xl border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
       Phân bổ bắt đầu từ tháng {mm(data.firstMonth)} (trước đó MISA đã phân bổ). Tháng {mm(data.firstMonth)} chưa kết thúc — kế toán lập phân bổ từ đầu tháng sau, khi HR đã chốt công và duyệt bảng lương.</p>}
 
-    <ul className="grid gap-2 md:grid-cols-3">
+    <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
       <Step ok={tsOk} title={tsOk ? `Bảng công đã chốt (lần ${rd.timesheet?.version})` : rd.timesheet ? 'Bảng công đang rà soát' : 'Bảng công chưa chốt'}
         hint={tsOk ? `Chốt ${viDate(rd.timesheet?.decidedAt)} — số công lấy theo bản chốt, công trường theo chấm công.` : 'HR chốt công tháng (Nhân sự → Chốt công) trước khi gửi chốt phân bổ.'} />
       <Step ok={payOk} title={payOk ? `Bảng lương đã duyệt: ${rd.payroll.confirmed} người` : 'Bảng lương chưa duyệt'}
         hint={payOk ? `Lương gộp ${shortMoney(rd.payroll.gross)}${rd.payroll.draft ? ` · còn ${rd.payroll.draft} phiếu nháp chưa tính` : ''}` : `${rd.payroll.draft ? `${rd.payroll.draft} phiếu lương còn nháp. ` : ''}HR lập và duyệt bảng lương tháng.`} />
       <Step ok={rd.receipts.length > 0 ? true : null} title={rd.receipts.length ? `Tiền CĐT trả: ${rd.receipts.map(r => `${r.projectCode} ${shortMoney(r.amount)}`).join(' · ')}` : 'Tháng không có tiền CĐT trả'}
         hint={rd.receipts.length ? 'Căn cứ chia chi phí chung công ty.' : 'Chi phí chung để lại công ty, không phân bổ (theo quyết định 04/10).'} />
+      {vpp && <Step ok={vpp.postedTotal != null ? true : vpp.liveTotal ? false : null}
+        title={vpp.postedTotal != null ? `Chi phí VPP đã chốt: ${shortMoney(vpp.postedTotal)}` : vpp.liveTotal ? `Chi phí VPP chưa chốt: ${shortMoney(vpp.liveTotal)}` : 'Tháng không cấp VPP'}
+        hint={<a href={`#/vpp?tab=report&m=${data.month.slice(0, 7)}`} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">{vpp.postedCode || 'Mở báo cáo VPP'}</a>} />}
     </ul>
 
     {!run ? <section className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm">

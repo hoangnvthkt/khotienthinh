@@ -5,10 +5,10 @@ import '../../index.css';
 import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import OfficeSupplies from '../../pages/vpp/OfficeSupplies';
-import { officeSupplyService, type VppDetail, type VppLine, type VppReceipt, type VppSettings, type VppStatus } from '../../lib/officeSupplyService';
+import { officeSupplyService, type VppDetail, type VppLine, type VppPosting, type VppReceipt, type VppReport, type VppSettings, type VppStatus } from '../../lib/officeSupplyService';
 import seedSql from '../../supabase/migrations/20261018100000_vpp_opening_balance.sql?raw';
 
-// Văn phòng phẩm — giả lập máy chủ trong trình duyệt, không gọi Cloud. ?as=staff | approver | keeper | admin
+// Văn phòng phẩm — giả lập máy chủ trong trình duyệt, không gọi Cloud. ?as=staff | approver | keeper | admin | kt (kế toán, mở ?tab=report)
 // Danh mục + tồn lấy đúng 82 mã từ migration tồn đầu kỳ 17/10/2026.
 const as = new URLSearchParams(location.search).get('as') || 'staff';
 const PEOPLE = {
@@ -170,6 +170,80 @@ officeSupplyService.saveSettings = async input => {
   return structuredClone(settings);
 };
 
+// Báo cáo: tháng 09 (đã qua, chốt được) và tháng 10 (đang mở). Tồn đầu tháng 09 = bảng XNT, tháng 10 = sau cấp tháng 09.
+const ISSUES: Record<string, Array<{ who: keyof typeof PEOPLE | string; ou: string | null; sku: string; qty: number; ret?: number }>> = {
+  '2026-09': [{ who: 'staff', ou: 'ou-hcns', sku: 'VPP001', qty: 3 }, { who: 'staff', ou: 'ou-hcns', sku: 'VPP005', qty: 10 }, { who: 'kt', ou: 'ou-tckt', sku: 'VPP001', qty: 2 },
+    { who: 'kt', ou: 'ou-tckt', sku: 'VPP034', qty: 2 }, { who: 'Trần Văn Nam', ou: 'ou-nm', sku: 'VPP070', qty: 4 }, { who: 'Trần Văn Nam', ou: 'ou-nm', sku: 'VPP041', qty: 3, ret: 1 },
+    { who: 'Lê Thu Trang', ou: null, sku: 'VPP060', qty: 2 }],
+  '2026-10': [{ who: 'approver', ou: 'ou-hcns', sku: 'VPP040', qty: 2 }, { who: 'staff', ou: 'ou-hcns', sku: 'VPP035', qty: 5 }, { who: 'kt', ou: 'ou-tckt', sku: 'VPP002', qty: 1 },
+    { who: 'Trần Văn Nam', ou: 'ou-nm', sku: 'VPP072', qty: 6, ret: 2 }],
+};
+const postings: Record<string, NonNullable<VppPosting['posted']>> = {};
+const history: Record<string, VppPosting['history']> = {};
+const whoName = (w: string) => PEOPLE[w as keyof typeof PEOPLE]?.name || w;
+const priceOf = (sku: string) => items.find(i => i.sku === sku)!.price;
+const deptCosts = (m: string) => {
+  const map = new Map<string | null, { name: string; issued: number; returned: number; people: Set<string>; n: number }>();
+  for (const x of ISSUES[m] || []) {
+    const d = map.get(x.ou) || { name: x.ou ? OU[x.ou] : 'Chưa có phòng ban', issued: 0, returned: 0, people: new Set<string>(), n: 0 };
+    d.issued += x.qty * priceOf(x.sku); d.returned += (x.ret || 0) * priceOf(x.sku); d.people.add(x.who); d.n++; map.set(x.ou, d);
+  }
+  return [...map.entries()].map(([orgUnitId, d]) => ({ orgUnitId, ...d }));
+};
+const postingOf = (m: string): VppPosting => {
+  const d = deptCosts(m); const live = d.reduce((s, x) => s + x.issued - x.returned, 0);
+  return { month: m, liveTotal: live, liveIssued: d.reduce((s, x) => s + x.issued, 0), liveReturned: d.reduce((s, x) => s + x.returned, 0),
+    closed: m < '2026-10', allocation: m === '2026-09' ? { code: 'PB-2609', status: 'draft' } : null, posted: postings[m] || null, history: history[m] || [] };
+};
+officeSupplyService.report = async m => {
+  await wait();
+  if (!(can.report || can.manage || can.keeper || as === 'kt')) throw Object.assign(new Error('VPP_REPORT_DENIED'), { code: '42501' });
+  const before = m > '2026-09' ? ISSUES['2026-09'] : [];
+  const mv = ISSUES[m] || [];
+  const xnt = items.map(i => {
+    const sum = (arr: typeof mv, f: (x: typeof mv[number]) => number) => arr.filter(x => x.sku === i.sku).reduce((s, x) => s + f(x), 0);
+    const openQty = m < '2026-09' ? 0 : i.stock + sum(before, x => (x.ret || 0) - x.qty);
+    const inQty = sum(mv, x => x.ret || 0); const outQty = sum(mv, x => x.qty); const closeQty = openQty + inQty - outQty;
+    const who = mv.filter(x => x.sku === i.sku).map(x => `${whoName(x.who)} ${x.qty - (x.ret || 0)}`).join(', ');
+    return { itemId: i.itemId, sku: i.sku, name: i.name, unit: i.unit, openQty, inQty, outQty, closeQty, openValue: openQty * i.price, inValue: inQty * i.price,
+      outValue: outQty * i.price, closeValue: closeQty * i.price, unitPrice: i.price, note: who || null };
+  });
+  const people = [...new Set(mv.map(x => x.who))].map(w => {
+    const mine = mv.filter(x => x.who === w);
+    return { userId: w, name: whoName(w), orgUnitName: mine[0].ou ? OU[mine[0].ou] : 'Chưa có phòng ban', requestCount: 1 + Math.floor(mine.length / 2),
+      requestedQty: mine.reduce((s, x) => s + x.qty, 0), issuedQty: mine.reduce((s, x) => s + x.qty - (x.ret || 0), 0),
+      value: mine.reduce((s, x) => s + (x.qty - (x.ret || 0)) * priceOf(x.sku), 0),
+      items: mine.map(x => { const it = items.find(i => i.sku === x.sku)!; return { name: it.name, unit: it.unit, requestedQty: x.qty, issuedQty: x.qty - (x.ret || 0), value: (x.qty - (x.ret || 0)) * it.price }; }) };
+  }).sort((a, b) => b.value - a.value);
+  const departments = deptCosts(m).map(d => ({ orgUnitId: d.orgUnitId, name: d.name, people: d.people.size, requestCount: d.n, requestedQty: mv.filter(x => x.ou === d.orgUnitId).reduce((s, x) => s + x.qty, 0),
+    issuedQty: mv.filter(x => x.ou === d.orgUnitId).reduce((s, x) => s + x.qty - (x.ret || 0), 0), issuedValue: d.issued, returnedValue: d.returned, value: d.issued - d.returned }))
+    .sort((a, b) => b.value - a.value);
+  const tot = (k: 'openValue' | 'inValue' | 'outValue' | 'closeValue') => xnt.reduce((s, r) => s + r[k], 0);
+  const posting = postingOf(m);
+  return { month: m, warehouseId: 'wh-vpp', warehouseName: 'Kho VPP Hưng Yên', firstMonth: '2026-09', can: { post: as === 'kt' || as === 'admin', reverse: as === 'kt' || as === 'admin' },
+    totals: { openValue: tot('openValue'), inValue: tot('inValue'), outValue: tot('outValue'), closeValue: tot('closeValue'), cost: posting.liveTotal, returned: posting.liveReturned,
+      requestCount: people.reduce((s, p) => s + p.requestCount, 0), issuedRequestCount: people.length }, xnt, people, departments, posting } satisfies VppReport;
+};
+officeSupplyService.postCosts = async input => {
+  await wait();
+  const p = postingOf(input.month);
+  if (p.posted) history[input.month] = [{ code: p.posted.code, status: 'reversed', total: p.posted.total, postedAt: p.posted.postedAt, postedByName: p.posted.postedByName,
+    reversedAt: new Date().toISOString(), reversedByName: me.name, reverseReason: input.reason || null }, ...(history[input.month] || [])];
+  postings[input.month] = { id: `p-${Date.now()}`, code: `CPVPP-${input.month.slice(2, 4)}${input.month.slice(5, 7)}${p.posted ? `-${(history[input.month] || []).length + 1}` : ''}`, total: p.liveTotal,
+    postedAt: new Date().toISOString(), postedByName: me.name, note: input.reason || null,
+    lines: deptCosts(input.month).map(d => ({ orgUnitId: d.orgUnitId, name: d.name, issuedValue: d.issued, returnedValue: d.returned, value: d.issued - d.returned, requestCount: d.n, people: d.people.size })) };
+  return postingOf(input.month);
+};
+officeSupplyService.reverseCosts = async input => {
+  await wait();
+  const p = postingOf(input.month);
+  if (p.posted) history[input.month] = [{ code: p.posted.code, status: 'reversed', total: p.posted.total, postedAt: p.posted.postedAt, postedByName: p.posted.postedByName,
+    reversedAt: new Date().toISOString(), reversedByName: me.name, reverseReason: input.reason }, ...(history[input.month] || [])];
+  delete postings[input.month];
+  return postingOf(input.month);
+};
+const entry = new URLSearchParams(location.search).get('tab') === 'report' ? `/vpp?tab=report&m=${new URLSearchParams(location.search).get('m') || '2026-09'}` : '/vpp';
+
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={['/vpp']}><ToastProvider><ConfirmProvider><OfficeSupplies /></ConfirmProvider></ToastProvider></MemoryRouter>,
+  <MemoryRouter initialEntries={[entry]}><ToastProvider><ConfirmProvider><OfficeSupplies /></ConfirmProvider></ToastProvider></MemoryRouter>,
 );

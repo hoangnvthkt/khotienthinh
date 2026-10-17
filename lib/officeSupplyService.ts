@@ -60,6 +60,28 @@ export type VppSettings = {
   departments: VppDepartment[]; people: Array<{ id: string; name: string }>;
 };
 
+export type VppXntRow = {
+  itemId: string; sku: string | null; name: string; unit: string;
+  openQty: number; inQty: number; outQty: number; closeQty: number;
+  openValue: number; inValue: number; outValue: number; closeValue: number; unitPrice: number; note: string | null;
+};
+export type VppPersonItem = { name: string; unit: string; requestedQty: number; issuedQty: number; value: number };
+export type VppPersonRow = { userId: string; name: string | null; orgUnitName: string; requestCount: number; requestedQty: number; issuedQty: number; value: number; items: VppPersonItem[] | null };
+export type VppDeptRow = { orgUnitId: string | null; name: string; people: number; requestCount: number; requestedQty: number; issuedQty: number; issuedValue: number; returnedValue: number; value: number };
+export type VppPostingLine = { orgUnitId: string | null; name: string; issuedValue: number; returnedValue: number; value: number; requestCount: number; people: number };
+export type VppPosting = {
+  month: string; liveTotal: number; liveIssued: number; liveReturned: number; closed: boolean;
+  allocation: { code: string; status: 'draft' | 'submitted' | 'confirmed' } | null;
+  posted: { id: string; code: string; total: number; postedAt: string; postedByName: string | null; note: string | null; lines: VppPostingLine[] | null } | null;
+  history: Array<{ code: string; status: string; total: number; postedAt: string; postedByName: string | null; reversedAt: string | null; reversedByName: string | null; reverseReason: string | null }>;
+};
+export type VppReport = {
+  month: string; warehouseId: string; warehouseName: string | null; firstMonth: string | null;
+  can: { post: boolean; reverse: boolean };
+  totals: { openValue: number; inValue: number; outValue: number; closeValue: number; cost: number; returned: number; requestCount: number; issuedRequestCount: number };
+  xnt: VppXntRow[]; people: VppPersonRow[]; departments: VppDeptRow[]; posting: VppPosting;
+};
+
 const MESSAGES: Record<string, string> = {
   AUTH_REQUIRED: 'Phiên đăng nhập đã hết. Đăng nhập lại để tiếp tục.',
   ROW_VERSION_CONFLICT: 'Phiếu vừa được người khác cập nhật. Đã tải lại, kiểm tra rồi làm lại.',
@@ -89,6 +111,13 @@ const MESSAGES: Record<string, string> = {
   VPP_MANAGE_DENIED: 'Cần quyền Quản trị VPP.',
   VPP_THRESHOLD_INVALID: 'Ngưỡng tiền chưa hợp lệ.',
   VPP_DEPUTY_SAME: 'Người duyệt thay phải khác người duyệt.',
+  VPP_REPORT_DENIED: 'Cần quyền Xem báo cáo VPP, thủ kho VPP hoặc quyền xem Tài chính.',
+  VPP_MONTH_INVALID: 'Tháng chưa hợp lệ.',
+  VPP_MONTH_OPEN: 'Tháng chưa kết thúc, chưa chốt được.',
+  VPP_COST_CHANGED: 'Số liệu vừa thay đổi. Đã tải lại, kiểm tra rồi chốt lại.',
+  VPP_POSTING_NOT_FOUND: 'Tháng này chưa có bản chốt. Đã tải lại.',
+  VPP_ALLOCATION_LOCKED: 'Phân bổ tháng này đã gửi chốt / đã chốt. Trả lại hoặc đảo phân bổ trước.',
+  FINANCE_RECORD_DENIED: 'Cần quyền Tài chính — Ghi nhận.',
 };
 
 export const vppErrorMessage = (error: unknown, fallback = 'Chưa thực hiện được. Thử lại sau.') => {
@@ -99,7 +128,7 @@ export const vppErrorMessage = (error: unknown, fallback = 'Chưa thực hiện 
 };
 export const isVppConflict = (error: unknown) => {
   const e = error as { code?: string; message?: string } | null;
-  return e?.code === 'PT409' || !!e?.message?.includes('ROW_VERSION_CONFLICT');
+  return e?.code === 'PT409' || !!e?.message?.includes('ROW_VERSION_CONFLICT') || !!e?.message?.includes('VPP_COST_CHANGED');
 };
 
 const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> => {
@@ -128,6 +157,9 @@ export const officeSupplyService = {
   saveSettings: (input: { expectedRowVersion: number; thresholdAmount: number; thresholdApproverId: string | null; fallbackApproverId: string | null;
     approvers: Array<{ orgUnitId: string; approverId: string | null; deputyId: string | null }> }) =>
     rpc<VppSettings>('save_office_supply_settings_v1', { p: input }),
+  report: (month: string) => rpc<VppReport>('get_office_supply_report_v1', { p: { month } }),
+  postCosts: (input: { month: string; expectedTotal: number; reason?: string | null }) => rpc<VppPosting>('post_office_supply_costs_v1', { p: input }),
+  reverseCosts: (input: { month: string; reason: string }) => rpc<VppPosting>('reverse_office_supply_costs_v1', { p: input }),
 
   async attachReceiptFiles(transactionId: string, files: File[], actorUserId: string) {
     const up = await uploadTransactionAttachments({ transactionId, actorUserId, files, existing: [] });
