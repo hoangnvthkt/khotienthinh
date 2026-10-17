@@ -195,10 +195,12 @@ export const ProactiveOrderEditor: React.FC<{
     if (!meta) return;
     if (meta.vatRate != null && String(meta.vatRate) !== vat) { setVat(String(meta.vatRate)); setHeaderTouched(true); }
     if (vendor || !(meta.vendorName || meta.vendorTaxCode)) return;
-    const query = meta.vendorTaxCode || (meta.vendorName || '').replace(/c[ôo]ng ty|tnhh|c[ổo] ph[ầa]n|\bcp\b|vi[ệe]t nam|th[ưu][ơo]ng m[ạa]i|d[ịi]ch v[ụu]|x[âa]y d[ựu]ng|s[ảa]n xu[ấa]t/gi, ' ').replace(/\s+/g, ' ').trim();
+    const core = (name: string) => name.replace(/c[ôo]ng ty|tnhh|c[ổo] ph[ầa]n|\bcp\b|vi[ệe]t nam|th[ưu][ơo]ng m[ạa]i|d[ịi]ch v[ụu]|x[âa]y d[ựu]ng|s[ảa]n xu[ấa]t/gi, ' ').replace(/\s+/g, ' ').trim();
+    const query = meta.vendorTaxCode || core(meta.vendorName || '');
     const found = query ? await procurementInboxService.vendors(query).catch(() => []) : [];
     const tax = (meta.vendorTaxCode || '').replace(/\D/g, '');
-    const best = (tax && found.find(v => (v.taxCode || '').replace(/\D/g, '') === tax)) || found.find(v => nameSimilarity(v.name, meta.vendorName || '') >= 0.5);
+    // So phần tên riêng ("HANAKA" ↔ "CÔNG TY TNHH HANAKA VIỆT NAM"), không để chữ chung kéo điểm.
+    const best = (tax && found.find(v => (v.taxCode || '').replace(/\D/g, '') === tax)) || found.find(v => nameSimilarity(core(v.name), core(meta.vendorName || '')) >= 0.5);
     if (best) { setVendor({ id: best.id, name: best.name }); toast.success('Đã chọn NCC theo báo giá', best.name); }
     else toast.info('Chưa tìm thấy NCC trên báo giá', `${meta.vendorName || meta.vendorTaxCode} — chọn NCC ở ô Nhà cung cấp.`);
   };

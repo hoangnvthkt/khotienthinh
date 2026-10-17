@@ -29,7 +29,8 @@ const HANAKA: QuoteRead = {
 describe('skill po_quote_lines (đọc báo giá NCC)', () => {
   const skill = SKILLS.po_quote_lines;
   const img = { mime: 'image/jpeg', b64: 'A'.repeat(400) };
-  it('nhận chữ dán hoặc 1–4 ảnh; có ảnh thì cổng gửi sang kết nối đọc ảnh', () => {
+  it('nhận chữ dán hoặc 1–4 ảnh; có ảnh thì cổng gửi sang kết nối đọc ảnh; chỉ chép nên tắt phần suy nghĩ', () => {
+    expect(skill.noThinking).toBe(true);
     expect(skill.parseInput({ text: 'Thép D10 CB500 21.490 kg x 14.930' })).toEqual({ text: 'Thép D10 CB500 21.490 kg x 14.930', pages: '0' });
     expect(skill.images!({ text: 'Thép D10 CB500 21.490 kg x 14.930' })).toEqual([]);
     expect(skill.parseInput({ images: [img, img] })).toEqual({ text: '', pages: '2' });
@@ -75,6 +76,9 @@ describe('báo giá → dòng đơn', () => {
       { level: 'warn', text: 'VAT ghi 56.341.045 đ, tính 10% ra 60.000.000 đ' },
     ]);
     expect(quoteChecks({ ...HANAKA, lines: [{ ...HANAKA.lines[0], amount: null }], vatRate: null })).toEqual([]);
+    // AI chép sai SL (21.490 đọc thành 24.190): lệch thật thì báo theo dòng; lệch do SL làm tròn (746 đ) thì không.
+    const misread = { ...HANAKA, lines: [{ ...HANAKA.lines[0], qty: 24190.1 }], subtotal: null };
+    expect(quoteChecks(misread)).toEqual([{ level: 'warn', text: 'Dòng 1 Thép D10 CB500: SL × đơn giá = 361.158.193 đ, thành tiền ghi 320.846.447 đ — kiểm SL / đơn giá' }]);
   });
 
   it('mác thép quyết định loại: CB500 là thép vằn (XD), CB240 là tròn trơn', () => {
