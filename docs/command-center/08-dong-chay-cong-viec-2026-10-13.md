@@ -389,3 +389,59 @@ cầm cọc) và bàn gia công uốn / cắt thép; nhà khung bê tông n tầ
 chưa đổ (DA29: "2.4.2 ván khuôn cột tầng 2 14% nhưng 2.3.3 đổ bê tông cột tầng 1 0%") — phần tử tầng trên không vẽ lơ lửng.
 
 Ảnh: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong}.jpg`.
+
+**XinHai theo phối cảnh và bảng hạng mục thật (15/10).** Chủ SP gửi phối cảnh 3D (4 ảnh: toàn khu, nhà nghỉ ca 3 góc) + bảng cơ cấu đất (50.156,9 m²: xây dựng
+26.902,6 · sân đường 10.715,4 · cây xanh 12.538,9) + bảng hạng mục. Dựng lại theo đó:
+- Mặt bằng xoay đúng phối cảnh: đường chính dọc mặt trước (phía tây), đường nhánh bên phải (phía nam), xưởng chạy song song đường chính, nhà máy hiện có
+  (giai đoạn 1) phía sau.
+- Kích thước: **Xưởng sản xuất chính + kho 8.110 m² → 60 × 135 m** (2 nhịp × 30 m, 18 bước cột × 7,5 m, 2 tầng sàn deck); **Nhà điều hành 2 tầng 1.161 m² →
+  36,3 × 32 m** ở đầu xa, sát xưởng; **Nhà nghỉ ca 3 tầng 288 m² → 18 × 16 m** ở đầu gần, trước mặt dài của xưởng (đúng ảnh 2–4).
+- Hạng mục chưa thi công hiện bóng mờ có tên + diện tích, bật / tắt cùng "Hình hoàn thành" và chỉ hiện nhãn khi lại gần: nhà xe công nhân 5C 844,2 m² (dọc rào
+  mặt trước) và 5D 294 m², nhà lán xe 99,8, hồ nước PCCC 235, cột cờ, nhà vệ sinh 6A 105,8 / 6B 110,7, phòng khí nén 52,5, phòng máy phát 66,3, trạm biến áp 36,7,
+  nhà nồi hơi 40,2, chòi hút thuốc 11, công viên cây xanh. Vị trí các nhà phụ là ước theo phối cảnh (cụm nhà nhỏ ở đầu xa gần nhà điều hành) — cần mặt bằng tổng thể
+  để đặt chính xác.
+
+Ảnh thay mới: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong,hang-muc-phu}.jpg`.
+
+**Mô hình thiết kế thật từ SketchUp (17/10).** Chủ SP gửi `TMB+NM_V1.skp` (SketchUp 2022, dựng từ Revit — có tên IFC: tường gạch 110/220, cửa, lan can kính,
+cầu thang thép, đèn, mái sảnh, tầng 1 → đỉnh mái; toàn bộ ở Layer0, chưa chia lớp) rồi xuất lại COLLADA `.dae` 73 MB + 52 ảnh vật liệu theo hướng dẫn.
+Chuyển đổi (scratchpad `conv/`, chạy trong Chrome không giao diện): ColladaLoader → xoay thẳng −14,33° theo trục khu đất → bỏ nhóm cây chi tiết (8 triệu tam giác,
+thay bằng bụi cây đơn giản theo đúng vị trí) → **tự tách theo nhà bằng vị trí** (nhóm gốc + toạ độ: nhà nghỉ ca, xưởng, nhà điều hành = phần đầu xưởng x > 57 m,
+nhà máy giai đoạn 1, nhà xe 5C/trước/góc, cổng, bảo vệ, nhà phụ phía đông, nền trong / ngoài vùng thi công, địa hình) → gộp theo nhà + loại IFC + tầng + bước cột
+(xưởng chia 18 bước để khớp 3 phân đoạn) → GLB, nén meshopt + lượng tử hoá; phần ngữ cảnh bỏ pháp tuyến / UV để hàn đỉnh và giảm tam giác (nhà nghỉ ca, nhà điều hành
+giữ đủ chi tiết). Kết quả `mockups/xinhai/xinhai.glb` **13,9 MB, 1,32 triệu tam giác, 718 khối**, tải ~9 s trong trình duyệt không GPU.
+
+Trên trang XinHai mô hình thiết kế thay cho hình khối tự dựng, nút 3 trạng thái: **Thiết kế: mờ** (mặc định — phần đã xong theo tiến độ hiện thật, phần chưa xong mờ,
+phần đang thi công vẫn là cột / thép / ván khuôn / máy / người theo nhật ký), **hoàn thiện** (toàn bộ như render, để trình chiếu), **ẩn**. Quy tắc "đã xong": nhà nghỉ
+ca / nhà điều hành theo tầng (xây tường tầng đó 100%), cửa theo đầu việc lắp cửa; xưởng theo phân đoạn (tôn mái + tôn thưng + xây tường của phân đoạn 100%);
+nhà xe / sân / cổng / nhà phụ / nền theo nhóm hạng mục 5–8. Nhà / phân đoạn đã hiện thật thì ẩn phần dựng tiến độ trùng chỗ. Nhà máy giai đoạn 1, đường, kênh,
+địa hình luôn hiện thật. BCH, đường đất, bãi vật tư, khu gia công là công trình tạm, không có trong thiết kế nên vẫn dựng tay. Bấm vào mô hình thật → bảng nhà đó.
+Toạ độ mọi nhà, máy, tổ đội, góc nhìn đã chuyển theo mô hình thật (đường chính phía trước, đường nhánh bên phải).
+
+Ảnh: `mockups/site-3d-xinhai-thiet-ke-{hom-nay,hoan-thien,nha-nghi-ca,nha-nghi-ca-hoan-thien,nha-van-phong-hoan-thien,mong-pd2}.jpg`.
+Việc tiếp: thép xưởng từ Tekla (IFC) để gắn tiến độ lắp dựng tới từng cấu kiện; chia lớp theo nhà / tầng ngay trong SketchUp thì bỏ được bước tách theo toạ độ;
+Sơn Miền Bắc làm tương tự khi có file.
+
+**Kết cấu thép Tekla + công nhân đi lại (17/10).** Chủ SP gửi `3D XIN HAI.ifc` (Tekla Structures 2017, IFC2X3, 88 MB, 1,2 triệu bản ghi). Đọc bằng web-ifc trong Node
+(scratchpad `conv/ifc2glb.mjs`): bỏ đinh chống cắt (28.682), bu lông / đai ốc / long đen, tôn bao và sê nô (đã có ở mô hình kiến trúc) → còn ~9.000 cấu kiện, 0,54 triệu
+tam giác → `mockups/xinhai/xinhai-tekla.glb` **1,1 MB**. Lưới trục Tekla 1 → 21 (trục 1 tại x = 0, trục 19 = 140 m là hết xưởng, trục 19–21 là khung mái nhà văn phòng),
+A → F cách 10,8 m (54 m) — khớp vỏ SketchUp 141,5 × 54,3 m khi dời (−84,5; −2,9), không cần lật. Cấu kiện chia **giai đoạn × bước trục**: bu lông neo (hiện khi thép
+móng của phân đoạn xong), cột (0–40% đầu việc 4.3.1), kèo / dầm (20–65%), giằng / xà gồ / ty (40–85%), tôn sàn deck (60–100%), cầu thang thép (80–100%); mỗi giai
+đoạn lắp dần từ đầu cổng vào. Khi có Tekla, thép tự dựng của xưởng tắt. Nút thiết kế thêm chế độ **khung thép** (ẩn vỏ xưởng / văn phòng, hiện toàn bộ Tekla).
+Bấm vào thép → giai đoạn, trục, đầu việc, % thực tế, kế hoạch. Hôm nay 4.3.1 = 0% (kế hoạch 23/10 → 26/11) nên chỉ hiện bu lông neo PĐ3.
+
+**Cần chủ SP kiểm tra — số liệu phân đoạn ngược trục?** Tekla: trục 1 ở đầu cổng (gần nhà nghỉ ca), trục 19–21 giáp nhà văn phòng. WBS ghi PĐ1 = trục 1–5, PĐ3 = trục 15–19.
+Ảnh flycam: đầu cổng đã lấp + lu nền, đầu giáp văn phòng mới đào. Vioo lại ghi PĐ3 (trục 15–19) xong móng 100%, PĐ1 (trục 1–5) mới đào 30% → hoặc công trường đánh
+số phân đoạn từ đầu văn phòng, hoặc đang nhập % nhầm phân đoạn. Mô hình đang theo **số liệu Vioo + ảnh** (đầu cổng = PĐ3).
+
+**Công nhân đi lại làm việc** (cả hai công trường): người có chân / tay xoay quanh hông / vai — bước đi, vung tay, dừng lại gõ búa 3–9 s rồi đi tiếp tới điểm khác trong
+khu làm việc; cứ 4 người có 1 người khuân vật tư (bó thép, tấm ván, bao xi măng) đi lại giữa bãi vật tư và chỗ làm. Khu làm việc theo việc ghi trong nhật ký: XinHai — buộc
+thép móng rải khắp PĐ2, lấp đất ở PĐ1, nhà nghỉ ca trên sàn, BCH; Sơn Miền Bắc giữ khu cũ (vòng bán kính theo số người). Tối đa 24 người / tổ.
+
+Ảnh: `mockups/site-3d-xinhai-{tekla-steel,tekla-steel-close,cong-nhan}.jpg`.
+
+**17/10 — chủ SP xác nhận trục 1 ở đầu cổng (Tekla đúng).** Mô hình đổi: PĐ1 = trục 1–5 ở đầu cổng, PĐ2 = trục 5–15, PĐ3 = trục 15–19 giáp nhà văn phòng; khung tự dựng của xưởng
+đặt đúng vị trí trục Tekla (bước không đều 8,2–8,5 m, khe lún trục 9–10). Vì mô hình hiển thị theo số liệu Vioo, hôm nay đầu giáp văn phòng (PĐ3) hiện móng đã lấp còn
+đầu cổng (PĐ1) mới đào — **ngược ảnh flycam** → bảng Nhà xưởng có kiểm tra tự động "Cần kiểm tra số liệu": phân đoạn kế hoạch làm sau mà ghi % cao hơn phân đoạn làm
+trước ≥ 40 điểm. Nhiều khả năng công trường nhập % của PĐ1 vào dòng PĐ3: cần BCH sửa trong Nhật ký (dùng điều chỉnh có duyệt #193), mô hình tự đúng theo.
+Ảnh `mockups/site-3d-xinhai-phan-doan-theo-truc.jpg`.
