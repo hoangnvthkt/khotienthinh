@@ -10,7 +10,7 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 |---|---|
 | **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), mặc định thu gọn — đầu nhóm có số việc và "N gấp"; bấm tên nhóm để mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
 | **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng) với **màn xử lý của module ngay tại chỗ** (duyệt / từ chối / sửa như ở module). Nút **Mở ở màn … ↗** góc trên chỉ khi muốn sang hẳn module. |
-| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | **Bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, cùng ô **Hỏi Trợ lý**. Xem mục "Tab Trợ lý". |
+| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | Khung chat: **bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, hỏi và hỏi tiếp, **Lịch sử** hội thoại. Xem mục "Tab Trợ lý". |
 
 ## Tab "Hôm nay"
 
@@ -26,17 +26,24 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 
 ## Tab "Trợ lý"
 
-Bản tin sáng, gọn trong một màn — mở ra là biết hôm nay làm gì trước và có gì bất thường:
+Tab Trợ lý là một khung chat. Khối đầu của hội thoại hôm nay là bản tin sáng, gọn trong một màn — mở ra là biết hôm nay làm gì trước và có gì bất thường:
 
 - **Câu đầu**: tổng việc chờ và số việc phải xong hôm nay (quá hạn + tới hạn hôm nay).
 - **Làm trước**: tối đa 3 việc theo hạn gần nhất — mã, việc cần làm (Duyệt / Làm / Xác nhận…), hạn (đỏ = quá hạn, cam = trong hôm nay). Bấm **Mở** là mở hồ sơ thành tab. Dòng **+ N việc khác** mở cột Việc của tôi.
 - **Đáng lo**: tối đa 3 điều bất thường của dự án đang xem (trễ tiến độ, PO quá ngày hẹn giao, mũi chưa gửi phiếu, đề xuất vật tư chờ duyệt…). Bấm **Xem** mở đúng màn.
-- **Hỏi Trợ lý**: nút hỏi nhanh (Dự án · Vật tư, đơn hàng · Tiền của dự án · Công, phép) hiện số liệu của nhóm đó, không cần AI. Khi quản trị đã bật khóa AI (Cài đặt → Cổng AI) có thêm ô hỏi tự do — Trợ lý chỉ trả lời từ số liệu của bạn, kèm nút mở chứng từ gốc — và nút **Tóm tắt** viết bản tin thành vài câu. Bấm 👍 / 👎 để chấm câu trả lời.
-- Trợ lý **chỉ đọc**: không có nút gửi, duyệt hay ghi sổ.
+
+Hỏi Trợ lý:
+
+- **Câu hỏi nhanh** (Dự án · Vật tư, đơn hàng · Tiền của dự án · Công, phép) hiện số liệu của nhóm đó, không cần AI.
+- Khi quản trị đã bật AI (Cài đặt → Kết nối, dòng **Trợ lý · hội thoại**), ô nhập ở đáy màn: gõ câu hỏi, **Enter** để gửi, **Shift+Enter** để xuống dòng. Câu trả lời chạy dần; bấm **■** để dừng. Mỗi ý có nút mở chứng từ / màn gốc; bấm 👍 / 👎 để chấm.
+- **Hỏi tiếp** ngay bên dưới: Trợ lý nhớ các lượt trước trong cùng hội thoại (ví dụ hỏi "Còn PO-116 thì sao?" sau câu trước).
+- **Lịch sử** mở lại các hội thoại cũ; **Hội thoại mới** quay về bản tin hôm nay. Hội thoại có tin trong hôm nay tự mở lại khi tải lại trang. Hội thoại chỉ chính bạn xem được, tự xóa sau 90 ngày không dùng.
+- Đợt này Trợ lý trả lời từ số liệu bản tin hôm nay; câu cần tra sâu hơn (tồn kho một mã, chi tiết một đơn…) Trợ lý sẽ nói chưa tra được và gợi ý màn nên mở.
+- Trợ lý **chỉ đọc**: không gửi, duyệt, trả lại, xóa hay ghi sổ gì — việc đó bạn tự làm ở màn gốc.
 
 ## Trên điện thoại
 
-Thanh dưới cùng có 3 nút: **Việc** · **Hôm nay** (hoặc **Hồ sơ** khi đang mở hồ sơ) · **Trợ lý** (bản tin hôm nay). Bấm một việc để mở; nút **Back** của điện thoại (hoặc "← Việc của tôi") quay về danh sách. Nút ☰ góc trái mở menu ứng dụng như thường.
+Thanh dưới cùng có 3 nút: **Việc** · **Hôm nay** (hoặc **Hồ sơ** khi đang mở hồ sơ) · **Trợ lý** (bản tin hôm nay + hỏi đáp, ô nhập ở đáy). Bấm một việc để mở; nút **Back** của điện thoại (hoặc "← Việc của tôi") quay về danh sách. Nút ☰ góc trái mở menu ứng dụng như thường.
 
 ## Cần biết
 

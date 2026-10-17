@@ -211,30 +211,76 @@ const saveLayout = (layout: CenterLayout): Promise<number> => new Promise(resolv
   resolve(layoutVersion);
 }, 30));
 
-// Tab Trợ lý: ?ai=gemini giả lập đã có khóa (hỏi tự do trả lời từ dòng số liệu, trích khóa); mặc định chưa có khóa (chỉ câu hỏi nhanh).
-// Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
+// Tab Trợ lý v2: ?ai=gemini giả lập đã có khóa (hội thoại chạy dần, trích khóa dòng số liệu); ?ai=fail lỗi giữa chừng; ?ai=quota hết lượt;
+// mặc định chưa có khóa (chỉ câu hỏi nhanh). ?threads=today|old gieo sẵn một hội thoại hôm nay / ngày cũ. Hội thoại lưu sessionStorage
+// (giả lập máy chủ) để tải lại trang vẫn mở lại được. Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
 const AI = params.get('ai') || 'off';
 const aiCalls: Array<Record<string, unknown>> = [];
 (window as unknown as { __aiCalls: typeof aiCalls }).__aiCalls = aiCalls;
 const aiStatus = (configured: boolean) => ({
   deployed: true, configured, provider: 'gemini' as const, providerSource: 'AI_PROVIDER' as const, models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
-  keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['center_question', 'morning_brief'],
+  keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['assistant_chat', 'morning_brief'],
   targets: { fast: null, reasoning: null },
 });
+type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: string[]; runId: string | null; accepted: boolean | null; createdAt: string }> };
+const THREADS_KEY = 'center-fixture-ai-threads';
+const loadThreads = (): FxThread[] => { try { return JSON.parse(sessionStorage.getItem(THREADS_KEY) || '[]'); } catch { return []; } };
+const saveThreads = (list: FxThread[]) => sessionStorage.setItem(THREADS_KEY, JSON.stringify(list));
+if (params.get('threads') && !sessionStorage.getItem(THREADS_KEY)) {
+  const at = params.get('threads') === 'old' ? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - 3, 9, 15) : new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate(), 7, 40);
+  const iso = at.toISOString();
+  saveThreads([{ id: '0d4c2f1e-8a5b-4c3d-9e2f-1a2b3c4d5e6f', title: 'PO nào sắp giao?', lastMessageAt: iso, messages: [
+    { id: 'm1', role: 'user', content: 'PO nào sắp giao?', sources: [], runId: null, accepted: null, createdAt: iso },
+    { id: 'm2', role: 'assistant', content: 'PO-116 hẹn giao 09/10 nhưng **đã quá hạn 2 ngày** [[item.po.po-116]].', sources: ['item.po.po-116'], runId: 'run-old', accepted: true, createdAt: iso },
+  ] }]);
+}
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const assistantHooks: AssistantHooks = {
-  status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI === 'gemini')), 40)),
-  ask: (question, facts, context) => new Promise(resolve => setTimeout(() => {
-    aiCalls.push({ skill: 'center_question', question, factLines: facts.split('\n').length, context });
-    const keys = facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
-    resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 60, costUsd: null, durationMs: 640 },
-      result: { answer: `Bạn có 7 việc trễ trên tiến độ SMB-2026 và 4 đề xuất vật tư chờ Phòng vật tư duyệt; PO-116 đã quá hạn 2 ngày. (giả lập cho "${question}")`, sources: keys } });
-  }, 120)),
+  status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
     aiCalls.push({ skill: 'morning_brief', factLines: facts.split('\n').length, context });
     resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 90, costUsd: null, durationMs: 700 },
       result: { brief: 'Sáng nay bạn có 11 việc chờ, trong đó PO-116 quá hạn 2 ngày và MR-2026-2688 cần duyệt trước 13h. Tiến độ SMB-2026 đạt 81% nhưng 7 việc đã trễ; 4 đề xuất vật tư đang chờ Phòng vật tư. Bạn chưa chấm công hôm nay.' } });
   }, 120)),
   feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+  listThreads: async () => { await sleep(30); return loadThreads().sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(({ messages, ...t }) => ({ ...t, messageCount: messages.length })); },
+  getThread: async id => {
+    await sleep(30);
+    const t = loadThreads().find(x => x.id === id);
+    if (!t) throw new Error('AI_THREAD_NOT_FOUND');
+    return { ...t, messageCount: t.messages.length };
+  },
+  chat: async (input, handlers, signal) => {
+    const runId = `run-${aiCalls.length + 1}`;
+    const prior = input.threadId ? loadThreads().find(t => t.id === input.threadId)?.messages.length || 0 : 0;
+    aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context });
+    await sleep(60);
+    if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };
+    handlers.onStart?.({ runId, model: 'gemini-2.5-pro' });
+    const keys = input.facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
+    const answer = prior
+      ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
+      : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`;
+    let sent = '';
+    for (const chunk of answer.match(/[\s\S]{1,9}/g) || []) {
+      if (signal?.aborted) return { code: 'AI_FAILED', runId, error: 'AI_ABORTED', partial: sent };
+      if (AI === 'fail' && sent.length > 30) return { code: 'AI_FAILED', runId, error: 'AI_HTTP_502', partial: sent };
+      await sleep(25);
+      sent += chunk;
+      handlers.onDelta(chunk);
+    }
+    const all = loadThreads();
+    // Giờ giả lập của fixture (NOW) + vài phút mỗi lượt: hội thoại vừa hỏi là "hôm nay" với màn hình.
+    const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+    let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+    if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+    const messageId = `msg-${aiCalls.length}`;
+    thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+      { id: messageId, role: 'assistant', content: answer, sources: keys, runId, accepted: null, createdAt: at });
+    thread.lastMessageAt = at;
+    saveThreads(all);
+    return { code: 'OK', runId, threadId: thread.id, messageId, answer, sources: keys, model: 'gemini-2.5-pro', saved: true };
+  },
 };
 
 const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone: () => void }> = ({ modal, onClose, onDone }) => (

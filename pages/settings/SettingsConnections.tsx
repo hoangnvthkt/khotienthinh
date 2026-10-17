@@ -137,7 +137,7 @@ const SettingsConnections: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'error'>('loading');
   const [error, setError] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null });
+  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null, 'ai.assistant': null });
   const [envs, setEnvs] = useState<EnvConnection[] | null>(null);
   const [envResults, setEnvResults] = useState<Record<string, ProbeResult | 'testing' | undefined>>({});
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -265,7 +265,7 @@ const SettingsConnections: React.FC = () => {
                     <div className="flex items-center gap-2">
                       {chosen && chosen.status === 'error' && <span className="text-xs font-semibold text-rose-700">kết nối đang lỗi</span>}
                       <select value={assignments[f.feature] || ''} onChange={e => assign(f.feature, e.target.value || null)} className={`${inputCls} min-w-56`} aria-label={f.label}>
-                        <option value="">Khóa trong Secrets (mặc định)</option>
+                        <option value="">{f.emptyLabel || 'Khóa trong Secrets (mặc định)'}</option>
                         {enabledConnections.map(c => <option key={c.id} value={c.id}>{c.name} · {kindLabelFull(c.kind)}</option>)}
                         {chosen && !chosen.enabled && <option value={chosen.id}>{chosen.name} (đang tắt)</option>}
                       </select>

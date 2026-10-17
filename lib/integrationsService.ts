@@ -3,7 +3,7 @@
 import { supabase } from './supabase';
 
 export type ConnectionKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
-export type ConnectionFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader';
+export type ConnectionFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant';
 
 export const KIND_OPTIONS: Array<{ kind: ConnectionKind; label: string; baseUrl: string; keyHint: string; modelHint: string }> = [
   { kind: 'anthropic', label: 'Anthropic (Claude)', baseUrl: 'https://api.anthropic.com', keyHint: 'sk-ant-…', modelHint: 'claude-haiku-5-5' },
@@ -28,9 +28,12 @@ export const presetOf = (kind: ConnectionKind, baseUrl: string): ConnectionPrese
   PRESETS.find(p => p.id !== p.kind && p.kind === kind && baseUrl.replace(/\/+$/, '').startsWith(p.baseUrl)) || PRESETS.find(p => p.id === kind)!;
 export const kindLabelFull = (kind: ConnectionKind) => KIND_OPTIONS.find(o => o.kind === kind)?.label || kind;
 
-export const FEATURES: Array<{ feature: ConnectionFeature; label: string }> = [
+/** emptyLabel: khi chưa gán kết nối thì tính năng dùng gì (mặc định khóa trong Secrets). */
+export const FEATURES: Array<{ feature: ConnectionFeature; label: string; emptyLabel?: string }> = [
   { feature: 'ai.fast', label: 'Trợ lý · model nhanh' },
   { feature: 'ai.reasoning', label: 'Trợ lý · model suy luận' },
+  // Trợ lý v2 (17/10): hội thoại ở tab Trợ lý; chủ SP chọn claude-sonnet-5-5.
+  { feature: 'ai.assistant', label: 'Trợ lý · hội thoại', emptyLabel: 'Như Trợ lý · model suy luận' },
   { feature: 'wms.doc_reader', label: 'Đọc ảnh chứng từ · Kho, Đề xuất' },
 ];
 
@@ -108,7 +111,7 @@ export const integrationsService = {
     const a = raw.assignments || {};
     return {
       connections: (raw.connections || []).map(parseConnection),
-      assignments: { 'ai.fast': a['ai.fast'] || null, 'ai.reasoning': a['ai.reasoning'] || null, 'wms.doc_reader': a['wms.doc_reader'] || null },
+      assignments: { 'ai.fast': a['ai.fast'] || null, 'ai.reasoning': a['ai.reasoning'] || null, 'wms.doc_reader': a['wms.doc_reader'] || null, 'ai.assistant': a['ai.assistant'] || null },
     };
   },
   async envConnections(): Promise<EnvConnection[]> {

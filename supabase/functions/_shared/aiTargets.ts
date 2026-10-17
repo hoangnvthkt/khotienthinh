@@ -4,7 +4,7 @@
 
 export type AiKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
 export type ModelClass = 'fast' | 'reasoning';
-export type AiFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader';
+export type AiFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant';
 
 export interface AiTarget {
   kind: AiKind;

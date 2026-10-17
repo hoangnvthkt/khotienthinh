@@ -655,7 +655,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
               </React.Suspense>
             </div>
           )}
-          {assistantMounted && <div {...panelProps(ASSISTANT_TAB.id)}>
+          {/* Trợ lý tự cuộn trong khung chat (ô nhập luôn ở đáy). */}
+          {assistantMounted && <div {...panelProps(ASSISTANT_TAB.id)} style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <AssistantView
               person={person}
               now={now}

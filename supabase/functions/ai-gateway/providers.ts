@@ -12,6 +12,7 @@ export type { ModelClass };
 export interface Usage { tokensIn: number | null; tokensOut: number | null }
 export interface Completion { text: string; usage: Usage }
 import type { ImagePart } from './images.ts';
+import { readSse } from './chat.ts';
 export type { ImagePart };
 export interface CompletionRequest {
   system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[];
@@ -124,3 +125,93 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
 
 export const complete = (target: AiTarget, req: CompletionRequest): Promise<Completion> =>
   target.kind === 'anthropic' ? withAnthropic(target, req) : target.kind === 'gemini' ? withGemini(target, req) : withOpenAI(target, req);
+
+// ── Trợ lý · hội thoại (T0): trả lời chạy dần. Chữ thường (không JSON), nhiều lượt. ─────────────────────────────────────────────
+export interface ChatRequest { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; maxTokens: number; noThinking?: boolean }
+/** Cả lượt (kể cả chờ model suy nghĩ) tối đa 110 s; cổng gửi nhịp giữ kết nối nên không chạm mốc 150 s không trả byte của Supabase. */
+const CHAT_TIMEOUT_MS = 110_000;
+
+async function streamAnthropic(t: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> {
+  const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
+  const stream = client.messages.stream(
+    { model: t.model, max_tokens: req.maxTokens, system: req.system, messages: req.messages },
+    { signal: AbortSignal.timeout(CHAT_TIMEOUT_MS) },
+  );
+  let text = '';
+  stream.on('text', delta => { text += delta; onDelta(delta); });
+  const final = await stream.finalMessage();
+  if (final.stop_reason === 'refusal') throw new Error('AI_REFUSED');
+  if (!text) throw new Error(emptyReplyError(final.stop_reason));
+  return { text, usage: { tokensIn: final.usage?.input_tokens ?? null, tokensOut: final.usage?.output_tokens ?? null } };
+}
+
+async function streamGemini(t: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> {
+  const res = await fetch(`${t.baseUrl}/v1beta/models/${encodeURIComponent(t.model)}:streamGenerateContent?alt=sse`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: req.system }] },
+      contents: req.messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+      generationConfig: { temperature: 0.3, maxOutputTokens: outputTokenCap(t.kind, req.maxTokens) },
+    }),
+  });
+  if (!res.ok || !res.body) throw new Error(`AI_HTTP_${res.status}`);
+  let text = ''; let finish: unknown = null; let blocked = false; let usage: Usage = { tokensIn: null, tokensOut: null };
+  await readSse(res.body, data => {
+    let j: Record<string, any>;
+    try { j = JSON.parse(data); } catch { return; }
+    if (j?.promptFeedback?.blockReason) blocked = true;
+    const candidate = j?.candidates?.[0];
+    const delta = (candidate?.content?.parts || []).map((p: { text?: string; thought?: boolean }) => (p.thought ? '' : p.text || '')).join('');
+    if (delta) { text += delta; onDelta(delta); }
+    if (candidate?.finishReason) finish = candidate.finishReason;
+    if (j?.usageMetadata) usage = { tokensIn: j.usageMetadata.promptTokenCount ?? null, tokensOut: j.usageMetadata.candidatesTokenCount ?? null };
+  });
+  if (blocked || finish === 'SAFETY') throw new Error('AI_REFUSED');
+  if (!text) throw new Error(emptyReplyError(finish === 'MAX_TOKENS' ? 'length' : finish));
+  return { text, usage };
+}
+
+async function streamOpenAI(t: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> {
+  if (!t.model) throw new Error('AI_MODEL_REQUIRED');
+  const compatible = t.kind === 'openai_compatible';
+  const cap = outputTokenCap(t.kind, req.maxTokens);
+  // Lần đầu xin cả số token và tắt suy nghĩ; cổng không nhận tham số lạ (400) thì gửi lại bản tối giản.
+  const send = (extras: boolean) => fetch(`${t.baseUrl}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+    body: JSON.stringify({
+      model: t.model, stream: true, messages: [{ role: 'system', content: req.system }, ...req.messages],
+      ...(compatible ? { max_tokens: cap } : { max_completion_tokens: cap }),
+      ...(extras ? { stream_options: { include_usage: true }, ...(compatible && req.noThinking ? { reasoning_effort: 'none' } : {}) } : {}),
+    }),
+  });
+  let res = await send(true);
+  if (res.status === 400) res = await send(false);
+  if (!res.ok || !res.body) throw new Error(`AI_HTTP_${res.status}`);
+  // Cổng bỏ qua stream → trả nguyên câu một lần.
+  if (!(res.headers.get('content-type') || '').includes('event-stream')) {
+    const data = await res.json();
+    if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
+    const whole = data?.choices?.[0]?.message?.content;
+    if (!whole) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
+    onDelta(whole);
+    return { text: whole, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
+  }
+  let text = ''; let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
+  await readSse(res.body, data => {
+    if (data === '[DONE]') return;
+    let j: Record<string, any>;
+    try { j = JSON.parse(data); } catch { return; }
+    const choice = j?.choices?.[0];
+    // Model suy nghĩ (deepseek…) gửi reasoning_content trước — không hiện cho người dùng.
+    const delta = choice?.delta?.content;
+    if (typeof delta === 'string' && delta) { text += delta; onDelta(delta); }
+    if (choice?.finish_reason) finish = choice.finish_reason;
+    if (j?.usage) usage = { tokensIn: j.usage.prompt_tokens ?? null, tokensOut: j.usage.completion_tokens ?? null };
+  });
+  if (finish === 'content_filter') throw new Error('AI_REFUSED');
+  if (!text) throw new Error(emptyReplyError(finish));
+  return { text, usage };
+}
+
+export const streamChat = (target: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> =>
+  target.kind === 'anthropic' ? streamAnthropic(target, req, onDelta) : target.kind === 'gemini' ? streamGemini(target, req, onDelta) : streamOpenAI(target, req, onDelta);
