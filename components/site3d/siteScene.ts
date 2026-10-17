@@ -44,7 +44,7 @@ const TEMPLATE = `
 <div class="s3d-card s3d-timeline">
   <button type="button" data-s3d="btnPlay">▶ Phát</button>
   <div class="s3d-date" data-s3d="dateText">—</div>
-  <div><input type="range" data-s3d="slider" min="0" step="1" aria-label="Ngày đang xem"><div class="s3d-ticks" data-s3d="ticks"></div></div>
+  <div class="s3d-track"><div class="s3d-range" data-s3d="slider" role="slider" tabindex="0" aria-label="Ngày đang xem" aria-valuemin="0"><i class="s3d-range-fill"></i><i class="s3d-range-thumb"></i></div><div class="s3d-ticks" data-s3d="ticks"></div></div>
   <button type="button" data-s3d="btnToday">Hôm nay</button>
 </div>
 <div class="s3d-card s3d-hud" data-s3d="hud">
@@ -1243,7 +1243,19 @@ export function createSiteScene(opts) {
     }
   });
   const slider = $('slider'), dateText = $('dateText'), btnPlay = $('btnPlay'), btnPlay2 = $('btnPlay2');
-  slider.max = String(TODAY); slider.value = String(TODAY);
+  // Thanh trượt tự dựng: <input type="range"> làm tiến trình GPU của WebKit (bản Playwright, macOS 26) quay 100% CPU mãi (17/10).
+  slider.setAttribute('aria-valuemax', String(TODAY));
+  const fill = slider.querySelector('.s3d-range-fill'), thumb = slider.querySelector('.s3d-range-thumb');
+  const paintSlider = d => { const f = `${(d / TODAY) * 100}%`; fill.style.width = f; thumb.style.left = f; slider.setAttribute('aria-valuenow', String(d)); slider.setAttribute('aria-valuetext', ddy(d)); };
+  const slideTo = d => { setPlaying(false); setFinished(false, false); if (Math.round(d) !== DAY) setDay(d); };
+  const dayAt = x => { const r = slider.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(1, (x - r.left) / Math.max(1, r.width))) * TODAY); };
+  slider.addEventListener('pointerdown', e => { slider.setPointerCapture?.(e.pointerId); slider.focus({ preventScroll: true }); slideTo(dayAt(e.clientX)); });
+  slider.addEventListener('pointermove', e => { if (slider.hasPointerCapture?.(e.pointerId)) slideTo(dayAt(e.clientX)); });
+  slider.addEventListener('keydown', e => {
+    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -7, PageUp: 7 }[e.key];
+    if (step) slideTo(Math.max(0, Math.min(TODAY, DAY + step))); else if (e.key === 'Home') slideTo(0); else if (e.key === 'End') slideTo(TODAY); else return;
+    e.preventDefault();
+  });
   btnPlay.title = `Phát tiến độ từ ${ddy(0)}`;
   { // Mốc đầu tháng trên thanh thời gian (thưa dần khi dự án dài).
     const marks = []; const s = dateOf(0); for (let y = s.getUTCFullYear(), m = s.getUTCMonth(); ; m += 1) { const ms = Date.UTC(y, m, 1), d = Math.round((ms - D0) / 86400000); if (d > TODAY) break; if (d >= 0) marks.push(d); if (marks.length > 40) break; }
@@ -1255,7 +1267,7 @@ export function createSiteScene(opts) {
   function setPlaying(on) { playing = on; btnPlay.textContent = on ? '⏸ Dừng' : '▶ Phát'; btnPlay2.textContent = on ? '⏸ Dừng tiến độ' : '▶ Phát tiến độ'; if (on) invalidate(); }
   const PLAN_END = (() => { let m = -Infinity; for (const x of Object.values(TASK)) if (x.pe != null && x.pe > m) m = x.pe; return Number.isFinite(m) ? m : null; })();
   function setDay(d) {
-    DAY = Math.max(0, Math.min(TODAY, Math.round(d))); slider.value = String(DAY);
+    DAY = Math.max(0, Math.min(TODAY, Math.round(d))); paintSlider(DAY);
     const txt = FINISHED ? `Khi hoàn thiện${PLAN_END != null ? ` · kế hoạch xong ${ddy(PLAN_END)}` : ''}` : `${wd(DAY)} ${ddy(DAY)}${DAY === TODAY ? ' · hôm nay' : ''}`;
     dateText.textContent = txt; $('hudDate').textContent = txt;
     for (const u of UPDATERS) u(DAY);
@@ -1279,7 +1291,6 @@ export function createSiteScene(opts) {
         return `<div class="s3d-row"><span>${esc(b.name)}</span><b>${pct(a)} <small style="color:#737373;font-weight:500">${end != null ? `· xong ${dd(end)}` : ''}</small></b></div>`; }).join('')}` : ''}
       <p style="margin:10px 0 0"><button type="button" class="s3d-link" data-unfinish>← Về tiến độ thực tế</button></p>`;
   }
-  slider.addEventListener('input', () => { setPlaying(false); setFinished(false, false); setDay(Number(slider.value)); });
   const togglePlay = () => { const on = !playing; setFinished(false, false); if (on && DAY >= TODAY) setDay(0); setPlaying(on); };
   btnPlay.onclick = togglePlay; btnPlay2.onclick = togglePlay;
   $('btnToday').onclick = () => { setPlaying(false); setFinished(false, false); setDay(TODAY); };
@@ -1465,8 +1476,11 @@ export function createSiteScene(opts) {
   controls.addEventListener('change', () => invalidate());
 
   /* ───────── Vòng vẽ ───────── */
+  // Bản nhẹ (điện thoại / máy yếu): tối đa 30 khung / giây khi đang chuyển động — đỡ nóng máy, hao pin.
+  const minFrameMs = HIGH ? 0 : 32;
   function tick(now) {
     raf = 0; if (disposed || !active) return;
+    if (minFrameMs && lastTs && now - lastTs < minFrameMs) { raf = requestAnimationFrame(tick); return; }
     inTick = true;
     const dt = lastTs ? Math.min((now - lastTs) / 1000, 0.05) : 1 / 60; lastTs = now; frameNo += 1;
     let busy = false;

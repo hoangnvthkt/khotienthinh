@@ -1,5 +1,5 @@
 /* Công trường 3D (Trung tâm điều hành). Bản gốc: docs/command-center/mockups/site-3d.html. Mọi lớp nằm dưới .s3d-frame. */
-.s3d-frame { position: relative; height: 100%; min-height: 520px; overflow: hidden; background: #dbe7f1; container-type: inline-size; isolation: isolate; }
+.s3d-frame { position: relative; height: 100%; min-height: 360px; overflow: hidden; background: #dbe7f1; container-type: inline-size; isolation: isolate; }
 .s3d-frame:fullscreen { width: 100vw; height: 100vh; min-height: 0; }
 .s3d-frame:-webkit-full-screen { width: 100vw; height: 100vh; min-height: 0; }
 /* Trình duyệt không cho toàn màn hình (iPhone): phủ kín khung nhìn. */
@@ -56,7 +56,12 @@
 .s3d-views { left: 344px; right: 324px; top: 12px; padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .s3d-timeline { left: 12px; right: 12px; bottom: 12px; padding: 8px 14px; display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: center; }
 .s3d-date { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 132px; }
-.s3d-timeline input[type="range"] { width: 100%; accent-color: var(--s3d-accent); }
+.s3d-range { position: relative; height: 22px; cursor: pointer; touch-action: none; outline: none; }
+.s3d-range::before { content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 4px; border-radius: 999px; background: #e5e7eb; }
+.s3d-range-fill { position: absolute; left: 0; top: 9px; height: 4px; border-radius: 999px; background: var(--s3d-accent); }
+.s3d-range-thumb { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: #fff; border: 2px solid var(--s3d-accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.s3d-range:focus-visible .s3d-range-thumb { outline: 2px solid #0f766e; outline-offset: 2px; }
+.dark .s3d-range::before { background: #343a42; }
 .s3d-ticks { position: relative; height: 12px; margin-top: -2px; font-size: 10px; color: var(--s3d-muted); }
 .s3d-ticks span { position: absolute; transform: translateX(-50%); }
 .s3d-legend { display: grid; gap: 3px; font-size: 11px; color: #444; margin-top: 10px; border-top: 1px solid #f0f0f0; padding-top: 8px; }
@@ -98,12 +103,23 @@
   .s3d-right { top: auto; bottom: 128px; max-height: 34%; width: min(300px, calc(100% - 24px)); }
 }
 @container (max-width: 700px) {
-  .s3d-left { max-height: 46%; }
-  .s3d-right { bottom: 128px; left: 12px; right: 12px; width: auto; max-height: 30%; }
-  .s3d-timeline { grid-template-columns: auto 1fr auto; gap: 8px; padding: 8px 10px; }
-  .s3d-date { min-width: 0; font-size: 13px; grid-column: 1 / -1; }
-  .s3d-presenting .s3d-hud { min-width: 0; right: 16px; bottom: 64px; }
-  .s3d-present { left: 16px; }
+  /* Điện thoại: thời gian 2 hàng (Phát · ngày · Hôm nay / thanh trượt), nút góc nhìn một hàng cuộn ngang ngay trên. */
+  .s3d-timeline { left: 8px; right: 8px; bottom: 8px; grid-template-columns: auto 1fr auto; grid-template-areas: "play date today" "track track track"; gap: 4px 8px; padding: 8px 10px 6px; }
+  .s3d-timeline > [data-s3d="btnPlay"] { grid-area: play; }
+  .s3d-timeline > [data-s3d="btnToday"] { grid-area: today; }
+  .s3d-timeline > .s3d-track { grid-area: track; }
+  .s3d-date { grid-area: date; min-width: 0; font-size: 13px; text-align: center; align-self: center; }
+  .s3d-views, .s3d-noinfo .s3d-views { left: 8px; right: 8px; bottom: 96px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 5px; }
+  .s3d-views::-webkit-scrollbar { display: none; }
+  .s3d-views > *, .s3d-views button { flex: none; }
+  .s3d-tools { top: 8px; right: 8px; }
+  .s3d-left { left: 8px; top: 50px; width: calc(100% - 16px); max-height: 36%; }
+  .s3d-right { top: auto; bottom: 146px; left: 8px; right: 8px; width: auto; max-height: 26%; }
+  .s3d-label { font-size: 10px; padding: 2px 5px; }
+  .s3d-label small, .s3d-label.team, .s3d-label.mach { display: none; }
+  .s3d-presenting .s3d-hud { left: 8px; right: 8px; bottom: 60px; min-width: 0; padding: 10px 12px; }
+  .s3d-presenting .s3d-present { left: 8px; right: 8px; bottom: 8px; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .s3d-presenting .s3d-present > button { flex: none; }
 }
 
 /* Nền tối của ứng dụng: thẻ tối, khung cảnh 3D giữ trời sáng như bản đồ. */

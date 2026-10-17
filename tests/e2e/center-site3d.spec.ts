@@ -52,6 +52,14 @@ test("người xem: tiến độ, ẩn thông tin, xem hoàn thiện, trình chi
   await expect(tool(page, "hud")).toBeHidden();
   await expect(left).toBeVisible();
   expect(await call<boolean>(page, "motion")).toBe(false);
+  // Thanh thời gian (tự dựng, dùng được bằng phím): Home về ngày đầu, End về hôm nay.
+  const slider = page.getByRole("slider", { name: "Ngày đang xem" });
+  await slider.focus();
+  await page.keyboard.press("Home");
+  await expect(tool(page, "dateText")).not.toContainText("hôm nay");
+  await expect(slider).toHaveAttribute("aria-valuenow", "0");
+  await page.keyboard.press("End");
+  await expect(tool(page, "dateText")).toContainText("17/10/2026 · hôm nay");
   // Đổi công trường giữ được trong tab.
   await page.locator('[data-site="SMB-2026"]').click();
   await expect(tool(page, "title")).toHaveText("Công trường Sơn Miền Bắc");
