@@ -249,8 +249,94 @@ const poQuoteLines: SkillDef = {
   summary: (input, output) => `báo giá ${input.pages} ảnh + ${input.text.length} ký tự → ${(output.lines as unknown[]).length} dòng`,
 };
 
+// Nhật ký · Dán báo cáo Zalo / chụp sổ → nhật ký nháp (chủ SP 16–17/10/2026, PR-2). Báo cáo có thể nhiều ngày; AI chỉ chọn mã trong
+// danh sách hạng mục máy gửi (cửa sổ kế hoạch quanh ngày báo cáo), máy kiểm lại mã có thật. Không tự ghi tiến độ: KL / % chỉ khi báo cáo ghi số.
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const reportInput = (raw: unknown) => {
+  const o = asObject(raw);
+  const text = clampText(o.text, 8000).trim();
+  const images = Array.isArray(o.images) && o.images.length ? mrImages(raw) : [];
+  if (!images.length && text.length < 10) throw new Error('AI_BAD_INPUT');
+  const reportDate = String(o.reportDate || '').slice(0, 10);
+  if (!DAY_RE.test(reportDate)) throw new Error('AI_BAD_INPUT');
+  const tasks = clampText(o.tasks, 20000).trim();
+  if (tasks.length < 5) throw new Error('AI_BAD_INPUT');
+  return { text, images, reportDate, tasks, areas: clampText(o.areas, 2000).trim(), crews: clampText(o.crews, 2000).trim(), hints: clampText(o.hints, 4000).trim() };
+};
+const REPORT_WORK_SCHEMA = { type: 'object', additionalProperties: false, required: ['text', 'taskCodes', 'location', 'quantity', 'unit', 'percent', 'confidence', 'reason'], properties: {
+  text: { type: 'string' }, taskCodes: { type: 'array', items: { type: 'string' } }, location: { type: ['string', 'null'] },
+  quantity: { type: ['number', 'null'] }, unit: { type: ['string', 'null'] }, percent: { type: ['number', 'null'] },
+  confidence: { type: 'string', enum: ['high', 'low'] }, reason: { type: ['string', 'null'] },
+} };
+const REPORT_SECTION_SCHEMA = { type: 'object', additionalProperties: false, required: ['area', 'crews', 'works'], properties: {
+  area: { type: ['string', 'null'] },
+  crews: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'canonical', 'people'], properties: {
+    name: { type: 'string' }, canonical: { type: ['string', 'null'] }, people: { type: ['number', 'null'] } } } },
+  works: { type: 'array', items: REPORT_WORK_SCHEMA },
+} };
+const dailyLogFromReport: SkillDef = {
+  code: 'daily_log_from_report',
+  maxInputChars: 20000,
+  maxOutputTokens: 6000,
+  parseInput: raw => { const r = reportInput(raw); return { text: r.text, pages: String(r.images.length), reportDate: r.reportDate, tasks: r.tasks, areas: r.areas, crews: r.crews, hints: r.hints }; },
+  images: raw => reportInput(raw).images,
+  noThinking: true,
+  system: 'Chuyển báo cáo công việc của công trường (tin Zalo, sổ viết tay, ảnh chụp; viết tắt, không dấu) thành nhật ký nháp. Báo cáo có thể gồm NHIỀU NGÀY: tách theo ngày ghi trong báo cáo ("Báo cáo ngày 15/10", "Ngày 16/10", "15/10:"); phần không ghi ngày thì dùng ngày báo cáo được cho. Mỗi ngày tách theo khối nhà / khu vực thi công (mũi): area = đúng tên trong danh sách mũi nếu là cùng khu vực, khác thì ghi tên như báo cáo. crews: tổ đội và số người như báo cáo; canonical = tên trong danh sách tổ quen nếu chắc là cùng một tổ (VD "Mr Ích" = "Tổ Đỗ Duy Ích"), không chắc thì null. works: mỗi dòng việc của báo cáo là một phần tử, text giữ chữ gốc. taskCodes: mã hạng mục trong danh sách kế hoạch ứng với việc — một dòng có thể nhiều mã (VD "cofa cổ cột, dầm chân tường"); CHỈ dùng mã có trong danh sách, không bịa; ưu tiên đúng khối nhà / phân đoạn / trục, đang trong kế hoạch quanh ngày báo cáo, chưa xong 100%; không có mã phù hợp thì [] (việc phát sinh). location: trục / vị trí nếu có. quantity + unit chỉ khi báo cáo ghi khối lượng; percent chỉ khi ghi % hoàn thành; không đoán. confidence "low" khi không chắc, kèm reason ngắn. Từ ngữ công trường: cofa / coppha / cốp pha / cốt pha = ván khuôn; GCLD / SXLD / GC LD = gia công (sản xuất) lắp dựng; BT = bê tông; đá base = đắp đá Base; Ubot / U-boot = hộp nhựa sàn; hàng lang = hành lang; ngthu / NT = nghiệm thu (công tác nghiệm thu của việc nào thì gắn mã việc đó); "trục F6-->F16" = trục 6 đến 16. Cách gọi đã xác nhận (nếu có) là đúng — dùng lại. weather, issues (sự cố, vướng mắc), nextDayPlan (kế hoạch ngày mai) nếu báo cáo ghi. warnings: tối đa 5 câu ngắn — hạng mục kế hoạch đã 100% mà vẫn làm, việc không có trong kế hoạch, chữ mờ.',
+  user: input => [
+    `Ngày báo cáo: ${input.reportDate}`,
+    wrapData('danh_sach_hang_muc', `mã | khối › nhóm › việc | kế hoạch | %\n${input.tasks}`),
+    input.areas ? wrapData('mui_thi_cong', input.areas) : '',
+    input.crews ? wrapData('to_doi_quen', input.crews) : '',
+    input.hints ? wrapData('cach_goi_da_xac_nhan', input.hints) : '',
+    input.text ? wrapData('bao_cao', input.text) : '',
+    Number(input.pages) ? `Ảnh: ${input.pages} trang báo cáo.` : '',
+    'Trả JSON: {"days": [{"date": "YYYY-MM-DD", "sections": [{"area": null, "crews": [{"name": "<tổ>", "canonical": null, "people": null}], "works": [{"text": "<dòng việc gốc>", "taskCodes": [], "location": null, "quantity": null, "unit": null, "percent": null, "confidence": "high", "reason": null}]}], "weather": null, "issues": [], "nextDayPlan": null}], "warnings": []}',
+  ].filter(Boolean).join('\n'),
+  schema: {
+    type: 'object', additionalProperties: false, required: ['days', 'warnings'],
+    properties: {
+      days: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['date', 'sections', 'weather', 'issues', 'nextDayPlan'], properties: {
+        date: { type: ['string', 'null'] }, sections: { type: 'array', items: REPORT_SECTION_SCHEMA }, weather: { type: ['string', 'null'] },
+        issues: { type: 'array', items: { type: 'string' } }, nextDayPlan: { type: ['string', 'null'] } } } },
+      warnings: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(raw);
+    const bounded = (v: unknown, max: number) => { const n = numOrNull(v); return n != null && n <= max ? n : null; };
+    const days = (Array.isArray(o.days) ? o.days : []).slice(0, 14).map(d => {
+      const day = asObject(d); const date = strOrNull(day.date, 10);
+      return {
+        date: date && DAY_RE.test(date) ? date : null,
+        sections: (Array.isArray(day.sections) ? day.sections : []).slice(0, 10).map(s => {
+          const sec = asObject(s);
+          return {
+            area: strOrNull(sec.area, 80),
+            crews: (Array.isArray(sec.crews) ? sec.crews : []).slice(0, 10).flatMap(c => {
+              const crew = asObject(c); const name = strOrNull(crew.name, 80);
+              return name ? [{ name, canonical: strOrNull(crew.canonical, 80), people: bounded(crew.people, 2000) }] : [];
+            }),
+            works: (Array.isArray(sec.works) ? sec.works : []).slice(0, 40).flatMap(w => {
+              const work = asObject(w); const text = strOrNull(work.text, 300);
+              if (!text) return [];
+              return [{
+                text, taskCodes: strings(work.taskCodes, 5).filter(c => /^[0-9A-Za-z][0-9A-Za-z.\-_]{0,29}$/.test(c)),
+                location: strOrNull(work.location, 120), quantity: numOrNull(work.quantity), unit: strOrNull(work.unit, 20),
+                percent: bounded(work.percent, 100), confidence: work.confidence === 'low' ? 'low' : 'high', reason: strOrNull(work.reason, 200),
+              }];
+            }),
+          };
+        }).filter(sec => sec.works.length || sec.crews.length),
+        weather: strOrNull(day.weather, 60), issues: strings(day.issues, 10).map(x => x.slice(0, 300)), nextDayPlan: strOrNull(day.nextDayPlan, 1000),
+      };
+    }).filter(day => day.sections.length);
+    return { days, warnings: strings(o.warnings, 5).map(w => w.slice(0, 240)) };
+  },
+  summary: (input, output) => `báo cáo ${input.pages} ảnh + ${input.text.length} ký tự, ${input.tasks.split('\n').length} hạng mục → ${(output.days as unknown[]).length} ngày`,
+};
+
 export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
   [poReviewBrief.code]: poReviewBrief, [mrTextLines.code]: mrTextLines, [mrPhotoLines.code]: mrPhotoLines,
-  [poQuoteLines.code]: poQuoteLines,
+  [poQuoteLines.code]: poQuoteLines, [dailyLogFromReport.code]: dailyLogFromReport,
 };
