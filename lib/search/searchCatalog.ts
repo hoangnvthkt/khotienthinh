@@ -35,6 +35,7 @@ export const ROUTE_KEYWORDS: Record<string, string> = {
   '/finance/requests': 'de nghi chi de nghi thanh toan tam ung',
   '/finance/settings': 'quan tri tai chinh cau hinh ma tran duyet',
   '/site-fund': 'quy cong truong tien mat cong truong',
+  '/vpp': 'van phong pham vpp giay but ghim de xuat cap phat',
   '/hrm/checkin': 'cham cong vao ca ra ca gps',
   '/hrm/attendance': 'cham cong bang cham cong di muon ve som cham bu',
   '/hrm/leave': 'nghi phep don nghi phep nam',
@@ -90,6 +91,7 @@ export const EXTRA_PAGES: Array<{ route: string; title: string; context: string 
   { route: '/settings', title: 'Cài đặt', context: 'Hệ thống' },
   { route: '/audit-trail', title: 'Nhật ký thay đổi', context: 'Hệ thống' },
   { route: '/site-fund', title: 'Quỹ công trường', context: 'Tài chính' },
+  { route: '/vpp', title: 'Văn phòng phẩm', context: 'Vật tư' },
   { route: '/finance/requests', title: 'Đề nghị chi', context: 'Tài chính' },
 ];
 
@@ -198,6 +200,7 @@ export const quickActionDefs = (now: Date): QuickActionDef[] => [
   { id: 'count', title: 'Kiểm kê kho', subtitle: 'Đếm và đối chiếu tồn', context: 'Vật tư', keywords: 'kiem ke kho dem hang doi chieu ton', gate: '/audit', route: '/audit' },
   { id: 'new-code', title: 'Đề xuất mã vật tư mới', subtitle: 'Cấp mã cho vật tư chưa có', context: 'Vật tư', keywords: 'cap ma vat tu moi tao ma de xuat ma', gate: '/material-code-requests', route: '/material-code-requests' },
   { id: 'work-plan', title: 'Kế hoạch tuần', subtitle: 'Chọn dự án rồi lập kế hoạch tuần này', context: 'Dự án', keywords: 'ke hoach tuan lich thi cong', gate: '/da', needsProject: { tab: 'work_plan', extra: { period: 'week', start: mondayOf(now) } } },
+  { id: 'vpp', title: 'Đề xuất VPP', subtitle: 'Xin giấy, bút, ghim… từ Kho VPP', context: 'Vật tư', keywords: 'van phong pham vpp de xuat giay but ghim', gate: '/vpp', route: '/vpp' },
   { id: 'site-fund', title: 'Chi quỹ công trường', subtitle: 'Ghi chi tiền mặt ở công trường', context: 'Tài chính', keywords: 'quy cong truong chi tien mat', gate: '/site-fund', route: '/site-fund' },
   { id: 'feedback', title: 'Gửi góp ý / báo lỗi', subtitle: 'Gửi cho đội phát triển', context: 'Góp ý', keywords: 'gop y bao loi feedback y kien', gate: '/feedback', route: '/feedback' },
   { id: 'theme', title: 'Đổi nền sáng / tối', subtitle: 'Giao diện dễ nhìn hơn', context: 'Giao diện', keywords: 'giao dien toi sang dark mode light mode nen', gate: '/', command: 'toggle-theme' },

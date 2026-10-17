@@ -4,7 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 // có quyền mới thấy tab → xem tiến độ → Ẩn thông tin → Xem hoàn thiện → Trình chiếu (Esc thoát); Admin tải mô hình lên;
 // đứng yên thì cảnh không vẽ thêm khung nào (vẽ theo yêu cầu, docs/ui/VIOO-UI-UX.md mục 6).
 const base = "/tests/center/fixture.html";
-type Debug = { frames: () => number; finished: () => boolean; presenting: () => boolean; infoHidden: () => boolean; motion: () => boolean; real: () => { loaded: boolean; meshes: number; tekla: number } };
+type Debug = { frames: () => number; finished: () => boolean; presenting: () => boolean; infoHidden: () => boolean; motion: () => boolean; hq: () => boolean; softwareGl: () => boolean; real: () => { loaded: boolean; meshes: number; tekla: number } };
 const ready = (page: Page) => page.waitForFunction(() => !!(window as unknown as { __site3d?: unknown }).__site3d, null, { timeout: 60_000 });
 const call = <T,>(page: Page, name: keyof Debug) => page.evaluate(n => (window as unknown as { __site3d: Record<string, () => unknown> }).__site3d[n](), name) as Promise<T>;
 const tool = (page: Page, id: string) => page.locator(`[data-s3d="${id}"]`);
@@ -63,6 +63,31 @@ test("người xem: tiến độ, ẩn thông tin, xem hoàn thiện, trình chi
   // Đổi công trường giữ được trong tab.
   await page.locator('[data-site="SMB-2026"]').click();
   await expect(tool(page, "title")).toHaveText("Công trường Sơn Miền Bắc");
+});
+
+test("Chất lượng cao: bật / tắt, đứng yên vẫn không vẽ, trình chiếu tự bật rồi trả lại", async ({ page }, info) => {
+  test.skip(info.project.name.includes("phone"), "chỉ máy tính");
+  await page.goto(`${base}?site3d=viewer&view=site3d`);
+  await ready(page);
+  const btn = tool(page, "btnHq");
+  await expect(btn).toBeVisible();
+  await btn.click();
+  await expect(btn).toHaveAttribute("aria-pressed", "true");
+  expect(await call<boolean>(page, "hq")).toBe(true);
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(1500);
+  const before = await call<number>(page, "frames");
+  await page.waitForTimeout(1500);
+  expect(await call<number>(page, "frames"), "chất lượng cao đứng yên cũng không vẽ lại").toBe(before);
+  await btn.click();
+  expect(await call<boolean>(page, "hq")).toBe(false);
+  // Trình chiếu trên máy tính tự bật chất lượng cao (trừ khi vẽ bằng phần mềm như Chrome headless); thoát thì trả về như trước.
+  await tool(page, "btnPresent").click();
+  await expect(tool(page, "hud")).toBeVisible();
+  expect(await call<boolean>(page, "hq")).toBe(!(await call<boolean>(page, "softwareGl")));
+  await page.keyboard.press("Escape");
+  await expect(tool(page, "hud")).toBeHidden();
+  expect(await call<boolean>(page, "hq")).toBe(false);
 });
 
 test("đứng yên thì không vẽ thêm khung nào", async ({ page }, info) => {
