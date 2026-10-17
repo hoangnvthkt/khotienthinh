@@ -33,5 +33,13 @@ export const CENTER_PERMISSION_APPLICATION: PermissionApplicationDefinition = {
       sortOrder: 30,
       actions: [{ action: 'view', label: 'Xem dòng chảy công việc toàn công ty', permissionCode: 'center.flow.view', scopeTypes: ['global'], sortOrder: 1 }],
     },
+    {
+      // Khớp migration 20261017220000_center_site3d_v1. Admin luôn xem; người khác do Admin cấp từng người (không nằm trong mẫu nào).
+      code: 'center.site3d',
+      label: 'Công trường 3D',
+      routes: [CENTER_ROUTE],
+      sortOrder: 40,
+      actions: [{ action: 'view', label: 'Xem công trường 3D (trình chiếu tiến độ, mô hình thiết kế)', permissionCode: 'center.site3d.view', scopeTypes: ['global'], sortOrder: 1 }],
+    },
   ],
 };

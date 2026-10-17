@@ -21,6 +21,9 @@ import { buildDashboardFixture, fixtureDocs, fixtureMoves } from './dashboardFix
 import { buildFlowFixture, buildFlowItemsFixture } from './flowFixture';
 import type { FlowItemsFilter, FlowQuery, FlowRemindOutcome, FlowResult } from '../../lib/center/centerFlowService';
 import type { DashDocQuery, DashMoveKind } from '../../lib/dashboard/dashboardTypes';
+import { SITE3D_PROJECTS, site3dRaw } from './site3dFixture';
+import { parseSite3dAccess, parseSite3dResult } from '../../lib/site3d/site3dData';
+import type { Site3dHooks, SiteModelKind, SiteModels } from '../../lib/site3d/site3dService';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -306,6 +309,30 @@ const FakeClassic: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
   </div>
 );
 
+// Công trường 3D: ?site3d=admin | viewer | none (không quyền → không có tab) | error (lỗi tải số liệu) · mặc định không có tab.
+// ?site3dModel=1: mô hình XinHai trong repo (docs/command-center/mockups/xinhai) đóng vai tệp ở kho riêng tư (kiểm luồng tải);
+// tải lên ghi ở window.__site3dUploads (không gửi đi đâu).
+const SITE3D = params.get('site3d');
+const site3dUploads: Record<string, { name: string; size: number }> = {};
+const SITE3D_MODEL_URL: Record<SiteModelKind, string> = { architecture: '/docs/command-center/mockups/xinhai/xinhai.glb', structure: '/docs/command-center/mockups/xinhai/xinhai-tekla.glb' };
+const site3dHooks: Site3dHooks | undefined = !SITE3D ? undefined : {
+  loadAccess: () => Promise.resolve(parseSite3dAccess(SITE3D === 'none' ? { access: false, reason: 'no_permission' } : { access: true, canManage: SITE3D === 'admin', projects: SITE3D_PROJECTS })),
+  loadSite: code => new Promise((resolve, reject) => setTimeout(() => {
+    if (SITE3D === 'error') reject(new Error('Máy chủ bận, thử lại sau ít phút.'));
+    else resolve(parseSite3dResult({ ...site3dRaw(code), canManage: SITE3D === 'admin' }, new Date(2026, 9, 17, 9, 0)));
+  }, 150)),
+  listModels: projectId => Promise.resolve<SiteModels>(params.get('site3dModel') === '1' && projectId.endsWith('d2') ? {
+    architecture: { kind: 'architecture', path: `${projectId}/architecture.glb`, size: 13_881_148, updatedAt: '2026-10-17T03:00:00Z' },
+    structure: { kind: 'structure', path: `${projectId}/structure.glb`, size: 1_097_808, updatedAt: '2026-10-17T03:00:00Z' },
+  } : {}),
+  fetchModel: (file, onProgress) => fetch(SITE3D_MODEL_URL[file.kind]).then(r => r.arrayBuffer()).then(buffer => { onProgress?.(1); return buffer; }),
+  uploadModel: (projectId: string, kind: SiteModelKind, file: File) => new Promise<void>(resolve => setTimeout(() => {
+    site3dUploads[`${projectId}/${kind}`] = { name: file.name, size: file.size };
+    (window as unknown as { __site3dUploads: typeof site3dUploads }).__site3dUploads = site3dUploads;
+    resolve();
+  }, 200)),
+};
+
 const Fixture: React.FC = () => {
   const [dark, setDark] = useState(params.get('theme') === 'dark');
   const [lastRoute, setLastRoute] = useState('');
@@ -345,7 +372,9 @@ const Fixture: React.FC = () => {
             loadFlowAccess={loadFlowAccess}
             loadFlowItems={FLOW === 'noitems' ? undefined : loadFlowItems}
             remindFlow={FLOW === 'noitems' ? undefined : remindFlow}
-            initialTab={params.get('view') === 'flow' ? 'flow' : null}
+            initialTab={params.get('view') === 'flow' ? 'flow' : params.get('view') === 'site3d' ? 'site3d' : null}
+            site3d={site3dHooks}
+            exposeSite3dDebug
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
             assistant={assistantHooks}

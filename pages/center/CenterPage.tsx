@@ -14,6 +14,7 @@ import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
 import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDocs } from '../../lib/dashboard/dashboardService';
 import { fetchFlow, fetchFlowAccess, fetchFlowItems, remindFlow, type FlowItemsFilter, type FlowQuery } from '../../lib/center/centerFlowService';
+import { site3dHooks } from '../../lib/site3d/site3dService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -53,8 +54,11 @@ const CenterPage: React.FC = () => {
     if (board !== 'portfolio' && board !== 'cashflow' && board !== 'materials' && board !== 'debt') return null;
     return { board, projectId: params.get('project'), nonce: Date.now() } as const;
   }, [location.search]);
-  // /center?view=flow: mở thẳng tab Dòng chảy công việc.
-  const initialTab = useMemo(() => (new URLSearchParams(location.search).get('view') === 'flow' ? 'flow' as const : null), [location.search]);
+  // /center?view=flow | site3d: mở thẳng tab Dòng chảy công việc / Công trường 3D.
+  const initialTab = useMemo(() => {
+    const view = new URLSearchParams(location.search).get('view');
+    return view === 'flow' || view === 'site3d' ? view : null;
+  }, [location.search]);
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
   const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
@@ -117,6 +121,7 @@ const CenterPage: React.FC = () => {
         loadFlowItems={loadFlowItems}
         remindFlow={remindFlowHolders}
         initialTab={initialTab}
+        site3d={site3dHooks}
       />
     </CenterEntrance>
   );

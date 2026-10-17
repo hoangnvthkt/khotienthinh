@@ -138,3 +138,23 @@ test("WebKit idle: Dòng chảy công việc (sơ đồ dải 820, thanh theo ph
   await expect(page.getByRole("list", { name: "Nơi xử lý" })).toBeVisible();
   await measureIdle(page, "flow-bars");
 });
+
+// Công trường 3D (WebGL, iPhone): vẽ theo yêu cầu — đứng yên không rAF, không timer, không đổi DOM (17/10: 0,3%). Chuyển động (người tự
+// bật / Trình chiếu) vẽ liên tục, bản nhẹ tối đa 30 khung / giây (17/10: 39,5%); chặn khi quá 50% (vòng vẽ chồng, rò rỉ).
+// Không dùng <input type="range">: bản WebKit của Playwright (macOS 26) làm tiến trình GPU quay 100% mãi khi trang có thanh trượt gốc.
+test("WebKit idle: Công trường 3D (đứng yên, chuyển động)", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto(`${base}?site3d=viewer&view=site3d`);
+  await page.getByRole("button", { name: "Vẫn mở trên điện thoại" }).click();
+  await page.waitForFunction(() => !!(window as unknown as { __site3d?: unknown }).__site3d, null, { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  await measureIdle(page, "site3d");
+  await page.locator('[data-s3d="btnMotion"]').click();
+  await page.waitForTimeout(1500);
+  const before = webkitCpuSeconds();
+  await page.waitForTimeout(IDLE_SECONDS * 1000);
+  const cpuPercent = Math.round(((webkitCpuSeconds() - before) / IDLE_SECONDS) * 1000) / 10;
+  const baseline = baselinePercent();
+  record("site3d-motion", { cpuPercent, overBaseline: baseline === null ? null : Math.round((cpuPercent - baseline) * 10) / 10 });
+  expect(cpuPercent, "site3d-motion: CPU % khi bật chuyển động").toBeLessThan(50);
+});

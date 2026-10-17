@@ -304,6 +304,12 @@
       ]
     },
     {
+      "permissionCode": "center.site3d.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "contract.cost_library.manage",
       "scopeTypes": [
         "global"
