@@ -17,6 +17,7 @@ import AdminSetPasswordForm from '../../components/AdminSetPasswordForm';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { useNavigate } from 'react-router-dom';
 import { userActivityService } from '../../lib/userActivityService';
+import { USER_MANAGER_SOURCE_LABEL, useUserDirectManagers } from '../../lib/userDirectManagerService';
 
 // A person counts as online while an active session was seen recently.
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -81,6 +82,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   permissionApplicationCode,
 }) => {
   const toast = useToast();
+  const { managers: directManagers } = useUserDirectManagers(users.length);
   
   // Filtering & Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -341,7 +343,8 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                   const disabled = u.accountStatus === 'DISABLED' || u.isActive === false;
                   const isAdmin = isSettingsUserAdmin(u);
                   const isOnline = onlineUserIds ? onlineUserIds.has(u.id) : null;
-                  const manager = users.find(m => m.id === u.managerId);
+                  const directManager = directManagers?.get(u.id);
+                  const manager = users.find(m => m.id === directManager?.managerUserId);
                   const username = u.username || u.email.split('@')[0];
                   const position = u.position || (u.role === Role.ADMIN ? 'Quản trị viên' : u.role === Role.WAREHOUSE_KEEPER ? 'Thủ kho' : 'Cán bộ');
                   
@@ -468,7 +471,10 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs italic text-slate-400 font-medium">Chưa phân công</span>
+                          <span className="text-xs italic text-slate-400 font-medium">{directManagers ? 'Chưa có' : '…'}</span>
+                        )}
+                        {directManager?.source === 'legacy' && (
+                          <p className="mt-1 text-[10px] font-semibold text-amber-600" title="Đơn vị chưa có trưởng trên sơ đồ tổ chức">{USER_MANAGER_SOURCE_LABEL.legacy}</p>
                         )}
                       </td>
 
@@ -686,7 +692,8 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                         <div>
                           <p className="text-slate-400 font-medium">Quản lý trực tiếp</p>
                           <p className="font-bold text-slate-800 mt-0.5">
-                            {users.find(m => m.id === drawerUser.managerId)?.name || 'Chưa phân công'}
+                            {users.find(m => m.id === directManagers?.get(drawerUser.id)?.managerUserId)?.name || (directManagers ? 'Chưa có' : '…')}
+                            <span className="ml-1.5 text-[10px] font-semibold text-slate-400">{USER_MANAGER_SOURCE_LABEL[directManagers?.get(drawerUser.id)?.source || 'none']}</span>
                           </p>
                         </div>
                       </div>
@@ -753,6 +760,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         userToEdit={editingUser}
         warehouses={warehouses}
         users={users}
+        directManager={editingUser ? directManagers?.get(editingUser.id) ?? null : null}
       />
 
       {/* Account Status Modal for Disable / Reactivate */}

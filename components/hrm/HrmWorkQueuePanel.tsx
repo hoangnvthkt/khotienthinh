@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  AlarmClock, Check, ExternalLink, FilePenLine, FileText, Loader2, RefreshCw, Search, UserCheck, X,
+  AlarmClock, Check, ExternalLink, FilePenLine, FileText, Loader2, RefreshCw, UserCheck, X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { EDITOR_META, describePayload, type ProfileEditorKind } from '../../lib/hrmProfileFields';
 import {
   hrmProfileChangeService,
-  type DirectManagerRow, type HrReminder, type ProfileChangeRequest,
+  type HrReminder, type ProfileChangeRequest, type UnitHeadRow,
 } from '../../lib/hrmProfileChangeService';
 import { ProfileFieldInput } from './ProfileChangeRequestDialog';
 
@@ -19,12 +19,6 @@ const REMINDER_META: Record<HrReminder['kind'], { label: string; section: string
   probation: { label: 'Thử việc', section: 'contracts_employment' },
   identity: { label: 'Giấy tờ', section: 'legal_insurance' },
   certification: { label: 'Chứng chỉ', section: 'qualifications_documents' },
-};
-
-const SOURCE_META: Record<DirectManagerRow['source'], { label: string; className: string }> = {
-  org_chart: { label: 'Sơ đồ tổ chức', className: 'bg-mint-50 text-mint-700 dark:bg-mint-900/30 dark:text-mint-300' },
-  designated: { label: 'HR chỉ định', className: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300' },
-  none: { label: 'Chưa có', className: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' },
 };
 
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
@@ -180,50 +174,6 @@ const ChangeReviewDrawer: React.FC<{
   );
 };
 
-/** Inline "who approves this person" designation for people the org chart does not cover. */
-const DesignateManager: React.FC<{ row: DirectManagerRow; onSaved: () => void; onCancel: () => void }> = ({ row, onSaved, onCancel }) => {
-  const { users, employees } = useApp();
-  const employeeUserId = employees.find(employee => employee.id === row.employeeId)?.userId;
-  const candidates = useMemo(() => users
-    .filter(user => user.isActive !== false && (user.accountStatus || 'ACTIVE') === 'ACTIVE' && user.id !== employeeUserId)
-    .sort((a, b) => a.name.localeCompare(b.name, 'vi')), [users, employeeUserId]);
-  const [managerId, setManagerId] = useState(row.designatedManagerUserId || '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const save = async () => {
-    setSaving(true);
-    setError('');
-    try {
-      await hrmProfileChangeService.setDesignatedManager(row.employeeId, managerId || null, 'Chỉ định quản lý trực tiếp theo phân công thực tế');
-      onSaved();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Không lưu được người duyệt.');
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="mt-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/70">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <select value={managerId} onChange={event => setManagerId(event.target.value)} aria-label="Người quản lý trực tiếp"
-          className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-mint-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-          <option value="">— Chưa chỉ định —</option>
-          {candidates.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
-        </select>
-        <div className="flex gap-2">
-          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">Hủy</button>
-          <button type="button" onClick={() => void save()} disabled={saving || managerId === (row.designatedManagerUserId || '')}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-mint-600 px-4 py-2 text-sm font-black text-white disabled:opacity-40">
-            {saving ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />} Lưu
-          </button>
-        </div>
-      </div>
-      {error && <p className="mt-2 text-xs font-bold text-rose-600">{error}</p>}
-    </div>
-  );
-};
-
 /** HR to-do for profiles: change requests to approve, documents expiring, people without an approver. */
 const HrmWorkQueuePanel: React.FC = () => {
   const navigate = useNavigate();
@@ -235,12 +185,10 @@ const HrmWorkQueuePanel: React.FC = () => {
   const [doneChanges, setDoneChanges] = useState<ProfileChangeRequest[] | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [reminders, setReminders] = useState<HrReminder[] | null>(null);
-  const [managers, setManagers] = useState<DirectManagerRow[] | null>(null);
+  const [units, setUnits] = useState<UnitHeadRow[] | null>(null);
   const [errors, setErrors] = useState<Partial<Record<Tab, string>>>({});
   const [reviewing, setReviewing] = useState<ProfileChangeRequest | null>(null);
-  const [managerFilter, setManagerFilter] = useState<'none' | 'all'>('none');
-  const [managerSearch, setManagerSearch] = useState('');
-  const [designating, setDesignating] = useState<string | null>(null);
+  const [unitFilter, setUnitFilter] = useState<'none' | 'all'>('none');
   const canApprovePay = canPerformHrmTemplatePermission(user, 'hrm.compensation.manage');
   const ownEmployeeId = employees.find(employee => employee.userId === user?.id)?.id;
 
@@ -254,7 +202,7 @@ const HrmWorkQueuePanel: React.FC = () => {
   }, []);
 
   const loadChanges = useCallback(() => capture('changes', () => hrmProfileChangeService.listForHr('pending'), setChanges), [capture]);
-  const loadManagers = useCallback(() => capture('managers', () => hrmProfileChangeService.listDirectManagers(), setManagers), [capture]);
+  const loadManagers = useCallback(() => capture('managers', () => hrmProfileChangeService.listUnitHeads(), setUnits), [capture]);
   const loadAll = useCallback(() => {
     void loadChanges();
     void capture('reminders', () => hrmProfileChangeService.listReminders(45), setReminders);
@@ -274,20 +222,19 @@ const HrmWorkQueuePanel: React.FC = () => {
     setSearchParams(params, { replace: true });
   };
 
-  const withoutManager = managers?.filter(row => row.source === 'none').length;
+  const headless = units?.filter(row => !row.hasHead);
+  const headlessPeople = headless?.reduce((sum, row) => sum + row.people, 0);
   const urgentReminders = reminders?.filter(item => item.daysLeft <= 7).length;
   const tiles: Array<{ key: Tab; icon: typeof FilePenLine; title: string; value: string; detail: string; alert: boolean }> = [
     { key: 'changes', icon: FilePenLine, title: 'Đề nghị cập nhật',
       value: changes ? String(changes.length) : '…', detail: 'chờ HR duyệt', alert: Boolean(changes?.length) },
     { key: 'reminders', icon: AlarmClock, title: 'Sắp đến hạn',
       value: reminders ? String(reminders.length) : '…', detail: urgentReminders ? `${urgentReminders} mục trong 7 ngày` : 'trong 45 ngày tới', alert: Boolean(urgentReminders) },
-    { key: 'managers', icon: UserCheck, title: 'Chưa có quản lý trực tiếp',
-      value: managers ? String(withoutManager) : '…', detail: managers ? `trên ${managers.length} nhân sự` : 'đang kiểm tra', alert: Boolean(withoutManager) },
+    { key: 'managers', icon: UserCheck, title: 'Đơn vị chưa có trưởng',
+      value: headless ? String(headless.length) : '…', detail: headless ? `${headlessPeople} người` : 'đang kiểm tra', alert: Boolean(headless?.length) },
   ];
 
-  const visibleManagers = (managers || []).filter(row =>
-    (managerFilter === 'all' || row.source === 'none')
-    && (!managerSearch.trim() || `${row.fullName} ${row.employeeCode || ''} ${row.orgUnitName || ''}`.toLowerCase().includes(managerSearch.trim().toLowerCase())));
+  const visibleUnits = (units || []).filter(row => unitFilter === 'all' || !row.hasHead);
   const changeRows = showDone ? doneChanges : changes;
 
   return (
@@ -388,56 +335,46 @@ const HrmWorkQueuePanel: React.FC = () => {
 
           {tab === 'managers' && (
             <>
-              <p className="mb-3 text-xs font-medium text-slate-500">
-                Người duyệt lấy từ sơ đồ tổ chức (trưởng đơn vị). Ai chưa nằm trên sơ đồ thì HR chỉ định riêng. Dùng chung cho nghỉ phép, Yêu cầu và đặt xe; nhân sự công trường nghỉ phép do người duyệt của công trường duyệt.
-              </p>
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                {([['none', `Chưa có · ${withoutManager ?? '…'}`], ['all', 'Tất cả']] as const).map(([key, label]) => (
-                  <button key={key} type="button" onClick={() => setManagerFilter(key)}
-                    className={`rounded-full px-3 py-1 text-[11px] font-bold ${managerFilter === key ? 'bg-mint-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                {([['none', `Chưa có trưởng · ${headless?.length ?? '…'}`], ['all', 'Tất cả đơn vị']] as const).map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setUnitFilter(key)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-bold ${unitFilter === key ? 'bg-mint-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
                     {label}
                   </button>
                 ))}
-                <div className="relative ml-auto w-full sm:w-56">
-                  <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
-                  <input value={managerSearch} onChange={event => setManagerSearch(event.target.value)} placeholder="Tìm tên, đơn vị"
-                    className="w-full rounded-full border border-slate-200 bg-white py-1.5 pl-7 pr-3 text-xs font-semibold outline-none focus:border-mint-500 dark:border-slate-700 dark:bg-slate-800" />
-                </div>
+                <button type="button" onClick={() => navigate('/settings/hrm-shared-catalog')}
+                  title="Quản lý trực tiếp lấy từ trưởng đơn vị trên sơ đồ tổ chức"
+                  className="ml-auto inline-flex items-center gap-1 rounded-lg border border-mint-200 px-2.5 py-1 text-xs font-black text-mint-700 hover:bg-mint-50 dark:border-mint-800 dark:text-mint-300">
+                  Mở sơ đồ tổ chức <ExternalLink size={12} />
+                </button>
               </div>
-              {managers === null ? <p className="py-6 text-center text-sm text-slate-500">Đang tải…</p>
-                : visibleManagers.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">{managerFilter === 'none' ? 'Mọi nhân sự đã có người duyệt.' : 'Không tìm thấy nhân sự.'}</p>
+              {units === null ? <p className="py-6 text-center text-sm text-slate-500">Đang tải…</p>
+                : visibleUnits.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Mọi đơn vị đã có trưởng.</p>
                 : (
                   <div className="max-h-[520px] divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-                    {visibleManagers.map(row => (
-                      <div key={row.employeeId} className="py-2.5">
-                        <div className="flex items-start gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-bold text-slate-800 dark:text-white">{row.fullName} <span className="font-mono text-[11px] text-slate-400">{row.employeeCode}</span></p>
-                            <p className="truncate text-[11px] text-slate-500">{[row.orgUnitName || 'Chưa có đơn vị', row.positionName].filter(Boolean).join(' · ')}</p>
-                            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${SOURCE_META[row.source].className}`}>{SOURCE_META[row.source].label}</span>
-                              {row.managerName || 'Chưa có quản lý trực tiếp'}
-                            </p>
-                            {row.leaveApproverLabel && (!row.leaveApproverName || row.leaveApproverName !== row.managerName) && (
-                              <p className="mt-0.5 text-[11px] text-slate-500">
-                                Duyệt nghỉ phép: {row.leaveApproverName ? `${row.leaveApproverName} (${row.leaveApproverLabel})` : `${row.leaveApproverLabel} (tạm thời)`}
-                              </p>
+                    {visibleUnits.map(row => (
+                      <div key={row.orgUnitId} className="flex items-start gap-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-slate-800 dark:text-white">{row.name}
+                            <span className="ml-1.5 text-[11px] font-semibold text-slate-400">{row.people} người</span></p>
+                          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            {row.hasHead
+                              ? <><span className="rounded-md bg-mint-50 px-1.5 py-0.5 text-[10px] font-black text-mint-700 dark:bg-mint-900/30 dark:text-mint-300">Trưởng</span>{row.headName} · {row.headSeatPosition}</>
+                              : row.headSeatPosition
+                                ? <><span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Ghế trưởng trống</span>{row.headSeatPosition}</>
+                                : <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Chưa có ghế trưởng</span>}
+                            {!row.hasHead && row.legacyManaged > 0 && (
+                              <span className="text-[11px] font-medium text-slate-500" title="Tạm theo quản lý cũ ghi trên tài khoản cho tới khi đơn vị có trưởng">
+                                {row.legacyManaged} người tạm theo quản lý cũ
+                              </span>
                             )}
-                          </div>
-                          {!row.hasAccount ? (
-                            <span className="shrink-0 text-[11px] font-semibold text-slate-400">Chưa có tài khoản</span>
-                          ) : row.source === 'org_chart' ? (
-                            <button type="button" onClick={() => navigate('/settings/hrm-shared-catalog')} className="shrink-0 text-[11px] font-bold text-mint-700 hover:underline dark:text-mint-300">Sửa sơ đồ</button>
-                          ) : designating !== row.employeeId && (
-                            <button type="button" onClick={() => setDesignating(row.employeeId)}
-                              className="shrink-0 rounded-lg border border-mint-200 px-2.5 py-1 text-xs font-black text-mint-700 hover:bg-mint-50 dark:border-mint-800 dark:text-mint-300">
-                              {row.source === 'none' ? 'Chỉ định' : 'Đổi'}
-                            </button>
-                          )}
+                          </p>
                         </div>
-                        {designating === row.employeeId && (
-                          <DesignateManager row={row} onCancel={() => setDesignating(null)}
-                            onSaved={() => { setDesignating(null); void loadManagers(); }} />
+                        {!row.hasHead && (
+                          <button type="button" onClick={() => navigate('/settings/hrm-shared-catalog')}
+                            className="shrink-0 rounded-lg border border-mint-200 px-2.5 py-1 text-xs font-black text-mint-700 hover:bg-mint-50 dark:border-mint-800 dark:text-mint-300">
+                            Chọn trưởng
+                          </button>
                         )}
                       </div>
                     ))}
