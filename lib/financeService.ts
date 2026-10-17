@@ -789,7 +789,8 @@ export type FinanceAllocationStatus = 'draft' | 'submitted' | 'confirmed' | 'rev
 export interface FinanceAllocation {
   month: string; firstMonth: string; lastClosableMonth: string; can: { view: boolean; record: boolean; confirm: boolean; manage: boolean };
   readiness: { timesheet: { status: 'reviewing' | 'submitted' | 'closed'; version: number; decidedAt: string | null } | null;
-    payroll: { confirmed: number; draft: number; gross: number }; receipts: Array<{ projectId: string; projectCode: string; amount: number }> };
+    payroll: { confirmed: number; draft: number; gross: number }; receipts: Array<{ projectId: string; projectCode: string; amount: number }>;
+    officeSupply?: { liveTotal: number; postedTotal: number | null; postedCode: string | null } | null };
   projects: Array<{ id: string; code: string }>;
   runs: Array<{ id: string; code: string; month: string; status: FinanceAllocationStatus; siteTotal: number; poolTotal: number; createdByName: string;
     decidedByName: string | null; decidedAt: string | null; reverseReason: string | null; decisionNote: string | null }>;

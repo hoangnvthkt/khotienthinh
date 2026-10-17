@@ -344,7 +344,8 @@
     "20261017230000_hrm_manager_from_org_chart.sql",
     "20261018090000_daily_log_fast_review.sql",
     "20261018100000_vpp_opening_balance.sql",
-    "20261018100100_vpp_requests.sql"
+    "20261018100100_vpp_requests.sql",
+    "20261018110000_vpp_report_finance.sql"
   ],
   "forbidIncludeAll": true
 }

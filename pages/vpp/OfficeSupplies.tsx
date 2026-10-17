@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpFromLine, CheckCircle2, Loader2, ClipboardList, FileText, Inbox, PackagePlus, Paperclip, Plus, RefreshCw, Search, Settings, ShieldCheck } from 'lucide-react';
+import { ArrowUpFromLine, BarChart3, CheckCircle2, Loader2, ClipboardList, FileText, Inbox, PackagePlus, Paperclip, Plus, RefreshCw, Search, Settings, ShieldCheck } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { Badge, StateBox, money, primaryBtn, secondaryBtn } from '../../components/procurement/hub/hubUi';
 import { ENT, NUM } from '../../components/finance/financeUi';
@@ -9,6 +9,7 @@ import { VppDetailPanel, VppStatusBadge } from '../../components/vpp/VppDetailPa
 import { VppRequestForm } from '../../components/vpp/VppRequestForm';
 import { VppReceiveForm } from '../../components/vpp/VppReceiveForm';
 import { VppSettingsView } from '../../components/vpp/VppSettingsView';
+import { VppReportView } from '../../components/vpp/VppReportView';
 import {
   VPP_OPEN, officeSupplyService, vppErrorMessage,
   type VppDetail, type VppHome, type VppList, type VppReceipt, type VppView,
@@ -17,9 +18,9 @@ import { foldVi } from '../../lib/wmsCatalogService';
 
 // Văn phòng phẩm: mọi nhân viên đề xuất; trưởng phòng duyệt (duyệt thay, vượt ngưỡng); thủ kho cấp phát, nhập kho; quản trị thiết lập.
 
-type Tab = VppView | 'receipts' | 'settings';
-const TAB_ICON: Record<Tab, React.ElementType> = { mine: Inbox, approve: ShieldCheck, issue: ArrowUpFromLine, all: ClipboardList, receipts: PackagePlus, settings: Settings };
-const TAB_LABEL: Record<Tab, string> = { mine: 'Của tôi', approve: 'Chờ duyệt', issue: 'Cấp phát', all: 'Tất cả', receipts: 'Nhập kho', settings: 'Thiết lập' };
+type Tab = VppView | 'receipts' | 'report' | 'settings';
+const TAB_ICON: Record<Tab, React.ElementType> = { mine: Inbox, approve: ShieldCheck, issue: ArrowUpFromLine, all: ClipboardList, receipts: PackagePlus, report: BarChart3, settings: Settings };
+const TAB_LABEL: Record<Tab, string> = { mine: 'Của tôi', approve: 'Chờ duyệt', issue: 'Cấp phát', all: 'Tất cả', receipts: 'Nhập kho', report: 'Báo cáo', settings: 'Thiết lập' };
 
 const OfficeSupplies: React.FC = () => {
   const location = useLocation();
@@ -27,7 +28,9 @@ const OfficeSupplies: React.FC = () => {
   const [home, setHome] = useState<VppHome | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [message, setMessage] = useState('');
-  const [tab, setTab] = useState<Tab>('mine');
+  // Mở thẳng báo cáo từ Tài chính: #/vpp?tab=report&m=YYYY-MM.
+  const [entry] = useState(() => { const sp = new URLSearchParams(location.search); return { report: sp.get('tab') === 'report', month: sp.get('m') }; });
+  const [tab, setTab] = useState<Tab>(entry.report ? 'report' : 'mine');
   const [list, setList] = useState<VppList | null>(null);
   const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [receipts, setReceipts] = useState<VppReceipt[] | null>(null);
@@ -42,7 +45,7 @@ const OfficeSupplies: React.FC = () => {
     catch (e) { setMessage(vppErrorMessage(e, 'Chưa tải được Văn phòng phẩm.')); setState('error'); }
   }, []);
   const loadList = useCallback(async (view: Tab) => {
-    if (view === 'settings') return;
+    if (view === 'settings' || view === 'report') return;
     if (view === 'receipts') { officeSupplyService.receipts().then(setReceipts).catch(() => setReceipts([])); return; }
     setListState(s => s === 'ready' ? s : 'loading');
     try { setList(await officeSupplyService.list(view)); setListState('ready'); }
@@ -66,8 +69,8 @@ const OfficeSupplies: React.FC = () => {
   const can = home?.can;
   const tabs = useMemo<Tab[]>(() => !can ? ['mine'] : ([
     'mine', can.approve && 'approve', can.keeper && 'issue', (can.report || can.manage || can.keeper) && 'all',
-    (can.keeper || can.report) && 'receipts', can.manage && 'settings',
-  ].filter(Boolean) as Tab[]), [can]);
+    (can.keeper || can.report) && 'receipts', (can.report || can.manage || can.keeper || entry.report) && 'report', can.manage && 'settings',
+  ].filter(Boolean) as Tab[]), [can, entry.report]);
   // Lần đầu: người có việc chờ mở thẳng tab đó.
   const [autoTab, setAutoTab] = useState(false);
   useEffect(() => {
@@ -137,6 +140,7 @@ const OfficeSupplies: React.FC = () => {
     </nav>}
 
     {tab === 'settings' ? <VppSettingsView />
+      : tab === 'report' ? <VppReportView initialMonth={entry.month} />
       : tab === 'receipts' ? <ReceiptList receipts={receipts} canAttach={!!can?.keeper} actorUserId={home.me.id} onChanged={() => loadList('receipts')} />
       : <Split open={!!selId} selKey={selId} list={listView}
         detail={detail ? <VppDetailPanel detail={detail} catalog={home.catalog} onBack={() => select(null)} onChanged={onChanged} onEdit={() => setForm('edit')} />
