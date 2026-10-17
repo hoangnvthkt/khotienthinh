@@ -66,7 +66,6 @@ const PROJECT_PERMISSION_SCOPE: Partial<Record<AlertRuleKey, string>> = {
   overdue_payment: 'Thành viên Room Thanh toán có quyền',
   slow_progress: 'Thành viên Room Tiến độ có quyền',
   material_waste: 'Thành viên Room Kế hoạch vật tư có quyền',
-  stale_daily_log: 'Thành viên Room Nhật ký có quyền',
   safety_critical: 'Thành viên Room An toàn có quyền',
 };
 
@@ -79,6 +78,8 @@ const THRESHOLD_LABELS: Record<string, string> = {
   criticalDays: 'Khẩn cấp khi còn (ngày)',
   startDay: 'Bắt đầu nhắc từ ngày',
   daysPending: 'Chờ quá (ngày)',
+  takeoverDays: 'Duyệt thay sau (ngày)',
+  hour: 'Nhắc lúc (giờ)',
 };
 
 const getRuleTone = (category: string) => {
@@ -230,6 +231,23 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
 
   const renderRecipientControls = (rule: NotificationAlertRule) => {
     const config = rule.recipientConfig || { mode: 'admin', fallbackToAdmin: true };
+    // Nhật ký (17/10/2026): người nhận cố định theo phân công; ô chọn ở đây chỉ là người duyệt dự phòng.
+    if (rule.alertKey === 'daily_log_missing_today') {
+      return <p className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-xs font-bold text-teal-800">
+        Gửi người đã ghi nhật ký / phiếu kỹ sư của dự án trong 14 ngày gần nhất (trừ người duyệt dự phòng). Chỉ dự án đã dùng Nhật ký chính thức.</p>;
+    }
+    if (rule.alertKey === 'stale_daily_log') {
+      return <div className="space-y-2">
+        <p className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-xs font-bold text-teal-800">
+          Người được giao duyệt luôn nhận 1 tin mỗi sáng. Chọn dưới đây người duyệt dự phòng: nhận tin tổng hợp các dự án và được Duyệt thay phiếu treo quá hạn (cần quyền Duyệt trong Room Nhật ký).</p>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Người duyệt dự phòng</span>
+        <select multiple aria-label="Người duyệt dự phòng" value={config.userIds || []}
+          onChange={event => patchRecipient(rule.alertKey, { mode: 'users', userIds: Array.from(event.target.selectedOptions).map(option => option.value) })}
+          className="h-36 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/10">
+          {activeUsers.map(user => <option key={user.id} value={user.id}>{user.name} - {user.email}</option>)}
+        </select>
+      </div>;
+    }
 
     return (
       <div className="space-y-3">
@@ -510,7 +528,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
                   <Users size={14} /> Người nhận
                 </div>
                 {renderRecipientControls(rule)}
-                <SettingsAlertsRecipientPreview rule={rule} projects={projects} />
+                {rule.alertKey !== 'stale_daily_log' && rule.alertKey !== 'daily_log_missing_today' && <SettingsAlertsRecipientPreview rule={rule} projects={projects} />}
               </div>
             </div>
           ))}
