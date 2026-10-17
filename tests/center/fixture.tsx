@@ -212,6 +212,7 @@ const saveLayout = (layout: CenterLayout): Promise<number> => new Promise(resolv
 }, 30));
 
 // Tab Trợ lý v2: ?ai=gemini giả lập đã có khóa (hội thoại chạy dần, trích khóa dòng số liệu); ?ai=fail lỗi giữa chừng; ?ai=quota hết lượt;
+// ?ai=busy còn câu đang trả lời / ?ai=rate gửi quá nhanh (chống spam); ?ai=refuse câu từ chối lịch sự;
 // mặc định chưa có khóa (chỉ câu hỏi nhanh). ?threads=today|old gieo sẵn một hội thoại hôm nay / ngày cũ. Hội thoại lưu sessionStorage
 // (giả lập máy chủ) để tải lại trang vẫn mở lại được. Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
 const AI = params.get('ai') || 'off';
@@ -256,11 +257,15 @@ const assistantHooks: AssistantHooks = {
     aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context });
     await sleep(60);
     if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };
+    if (AI === 'busy') return { code: 'AI_QUOTA', reason: 'busy' };
+    if (AI === 'rate') return { code: 'AI_QUOTA', reason: 'minute' };
     handlers.onStart?.({ runId, model: 'gemini-2.5-pro' });
     const keys = input.facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
-    const answer = prior
+    // ?ai=refuse: lời lẽ khiếm nhã → AI mở đầu bằng nhãn từ chối (màn hình phải ẩn), máy chủ trả câu đã bỏ nhãn.
+    const refused = AI === 'refuse' ? '[[tu_choi:khiem_nha]] Em mong anh dùng từ ngữ lịch sự hơn ạ. Anh cần xem việc nào hôm nay?' : null;
+    const answer = refused ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
-      : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`;
+      : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);
     let sent = '';
     for (const chunk of answer.match(/[\s\S]{1,9}/g) || []) {
       if (signal?.aborted) return { code: 'AI_FAILED', runId, error: 'AI_ABORTED', partial: sent };
@@ -279,7 +284,7 @@ const assistantHooks: AssistantHooks = {
       { id: messageId, role: 'assistant', content: answer, sources: keys, runId, accepted: null, createdAt: at });
     thread.lastMessageAt = at;
     saveThreads(all);
-    return { code: 'OK', runId, threadId: thread.id, messageId, answer, sources: keys, model: 'gemini-2.5-pro', saved: true };
+    return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources: refused ? [] : keys, model: 'gemini-2.5-pro', saved: true };
   },
 };
 

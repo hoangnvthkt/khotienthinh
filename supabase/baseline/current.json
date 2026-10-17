@@ -346,7 +346,8 @@
     "20261018100000_vpp_opening_balance.sql",
     "20261018100100_vpp_requests.sql",
     "20261018130000_daily_log_from_report.sql",
-    "20261018150000_ai_assistant_threads.sql"
+    "20261018150000_ai_assistant_threads.sql",
+    "20261018170000_ai_guardrails_costs.sql"
   ],
   "forbidIncludeAll": true
 }

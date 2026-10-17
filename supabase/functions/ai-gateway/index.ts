@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
 import { complete, costUsd, envTarget, readConfig, streamChat, type ImagePart } from './providers.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
-import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, sseEvent, threadTurns, type ChatTurn } from './chat.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -74,15 +74,18 @@ Deno.serve(async request => {
         try {
           const out = await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
             delta => send(sseEvent({ type: 'delta', text: delta })));
-          const sources = sourceKeysOf(out.text, input.facts);
-          const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };
+          // Câu từ chối (ngoài công việc, khiếm nhã, đòi xóa…): bỏ nhãn khỏi chữ lưu / trả về, ghi loại vào nhật ký.
+          const { text: answer, refusal } = splitRefusal(out.text);
+          // Từ chối vẫn giữ nút nguồn: câu lẫn (một phần công việc + một phần ngoài lề) và câu gợi ý việc khác đều dẫn chứng từ thật.
+          const sources = sourceKeysOf(answer, input.facts);
+          const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
           const saved = await user.rpc('ai_thread_save_turn_v1', { p_thread_id: input.threadId, p: {
-            question: input.question, answer: out.text, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
+            question: input.question, answer, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
           if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
           const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
-          await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: out.text.length, ...usage,
-            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu → ${out.text.length} ký tự, ${sources.length} nguồn${redactNote}` });
-          send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer: out.text, sources, model, usage, saved: !saved.error }));
+          await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
+          send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'AI_FAILED';
           console.error('ai-gateway chat failed', provider, model, message);
@@ -147,7 +150,7 @@ Deno.serve(async request => {
     const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images, noThinking: def.noThinking });
     const result = def.parseOutput(parseJsonLoose(out.text));
     const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
-    const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };
+    const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
     await finish({ status: 'ok', provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}` });
     return json({ code: 'OK', runId, result, model, provider: target.kind, usage });
   } catch (e) {

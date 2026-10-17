@@ -471,6 +471,7 @@ const AssistantView: React.FC<{
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!sending) submit(); }
                 }}
               />
+              {question.length > 800 && <span className="vcc-composer-count" aria-live="polite">{question.length}/1000</span>}
               {sending ? (
                 <button type="submit" className="vcc-composer-send" aria-label="Dừng" title="Dừng"><Square size={13} fill="currentColor" /></button>
               ) : (

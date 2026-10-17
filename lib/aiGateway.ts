@@ -38,10 +38,12 @@ export interface AiGatewayStatus {
   skills: string[];
 }
 
+/** Hết lượt vì: ngày · trần tháng · gửi quá nhanh trong một phút · còn một câu đang trả lời (chống spam, 18/10). */
+export type AiQuotaReason = 'day' | 'month' | 'minute' | 'busy';
 export interface AiUsage { tokensIn: number | null; tokensOut: number | null; costUsd: number | null; durationMs: number }
 export type AiRunResult<T> =
   | { code: 'OK'; runId: string; result: T; model: string; provider: AiProvider; usage: AiUsage }
-  | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: 'day' | 'month'; usedToday?: number; dailyLimit?: number };
+  | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number };
 
 export interface AiSkillRow {
   code: string; name: string; description: string; tier: string; mode: string; enabled: boolean; dailyLimit: number; modelClass: 'fast' | 'reasoning';
@@ -158,8 +160,10 @@ export const aiGateway = {
 };
 
 /** Câu báo cho người dùng theo mã; hết lượt thì kèm số. */
-export const aiErrorMessage = (outcome: { code: AiGatewayErrorCode; reason?: 'day' | 'month'; usedToday?: number; dailyLimit?: number; error?: string }) => {
+export const aiErrorMessage = (outcome: { code: AiGatewayErrorCode; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; error?: string }) => {
   if (outcome.code === 'AI_QUOTA') {
+    if (outcome.reason === 'busy') return 'Trợ lý đang trả lời câu trước — đợi xong rồi hỏi tiếp.';
+    if (outcome.reason === 'minute') return 'Bạn gửi hơi nhanh — đợi vài giây rồi hỏi tiếp.';
     return outcome.reason === 'month' ? 'Hết trần AI tháng này — làm tay như thường.'
       : `Hết lượt AI hôm nay${outcome.dailyLimit ? ` (${outcome.usedToday ?? outcome.dailyLimit}/${outcome.dailyLimit})` : ''}.`;
   }

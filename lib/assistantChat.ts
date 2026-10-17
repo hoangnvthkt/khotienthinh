@@ -1,7 +1,7 @@
 // Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): hội thoại nhiều lượt ở tab Trợ lý, trả lời chạy dần, mở lại được từ Lịch sử.
 // Máy chủ: skill assistant_chat của cổng AI (stream text/event-stream) + RPC list/get_ai_thread_v1 (chỉ chủ hội thoại xem, giữ 90 ngày).
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
-import type { AiGatewayErrorCode } from './aiGateway';
+import type { AiGatewayErrorCode, AiQuotaReason } from './aiGateway';
 
 export const CHAT_SKILL = 'assistant_chat';
 
@@ -28,7 +28,7 @@ export interface ChatSendInput {
 export interface ChatHandlers { onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void }
 export type ChatSendResult =
   | { code: 'OK'; runId: string; threadId: string | null; messageId: string | null; answer: string; sources: string[]; model: string; saved: boolean }
-  | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: 'day' | 'month'; usedToday?: number; dailyLimit?: number; partial?: string };
+  | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; partial?: string };
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
@@ -127,7 +127,7 @@ export const assistantChat = {
       // Lỗi trước khi bắt đầu (chưa có khóa, hết lượt, không quyền…) trả JSON như skill thường.
       const body = await res.json().catch(() => ({})) as Record<string, unknown>;
       return { code: errorCode(body.code), runId: str(body.runId) || undefined, error: str(body.error) || undefined,
-        reason: body.reason === 'month' ? 'month' : body.reason === 'day' ? 'day' : undefined,
+        reason: (['day', 'month', 'minute', 'busy'] as const).find(r => r === body.reason),
         usedToday: typeof body.usedToday === 'number' ? body.usedToday : undefined, dailyLimit: typeof body.dailyLimit === 'number' ? body.dailyLimit : undefined };
     }
     const reader = res.body.getReader();

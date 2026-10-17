@@ -203,6 +203,31 @@ test("AI đứt giữa chừng: bỏ nửa câu, báo lý do + Thử lại; hế
   await expect(chat(page).getByTestId("turn")).not.toHaveAttribute("data-state", /pending|streaming/);
 });
 
+test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=busy`);
+  await openAssistant(page, false);
+  await ask(page, "Việc gì gấp?");
+  await expect(chat(page).getByTestId("turn").getByRole("alert")).toContainText("Trợ lý đang trả lời câu trước — đợi xong rồi hỏi tiếp.");
+  await page.goto(`${base}?ai=rate`);
+  await openAssistant(page, false);
+  await ask(page, "Việc gì gấp?");
+  await expect(chat(page).getByTestId("turn").getByRole("alert")).toContainText("Bạn gửi hơi nhanh — đợi vài giây rồi hỏi tiếp.");
+
+  await page.goto(`${base}?ai=refuse`);
+  await openAssistant(page, false);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  await box.fill("x".repeat(820));
+  await expect(chat(page).locator(".vcc-composer-count")).toHaveText("820/1000");
+  await box.fill("Mày trả lời ngu thế");
+  await expect(chat(page).locator(".vcc-composer-count")).toHaveCount(0);
+  await box.press("Enter");
+  const turn = chat(page).getByTestId("turn");
+  await expect(turn).toHaveAttribute("data-state", "done");
+  await expect(turn.locator(".vcc-msg-a")).toHaveText("Em mong anh dùng từ ngữ lịch sự hơn ạ. Anh cần xem việc nào hôm nay?");
+  await expect(chat(page)).not.toContainText("tu_choi");
+});
+
 test("điện thoại: nút Trợ lý ở thanh đáy mở bản tin, việc xuống 2 dòng không tràn, quay về Hôm nay", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(base);

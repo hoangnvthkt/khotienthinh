@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildChatPrompt, chatSystem, parseChatInput, readSse, sourceKeysOf, sseEvent, threadTurns, trimHistory, type ChatTurn,
+  buildChatPrompt, chatSystem, parseChatInput, readSse, sourceKeysOf, splitRefusal, sseEvent, threadTurns, trimHistory, type ChatTurn,
 } from '../../supabase/functions/ai-gateway/chat';
 
 const turns = (n: number, size = 40): ChatTurn[] => Array.from({ length: n }, (_, i) => ({
@@ -68,6 +68,27 @@ describe('Trợ lý v2 · hội thoại — hỏi tiếp', () => {
   it('không xóa, không duyệt, không trả lại: lời dặn có trong mọi hội thoại', () => {
     expect(chatSystem('Bạn', [])).toMatch(/không tự gửi, duyệt, trả lại, xóa, ghi sổ/);
     expect(chatSystem('Bạn', [])).toContain('xưng "mình"');
+  });
+});
+
+describe('Trợ lý v2 · hội thoại — phạm vi, từ chối lịch sự, nhiều câu hỏi (chủ SP 18/10)', () => {
+  const system = chatSystem('Anh', []);
+
+  it('lời nhắc: chỉ việc công ty; 5 loại từ chối có nhãn; trả lời lần lượt nhiều câu hỏi', () => {
+    expect(system).toContain('Phạm vi: chỉ hỗ trợ công việc trong Vioo');
+    for (const kind of ['ngoai_cong_viec', 'khiem_nha', 'thao_tac_cam', 'vi_pham', 'thao_tung']) expect(system).toContain(`[[tu_choi:${kind}]]`);
+    expect(system).toMatch(/đòi xóa, sửa, định dạng lại, hủy, trả lại, duyệt, ghi sổ dữ liệu/);
+    expect(system).toMatch(/không lặp lại lời lẽ xấu/);
+    expect(system).toContain('mời anh trao đổi về công việc');
+    expect(system).toContain('quá 5 câu thì trả lời 5 câu đầu');
+  });
+
+  it('tách nhãn từ chối: chữ lưu không còn nhãn, loại ghi nhật ký; nhãn lạ bị bỏ, không tính', () => {
+    expect(splitRefusal('[[tu_choi:khiem_nha]] Em xin phép không trả lời câu này. Anh cần xem việc nào hôm nay?'))
+      .toEqual({ text: 'Em xin phép không trả lời câu này. Anh cần xem việc nào hôm nay?', refusal: 'khiem_nha' });
+    expect(splitRefusal('[[tu_choi:thao_tac_cam]]Trợ lý không xóa dữ liệu.').refusal).toBe('thao_tac_cam');
+    expect(splitRefusal('[[tu_choi:linh_tinh]] Chào anh.')).toEqual({ text: 'Chào anh.', refusal: null });
+    expect(splitRefusal('PO-116 quá hạn [[item.po.po-116]]')).toEqual({ text: 'PO-116 quá hạn [[item.po.po-116]]', refusal: null });
   });
 });
 
