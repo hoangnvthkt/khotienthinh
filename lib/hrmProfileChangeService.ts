@@ -43,6 +43,20 @@ export interface HrReminder {
 
 export type DirectManagerSource = 'org_chart' | 'designated' | 'none';
 
+export interface UnitHeadRow {
+  orgUnitId: string;
+  code: string | null;
+  name: string;
+  blockCode: string | null;
+  people: number;
+  /** Chức danh of the head seat; null = the unit has no head seat. */
+  headSeatPosition: string | null;
+  headName: string | null;
+  hasHead: boolean;
+  /** People still approved through the old per-account manager until the unit has a head. */
+  legacyManaged: number;
+}
+
 export interface DirectManagerRow {
   employeeId: string;
   employeeCode: string | null;
@@ -158,9 +172,9 @@ export const hrmProfileChangeService = {
       .then(rows => rows || []);
   },
 
-  setDesignatedManager(employeeId: string, managerUserId: string | null, reason: string): Promise<void> {
-    return rpc<void>('set_hrm_designated_manager', {
-      p_employee_id: employeeId, p_manager_user_id: managerUserId, p_reason: reason,
-    }, 'Không lưu được người duyệt.');
+  /** Units with people: who heads each one (the org chart is the only source of direct managers). */
+  listUnitHeads(): Promise<UnitHeadRow[]> {
+    return rpc<UnitHeadRow[] | null>('list_hrm_units_without_head', {}, 'Không tải được danh sách đơn vị.')
+      .then(rows => rows || []);
   },
 };

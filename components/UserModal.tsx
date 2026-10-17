@@ -13,6 +13,7 @@ import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
 import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpdateValidation';
 import { saveAuthorizationAndRefresh } from '../lib/permissions/authorizationSaveOutcome';
 import { DEFAULT_AVATAR_URL } from '../lib/defaultAvatar';
+import { USER_MANAGER_SOURCE_LABEL, type UserDirectManager } from '../lib/userDirectManagerService';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -23,12 +24,14 @@ interface UserModalProps {
   warehouses: Warehouse[];
   users?: User[];
   permissionApplicationCode?: string;
+  /** Who manages this account — read from the org chart, changed only there. */
+  directManager?: UserDirectManager | null;
 }
 
 // The server records a reason with every change; profile-only edits get this one automatically.
 const PROFILE_EDIT_REASON = 'Cập nhật hồ sơ người dùng';
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode }) => {
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode, directManager = null }) => {
   const toast = useToast();
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -368,13 +371,19 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
                 <option value={Role.EMPLOYEE}>Tài khoản thường</option>
               </select>
             </label>
-            <label className="space-y-1">
+            <div className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Users size={12} className="mr-1" /> Quản lý trực tiếp</span>
-              <select value={formData.managerId || ''} onChange={e => setFormData({ ...formData, managerId: e.target.value })} className={fieldClass}>
-                <option value="">-- Chưa chỉ định --</option>
-                {users.filter(candidate => candidate.id !== userToEdit?.id).map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-              </select>
-            </label>
+              <div className={`${fieldClass} flex items-center justify-between gap-2 bg-slate-50`}>
+                <span className="min-w-0 truncate">
+                  {users.find(candidate => candidate.id === directManager?.managerUserId)?.name || 'Chưa có'}
+                  <span className={`ml-1.5 text-[10px] font-semibold ${directManager?.source === 'legacy' ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {USER_MANAGER_SOURCE_LABEL[directManager?.source || 'none']}
+                  </span>
+                </span>
+                <a href="#/settings/hrm-shared-catalog" onClick={onClose} title="Quản lý trực tiếp = trưởng đơn vị trên sơ đồ tổ chức"
+                  className="shrink-0 text-[11px] font-bold text-mint-700 hover:underline">Đổi ở Sơ đồ tổ chức</a>
+              </div>
+            </div>
             <label className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Building size={12} className="mr-1" /> Kho phụ trách</span>
               <span className="block text-[10px] text-slate-400">Thủ kho chọn ở Kho vật tư → Phân quyền kho.</span>

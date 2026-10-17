@@ -15,7 +15,7 @@ export interface SiteLayout { code: string; key: 'SMB' | 'DA29'; label: string; 
 // Công trường đã dựng cấu hình 3D (mã dự án trong Vioo). Thêm công trường mới = thêm bố cục trong siteScene + một dòng ở đây.
 export const SITE_LAYOUTS: SiteLayout[] = [
   { code: 'DA29', key: 'DA29', label: 'XinHai', title: 'Công trường XinHai (Thú nhồi bông GĐ2)', sign: 'Nhà máy XinHai Vina · giai đoạn 2', models: true },
-  { code: 'SMB-2026', key: 'SMB', label: 'Sơn Miền Bắc', title: 'Công trường Sơn Miền Bắc', sign: 'Nhà máy Sơn Miền Bắc', models: false },
+  { code: 'SMB-2026', key: 'SMB', label: 'Sơn Miền Bắc', title: 'Công trường Sơn Miền Bắc', sign: 'Nhà máy Sơn Miền Bắc', models: true },
 ];
 
 const SITE_KEY = 's3d_site';

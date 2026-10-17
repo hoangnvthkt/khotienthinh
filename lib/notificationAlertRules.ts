@@ -15,6 +15,7 @@ export type AlertRuleKey =
   | 'employee_birthday'
   | 'missing_payroll'
   | 'stale_daily_log'
+  | 'daily_log_missing_today'
   | 'safety_critical';
 
 export type AlertRecipientMode =
@@ -193,12 +194,23 @@ export const DEFAULT_ALERT_RULES: NotificationAlertRule[] = [
   {
     alertKey: 'stale_daily_log',
     label: 'Nhật ký chờ xác nhận quá lâu',
-    description: 'Cảnh báo nhật ký đã gửi nhưng quá hạn xác nhận.',
+    description: 'Mỗi sáng gộp 1 tin cho người được giao duyệt. Treo quá "Duyệt thay sau" thì báo người duyệt dự phòng (Người nhận cụ thể) — họ được nhận duyệt thay.',
     category: 'progress',
     isEnabled: true,
-    thresholds: { daysPending: 2 },
+    thresholds: { daysPending: 1, takeoverDays: 2 },
     cooldownMinutes: 1440,
-    recipientConfig: { mode: 'project_permission', projectPermissionCodes: ['verify'], includeAdmins: true, fallbackToAdmin: true },
+    recipientConfig: { mode: 'users', userIds: [], includeAdmins: false, fallbackToAdmin: false },
+    channels: { inApp: true, webPush: true },
+  },
+  {
+    alertKey: 'daily_log_missing_today',
+    label: 'Nhắc ghi nhật ký cuối ngày',
+    description: 'Dự án dùng Nhật ký chính thức mà tới giờ nhắc chưa có nhật ký hôm nay: nhắc người ghi nhật ký 14 ngày gần nhất, 1 tin mỗi ngày.',
+    category: 'progress',
+    isEnabled: true,
+    thresholds: { hour: 17 },
+    cooldownMinutes: 1440,
+    recipientConfig: { mode: 'users', userIds: [], fallbackToAdmin: false },
     channels: { inApp: true, webPush: true },
   },
   {
