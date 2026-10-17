@@ -7,8 +7,9 @@
 // Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
-import { complete, costUsd, envTarget, readConfig, type ImagePart } from './providers.ts';
-import { KIND_LABEL, targetFromConnection, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
+import { complete, costUsd, envTarget, readConfig, streamChat, type ImagePart } from './providers.ts';
+import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, sseEvent, threadTurns, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -32,7 +33,7 @@ Deno.serve(async request => {
   // Đích theo lớp model: kết nối Admin gán (Cài đặt → Kết nối, khóa trong Vault) → Secrets → (suy luận) kết nối của lớp nhanh.
   // service_role chỉ dùng để giải mã đúng một khóa qua integration_secret_v1; mọi dữ liệu khác vẫn đi bằng JWT người dùng.
   const service = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false, autoRefreshToken: false } });
-  const assigned = async (feature: 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader', cls: ModelClass) => {
+  const assigned = async (feature: AiFeature, cls: ModelClass) => {
     const r = await service.rpc('integration_secret_v1', { p_id: null, p_feature: feature });
     if (r.error) { console.error('ai-gateway connection read failed', r.error.message); return null; }
     return targetFromConnection(r.data, cls);
@@ -41,13 +42,69 @@ Deno.serve(async request => {
     (await assigned(cls === 'reasoning' ? 'ai.reasoning' : 'ai.fast', cls)) ?? envTarget(config, cls) ?? (cls === 'reasoning' ? await assigned('ai.fast', cls) : null);
   const describe = (t: AiTarget | null) => t ? { source: t.source, name: t.name, kind: t.kind, label: KIND_LABEL[t.kind], model: t.model } : null;
 
+  // Trợ lý · hội thoại (T0, chủ SP 17/10): trả lời chạy dần (text/event-stream: start → delta… → done | error).
+  // Lỗi trước khi bắt đầu (đầu vào, chưa có khóa, hội thoại không phải của mình) → JSON như skill thường.
+  // Xong thì ghi lượt hỏi–đáp vào hội thoại bằng JWT người hỏi; người dùng rời trang giữa chừng vẫn ghi để mở lại thấy.
+  const chat = async (runId: string, finish: (p: Record<string, unknown>) => PromiseLike<void>, rawInput: unknown, context: { projectId?: unknown }): Promise<Response> => {
+    let input: ReturnType<typeof parseChatInput>;
+    try { input = parseChatInput(rawInput); } catch { await finish({ status: 'error', error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', runId, error: 'AI_BAD_INPUT' }); }
+    // Kết nối "Trợ lý · hội thoại" (Cài đặt → Kết nối) → lớp suy luận như cũ.
+    const target = (await assigned('ai.assistant', 'reasoning')) ?? await resolveTarget('reasoning');
+    if (!target) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
+    let history: ChatTurn[] = [];
+    if (input.threadId) {
+      const thread = await user.rpc('get_ai_thread_v1', { p_thread_id: input.threadId, p_limit: 40 });
+      if (thread.error) { await finish({ status: 'error', error: 'AI_THREAD_NOT_FOUND', durationMs: 0 }); return json({ code: 'AI_FAILED', runId, error: 'AI_THREAD_NOT_FOUND' }); }
+      history = threadTurns(thread.data);
+    }
+    const prompt = buildChatPrompt(input, history);
+    const model = target.model;
+    const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
+    const redactNote = Object.keys(prompt.hits).length ? ` · đã che ${Object.entries(prompt.hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
+    const factLines = input.facts ? input.facts.split('\n').length : 0;
+    const started = Date.now();
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let open = true;
+        const send = (chunk: string) => { if (!open) return; try { controller.enqueue(encoder.encode(chunk)); } catch { open = false; } };
+        // Nhịp giữ kết nối khi model còn suy nghĩ (Supabase cắt sau 150 s không trả byte nào).
+        const ping = setInterval(() => send(': ping\n\n'), 15_000);
+        send(sseEvent({ type: 'start', runId, model, threadId: input.threadId }));
+        try {
+          const out = await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
+            delta => send(sseEvent({ type: 'delta', text: delta })));
+          const sources = sourceKeysOf(out.text, input.facts);
+          const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };
+          const saved = await user.rpc('ai_thread_save_turn_v1', { p_thread_id: input.threadId, p: {
+            question: input.question, answer: out.text, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
+          if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
+          const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
+          await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: out.text.length, ...usage,
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu → ${out.text.length} ký tự, ${sources.length} nguồn${redactNote}` });
+          send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer: out.text, sources, model, usage, saved: !saved.error }));
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'AI_FAILED';
+          console.error('ai-gateway chat failed', provider, model, message);
+          await finish({ status: message === 'AI_REFUSED' ? 'refused' : 'error', provider, model, inputChars: prompt.inputChars, durationMs: Date.now() - started, error: message.slice(0, 200) });
+          send(sseEvent({ type: 'error', code: message === 'AI_REFUSED' ? 'AI_REFUSED' : 'AI_FAILED', error: message.startsWith('AI_') ? message : 'AI_FAILED' }));
+        } finally {
+          clearInterval(ping);
+          if (open) { open = false; try { controller.close(); } catch { /* đã đóng */ } }
+        }
+      },
+    });
+    return new Response(stream, { headers: { ...cors, 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' } });
+  };
+
   if (body?.action === 'status') {
-    const [fast, reasoning] = await Promise.all([resolveTarget('fast'), resolveTarget('reasoning')]);
+    const [fast, reasoning, assistant] = await Promise.all([resolveTarget('fast'), resolveTarget('reasoning'), assigned('ai.assistant', 'reasoning')]);
     return json({
       code: 'OK', configured: Boolean(fast), provider: fast?.kind ?? config.provider, providerSource: fast?.source === 'connection' ? 'connection' : config.providerSource,
-      models: { fast: fast?.model || '', reasoning: reasoning?.model || '' }, targets: { fast: describe(fast), reasoning: describe(reasoning) },
+      models: { fast: fast?.model || '', reasoning: reasoning?.model || '' },
+      targets: { fast: describe(fast), reasoning: describe(reasoning), assistant: describe(assistant ?? reasoning) },
       keysPresent: config.keysPresent, priceKnown: config.price.inPerM != null && config.price.outPerM != null,
-      skills: Object.keys(SKILLS),
+      skills: [...Object.keys(SKILLS), CHAT_SKILL],
     });
   }
 
@@ -61,6 +118,8 @@ Deno.serve(async request => {
 
   const runId = opened.runId;
   const finish = (p: Record<string, unknown>) => user.rpc('ai_gateway_finish_v1', { p_run_id: runId, p }).then(r => { if (r.error) console.error('ai-gateway finish failed', r.error.message); });
+
+  if (body.skill === CHAT_SKILL) return chat(runId, finish, body.input, context);
 
   const def = SKILLS[body.skill];
   if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }
