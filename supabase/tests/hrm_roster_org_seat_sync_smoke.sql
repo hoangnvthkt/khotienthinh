@@ -1,4 +1,4 @@
--- Run after 20261017160000_hrm_roster_org_seat_sync. Rolls back.
+-- Run after 20261017160000_hrm_roster_org_seat_sync (seats are workforce_plan from 20261017230000). Rolls back.
 begin;
 set local statement_timeout = '120s';
 
@@ -87,7 +87,7 @@ begin
   select slot.* into v_seat from public.hrm_employee_slot_assignments a join public.hrm_org_position_slots slot on slot.id = a.slot_id
   where a.employee_id = current_setting('test.s.e1')::uuid and a.status = 'ACTIVE' and a.assignment_type = 'PRIMARY';
   if v_seat.org_unit_id::text <> current_setting('test.s.unit') or v_seat.position_id::text <> current_setting('test.s.position')
-    or v_seat.source <> 'roster_sync' then
+    or v_seat.source not in ('roster_sync', 'workforce_plan') then
     raise exception 'SEAT_NOT_MOVED %', to_jsonb(v_seat);
   end if;
   if exists (select 1 from public.hrm_employee_slot_assignments where slot_id = current_setting('test.s.old_slot')::uuid and status = 'ACTIVE') then
