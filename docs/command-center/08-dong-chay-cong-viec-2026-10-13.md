@@ -503,3 +503,23 @@ xoay 90° khớp mặt bằng (mái che Tekla trùng mái che mặt nam SketchUp
 Zone 1 xưởng 3 = nhịp phía nam, zone 2 = nhịp phía bắc (giả định, cần xác nhận).
 
 **Việc chờ chủ SP.** Xác nhận xưởng 1 / xưởng 2 và zone xưởng 3; duyệt tải 2 mô hình lên kho dự án SMB-2026 và merge.
+
+## 18. Chất lượng cao cho trình chiếu (17/10)
+
+Chủ SP hỏi có render được như ảnh phối cảnh (Lumion / Enscape) không. Trả lời: không làm cho web đẹp y như render khi xem trực tiếp (tệp > 100 MB, máy văn phòng
+giật, iPhone sập); làm **chế độ "Chất lượng cao"** trên máy tính, ước 60–70% độ đẹp của render, vẫn chạy theo tiến độ từng ngày. Đã làm thử trên Sơn Miền Bắc và
+chủ SP xem ảnh so sánh.
+
+**Có gì.** Bầu trời + mặt trời (Sky của three.js, trời chiều 42°), ánh sáng môi trường lấy từ chính bầu trời (PMREM), tone mapping ACES, bóng mềm có normalBias,
+GTAO (bóng ở góc khuất, bán kính 1,8 m, 16 mẫu) + khử răng cưa MSAA 4× qua EffectComposer, cỏ có mảng đậm nhạt (ô 50 m), cây 3 tán màu lệch nhau từng cây,
+cây cau cảnh quanh hồ / lối vào SMB khi hoàn thiện, kính phản chiếu trời, mái tôn hơi bóng. Tham số mặc định: exposure 1,15 · mặt trời 3,0 · môi trường 0,65 ·
+hemisphere 0,3 · AO 0,55 (chỉnh khi thử: `debug.hqTune`).
+
+**Bật khi nào.** Nút **Chất lượng cao** (máy tính, WebGL2). **Trình chiếu** tự bật, thoát trả lại như trước. Không tự bật khi trình duyệt vẽ bằng phần mềm
+(SwiftShader / llvmpipe — máy ảo, headless). Máy yếu: chuyển động dưới ~14 khung/giây liên tục 3 giây thì tự tắt và báo một dòng. Điện thoại (bản nhẹ) không có.
+
+**Đo.** Apple M4, 1440 × 900, XinHai có mô hình: thường 60 khung/giây, chất lượng cao 45; Safari máy tính 56, không lỗi. Đứng yên vẫn 0 khung vẽ (0,5% CPU WebKit).
+Gói Site3dView 45,6 KB gzip (+1,8 KB).
+
+**Hướng sau nếu chủ SP muốn đẹp hơn nữa:** dùng ảnh / video render sẵn của đội thiết kế cho "Xem hoàn thiện" và Trình chiếu; nút "Chụp ảnh đẹp" tính ảnh chất lượng
+gần render cho đúng góc và ngày đang xem (chỉ máy tính có card đồ hoạ, 1–3 phút / ảnh).
