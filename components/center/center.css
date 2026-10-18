@@ -671,6 +671,13 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-dl-receipt { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .vcc-dl-receipt li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
 .vcc-dl-receipt li span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+/* T4a: lý do "chưa đúng" một chạm. */
+.vcc-fb-reasons { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--vcc-muted); }
+.vcc-fb-reasons button { min-height: 28px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--vcc-border); background: var(--vcc-card); color: var(--vcc-fg2); font-size: 12px; font-weight: 500; }
+.vcc-fb-reasons button:hover, .vcc-fb-reasons button[aria-pressed="true"] { border-color: var(--vcc-accent); color: var(--vcc-accent); }
+.vcc-fb-reasons form { flex-basis: 100%; display: flex; gap: 6px; }
+.vcc-fb-reasons input { flex: 1; min-width: 0; height: 32px; border: 1px solid var(--vcc-border); border-radius: 8px; padding: 0 10px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 13px; }
+.vcc-fb-thanks { font-size: 12px; color: var(--vcc-muted); }
 /* Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm phương án → nút; bấm là gửi đúng câu đó. */
 .vcc-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .vcc-suggest button { min-height: 32px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 13px; font-weight: 600; text-align: left; }

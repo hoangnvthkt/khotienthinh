@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Loader2, Package, Search, Send, Save, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Brain, CheckCircle2, Loader2, Package, Search, Send, Save, X } from 'lucide-react';
 import { mrView, type AssistantCommand } from '../../lib/assistantCommands';
 import { chooseItem, formProblems, parseQty, searchCatalog, toFormRows, type MrCatalogItem, type MrFormActions, type MrFormContext, type MrFormRow } from '../../lib/assistantMrForm';
 import { qtyInUnit, sameUnit } from '../../lib/materialRequestText';
@@ -9,7 +9,7 @@ import { qtyInUnit, sameUnit } from '../../lib/materialRequestText';
 // Đề xuất (actions.submit). Dòng theo BOQ, đính kèm… thì "Mở form đầy đủ".
 
 const qtyShow = (q: number | null) => (q == null ? '' : q.toLocaleString('vi-VN', { maximumFractionDigits: 3 }));
-const pill = (row: MrFormRow) => (row.itemId ? 'Đã khớp' : row.candidates.length ? 'Chọn mã' : 'Chưa có mã');
+const pill = (row: MrFormRow) => (row.itemId ? (row.remembered ? 'Đã nhớ' : 'Đã khớp') : row.candidates.length ? 'Chọn mã' : 'Chưa có mã');
 
 const AssistantMrForm: React.FC<{
   command: AssistantCommand;
@@ -43,7 +43,7 @@ const AssistantMrForm: React.FC<{
       setCtx(c);
       setWarehouseId(c.defaultWarehouseId || '');
       setApproverIds(c.approvers.length === 1 ? [c.approvers[0].id] : []);
-      const next = toFormRows(v.lines, c.catalog);
+      const next = toFormRows(v.lines, c.catalog, c.memory);
       setRows(next);
       setShowSpec(new Set(next.filter(r => r.spec).map(r => r.key)));
       setShowReason(new Set(next.filter(r => r.reason).map(r => r.key)));
@@ -67,7 +67,8 @@ const AssistantMrForm: React.FC<{
     try {
       const done = await actions.submit(command, {
         mode, title: title.trim(), warehouseId, neededDate: neededDate || null,
-        lines: kept.map(r => ({ item: byId.get(r.itemId!)!, qty: parseQty(r.qty), spec: r.spec.trim(), reason: (r.reason || purpose).trim() })),
+        lines: kept.map(r => ({ item: byId.get(r.itemId!)!, qty: parseQty(r.qty), spec: r.spec.trim(), reason: (r.reason || purpose).trim(),
+          said: [r.line.name, r.line.spec].filter(Boolean).join(' ') })),
         approverIds, approverNames: ctx.approvers.filter(a => approverIds.includes(a.id)).map(a => a.name),
       });
       onDone(done);
@@ -116,8 +117,9 @@ const AssistantMrForm: React.FC<{
           return (
             <li key={row.key} className="vcc-mr-row" data-state={item ? 'ok' : 'todo'}>
               <div className="vcc-mr-row-head">
-                <span className="vcc-mr-pill" data-tone={status === 'Đã khớp' ? 'ok' : status === 'Chọn mã' ? 'warn' : 'muted'}>
-                  {status === 'Đã khớp' && <CheckCircle2 size={11} aria-hidden="true" />}{status}</span>
+                <span className="vcc-mr-pill" data-tone={status === 'Đã khớp' || status === 'Đã nhớ' ? 'ok' : status === 'Chọn mã' ? 'warn' : 'muted'}
+                  title={status === 'Đã nhớ' ? 'Lần trước bạn đã chọn mã này cho cách gọi này' : undefined}>
+                  {status === 'Đã khớp' && <CheckCircle2 size={11} aria-hidden="true" />}{status === 'Đã nhớ' && <Brain size={11} aria-hidden="true" />}{status}</span>
                 <span className="vcc-mr-said">“{[row.line.name, row.line.spec].filter(Boolean).join(' ')}{row.line.qty != null ? ` · ${qtyShow(row.line.qty)} ${row.line.unit || ''}` : ''}”</span>
                 <button type="button" className="vcc-mr-x" aria-label={`Bỏ dòng ${row.line.name}`} disabled={locked}
                   onClick={() => setRows(rs => rs.filter(r => r.key !== row.key))}><X size={13} /></button>

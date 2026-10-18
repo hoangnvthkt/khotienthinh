@@ -277,13 +277,15 @@ const mrForm: MrFormActions = {
   load: async () => {
     await sleep(80);
     aiCalls.push({ mrForm: 'load' });
-    return { catalog: MR_CATALOG, warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }], defaultWarehouseId: 'wh-smb',
+    // ?memory=1: dự án đã nhớ "Ống PVC" = Ống PVC 42 (người dùng xác nhận lần trước) → thẻ chọn sẵn, không bắt chọn lại.
+    const memory = params.get('memory') ? [{ kind: 'item' as const, alias: 'Ống PVC', aliasNorm: 'ong pvc', targetId: 'it-1a7f772d34ab4306be08e57a597b0641', targetLabel: 'Ống PVC 42', hits: 2 }] : [];
+    return { memory, catalog: MR_CATALOG, warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }], defaultWarehouseId: 'wh-smb',
       approvers: [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
       sendBlocked: AI === 'mr-noflow' ? 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.' : null };
   },
   submit: async (command, input) => {
     aiCalls.push({ mrForm: 'submit', mode: input.mode, title: input.title, warehouseId: input.warehouseId, neededDate: input.neededDate, approverIds: input.approverIds,
-      lines: input.lines.map(l => ({ item: l.item.name, qty: l.qty, spec: l.spec, reason: l.reason })) });
+      lines: input.lines.map(l => ({ item: l.item.name, qty: l.qty, spec: l.spec, reason: l.reason, said: l.said })) });
     await sleep(120);
     if (AI === 'mr-fail' && !aiCalls.some(c => c.mrForm === 'failed')) {
       aiCalls.push({ mrForm: 'failed' });
@@ -373,7 +375,7 @@ const assistantHooks: AssistantHooks = {
     resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 90, costUsd: null, durationMs: 700 },
       result: { brief: 'Sáng nay bạn có 11 việc chờ, trong đó PO-116 quá hạn 2 ngày và MR-2026-2688 cần duyệt trước 13h. Tiến độ SMB-2026 đạt 81% nhưng 7 việc đã trễ; 4 đề xuất vật tư đang chờ Phòng vật tư. Bạn chưa chấm công hôm nay.' } });
   }, 120)),
-  feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+  feedback: (runId, accepted, detail) => { aiCalls.push({ feedback: { runId, accepted, ...(detail?.reason ? { reason: detail.reason, note: detail.note || null } : {}) } }); },
   listThreads: async () => { await sleep(30); return loadThreads().sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(({ messages, ...t }) => ({ ...t, messageCount: messages.length })); },
   getThread: async id => {
     await sleep(30);

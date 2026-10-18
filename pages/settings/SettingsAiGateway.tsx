@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Activity, Plug, RefreshCcw, Save, Zap } from 'lucide-react';
+import { Activity, Plug, RefreshCcw, Save, ThumbsDown, Zap } from 'lucide-react';
 import { StateBox, inputCls, primaryBtn, secondaryBtn } from '../../components/procurement/hub/hubUi';
 import { useToast } from '../../context/ToastContext';
 import {
-  AI_MODE_LABELS, AI_PROVIDER_LABELS, AI_RUN_STATUS_LABELS, AI_TIER_LABELS, aiErrorMessage, aiGateway,
-  type AiGatewayOverview, type AiGatewayStatus, type AiSkillRow,
+  AI_FEEDBACK_REASONS, AI_MODE_LABELS, AI_PROVIDER_LABELS, AI_RUN_STATUS_LABELS, AI_TIER_LABELS, aiErrorMessage, aiGateway,
+  type AiFeedbackStats, type AiGatewayOverview, type AiGatewayStatus, type AiSkillRow,
 } from '../../lib/aiGateway';
 
 // Cài đặt → Cổng AI (Admin): nhà cung cấp (khóa đặt ở secrets, màn chỉ báo có / chưa), công tắc + trần tháng, skill (bật tắt, lượt/ngày,
@@ -43,6 +43,8 @@ const SettingsAiGateway: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // T4a: phản hồi "chưa đúng" có lý do — Quản trị AI xem skill nào hay sai, sai kiểu gì (không thấy nội dung hội thoại).
+  const [feedback, setFeedback] = useState<AiFeedbackStats | null>(null);
 
   const load = useCallback(async (period: number) => {
     setState('loading');
@@ -59,6 +61,7 @@ const SettingsAiGateway: React.FC = () => {
     }
     try { setStatus(await aiGateway.status()); setStatusError(''); }
     catch (e) { setStatus(null); setStatusError(e instanceof Error ? e.message : String(e)); }
+    setFeedback(await aiGateway.feedbackStats(period).catch(() => null));
   }, []);
   useEffect(() => { load(days); }, [days, load]);
 
@@ -219,6 +222,31 @@ const SettingsAiGateway: React.FC = () => {
                   </li>
                 ))}
               </ul>}
+          </Card>
+
+          <Card title="Phản hồi người dùng" icon={ThumbsDown} right={<span className="text-xs text-muted-foreground">{days} ngày · chỉ số liệu, không xem nội dung</span>}>
+            {!feedback ? <StateBox kind="empty" title="Chưa đọc được phản hồi" message="Thử tải lại." />
+              : feedback.skills.every(s => !s.likes && !s.dislikes) ? <StateBox kind="empty" title="Chưa có ai chấm" message="Người dùng bấm 👍 / 👎 dưới câu trả lời; 👎 hỏi thêm lý do." />
+              : <div className="space-y-3 text-sm">
+                <ul className="divide-y divide-border/60">
+                  {feedback.skills.filter(s => s.likes || s.dislikes).map(s => (
+                    <li key={s.skill} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                      <b className="min-w-0 flex-1 text-foreground">{overview.skills.find(k => k.code === s.skill)?.name || s.skill}</b>
+                      <span className="tabular-nums text-xs text-muted-foreground">{nf.format(s.runs)} lượt · 👍 {s.likes} · 👎 {s.dislikes}</span>
+                      {s.dislikes > 0 && <span className="flex basis-full flex-wrap gap-1">
+                        {AI_FEEDBACK_REASONS.filter(r => s.reasons[r.code]).map(r => <span key={r.code} className={`${chip} border-amber-200 bg-amber-50 text-amber-800`}>{r.label} {s.reasons[r.code]}</span>)}
+                        {s.reasons.none ? <span className={`${chip} border-slate-200 bg-slate-100 text-slate-700`}>Không ghi lý do {s.reasons.none}</span> : null}
+                      </span>}
+                    </li>
+                  ))}
+                </ul>
+                {feedback.notes.some(n => n.note) && <div>
+                  <p className="mb-1 text-xs font-bold text-muted-foreground">Ghi chú gần đây</p>
+                  <ul className="space-y-1">{feedback.notes.filter(n => n.note).slice(0, 10).map((n, i) => (
+                    <li key={i} className="text-xs text-foreground"><span className="tabular-nums text-muted-foreground">{when(n.at)}</span> · {overview.skills.find(k => k.code === n.skill)?.name || n.skill} — {n.note}</li>
+                  ))}</ul>
+                </div>}
+              </div>}
           </Card>
 
           <Card title="Lượt gần nhất" icon={Activity} right={<span className="text-xs text-muted-foreground">{overview.recent.length} lượt</span>}>
