@@ -1541,6 +1541,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setShowForm(true);
     };
 
+    // Trợ lý (T2d): thẻ nhật ký trong khung chat "Mở phiếu" → ?slipDate=&slipContribution=: mở đúng phiếu kỹ sư nháp vừa tạo
+    // (như nút "Mở phiếu" của Dán báo cáo Zalo). Đợi quyền tải xong; mỗi liên kết mở một lần.
+    const slipLink = useMemo(() => {
+        const params = new URLSearchParams(location.search);
+        const date = params.get('slipDate'); const id = params.get('slipContribution');
+        return date && id && /^\d{4}-\d{2}-\d{2}$/.test(date) ? { date, id } : null;
+    }, [location.search]);
+    const slipLinkHandled = useRef<string | null>(null);
+    useEffect(() => {
+        if (!slipLink || !pbacLoaded || slipLinkHandled.current === slipLink.id) return;
+        slipLinkHandled.current = slipLink.id;
+        setEngineerOpenId(slipLink.id);
+        openCreateForDate(slipLink.date);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [slipLink, pbacLoaded]);
+
     const handleCalendarDayClick = (date: string, dayLogs: DailyLog[]) => {
         // Ngày theo quy trình mới: mở bảng của ngày (báo cáo + ghi / tổng hợp / duyệt).
         if (todayBoardEnabled && workflowCutoverDate && date >= workflowCutoverDate) {

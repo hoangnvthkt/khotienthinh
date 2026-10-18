@@ -12,7 +12,7 @@ import { SourceBook, type SourceRef } from './agent.ts';
 import { converse } from './loop.ts';
 import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
-import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, leaveTypesLine, mentionsLeave, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, leaveTypesLine, looksLikeDailyReport, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -91,7 +91,8 @@ Deno.serve(async request => {
           const out = withTools
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
               system: prompt.system, turns: prompt.messages, book, used, started, runId,
-              projectId: typeof context.projectId === 'string' ? context.projectId : null })
+              projectId: typeof context.projectId === 'string' ? context.projectId : null, question: reportTextOf(input.question, history),
+              forceTool: looksLikeDailyReport(input.question) ? 'chuan_bi_nhat_ky' : undefined })
             : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
               delta => send(sseEvent({ type: 'delta', text: delta })));
           if (!out.text.trim()) throw new Error('AI_EMPTY');

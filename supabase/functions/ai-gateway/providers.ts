@@ -217,7 +217,11 @@ export const streamChat = (target: AiTarget, req: ChatRequest, onDelta: (text: s
   target.kind === 'anthropic' ? streamAnthropic(target, req, onDelta) : target.kind === 'gemini' ? streamGemini(target, req, onDelta) : streamOpenAI(target, req, onDelta);
 
 // ── Trợ lý T1: một bước của vòng gọi công cụ (chữ chạy dần + lệnh gọi công cụ). Chuẩn OpenAI (RevidAPI…) và Anthropic. ─────────────
-export interface AgentStepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none'; maxTokens: number; noThinking?: boolean }
+/** toolChoice { name }: buộc gọi đúng công cụ đó ở bước này (VD tin dán là báo cáo thi công → chuan_bi_nhat_ky). */
+export type ToolChoice = 'auto' | 'none' | { name: string };
+export interface AgentStepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: ToolChoice; maxTokens: number; noThinking?: boolean }
+const openAIToolChoice = (c: ToolChoice | undefined) => (typeof c === 'object' ? { type: 'function', function: { name: c.name } } : c || 'auto');
+const anthropicToolChoice = (c: ToolChoice | undefined) => (typeof c === 'object' ? { type: 'tool', name: c.name } : { type: c || 'auto' });
 export interface AgentStep { text: string; toolCalls: ToolCall[]; usage: Usage }
 /** Nhà cung cấp nối được công cụ; Gemini chưa nối (Trợ lý trả lời từ số liệu bản tin như T0). */
 export const supportsTools = (target: AiTarget) => target.kind !== 'gemini';
@@ -228,7 +232,7 @@ async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (tex
   const cap = outputTokenCap(t.kind, req.maxTokens);
   const body = (extras: boolean) => JSON.stringify({
     model: t.model, stream: true, messages: toOpenAIMessages(req.system, req.messages),
-    ...(req.tools.length ? { tools: openAITools(req.tools), tool_choice: req.toolChoice || 'auto' } : {}),
+    ...(req.tools.length ? { tools: openAITools(req.tools), tool_choice: openAIToolChoice(req.toolChoice) } : {}),
     ...(compatible ? { max_tokens: cap } : { max_completion_tokens: cap }),
     ...(extras ? { stream_options: { include_usage: true }, ...(compatible && req.noThinking ? { reasoning_effort: 'none' } : {}) } : {}),
   });
@@ -272,7 +276,7 @@ async function agentStepAnthropic(t: AiTarget, req: AgentStepRequest, onDelta: (
   const stream = client.messages.stream({
     model: t.model, max_tokens: req.maxTokens, system: req.system,
     messages: toAnthropicMessages(req.messages) as Anthropic.MessageParam[],
-    ...(req.tools.length ? { tools: anthropicTools(req.tools) as Anthropic.Tool[], tool_choice: { type: req.toolChoice || 'auto' } as Anthropic.ToolChoice } : {}),
+    ...(req.tools.length ? { tools: anthropicTools(req.tools) as Anthropic.Tool[], tool_choice: anthropicToolChoice(req.toolChoice) as Anthropic.ToolChoice } : {}),
   }, { signal: AbortSignal.timeout(CHAT_TIMEOUT_MS) });
   let text = '';
   stream.on('text', delta => { text += delta; onDelta(delta); });

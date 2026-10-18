@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
-import { isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
+import { dailyLogSlipRoute, dailyLogView, isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
+import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
+import AssistantDailyLogForm, { type DailyLogReceiptSlip } from './AssistantDailyLogForm';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import type { PoFormActions } from '../../lib/assistantPoForm';
 import AssistantMrForm from './AssistantMrForm';
@@ -20,6 +22,8 @@ export interface CommandActions {
   mrForm?: MrFormActions;
   /** Form đơn mua trong chat (T2c): khớp mã / NCC, lưu nháp / gửi duyệt bằng lệnh của màn Lập đơn chủ động. */
   poForm?: PoFormActions;
+  /** Nhật ký từ báo cáo Zalo trong chat (T2d): đọc bằng bộ của màn Nhật ký, tạo phiếu nháp. */
+  dailyLog?: DailyLogFormActions;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
@@ -228,8 +232,63 @@ const PurchaseOrderCard: React.FC<CardProps> = ({ command, now, you, actions }) 
   );
 };
 
+const ddmmOf = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const DailyLogCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
+  const v = dailyLogView(command);
+  const [current, setCurrent] = useState(command);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const expired = isCommandExpired(current, now);
+  const project = v.projectCode && v.projectName ? `${v.projectCode} · ${v.projectName}` : v.projectCode || v.projectName || 'dự án';
+  if (current.status === 'done') {
+    const slips = (Array.isArray(current.result.slips) ? current.result.slips : []) as DailyLogReceiptSlip[];
+    const made = slips.filter(s => s.status === 'created').length;
+    return (
+      <div className="vcc-cmd vcc-dl-done" data-state="done" data-testid="command">
+        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" /> Đã tạo {made} phiếu nhật ký nháp · {project}</p>
+        <ul className="vcc-dl-receipt">
+          {slips.map((s, i) => (
+            <li key={`${s.date}-${s.area}-${i}`}>
+              <span>{s.status === 'created' ? <CheckCircle2 size={13} aria-hidden="true" /> : <AlertTriangle size={13} aria-hidden="true" />}
+                <b>{ddmmOf(s.date)} · {s.area}</b> — {s.status === 'created' ? `${s.works} dòng việc` : s.message}</span>
+              {s.contributionId && <button type="button" className="vcc-chip" onClick={() => actions.openRoute(dailyLogSlipRoute(v, s.date, s.contributionId!), `Nhật ký ${ddmmOf(s.date)}`)}><ArrowUpRight size={12} /> Mở phiếu</button>}
+            </li>
+          ))}
+        </ul>
+        {made > 0 && <p className="vcc-cmd-note">Mở từng phiếu điền khối lượng / % rồi gửi tổng hợp. Cách gọi vừa xác nhận đã được nhớ cho lần sau.</p>}
+      </div>
+    );
+  }
+  if (current.status === 'cancelled') {
+    return <div className="vcc-cmd" data-state="cancelled" data-testid="command"><p className="vcc-cmd-muted">Đã bỏ {current.title.toLowerCase()}.</p></div>;
+  }
+  const cancel = async () => {
+    setBusy(true); setError(null);
+    try { setCurrent(await actions.cancel(current)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa bỏ được.'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="vcc-cmd" data-state={expired ? 'expired' : current.status} data-testid="command" role="group" aria-label={current.title}>
+      <div className="vcc-cmd-head">
+        <span className="vcc-cmd-icon" aria-hidden="true"><CalendarDays size={15} /></span>
+        <p className="vcc-cmd-title">{current.title}</p>
+        <span className="vcc-cmd-tag">Nháp · Trợ lý chuẩn bị</span>
+      </div>
+      <dl className="vcc-cmd-facts">
+        <div><dt>Dự án</dt><dd>{project}</dd></div>
+        <div><dt>Ngày báo cáo</dt><dd>{ddmmOf(v.reportDate)} (dòng không ghi ngày)</dd></div>
+      </dl>
+      {error && <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {error}</p>}
+      {expired ? <p className="vcc-cmd-muted">Thẻ đã cũ — dán lại báo cáo để chuẩn bị lại.</p>
+        : actions.dailyLog ? <AssistantDailyLogForm command={current} actions={actions.dailyLog} you={you} onCancel={() => void cancel()} busyCancel={busy}
+          onCreated={async slips => { setCurrent(await actions.dailyLog!.finish(current, { slips })); }} />
+          : <p className="vcc-cmd-muted">Mở Dự án → Nhật ký → "Dán báo cáo Zalo" để tạo phiếu.</p>}
+    </div>
+  );
+};
+
 const AssistantCommandCard: React.FC<CardProps> = props =>
   props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
-    : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} /> : <LeaveCard {...props} />;
+    : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} />
+      : props.command.kind === 'daily_log' ? <DailyLogCard {...props} /> : <LeaveCard {...props} />;
 
 export default AssistantCommandCard;
