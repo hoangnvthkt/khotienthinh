@@ -7,7 +7,10 @@
 // Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
-import { complete, costUsd, envTarget, readConfig, streamChat, type ImagePart } from './providers.ts';
+import { agentStep, complete, costUsd, envTarget, readConfig, streamChat, supportsTools, type ImagePart } from './providers.ts';
+import { SourceBook, type SourceRef } from './agent.ts';
+import { converse } from './loop.ts';
+import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
@@ -42,6 +45,11 @@ Deno.serve(async request => {
     (await assigned(cls === 'reasoning' ? 'ai.reasoning' : 'ai.fast', cls)) ?? envTarget(config, cls) ?? (cls === 'reasoning' ? await assigned('ai.fast', cls) : null);
   const describe = (t: AiTarget | null) => t ? { source: t.source, name: t.name, kind: t.kind, label: KIND_LABEL[t.kind], model: t.model } : null;
 
+  const rpc: Rpc = async (fn, args) => {
+    const r = await user.rpc(fn, args);
+    return { data: r.data, error: r.error ? { message: r.error.message, code: r.error.code } : null };
+  };
+
   // Trợ lý · hội thoại (T0, chủ SP 17/10): trả lời chạy dần (text/event-stream: start → delta… → done | error).
   // Lỗi trước khi bắt đầu (đầu vào, chưa có khóa, hội thoại không phải của mình) → JSON như skill thường.
   // Xong thì ghi lượt hỏi–đáp vào hội thoại bằng JWT người hỏi; người dùng rời trang giữa chừng vẫn ghi để mở lại thấy.
@@ -57,7 +65,9 @@ Deno.serve(async request => {
       if (thread.error) { await finish({ status: 'error', error: 'AI_THREAD_NOT_FOUND', durationMs: 0 }); return json({ code: 'AI_FAILED', runId, error: 'AI_THREAD_NOT_FOUND' }); }
       history = threadTurns(thread.data);
     }
-    const prompt = buildChatPrompt(input, history);
+    // T1: nhà cung cấp nối được công cụ → Trợ lý tự tra (hồ sơ, tồn kho, đơn mua, đề xuất, việc của tôi) bằng JWT người hỏi.
+    const withTools = supportsTools(target);
+    const prompt = buildChatPrompt(input, history, withTools);
     const model = target.model;
     const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
     const redactNote = Object.keys(prompt.hits).length ? ` · đã che ${Object.entries(prompt.hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
@@ -72,19 +82,26 @@ Deno.serve(async request => {
         const ping = setInterval(() => send(': ping\n\n'), 15_000);
         send(sseEvent({ type: 'start', runId, model, threadId: input.threadId }));
         try {
-          const out = await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
-            delta => send(sseEvent({ type: 'delta', text: delta })));
+          const book = new SourceBook();
+          const used: string[] = [];
+          const out = withTools
+            ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
+              system: prompt.system, turns: prompt.messages, book, used, started })
+            : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
+              delta => send(sseEvent({ type: 'delta', text: delta })));
+          if (!out.text.trim()) throw new Error('AI_EMPTY');
           // Câu từ chối (ngoài công việc, khiếm nhã, đòi xóa…): bỏ nhãn khỏi chữ lưu / trả về, ghi loại vào nhật ký.
           const { text: answer, refusal } = splitRefusal(out.text);
           // Từ chối vẫn giữ nút nguồn: câu lẫn (một phần công việc + một phần ngoài lề) và câu gợi ý việc khác đều dẫn chứng từ thật.
-          const sources = sourceKeysOf(answer, input.facts);
+          // Nguồn = dòng số liệu bản tin [[khóa]] + hồ sơ công cụ trả về [[hN]] (màn hình mở đúng màn).
+          const sources: Array<string | SourceRef> = [...sourceKeysOf(answer, input.facts), ...book.cited(answer)];
           const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
           const saved = await user.rpc('ai_thread_save_turn_v1', { p_thread_id: input.threadId, p: {
             question: input.question, answer, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
           if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
           const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
           await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
-            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${used.length ? `, tra ${used.join(' ')}` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
           send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'AI_FAILED';

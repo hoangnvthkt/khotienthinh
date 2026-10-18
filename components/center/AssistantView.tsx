@@ -11,8 +11,10 @@ import {
 import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult } from '../../lib/aiGateway';
 import {
   assistantChat, boldParts, displayText, isTodayThread, textBlocks, threadDayLabel, threadTimeLabel,
-  type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatThread, type ChatThreadSummary,
+  type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
 } from '../../lib/assistantChat';
+import { recordTarget } from '../../lib/search/recordPresentation';
+import { displayCode } from '../../lib/center/workItemsService';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
 // hôm nay; hỏi tiếp được (máy chủ đọc lại các lượt trước), trả lời chạy dần, mở lại từ Lịch sử (chỉ chủ xem, giữ 90 ngày).
@@ -39,7 +41,9 @@ interface UiMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources: string[];
+  sources: ChatSource[];
+  /** T1: công cụ Trợ lý đã tra trong lượt này (chỉ lượt vừa hỏi, không lưu). */
+  tools?: ChatToolUse[];
   runId: string | null;
   accepted: boolean | null;
   /** pending: chờ chữ đầu · streaming: đang chạy · done · error */
@@ -158,6 +162,8 @@ const BriefCard: React.FC<{
 };
 
 const STOP_ERRORS = new Set(['AI_ABORTED']);
+/** "Đang tra Tồn kho: thép D16…" */
+const toolStatus = (tool: ChatToolUse) => `Đang tra ${tool.label.toLowerCase()}${tool.query ? `: ${tool.query}` : ''}…`;
 
 const AssistantView: React.FC<{
   person: CenterPerson;
@@ -170,8 +176,10 @@ const AssistantView: React.FC<{
   onDrill: (target: DrillTarget) => void;
   onOpenItem: (item: WorkItem) => void;
   onRetry: () => void;
+  /** Mở một màn (hồ sơ Trợ lý tìm được) thành tab trong Trung tâm. */
+  onOpenRoute?: (route: string, title?: string, state?: unknown) => void;
   hooks?: AssistantHooks;
-}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, hooks = defaultAssistantHooks }) => {
+}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, hooks = defaultAssistantHooks }) => {
   const [items, setItems] = useState<WorkItem[] | 'loading' | 'error'>('loading');
   const [itemsAttempt, setItemsAttempt] = useState(0);
   const [ai, setAi] = useState<AiGatewayStatus | null>(null);
@@ -276,6 +284,25 @@ const AssistantView: React.FC<{
     if (line.item) onOpenItem(line.item); else if (line.target) onDrill(line.target);
   };
 
+  // Nguồn của câu trả lời → nút: dòng số liệu bản tin (mở như bấm ở bản tin), hồ sơ tìm được (mở đúng màn như Tìm kiếm), việc (mở hồ sơ).
+  const sourceChips = (sources: ChatSource[]) => sources.flatMap(source => {
+    if (typeof source === 'string') {
+      const line = linesByKeys(brief, [source])[0];
+      return line ? [{ key: line.key, label: line.item ? line.item.code : line.label, title: line.locked || line.text, disabled: Boolean(line.locked) || !(line.item || line.target), open: () => open(line) }] : [];
+    }
+    if (source.type === 'work') {
+      const item = source.item;
+      return [{ key: `w:${item.source}:${item.id}`, label: displayCode(item), title: item.title, disabled: false, open: () => onOpenItem(item) }];
+    }
+    const record = source.record;
+    const label = record.code || record.title || 'Hồ sơ';
+    return [{ key: `r:${record.kind}:${record.id}`, label, title: [record.title, record.subtitle].filter(Boolean).join(' · '), disabled: false, open: () => {
+      const target = recordTarget(record);
+      if (onOpenRoute) onOpenRoute(target.route, label, target.state);
+      else onDrill({ kind: 'route', path: target.route, title: label });
+    } }];
+  });
+
   const askQuick = (id: string, text: string) => {
     pinned.current = true;
     setMessages(current => [...current,
@@ -299,7 +326,11 @@ const AssistantView: React.FC<{
     abort.current = controller;
     const result = await hooks.chat(
       { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender), context },
-      { onStart: ({ runId }) => patch(m => ({ ...m, runId })), onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })) },
+      {
+        onStart: ({ runId }) => patch(m => ({ ...m, runId })),
+        onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
+        onTool: tool => patch(m => ({ ...m, tools: [...(m.tools || []), tool] })),
+      },
       controller.signal,
     ).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
     abort.current = null;
@@ -398,7 +429,9 @@ const AssistantView: React.FC<{
                 <div key={message.id} className="vcc-msg" data-role="assistant" data-testid="turn" data-state={message.state}>
                   <span className="vcc-msg-avatar" aria-hidden="true"><Sparkles size={14} /></span>
                   <div className="vcc-msg-body">
-                    {message.state === 'pending' && <p className="vcc-msg-wait" role="status">Đang đọc số liệu…</p>}
+                    {(message.state === 'pending' || (message.state === 'streaming' && !displayText(message.content).trim())) && (
+                      <p className="vcc-msg-wait" role="status">{message.tools?.length ? toolStatus(message.tools[message.tools.length - 1]) : 'Đang đọc số liệu…'}</p>
+                    )}
                     {message.content && <div className="vcc-msg-a"><RichText text={displayText(message.content)} />{message.state === 'streaming' && <span className="vcc-caret" aria-hidden="true" />}</div>}
                     {message.lines && (
                       <ul className="vcc-qlines">
@@ -419,17 +452,20 @@ const AssistantView: React.FC<{
                       </p>
                     )}
                     {message.state === 'done' && !message.lines && (() => {
-                      const sources = linesByKeys(brief, message.sources);
+                      const chips = sourceChips(message.sources);
                       return (
                         <div className="vcc-msg-foot">
-                          {sources.length > 0 && (
+                          {chips.length > 0 && (
                             <div className="vcc-turn-src" role="group" aria-label="Chứng từ, màn gốc">
-                              {sources.map(line => (
-                                <button key={line.key} type="button" className="vcc-chip" disabled={Boolean(line.locked) || !(line.item || line.target)} onClick={() => open(line)} title={line.locked || line.text}>
-                                  <ArrowUpRight size={12} /> {line.item ? line.item.code : line.label}
+                              {chips.map(chip => (
+                                <button key={chip.key} type="button" className="vcc-chip" disabled={chip.disabled} onClick={chip.open} title={chip.title}>
+                                  <ArrowUpRight size={12} /> {chip.label}
                                 </button>
                               ))}
                             </div>
+                          )}
+                          {message.tools && message.tools.length > 0 && (
+                            <span className="vcc-msg-tools" title={message.tools.map(toolStatus).join('\n')}>Đã tra: {[...new Set(message.tools.map(t => t.label))].join(' · ')}</span>
                           )}
                           {message.runId && (
                             <Feedback label="Trả lời" value={message.accepted} onPick={accepted => {

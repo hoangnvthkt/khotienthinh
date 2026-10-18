@@ -13,6 +13,7 @@ export interface Usage { tokensIn: number | null; tokensOut: number | null }
 export interface Completion { text: string; usage: Usage }
 import type { ImagePart } from './images.ts';
 import { readSse } from './chat.ts';
+import { accumulateToolDeltas, anthropicTools, finishToolCalls, openAITools, parseToolArgs, toAnthropicMessages, toOpenAIMessages, type AgentMsg, type ToolCall, type ToolSpec } from './agent.ts';
 export type { ImagePart };
 export interface CompletionRequest {
   system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[];
@@ -215,3 +216,74 @@ async function streamOpenAI(t: AiTarget, req: ChatRequest, onDelta: (text: strin
 
 export const streamChat = (target: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> =>
   target.kind === 'anthropic' ? streamAnthropic(target, req, onDelta) : target.kind === 'gemini' ? streamGemini(target, req, onDelta) : streamOpenAI(target, req, onDelta);
+
+// ── Trợ lý T1: một bước của vòng gọi công cụ (chữ chạy dần + lệnh gọi công cụ). Chuẩn OpenAI (RevidAPI…) và Anthropic. ─────────────
+export interface AgentStepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none'; maxTokens: number; noThinking?: boolean }
+export interface AgentStep { text: string; toolCalls: ToolCall[]; usage: Usage }
+/** Nhà cung cấp nối được công cụ; Gemini chưa nối (Trợ lý trả lời từ số liệu bản tin như T0). */
+export const supportsTools = (target: AiTarget) => target.kind !== 'gemini';
+
+async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> {
+  if (!t.model) throw new Error('AI_MODEL_REQUIRED');
+  const compatible = t.kind === 'openai_compatible';
+  const cap = outputTokenCap(t.kind, req.maxTokens);
+  const body = (extras: boolean) => JSON.stringify({
+    model: t.model, stream: true, messages: toOpenAIMessages(req.system, req.messages),
+    ...(req.tools.length ? { tools: openAITools(req.tools), tool_choice: req.toolChoice || 'auto' } : {}),
+    ...(compatible ? { max_tokens: cap } : { max_completion_tokens: cap }),
+    ...(extras ? { stream_options: { include_usage: true }, ...(compatible && req.noThinking ? { reasoning_effort: 'none' } : {}) } : {}),
+  });
+  const send = (extras: boolean) => fetch(`${t.baseUrl}/chat/completions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(CHAT_TIMEOUT_MS), body: body(extras),
+  });
+  let res = await send(true);
+  if (res.status === 400) res = await send(false);
+  if (!res.ok || !res.body) throw new Error(`AI_HTTP_${res.status}`);
+  if (!(res.headers.get('content-type') || '').includes('event-stream')) {
+    const data = await res.json();
+    const msg = data?.choices?.[0]?.message || {};
+    if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
+    const calls = finishToolCalls(accumulateToolDeltas([], (msg.tool_calls || []).map((c: Record<string, unknown>, index: number) => ({ ...c, index }))));
+    const whole = typeof msg.content === 'string' ? msg.content : '';
+    if (whole) onDelta(whole);
+    if (!whole && !calls.length) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
+    return { text: whole, toolCalls: calls, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
+  }
+  let text = ''; let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
+  const acc: Array<{ id: string; name: string; args: string }> = [];
+  await readSse(res.body, data => {
+    if (data === '[DONE]') return;
+    let j: Record<string, any>;
+    try { j = JSON.parse(data); } catch { return; }
+    const choice = j?.choices?.[0];
+    const delta = choice?.delta?.content;
+    if (typeof delta === 'string' && delta) { text += delta; onDelta(delta); }
+    if (choice?.delta?.tool_calls) accumulateToolDeltas(acc, choice.delta.tool_calls);
+    if (choice?.finish_reason) finish = choice.finish_reason;
+    if (j?.usage) usage = { tokensIn: j.usage.prompt_tokens ?? null, tokensOut: j.usage.completion_tokens ?? null };
+  });
+  if (finish === 'content_filter') throw new Error('AI_REFUSED');
+  const toolCalls = finishToolCalls(acc);
+  if (!text && !toolCalls.length) throw new Error(emptyReplyError(finish));
+  return { text, toolCalls, usage };
+}
+
+async function agentStepAnthropic(t: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> {
+  const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
+  const stream = client.messages.stream({
+    model: t.model, max_tokens: req.maxTokens, system: req.system,
+    messages: toAnthropicMessages(req.messages) as Anthropic.MessageParam[],
+    ...(req.tools.length ? { tools: anthropicTools(req.tools) as Anthropic.Tool[], tool_choice: { type: req.toolChoice || 'auto' } as Anthropic.ToolChoice } : {}),
+  }, { signal: AbortSignal.timeout(CHAT_TIMEOUT_MS) });
+  let text = '';
+  stream.on('text', delta => { text += delta; onDelta(delta); });
+  const final = await stream.finalMessage();
+  if (final.stop_reason === 'refusal') throw new Error('AI_REFUSED');
+  const toolCalls: ToolCall[] = final.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    .map(b => ({ id: b.id, name: b.name, args: parseToolArgs(b.input) }));
+  if (!text && !toolCalls.length) throw new Error(emptyReplyError(final.stop_reason));
+  return { text, toolCalls, usage: { tokensIn: final.usage?.input_tokens ?? null, tokensOut: final.usage?.output_tokens ?? null } };
+}
+
+export const agentStep = (target: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> =>
+  target.kind === 'anthropic' ? agentStepAnthropic(target, req, onDelta) : agentStepOpenAI(target, req, onDelta);

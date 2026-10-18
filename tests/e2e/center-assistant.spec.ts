@@ -203,6 +203,20 @@ test("AI đứt giữa chừng: bỏ nửa câu, báo lý do + Thử lại; hế
   await expect(chat(page).getByTestId("turn")).not.toHaveAttribute("data-state", /pending|streaming/);
 });
 
+test("T1 tự tra: hiện đang tra gì, ghi 'Đã tra', nút hồ sơ mở đúng màn thành tab", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Thép D16 còn tồn bao nhiêu?");
+  const turn = chat(page).getByTestId("turn");
+  await expect(turn.getByRole("status")).toHaveText("Đang tra tồn kho: thép D16…");
+  await expect(turn).toHaveAttribute("data-state", "done");
+  await expect(turn.locator(".vcc-msg-a")).toHaveText("Thép CB400 D16 còn 42,4 tấn: Kho SMB 12,4 tấn, Kho tổng Hưng Yên 30 tấn.");
+  await expect(turn.locator(".vcc-msg-tools")).toHaveText("Đã tra: Tồn kho");
+  await turn.getByRole("group", { name: "Chứng từ, màn gốc" }).getByRole("button", { name: "THEP-D16" }).click();
+  await expect(workTabs(page).getByRole("tab", { name: /THEP-D16/ })).toHaveAttribute("aria-selected", "true");
+});
+
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=busy`);
