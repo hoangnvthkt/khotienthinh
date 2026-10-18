@@ -84,7 +84,7 @@ export const TOOLS: ToolSpec[] = [
   // T2b — đề xuất vật tư: tách câu thành dòng + chọn dự án; thẻ mở form Đề xuất thật (Gõ nhanh điền sẵn), người dùng khớp mã và tự gửi.
   {
     name: 'chuan_bi_de_xuat_vat_tu',
-    description: 'CHUẨN BỊ phiếu đề xuất vật tư nháp cho dự án (không gửi): tách lời người dùng thành từng dòng vật tư rồi hiện thẻ; người dùng bấm "Mở form đề xuất" để khớp mã, kiểm và tự gửi. Dùng khi người dùng muốn đề xuất / xin / cần vật tư cho công trường và đã nói ít nhất một vật tư.',
+    description: 'CHUẨN BỊ phiếu đề xuất vật tư nháp cho dự án (không gửi): tách lời người dùng thành từng dòng vật tư rồi hiện thẻ form gọn trong chat; người dùng chọn mã, người duyệt và tự bấm Gửi duyệt. Dùng khi người dùng muốn đề xuất / xin / cần vật tư cho công trường và đã nói ít nhất một vật tư.',
     parameters: { type: 'object', additionalProperties: false, required: ['dong'], properties: {
       du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng; chưa nói thì bỏ trống — công cụ trả danh sách dự án để hỏi lại.' },
       ten_de_xuat: { type: 'string', description: 'Tên phiếu ngắn, VD "Vật tư đổ bê tông sàn tầng 4" (bỏ trống thì lấy theo mục đích).' },
@@ -234,7 +234,7 @@ async function prepareMaterialRequest(args: Record<string, unknown>, ctx: ToolCo
   ctx.emit({ type: 'command', command: created.data });
   return JSON.stringify(compact({
     da_hien_the: true, du_an: projectLabel(project), ten_de_xuat: title, so_dong: lines.length, dong_chua_co_so_luong: missingQty || null, ngay_can: neededDate,
-    ghi_chu: 'Thẻ đề xuất nháp đã hiện. Người dùng bấm "Mở form đề xuất" để khớp mã vật tư, kiểm số lượng rồi tự gửi. Không nói là đã gửi hay đã tạo phiếu.',
+    ghi_chu: 'Thẻ đề xuất nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, kiểm số lượng, chọn người duyệt rồi tự bấm Gửi duyệt hoặc Lưu nháp trên thẻ. Không nói là đã gửi hay đã tạo phiếu.',
   }));
 }
 

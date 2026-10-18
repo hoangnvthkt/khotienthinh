@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -15,6 +15,8 @@ import { useCenterAccess } from '../../lib/center/centerService';
 import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDocs } from '../../lib/dashboard/dashboardService';
 import { fetchFlow, fetchFlowAccess, fetchFlowItems, remindFlow, type FlowItemsFilter, type FlowQuery } from '../../lib/center/centerFlowService';
 import { site3dHooks } from '../../lib/site3d/site3dService';
+import { defaultAssistantHooks } from '../../components/center/AssistantView';
+import { createMrFormActions } from '../../lib/assistantMrForm';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -43,7 +45,15 @@ const loadFlowItems = (filter: FlowItemsFilter, limit?: number, offset?: number)
 const remindFlowHolders = (filter: FlowItemsFilter, note?: string | null) => remindFlow(filter, note);
 
 const CenterPage: React.FC = () => {
-  const { user, employees, appSettings } = useApp();
+  const { user, employees, appSettings, addRequest } = useApp();
+  // Trợ lý: form đề xuất vật tư ngay trong chat lưu bằng đúng hàm lưu của app (như form Đề xuất). addRequest đổi mỗi lần app vẽ lại
+  // → giữ qua ref để hooks của Trợ lý ổn định (không tải lại hội thoại / trạng thái AI).
+  const addRequestRef = useRef(addRequest);
+  addRequestRef.current = addRequest;
+  const assistantHooks = useMemo(() => ({
+    ...defaultAssistantHooks,
+    mrForm: user?.id ? createMrFormActions({ userId: user.id, addRequest: request => addRequestRef.current(request) }) : undefined,
+  }), [user?.id]);
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -122,6 +132,7 @@ const CenterPage: React.FC = () => {
         remindFlow={remindFlowHolders}
         initialTab={initialTab}
         site3d={site3dHooks}
+        assistant={assistantHooks}
       />
     </CenterEntrance>
   );

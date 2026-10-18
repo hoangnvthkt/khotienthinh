@@ -16,6 +16,7 @@ import {
 import { recordTarget } from '../../lib/search/recordPresentation';
 import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
+import type { MrFormActions } from '../../lib/assistantMrForm';
 import { displayCode } from '../../lib/center/workItemsService';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -32,6 +33,8 @@ export interface AssistantHooks {
   /** T2a: người dùng bấm Xác nhận trên thẻ lệnh nháp → chạy lệnh gửi của module, ghi biên nhận. */
   runCommand: (command: AssistantCommand, edits: { reason?: string }) => Promise<AssistantCommand>;
   cancelCommand: (command: AssistantCommand) => Promise<AssistantCommand>;
+  /** Form đề xuất vật tư ngay trong chat (app thật: CenterPage dựng bằng addRequest của app). Không có → thẻ mở form của dự án. */
+  mrForm?: MrFormActions;
 }
 export const defaultAssistantHooks: AssistantHooks = {
   status: () => aiGateway.status(),
@@ -328,6 +331,7 @@ const AssistantView: React.FC<{
     run: (command, edits) => hooks.runCommand(command, edits),
     cancel: command => hooks.cancelCommand(command),
     openRoute: (route, title) => (onOpenRoute ? onOpenRoute(route, title) : onDrill({ kind: 'route', path: route, title })),
+    mrForm: hooks.mrForm,
   };
 
   const askQuick = (id: string, text: string) => {

@@ -55,6 +55,8 @@ import { buildSiteItemHistory, frequentSiteItems, siteSpecGhost } from '../lib/m
 import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
 import { duplicateItemSpecProblems, getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 import { MaterialRequestSupplyPanel } from './project/material/MaterialRequestSupplyPanel';
+import { toMaterialRequestRecord, toRequestItem, type MaterialRequestLineDraft } from '../lib/materialRequestBuild';
+import { MaterialRequestNotSavedError, getMaterialRequestBinding, saveAndStartWorkflow, toSubmittedProjectRequest } from '../lib/materialRequestSend';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -196,27 +198,7 @@ export type MaterialRequestInitialDraft = {
     quick?: QuickLinesInitial | null;
 };
 
-type RequestLineDraft = {
-    lineId: string;
-    itemId: string;
-    qty: number | string;
-    workBoqItemId?: string | null;
-    workBoqItemName?: string | null;
-    materialBudgetItemId?: string | null;
-    materialBudgetItemName?: string | null;
-    neededDate?: string;
-    note?: string;
-    overBudgetReason?: string;
-    isManualItem?: boolean;
-    itemNameSnapshot?: string;
-    unitSnapshot?: string;
-    skuSnapshot?: string;
-    specification?: string;
-    manualReason?: string;
-    materialGroupKey?: string | null;
-    materialGroupSource?: 'summary_aggregate' | string | null;
-    materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
-};
+type RequestLineDraft = MaterialRequestLineDraft;
 
 type RequestDisplayRow = RequestLineDraft | RequestItem;
 
@@ -1221,29 +1203,36 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const submitRequestForApproval = async (draftRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
         if (!submissionTarget) return;
-        const dynamicConfiguration = isProjectRequest
-            ? await projectWorkflowService.getConfiguration('material_request', effectiveProjectId || null, effectiveConstructionSiteId || null)
-            : null;
-        if (isProjectRequest && (!dynamicConfiguration?.valid || !dynamicConfiguration.binding)) {
-            throw new Error(dynamicConfiguration?.errors?.[0] || 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.');
+        // Đề xuất dự án: dùng chung bước gửi với form gọn trong khung chat Trợ lý (lib/materialRequestSend).
+        if (isProjectRequest) {
+            const binding = await getMaterialRequestBinding(effectiveProjectId || null, effectiveConstructionSiteId || null);
+            setIsSaving(true);
+            try {
+                const savedForCallback = await saveAndStartWorkflow(toSubmittedProjectRequest(draftRequest, user.id, submissionTarget.note), binding, submissionTarget, { addRequest });
+                recordSpecOutcome(reqItems, draftRequest.code);
+                setSubmittingProjectRequest(null);
+                toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
+                onSaved?.(savedForCallback, { submitted: true });
+                onClose();
+            } catch (err: any) {
+                if (err instanceof MaterialRequestNotSavedError) {
+                    toast.error('Không thể gửi đề xuất', err.message);
+                    return;
+                }
+                logApiError('requestModal.submitApproval', err);
+                toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
+                throw err;
+            } finally {
+                setIsSaving(false);
+            }
+            return;
         }
-        const dynamicBinding = dynamicConfiguration?.binding || null;
         const now = new Date().toISOString();
         const requestToSave: MaterialRequest = {
             ...draftRequest,
-            status: dynamicBinding ? RequestStatus.DRAFT : RequestStatus.PENDING,
-            ...(dynamicBinding
-                ? {
-                    submittedToUserId: null,
-                    submittedToName: null,
-                    submittedToPermission: null,
-                    submissionNote: null,
-                }
-                : projectSubmissionService.targetToUpdate(submissionTarget)),
-            ...projectSubmissionService.actionMeta(user.id, !dynamicBinding),
-            ...(isProjectRequest
-                ? getMaterialRequestWorkflowPatch(dynamicBinding ? 'draft' : 'site_manager_review', user.id)
-                : {}),
+            status: RequestStatus.PENDING,
+            ...projectSubmissionService.targetToUpdate(submissionTarget),
+            ...projectSubmissionService.actionMeta(user.id, true),
             logs: [
                 ...(draftRequest.logs || []),
                 { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
@@ -1258,25 +1247,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return;
             }
             recordSpecOutcome(reqItems, requestToSave.code);
-            let savedForCallback = requestToSave;
-            if (dynamicBinding) {
-                const targetUserIds = submissionTarget.userIds?.length
-                    ? submissionTarget.userIds
-                    : submissionTarget.userId
-                        ? [submissionTarget.userId]
-                        : [];
-                await projectWorkflowService.startMaterialRequestWorkflowV2({
-                    requestId: requestToSave.id,
-                    templateId: dynamicBinding.workflowTemplateId,
-                    firstAssigneeUserIds: targetUserIds,
-                    comment: submissionTarget.note,
-                });
-                const freshRequest = await materialRequestService.getById(requestToSave.id);
-                if (freshRequest) savedForCallback = freshRequest;
-            }
             setSubmittingProjectRequest(null);
             toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
-            onSaved?.(savedForCallback, { submitted: true });
+            onSaved?.(requestToSave, { submitted: true });
             onClose();
         } catch (err: any) {
             logApiError('requestModal.submitApproval', err);
@@ -1294,7 +1267,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const buildDraftRequestFromForm = (issuedCode?: string): MaterialRequest => {
         const now = new Date().toISOString();
-        const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
         const workflowPatch = isProjectRequest
             ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
             : {};
@@ -1303,68 +1275,29 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (!requestCode) {
             throw new Error('Hệ thống chưa cấp được mã phiếu MR mới.');
         }
-        return {
-            ...(request || {}),
-            id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        return toMaterialRequestRecord({
+            base: request,
             code: requestCode,
-            title: requestTitle.trim() || request?.title || 'Đề xuất vật tư',
+            title: requestTitle,
             projectId: effectiveProjectId,
             constructionSiteId: effectiveConstructionSiteId,
             requestOrigin: isProjectRequest ? 'project' : 'wms',
             siteWarehouseId,
-            sourceWarehouseId: sourceWarehouseId || undefined,
-            requesterId: request?.requesterId || user.id,
-            status: RequestStatus.DRAFT,
-            submittedToUserId: null,
-            submittedToName: null,
-            submittedToPermission: null,
-            submissionNote: null,
-            ...workflowPatch,
-            createdDate: request?.createdDate || now,
-            expectedDate: expectedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
+            sourceWarehouseId,
+            requesterId: user.id,
+            workflowPatch,
+            now,
+            expectedDate,
             note,
             fulfillmentMode,
-            items: reqItems.map(i => {
-                const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
-                const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
-                const overReason = i.overBudgetReason || undefined;
-                return {
-                    lineId: i.lineId,
-                    itemId: i.itemId,
-                    requestQty: parseNonNegativeLocaleNumber(i.qty),
-                    approvedQty: 0,
-                    workBoqItemId: i.workBoqItemId || null,
-                    workBoqItemName: i.workBoqItemName || work?.name || null,
-                    materialBudgetItemId: i.materialBudgetItemId || null,
-                    materialBudgetItemName: i.materialBudgetItemName || snapshot.budget?.itemName || null,
-                    neededDate: i.neededDate || undefined,
-                    note: i.note || undefined,
-                    budgetQtySnapshot: snapshot.budgetQty,
-                    reservedBeforeQtySnapshot: snapshot.reservedBeforeQty,
-                    previousRequestedQtySnapshot: snapshot.previousRequested,
-                    isOverBoq: snapshot.overBudgetQty > 0,
-                    overQty: snapshot.overBudgetQty,
-                    overPercent: snapshot.overBudgetPercent,
-                    overReason,
-                    overBudgetQtySnapshot: snapshot.overBudgetQty,
-                    overBudgetPercentSnapshot: snapshot.overBudgetPercent,
-                    overBudgetReason: overReason,
-                    isManualItem: i.isManualItem || false,
-                    itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
-                    unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
-                    skuSnapshot: i.skuSnapshot || getLineInventory(i.itemId)?.sku || undefined,
-                    specification: i.specification?.trim() || undefined,
-                    manualReason: i.manualReason || undefined,
-                    materialGroupKey: i.materialGroupKey || undefined,
-                    materialGroupSource: i.materialGroupSource || undefined,
-                    materialGroupSnapshot: i.materialGroupSnapshot || undefined,
-                };
-            }),
-            logs: [
-                ...(request?.logs || []),
-                { action: isExistingDraft ? 'UPDATED_DRAFT' : 'CREATED_DRAFT', userId: user.id, timestamp: now },
-            ],
-        };
+            userId: user.id,
+            items: reqItems.map(i => toRequestItem(
+                i,
+                sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id),
+                getLineInventory(i.itemId),
+                i.workBoqItemId ? workBoqMap.get(i.workBoqItemId)?.name : undefined,
+            )),
+        });
     };
 
     const specProblems = duplicateItemSpecProblems(reqItems.map(line => ({ key: line.lineId, itemId: line.itemId, specification: line.specification })));

@@ -304,9 +304,9 @@ test("gợi ý bấm: Trợ lý hỏi lại kèm phương án → nút; bấm l�
   expect((await aiCalls(page)).filter(call => call.skill === "assistant_chat").map(call => call.question)).toEqual(["Xin nghỉ", "Phép năm"]);
 });
 
-test("T2b đề xuất vật tư: thẻ dòng vật tư → Mở form đề xuất đúng dự án; form lưu xong thẻ thành biên nhận; tải lại vẫn thấy", async ({ page, isMobile }) => {
+test("T2b (bản không có form trong chat): thẻ dòng vật tư → Mở form đề xuất đúng dự án; form lưu xong thẻ thành biên nhận; tải lại vẫn thấy", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
-  await page.goto(`${base}?ai=gemini`);
+  await page.goto(`${base}?ai=gemini&mrform=0`);
   await openAssistant(page, false);
   await ask(page, "Đề xuất cho SMB 2 tấn xi măng PCB40, 50 cây thép D16, dây thép buộc, cần 23/10 đổ sàn tầng 4");
   const card = chat(page).getByTestId("command");
@@ -314,7 +314,7 @@ test("T2b đề xuất vật tư: thẻ dòng vật tư → Mở form đề xu�
   await expect(card.locator(".vcc-cmd-title")).toHaveText("Vật tư đổ bê tông sàn tầng 4");
   await expect(card.locator(".vcc-cmd-facts")).toContainText("SMB-2026 · Nhà máy SMB");
   await expect(card.locator(".vcc-cmd-facts")).toContainText("23/10");
-  await expect(card.getByRole("list", { name: "Vật tư" }).getByRole("listitem")).toHaveText(["Xi măng PCB402 tấn", "Thép D1650 cây", "Dây thép buộcchưa có SL"]);
+  await expect(card.getByRole("list", { name: "Vật tư" }).getByRole("listitem")).toHaveText(["Xi măng PCB402 tấn", "Thép D1650 cây", "Ống PVC20 cây", "Dây thép buộcchưa có SL"]);
   await expect(card.getByText("Chọn mã và gửi ở form — chưa gửi gì tới khi anh bấm.")).toBeVisible();
   await expect(chat(page).getByTestId("turn").locator(".vcc-msg-tools")).toHaveCount(0);
   await card.getByRole("button", { name: "Mở form đề xuất" }).click();
@@ -332,7 +332,7 @@ test("T2b đề xuất vật tư: thẻ dòng vật tư → Mở form đề xu�
   await expect(workTabs(page).getByRole("tab", { name: /MR-2026-0042/ })).toHaveAttribute("aria-selected", "true");
 });
 
-test("T2b điện thoại: thẻ đề xuất không tràn ngang, nút Mở form đề xuất bấm được", async ({ page, isMobile }) => {
+test("T2b điện thoại: form đề xuất trong chat không tràn ngang, có nút Gửi duyệt", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(`${base}?ai=gemini`);
   await openAssistant(page, true);
@@ -342,7 +342,77 @@ test("T2b điện thoại: thẻ đề xuất không tràn ngang, nút Mở form
   const card = chat(page).getByTestId("command");
   await expect(card).toHaveAttribute("data-state", "prepared");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(card.getByRole("button", { name: "Mở form đề xuất" })).toBeVisible();
+  await expect(card.getByTestId("mr-form")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(card.getByRole("button", { name: "Gửi duyệt" })).toBeVisible();
+});
+
+const MR_ASK = "Đề xuất cho SMB 2 tấn xi măng PCB40, 50 cây thép D16, 20 cây ống PVC, dây thép buộc, cần 23/10 đổ sàn tầng 4";
+
+test("T2b form trong chat: mã tự khớp, chọn mã bằng gợi ý, bỏ dòng, chọn người duyệt rồi Gửi duyệt ngay trên thẻ → biên nhận", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, MR_ASK);
+  const card = chat(page).getByTestId("command");
+  const form = card.getByTestId("mr-form");
+  await expect(form.getByLabel("Tên đề xuất")).toHaveValue("Vật tư đổ bê tông sàn tầng 4");
+  await expect(form.getByLabel("Dùng cho")).toHaveValue("Đổ bê tông sàn tầng 4");
+  await expect(form.getByLabel("Kho nhận")).toHaveValue("wh-smb");
+  await expect(form.getByLabel("Cần ngày")).toHaveValue("2026-10-23");
+  const rows = form.getByRole("list", { name: "Dòng vật tư" }).locator(":scope > li");
+  await expect(rows).toHaveCount(4);
+  await expect(form.getByLabel("Mã vật tư cho Xi măng PCB40")).toHaveValue("it-boq-ximang-pcb40");
+  await expect(form.getByLabel("Số lượng Xi măng PCB40")).toHaveValue("2");
+  // "Thép D16 · 50 cây": đơn vị phân định → Thép XD D16 (Cây), không phải thép tròn trơn tính Kg.
+  await expect(form.getByLabel("Mã vật tư cho Thép")).toHaveValue("it-1779153359828-833-2jd93");
+  const hints = form.getByRole("group", { name: "Gợi ý mã cho Ống PVC" }).getByRole("button");
+  await expect(hints).toHaveCount(3);
+  await hints.first().click();
+  await expect(rows.nth(2)).toContainText("Đã khớp");
+  await expect(form.getByRole("group", { name: "Gợi ý mã cho Ống PVC" })).toHaveCount(0);
+  await form.getByRole("button", { name: "Bỏ dòng Dây thép buộc" }).click();
+  await expect(rows).toHaveCount(3);
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(form.getByRole("alert")).toContainText("Chọn người duyệt.");
+  await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" }).click();
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã gửi đề xuất MR-2026-0042 · chờ Hà Đức Chuẩn duyệt");
+  const submit = (await aiCalls(page)).find(call => call.mrForm === "submit") as Record<string, unknown> & { lines: Array<Record<string, unknown>> };
+  expect(submit).toMatchObject({ mode: "send", warehouseId: "wh-smb", neededDate: "2026-10-23", approverIds: ["u-chuan"], title: "Vật tư đổ bê tông sàn tầng 4" });
+  expect(submit.lines.map(line => line.item).slice(0, 2)).toEqual(["Xi măng PCB40", "Thép XD D16"]);
+  expect(String(submit.lines[2].item)).toMatch(/^Ống PVC/);
+  expect(submit.lines[0]).toMatchObject({ qty: 2, reason: "Đổ bê tông sàn tầng 4" });
+  expect(submit.lines[1]).toMatchObject({ qty: 50 });
+  await page.reload();
+  await openAssistant(page, false);
+  await expect(chat(page).getByTestId("command")).toContainText("Đã gửi đề xuất MR-2026-0042 · chờ Hà Đức Chuẩn duyệt");
+});
+
+test("T2b form: gửi lỗi giữa chừng báo lý do rồi gửi lại được; dự án chưa có quy trình thì khóa Gửi duyệt, vẫn Lưu nháp", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=mr-fail`);
+  await openAssistant(page, false);
+  await ask(page, MR_ASK);
+  const form = chat(page).getByTestId("mr-form");
+  await form.getByRole("group", { name: "Gợi ý mã cho Ống PVC" }).getByRole("button").first().click();
+  await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Bùi Thị Tâm" }).click();
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(form.getByRole("alert")).toContainText("Mất kết nối, chưa gửi được.");
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(chat(page).getByTestId("command")).toContainText("Đã gửi đề xuất MR-2026-0042 · chờ Bùi Thị Tâm duyệt");
+
+  await page.evaluate(() => sessionStorage.removeItem("center-fixture-ai-threads"));
+  await page.goto(`${base}?ai=mr-noflow`);
+  await openAssistant(page, false);
+  await ask(page, MR_ASK);
+  const blocked = chat(page).getByTestId("mr-form");
+  await expect(blocked).toContainText("Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ. Vẫn lưu nháp được.");
+  await expect(blocked.getByRole("button", { name: "Gửi duyệt" })).toBeDisabled();
+  await blocked.getByRole("button", { name: "Lưu nháp" }).click();
+  await expect(chat(page).getByTestId("command")).toContainText("Đã lưu nháp đề xuất MR-2026-0042 · mở để gửi duyệt");
+  expect((await aiCalls(page)).filter(call => call.mrForm === "submit").at(-1)).toMatchObject({ mode: "draft", approverIds: [] });
 });
 
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {

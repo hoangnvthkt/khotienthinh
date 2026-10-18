@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
 import { isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
+import type { MrFormActions } from '../../lib/assistantMrForm';
+import AssistantMrForm from './AssistantMrForm';
 
 // Thẻ lệnh nháp của Trợ lý (T2a, chủ SP duyệt 18/10/2026): Trợ lý chỉ chuẩn bị; người dùng xem, sửa lý do, bấm Gửi đơn.
 // Gửi = đúng lệnh gửi của module (như form thường). Sau đó thẻ thành biên nhận (mã đơn + Mở). Không gửi gì tới khi người dùng bấm.
-// Đề xuất vật tư (T2b): thẻ không gửi — "Mở form đề xuất" mở form thật của dự án, Gõ nhanh điền sẵn; form lưu xong thẻ thành biên nhận.
+// Đề xuất vật tư (T2b): thẻ là form gọn ngay trong chat (chủ SP 18/10) — chọn mã, người duyệt rồi Gửi duyệt / Lưu nháp tại chỗ, lưu đúng
+// đường của form Đề xuất. Không có actions.mrForm (bản cũ) thì "Mở form đề xuất" mở form thật của dự án, Gõ nhanh điền sẵn.
 
 export interface CommandActions {
   /** Người dùng bấm Gửi: chạy lệnh gửi của module, trả lệnh đã ghi biên nhận. */
   run: (command: AssistantCommand, edits: { reason?: string }) => Promise<AssistantCommand>;
   cancel: (command: AssistantCommand) => Promise<AssistantCommand>;
   openRoute: (route: string, title: string) => void;
+  /** Form đề xuất vật tư trong chat: tải danh mục / kho / người duyệt của dự án, lưu nháp / gửi duyệt. */
+  mrForm?: MrFormActions;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
@@ -110,13 +115,17 @@ const MaterialRequestCard: React.FC<CardProps> = ({ command, now, you, actions }
   useEffect(() => onCommandChanged(command.id, setCurrent), [command.id]);
   const expired = isCommandExpired(current, now);
   const project = v.projectCode || v.projectName || 'dự án';
+  // Có form trong chat (app thật) và thẻ còn hạn → sửa + gửi ngay tại đây; không thì tóm tắt + "Mở form đề xuất".
+  const inline = Boolean(actions.mrForm) && !expired;
 
   if (current.status === 'done') {
     const code = typeof current.result.code === 'string' ? current.result.code : '';
     const submitted = current.result.submitted === true;
+    const approvers = Array.isArray(current.result.approvers) ? current.result.approvers.filter((n): n is string => typeof n === 'string') : [];
     return (
       <div className="vcc-cmd" data-state="done" data-testid="command">
-        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" /> {submitted ? 'Đã gửi đề xuất' : 'Đã lưu nháp đề xuất'} {code}{submitted ? '' : ' · mở để gửi duyệt'}</p>
+        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" /> {submitted ? 'Đã gửi đề xuất' : 'Đã lưu nháp đề xuất'} {code}
+          {submitted ? (approvers.length ? ` · chờ ${approvers.join(', ')} duyệt` : '') : ' · mở để gửi duyệt'}</p>
         <button type="button" className="vcc-chip" onClick={() => actions.openRoute(mrRequestRoute(current), code || 'Đề xuất vật tư')}><ArrowUpRight size={12} /> Mở</button>
       </div>
     );
@@ -137,9 +146,13 @@ const MaterialRequestCard: React.FC<CardProps> = ({ command, now, you, actions }
       </div>
       <dl className="vcc-cmd-facts">
         <div><dt>Dự án</dt><dd>{v.projectCode && v.projectName ? `${v.projectCode} · ${v.projectName}` : project}</dd></div>
-        {v.purpose && v.purpose !== v.title && <div><dt>Dùng cho</dt><dd>{v.purpose}</dd></div>}
-        {v.neededDate && <div><dt>Cần ngày</dt><dd>{ddmm(v.neededDate)}</dd></div>}
+        {!inline && v.purpose && v.purpose !== v.title && <div><dt>Dùng cho</dt><dd>{v.purpose}</dd></div>}
+        {!inline && v.neededDate && <div><dt>Cần ngày</dt><dd>{ddmm(v.neededDate)}</dd></div>}
       </dl>
+      {inline && actions.mrForm ? (
+        <AssistantMrForm command={current} actions={actions.mrForm} you={you} onDone={setCurrent} onCancel={() => void cancel()} busyCancel={busy}
+          onOpenFull={() => actions.openRoute(mrDraftRoute(current), `Đề xuất · ${project}`)} />
+      ) : <>
       <ul className="vcc-cmd-lines" aria-label="Vật tư">
         {v.lines.slice(0, MR_PREVIEW).map((l, i) => (
           <li key={i}><span>{[l.name, l.spec].filter(Boolean).join(' ')}</span>
@@ -157,6 +170,7 @@ const MaterialRequestCard: React.FC<CardProps> = ({ command, now, you, actions }
           <span className="vcc-cmd-note">Chọn mã và gửi ở form — chưa gửi gì tới khi {you} bấm.</span>
         </div>
       )}
+      </>}
     </div>
   );
 };
