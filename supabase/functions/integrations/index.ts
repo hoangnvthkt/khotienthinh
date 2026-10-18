@@ -10,7 +10,7 @@ import { DEFAULT_BASE_URL, envEntries, probe, type AiKind } from '../_shared/aiT
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
-const KINDS = new Set<AiKind>(['anthropic', 'gemini', 'openai', 'openai_compatible']);
+const KINDS = new Set<AiKind>(['anthropic', 'gemini', 'openai', 'openai_compatible', 'typesafe']);
 const UUID = /^[0-9a-f-]{36}$/i;
 const env = (name: string) => Deno.env.get(name);
 

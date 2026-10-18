@@ -1,4 +1,4 @@
-# HANDOFF — Trợ lý AI v2 + Trung tâm AI (cập nhật 18/10/2026, tối)
+# HANDOFF — Trợ lý AI v2 + Trung tâm AI (cập nhật 18/10/2026, đêm — thêm J1 Jev)
 
 Đọc tệp này **trước khi làm bất cứ gì** về Trợ lý AI, Trung tâm AI, cổng `ai-gateway`. Đủ để làm tiếp ngay.
 Tài liệu sống kèm theo: Claude Docs "Audit AI" → tab **"Trợ lý v2 · 17/10"** (doc `Wo95Mv3mZw3wxBpZLNY9NG`, thân tab `08e095b7-9f8a`, khối cuối `mfjt2rsnpg4.22529` — mỗi đợt xong thêm một gạch đầu dòng sau khối cuối).
@@ -10,6 +10,7 @@ Hướng dẫn người dùng: `docs/command-center/huong-dan-trung-tam-dieu-han
 
 - **Mọi thứ đã lên prod**: PR #230 → #248 đã merge vào `main` (gần nhất `ef2b98ba`), mọi migration đã áp Supabase Cloud, `ai-gateway` đã deploy (lần cuối sau #245; #246–#248 không đổi mã cổng).
 - **Nhóm thí điểm 15 người đang dùng Trợ lý** (cấp 18/10 tối). Chủ SP vừa nhận hướng dẫn 1 trang để gửi nhóm Zalo — **đang chờ chủ SP phản hồi** ("đã gửi" / "sửa hướng dẫn").
+- **Jev (TypeSafe AI) — J0 ĐẠT, J1 chạy bóng** (18/10 đêm): đọc `docs/command-center/09-jev-typesafe-ket-hop-tro-ly-2026-10-18.md` (mục 7–8). Sau khi J1 lên prod, Admin phải gán kết nối TypeSafe vào tính năng "Trợ lý · điều hướng Jev (chạy bóng)" thì mới ghi `ai_decisions`; 1 tuần sau chạy `scripts/jev-evals/shadow-report.mjs` rồi đề xuất J2.
 - **Việc tiếp theo đã thống nhất**: sau 1–2 tuần dùng thật, đọc tab **Trung tâm AI → Hoạt động** rồi đề xuất **T5 – báo cáo theo lịch** (bản tin sáng 7h tự gửi, báo cáo tuần dự án cho BLĐ thứ Hai) dựa trên điều nhóm hỏi nhiều nhất. Không làm T5 trước khi chủ SP đồng ý.
 
 ## 2. Cách làm việc chủ SP yêu cầu (bắt buộc)
@@ -60,6 +61,7 @@ ai-gateway (supabase/functions/ai-gateway)
              đối chiếu thanh_tien: lệch đúng 1.000 lần thì sửa SL), chuan_bi_nhat_ky (nguyên văn tin / noi_dung chép từ ảnh), chuan_bi_ghi_nho
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
   agent.ts / providers.ts   định dạng OpenAI / Anthropic, ảnh base64, ToolChoice
+  jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
 ```
@@ -75,6 +77,7 @@ Tệp client chính: `lib/aiGateway.ts` (status, feedback v2, myAccess, thông b
 | Thẻ nháp | `assistant_commands` | `assistant_command_create_v1` (≤3/lượt, payload ≤20.000), `…_finish_v1`, `…_get_v1`, `assistant_mr_projects_v1`, `assistant_po_approvers_v1`, `assistant_daily_log_projects_v1`, `assistant_leave_types_v1` |
 | Học cách gọi (chung) | `ai_memory_aliases` (project/company; task/crew/area/item/vendor) | `get/learn_ai_aliases_v2`, `get/learn_ai_memory_aliases_v1` (nhật ký), `get_ai_memory_overview_v1`, `forget_ai_memory_v1` |
 | Trí nhớ cá nhân | `ai_user_memory` (note ≤30, habit `mr.approvers:<p>` `mr.warehouse:<p>` `po.warehouse:<p>` `po.approver`) | `get_ai_user_memory_v1`, `ai_user_note_save_v1`, `learn_ai_user_habits_v1` |
+| Jev chạy bóng (J1) | `ai_decisions` (dự đoán + thực tế, không lưu nội dung; chỉ Admin đọc) | `ai_decision_log_v1`, `get_ai_decisions_summary_v1` |
 | Trung tâm AI | `ai_grant_templates`, `ai_user_grants` (riêng đè mẫu; `connection_id` mặc định + `extra_connection_ids`), `integration_connections.display_name/blurb/icon/vision` | `get_ai_admin_overview_v1`, `ai_admin_people_v1`, `ai_admin_grant_save_v1`, `ai_admin_template_save_v1/_delete_v1`, `ai_admin_skill_access_v1`, `ai_admin_model_save_v1`, `get_my_ai_access_v1`, `get_ai_activity_v1` |
 
 Mọi thay đổi cấp phát / mẫu / skill / model ghi `audit_trail` (module `AI`). Trần theo người (`user_day`, `user_month`) tính **mọi lượt AI** của người đó.
@@ -99,6 +102,7 @@ Mọi thay đổi cấp phát / mẫu / skill / model ghi `audit_trail` (module 
 | #246 | Đọc **PDF** ≤ 50 MB (chữ / PDF scan → ảnh) | — |
 | #247 | **Chọn model ở ô hỏi** (ô hỏi hai tầng), tab Model, câu hỏi nhanh dạng thẻ, xóa `pages/AiAssistant.tsx` | `20261019230000_ai_model_choice` |
 | #248 | Tab **Hoạt động**, tin chào + "Thử ngay", hướng dẫn 1 trang, mở nhóm 15 người | `20261020090000_ai_activity` |
+| J1 | **Jev (TypeSafe) chạy bóng**: kết nối `typesafe`, tính năng `ai.decisions`, `ai_decisions`; bộ đo J0 `scripts/jev-evals` | `20261020110000_jev_shadow_route` |
 
 Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_pilot_extend_2026_12_31.sql`, `supabase/operations/ai_pilot_group_2026_10_18.sql`.
 
@@ -133,7 +137,8 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 2. **Sau 1–2 tuần**: đọc tab Hoạt động (ai chưa dùng, thẻ gửi thật / bỏ, 👎 lý do, chạm trần, chi phí theo model) → đề xuất **T5 báo cáo theo lịch** (bản tin 7h push / Zalo; báo cáo tuần dự án cho BLĐ). Gợi ý chỉnh mẫu / trần theo số thật.
 3. Việc nhỏ có thể chen: hiện cảnh báo "SL × đơn giá khác thành tiền" ngay trên thẻ đơn mua (hiện chỉ trong câu trả lời); thêm ca DeepSeek vào bộ kiểm hồi quy; dọn mã cũ không dùng (`supabase/functions/ai-assistant`, `components/ChibiBot.tsx`, quyền `ai.assistant.*` cũ) — hỏi chủ SP trước khi xóa.
 4. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
-5. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
+5. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
+6. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
 
 ## 9. Memory liên quan
 

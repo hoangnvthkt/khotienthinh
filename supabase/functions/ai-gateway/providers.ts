@@ -124,7 +124,7 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
 }
 
 export const complete = (target: AiTarget, req: CompletionRequest): Promise<Completion> =>
-  target.kind === 'anthropic' ? withAnthropic(target, req) : target.kind === 'gemini' ? withGemini(target, req) : withOpenAI(target, req);
+  target.kind === 'typesafe' ? Promise.reject(new Error('AI_KIND_UNSUPPORTED')) : target.kind === 'anthropic' ? withAnthropic(target, req) : target.kind === 'gemini' ? withGemini(target, req) : withOpenAI(target, req);
 
 // ── Trợ lý · hội thoại (T0): trả lời chạy dần. Chữ thường (không JSON), nhiều lượt. ─────────────────────────────────────────────
 export interface ChatRequest { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; maxTokens: number; noThinking?: boolean }
@@ -214,7 +214,7 @@ async function streamOpenAI(t: AiTarget, req: ChatRequest, onDelta: (text: strin
 }
 
 export const streamChat = (target: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> =>
-  target.kind === 'anthropic' ? streamAnthropic(target, req, onDelta) : target.kind === 'gemini' ? streamGemini(target, req, onDelta) : streamOpenAI(target, req, onDelta);
+  target.kind === 'typesafe' ? Promise.reject(new Error('AI_KIND_UNSUPPORTED')) : target.kind === 'anthropic' ? streamAnthropic(target, req, onDelta) : target.kind === 'gemini' ? streamGemini(target, req, onDelta) : streamOpenAI(target, req, onDelta);
 
 // ── Trợ lý T1: một bước của vòng gọi công cụ (chữ chạy dần + lệnh gọi công cụ). Chuẩn OpenAI (RevidAPI…) và Anthropic. ─────────────
 /** toolChoice { name }: buộc gọi đúng công cụ đó ở bước này (VD tin dán là báo cáo thi công → chuan_bi_nhat_ky). */
@@ -224,7 +224,7 @@ const openAIToolChoice = (c: ToolChoice | undefined) => (typeof c === 'object' ?
 const anthropicToolChoice = (c: ToolChoice | undefined) => (typeof c === 'object' ? { type: 'tool', name: c.name } : { type: c || 'auto' });
 export interface AgentStep { text: string; toolCalls: ToolCall[]; usage: Usage }
 /** Nhà cung cấp nối được công cụ; Gemini chưa nối (Trợ lý trả lời từ số liệu bản tin như T0). */
-export const supportsTools = (target: AiTarget) => target.kind !== 'gemini';
+export const supportsTools = (target: AiTarget) => target.kind !== 'gemini' && target.kind !== 'typesafe';
 
 async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> {
   if (!t.model) throw new Error('AI_MODEL_REQUIRED');
@@ -289,4 +289,4 @@ async function agentStepAnthropic(t: AiTarget, req: AgentStepRequest, onDelta: (
 }
 
 export const agentStep = (target: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> =>
-  target.kind === 'anthropic' ? agentStepAnthropic(target, req, onDelta) : agentStepOpenAI(target, req, onDelta);
+  target.kind === 'typesafe' ? Promise.reject(new Error('AI_KIND_UNSUPPORTED')) : target.kind === 'anthropic' ? agentStepAnthropic(target, req, onDelta) : agentStepOpenAI(target, req, onDelta);

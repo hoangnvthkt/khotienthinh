@@ -2,9 +2,9 @@
 // Một "đích" = loại + endpoint + khóa + model. Nguồn: kết nối Admin thêm ở Cài đặt → Kết nối (khóa trong Vault), chưa gán thì
 // khóa trong Secrets như cũ. Tệp này không dùng API Deno để vitest kiểm thử được.
 
-export type AiKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
+export type AiKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible' | 'typesafe';
 export type ModelClass = 'fast' | 'reasoning';
-export type AiFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant';
+export type AiFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant' | 'ai.decisions';
 
 export interface AiTarget {
   kind: AiKind;
@@ -23,6 +23,8 @@ export const DEFAULT_BASE_URL: Record<AiKind, string> = {
   gemini: 'https://generativelanguage.googleapis.com',
   openai: 'https://api.openai.com/v1',
   openai_compatible: '',
+  // TypeSafe Jev (J1, 18/10): quyết định có kiểu, không sinh chữ — chỉ dùng cho tính năng ai.decisions.
+  typesafe: 'https://api.typesafe.ai',
 };
 
 export const DEFAULT_MODELS: Record<AiKind, Record<ModelClass, string>> = {
@@ -30,10 +32,11 @@ export const DEFAULT_MODELS: Record<AiKind, Record<ModelClass, string>> = {
   gemini: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
   openai: { fast: '', reasoning: '' },
   openai_compatible: { fast: '', reasoning: '' },
+  typesafe: { fast: 'jev-1.14.0', reasoning: 'jev-1.14.0' },
 };
 
 export const KIND_LABEL: Record<AiKind, string> = {
-  anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI',
+  anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI', typesafe: 'TypeSafe (Jev)',
 };
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
@@ -161,6 +164,7 @@ export const probe = async (target: Pick<AiTarget, 'kind' | 'baseUrl' | 'apiKey'
   };
   const base = trimUrl(target.baseUrl || DEFAULT_BASE_URL[target.kind]);
   if (!isSafeEndpoint(base)) return done({ code: 'UNSAFE_ENDPOINT' });
+  if (target.kind === 'typesafe') return probeTypeSafe(base, target, fetchFn, done);
   const request: { url: string; headers: Record<string, string> } = target.kind === 'anthropic'
     ? { url: `${base}/v1/models?limit=1000`, headers: { 'x-api-key': target.apiKey, 'anthropic-version': '2023-06-01' } }
     : target.kind === 'gemini'
@@ -200,6 +204,31 @@ export const probe = async (target: Pick<AiTarget, 'kind' | 'baseUrl' | 'apiKey'
     }
   }
   return done({ ok: true, httpStatus: res.status, models: ids.length, modelIds: ids.slice(0, 300), code: missing ? 'MODEL_NOT_FOUND' : null, balance });
+};
+
+/**
+ * TypeSafe không có danh sách model công khai: thử bằng một câu hỏi Noul nhỏ (vài chục token, ~0 đồng) với đúng model đã chọn.
+ * 401/403 → sai khóa; 404 → sai endpoint; 400/422 → model không có; 200 có answers → được, modelIds = model đã trả lời.
+ */
+const probeTypeSafe = async (base: string, target: Pick<AiTarget, 'apiKey' | 'model'>, fetchFn: FetchFn, done: (p: Partial<ProbeResult>) => ProbeResult): Promise<ProbeResult> => {
+  let res: Response;
+  try {
+    res = await fetchFn(`${base}/v1/systemone`, {
+      method: 'POST', headers: { Authorization: `Bearer ${target.apiKey}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000), redirect: 'error',
+      body: JSON.stringify({ state: 'kiểm tra kết nối', model: (target.model || '').trim() || DEFAULT_MODELS.typesafe.fast, questions: { ok: { type: 'noul', instructions: 'Đây là câu kiểm tra kết nối' } } }),
+    });
+  } catch {
+    return done({ code: 'UNREACHABLE' });
+  }
+  if (!res.ok) {
+    const code = res.status === 401 || res.status === 403 ? 'BAD_KEY' : res.status === 404 ? 'BAD_ENDPOINT' : res.status === 429 ? 'RATE_LIMIT' : res.status === 400 || res.status === 422 ? 'MODEL_NOT_FOUND' : `HTTP_${res.status}`;
+    return done({ httpStatus: res.status, code, ok: false });
+  }
+  let data: Record<string, unknown> = {};
+  try { data = await res.json(); } catch { return done({ httpStatus: res.status, code: 'BAD_ENDPOINT' }); }
+  if (!data.answers || typeof data.answers !== 'object') return done({ httpStatus: res.status, code: 'BAD_ENDPOINT' });
+  const answered = String(data.model || '');
+  return done({ ok: true, httpStatus: res.status, models: answered ? 1 : null, modelIds: answered ? [answered] : [], code: null, balance: null });
 };
 
 /**

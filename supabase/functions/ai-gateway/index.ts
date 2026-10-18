@@ -14,6 +14,7 @@ import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
+import { actualIntentOf, askJev, buildIntentRequest, decisionLog } from './jev.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
@@ -79,6 +80,21 @@ Deno.serve(async request => {
       : [];
     // T4b: ghi nhớ người dùng tự lưu (bảng Trí nhớ) — đọc bằng JWT người hỏi, chỉ của chính họ; lỗi thì bỏ qua.
     const notes = await user.rpc('get_ai_user_memory_v1', {}).then(r => (r.error ? [] : userNotesOf(r.data)), () => []);
+    // J1 (chủ SP 18/10): Jev (TypeSafe) CHẠY BÓNG — hỏi ý định + câu đòi thao tác cấm song song với model chính (chữ đã che SĐT / CCCD),
+    // rồi ghi dự đoán cạnh việc model chính thực làm vào ai_decisions. Không đổi câu trả lời; chưa gán kết nối "Trợ lý · điều hướng Jev" thì bỏ qua.
+    const jevTarget = await assigned('ai.decisions', 'fast');
+    const prevAssistant = [...history].reverse().find(t => t.role === 'assistant')?.content ?? null;
+    const shadow = jevTarget
+      ? askJev(jevTarget, buildIntentRequest(redact(input.question).text, prevAssistant ? redact(prevAssistant).text : null, jevTarget.model), fetch)
+        .then(answer => ({ ok: true as const, answer }), (e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : 'JEV_FAILED' }))
+      : null;
+    const logShadow = async (used: string[], refusal: string | null) => {
+      if (!shadow || !jevTarget) return;
+      try {
+        const r = await user.rpc('ai_decision_log_v1', { p_run_id: runId, p: decisionLog(await shadow, actualIntentOf(used, refusal), jevTarget.model) });
+        if (r.error) console.error('ai-gateway decision log failed', r.error.message);
+      } catch (e) { console.error('ai-gateway decision log failed', e instanceof Error ? e.message : e); }
+    };
     const prompt = buildChatPrompt(input, history, withTools, vnTodayLabel(new Date()), known, notes);
     const model = target.model;
     const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
@@ -93,9 +109,10 @@ Deno.serve(async request => {
         // Nhịp giữ kết nối khi model còn suy nghĩ (Supabase cắt sau 150 s không trả byte nào).
         const ping = setInterval(() => send(': ping\n\n'), 15_000);
         send(sseEvent({ type: 'start', runId, model, threadId: input.threadId }));
+        const used: string[] = [];
+        let refusalKind: string | null = null;
         try {
           const book = new SourceBook();
-          const used: string[] = [];
           const out = withTools
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
               system: prompt.system, turns: prompt.messages, images: input.images, book, used, started, runId,
@@ -106,6 +123,7 @@ Deno.serve(async request => {
           if (!out.text.trim()) throw new Error('AI_EMPTY');
           // Câu từ chối (ngoài công việc, khiếm nhã, đòi xóa…): bỏ nhãn khỏi chữ lưu / trả về, ghi loại vào nhật ký.
           const { text: answer, refusal } = splitRefusal(out.text);
+          refusalKind = refusal;
           // Từ chối vẫn giữ nút nguồn: câu lẫn (một phần công việc + một phần ngoài lề) và câu gợi ý việc khác đều dẫn chứng từ thật.
           // Nguồn = dòng số liệu bản tin [[khóa]] + hồ sơ công cụ trả về [[hN]] (màn hình mở đúng màn).
           const sources: Array<string | SourceRef> = [...sourceKeysOf(answer, input.facts), ...book.cited(answer)];
@@ -117,10 +135,12 @@ Deno.serve(async request => {
           await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
             summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${input.files?.length ? `, ${input.files.length} bảng tính` : ''}${input.images?.length ? `, ${input.images.length} ảnh` : ''}${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
           send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
+          await logShadow(used, refusalKind);
         } catch (e) {
           const message = e instanceof Error ? e.message : 'AI_FAILED';
           console.error('ai-gateway chat failed', provider, model, message);
           await finish({ status: message === 'AI_REFUSED' ? 'refused' : 'error', provider, model, inputChars: prompt.inputChars, durationMs: Date.now() - started, error: message.slice(0, 200) });
+          await logShadow(used, refusalKind);
           send(sseEvent({ type: 'error', code: message === 'AI_REFUSED' ? 'AI_REFUSED' : 'AI_FAILED', error: message.startsWith('AI_') ? message : 'AI_FAILED' }));
         } finally {
           clearInterval(ping);
