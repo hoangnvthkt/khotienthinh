@@ -217,6 +217,76 @@ test("T1 tự tra: hiện đang tra gì, ghi 'Đã tra', nút hồ sơ mở đú
   await expect(workTabs(page).getByRole("tab", { name: /THEP-D16/ })).toHaveAttribute("aria-selected", "true");
 });
 
+test("T2a lệnh nháp: Trợ lý chuẩn bị đơn nghỉ phép → thẻ → sửa lý do → Gửi đơn → biên nhận; tải lại vẫn thấy; Mở màn Nghỉ phép", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Cho anh xin nghỉ phép năm thứ 4 21/10, việc gia đình");
+  const card = chat(page).getByTestId("command");
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card.getByText("Đơn phép năm 21/10")).toBeVisible();
+  await expect(card.locator(".vcc-cmd-facts")).toContainText("21/10 cả ngày · 1 ngày");
+  await expect(card.locator(".vcc-cmd-facts")).toContainText("Quản lý trực tiếp — Hà Đức Chuẩn");
+  await expect(card.getByText("Chưa gửi gì tới khi anh bấm.")).toBeVisible();
+  // Chuẩn bị không phải "tra": không có dòng "Đã tra".
+  await expect(chat(page).getByTestId("turn").locator(".vcc-msg-tools")).toHaveCount(0);
+  await card.getByLabel("Lý do nghỉ").fill("Đưa con đi khám");
+  await card.getByRole("button", { name: "Gửi đơn" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã gửi đơn NP-2026-0099 · chờ Hà Đức Chuẩn duyệt");
+  expect((await aiCalls(page)).find(call => call.command === "run")).toMatchObject({ reason: "Đưa con đi khám" });
+  await page.reload();
+  await openAssistant(page, false);
+  const again = chat(page).getByTestId("command");
+  await expect(again).toHaveAttribute("data-state", "done");
+  await again.getByRole("button", { name: "Mở" }).click();
+  await expect(workTabs(page).getByRole("tab", { name: /NP-2026-0099/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("T2a: Bỏ thẻ; thiếu phép khóa nút Gửi; gửi lỗi báo lý do rồi Gửi lại được", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Xin nghỉ phép năm 21/10");
+  await chat(page).getByTestId("command").getByRole("button", { name: "Bỏ" }).click();
+  await expect(chat(page).getByTestId("command")).toHaveAttribute("data-state", "cancelled");
+  await expect(chat(page).getByTestId("command")).toHaveText("Đã bỏ đơn phép năm 21/10.");
+
+  // Mỗi tình huống một hội thoại sạch (fixture giữ hội thoại qua sessionStorage để thử tải lại trang).
+  const fresh = async (mode: string) => {
+    await page.evaluate(() => sessionStorage.removeItem("center-fixture-ai-threads"));
+    await page.goto(`${base}?ai=${mode}`);
+    await openAssistant(page, false);
+  };
+  await fresh("leave-short");
+  await ask(page, "Xin nghỉ phép năm 21/10");
+  const short = chat(page).getByTestId("command");
+  await expect(short.getByRole("alert")).toContainText("Phép năm còn 0,5 ngày, không đủ 1 ngày.");
+  await expect(short.getByRole("button", { name: "Gửi đơn" })).toBeDisabled();
+
+  await fresh("leave-fail");
+  await ask(page, "Xin nghỉ phép năm 21/10");
+  const fail = chat(page).getByTestId("command");
+  await fail.getByRole("button", { name: "Gửi đơn" }).click();
+  await expect(fail.getByRole("alert")).toContainText("Ngày 21/10 đã có đơn nghỉ khác.");
+  await fail.getByRole("button", { name: "Gửi đơn" }).click();
+  await expect(fail).toHaveAttribute("data-state", "done");
+});
+
+test("T2a điện thoại: thẻ đơn nghỉ không tràn ngang, bấm Gửi đơn ra biên nhận", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "chỉ đo trên điện thoại");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, true);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  await box.fill("Xin nghỉ phép năm 21/10, việc gia đình");
+  await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap();
+  const card = chat(page).getByTestId("command");
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await card.getByRole("button", { name: "Gửi đơn" }).tap();
+  await expect(card).toContainText("Đã gửi đơn NP-2026-0099");
+});
+
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=busy`);

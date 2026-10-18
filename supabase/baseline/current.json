@@ -349,7 +349,8 @@
     "20261018150000_ai_assistant_threads.sql",
     "20261018170000_ai_guardrails_costs.sql",
     "20261018190000_ai_assistant_tools.sql",
-    "20261018210000_ai_price_per_call.sql"
+    "20261018210000_ai_price_per_call.sql",
+    "20261018230000_assistant_commands.sql"
   ],
   "forbidIncludeAll": true
 }

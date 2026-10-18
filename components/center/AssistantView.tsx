@@ -14,6 +14,8 @@ import {
   type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
 } from '../../lib/assistantChat';
 import { recordTarget } from '../../lib/search/recordPresentation';
+import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
+import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
 import { displayCode } from '../../lib/center/workItemsService';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -27,6 +29,9 @@ export interface AssistantHooks {
   chat: (input: ChatSendInput, handlers: ChatHandlers, signal?: AbortSignal) => Promise<ChatSendResult>;
   listThreads: () => Promise<ChatThreadSummary[]>;
   getThread: (id: string) => Promise<ChatThread>;
+  /** T2a: người dùng bấm Xác nhận trên thẻ lệnh nháp → chạy lệnh gửi của module, ghi biên nhận. */
+  runCommand: (command: AssistantCommand, edits: { reason?: string }) => Promise<AssistantCommand>;
+  cancelCommand: (command: AssistantCommand) => Promise<AssistantCommand>;
 }
 export const defaultAssistantHooks: AssistantHooks = {
   status: () => aiGateway.status(),
@@ -35,6 +40,17 @@ export const defaultAssistantHooks: AssistantHooks = {
   chat: (input, handlers, signal) => assistantChat.send(input, handlers, signal),
   listThreads: () => assistantChat.listThreads(),
   getThread: id => assistantChat.getThread(id),
+  runCommand: async (command, edits) => {
+    let result: Record<string, unknown>;
+    try { result = await executeCommand(command, edits); } catch (e) {
+      const message = e instanceof Error ? e.message : 'Chưa gửi được.';
+      await finishCommand(command.id, 'failed', {}, message).catch(() => null);
+      throw e;
+    }
+    // Đã gửi thật: ghi biên nhận; ghi lỗi thì vẫn báo đã gửi (chứng từ đã có ở module).
+    return (await finishCommand(command.id, 'done', result).catch(() => null)) ?? { ...command, status: 'done', result };
+  },
+  cancelCommand: async command => (await finishCommand(command.id, 'cancelled')) ?? { ...command, status: 'cancelled' },
 };
 
 interface UiMessage {
@@ -44,6 +60,8 @@ interface UiMessage {
   sources: ChatSource[];
   /** T1: công cụ Trợ lý đã tra trong lượt này (chỉ lượt vừa hỏi, không lưu). */
   tools?: ChatToolUse[];
+  /** T2a: lệnh nháp (thẻ Xác nhận / biên nhận). */
+  commands?: AssistantCommand[];
   runId: string | null;
   accepted: boolean | null;
   /** pending: chờ chữ đầu · streaming: đang chạy · done · error */
@@ -162,8 +180,10 @@ const BriefCard: React.FC<{
 };
 
 const STOP_ERRORS = new Set(['AI_ABORTED']);
-/** "Đang tra Tồn kho: thép D16…" */
-const toolStatus = (tool: ChatToolUse) => `Đang tra ${tool.label.toLowerCase()}${tool.query ? `: ${tool.query}` : ''}…`;
+/** "Đang tra tồn kho: thép D16…"; công cụ chuẩn bị lệnh nháp: "Đang chuẩn bị đơn nghỉ phép…". */
+const isPrepareTool = (tool: ChatToolUse) => tool.name.startsWith('chuan_bi_');
+const toolStatus = (tool: ChatToolUse) => (isPrepareTool(tool) ? `Đang ${tool.label.toLowerCase()}…`
+  : `Đang tra ${tool.label.toLowerCase()}${tool.query ? `: ${tool.query}` : ''}…`);
 
 const AssistantView: React.FC<{
   person: CenterPerson;
@@ -206,7 +226,7 @@ const AssistantView: React.FC<{
     try {
       const loaded = await hooks.getThread(id);
       setThread({ id: loaded.id, title: loaded.title, startedAt: loaded.messages[0]?.createdAt || loaded.lastMessageAt });
-      setMessages(loaded.messages.map(m => ({ id: m.id, role: m.role, content: m.content, sources: m.sources, runId: m.runId, accepted: m.accepted, state: 'done' })));
+      setMessages(loaded.messages.map(m => ({ id: m.id, role: m.role, content: m.content, sources: m.sources, runId: m.runId, accepted: m.accepted, state: 'done', commands: m.commands })));
       setThreadState('idle');
       pinned.current = true;
     } catch {
@@ -303,6 +323,13 @@ const AssistantView: React.FC<{
     } }];
   });
 
+  const you = pronounOf(person.gender).toLowerCase();
+  const commandActions: CommandActions = {
+    run: (command, edits) => hooks.runCommand(command, edits),
+    cancel: command => hooks.cancelCommand(command),
+    openRoute: (route, title) => (onOpenRoute ? onOpenRoute(route, title) : onDrill({ kind: 'route', path: route, title })),
+  };
+
   const askQuick = (id: string, text: string) => {
     pinned.current = true;
     setMessages(current => [...current,
@@ -330,6 +357,7 @@ const AssistantView: React.FC<{
         onStart: ({ runId }) => patch(m => ({ ...m, runId })),
         onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
         onTool: tool => patch(m => ({ ...m, tools: [...(m.tools || []), tool] })),
+        onCommand: command => patch(m => ({ ...m, commands: [...(m.commands || []), command] })),
       },
       controller.signal,
     ).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
@@ -445,6 +473,11 @@ const AssistantView: React.FC<{
                         ))}
                       </ul>
                     )}
+                    {message.commands && message.commands.length > 0 && (
+                      <div className="vcc-cmds">
+                        {message.commands.map(command => <AssistantCommandCard key={command.id} command={command} now={now} you={you} actions={commandActions} />)}
+                      </div>
+                    )}
                     {message.state === 'error' && (
                       <p className="vcc-msg-err" role="alert">
                         {message.error}
@@ -464,8 +497,10 @@ const AssistantView: React.FC<{
                               ))}
                             </div>
                           )}
-                          {message.tools && message.tools.length > 0 && (
-                            <span className="vcc-msg-tools" title={message.tools.map(toolStatus).join('\n')}>Đã tra: {[...new Set(message.tools.map(t => t.label))].join(' · ')}</span>
+                          {message.tools && message.tools.some(t => !isPrepareTool(t)) && (
+                            <span className="vcc-msg-tools" title={message.tools.filter(t => !isPrepareTool(t)).map(toolStatus).join('\n')}>
+                              Đã tra: {[...new Set(message.tools.filter(t => !isPrepareTool(t)).map(t => t.label))].join(' · ')}
+                            </span>
                           )}
                           {message.runId && (
                             <Feedback label="Trả lời" value={message.accepted} onPick={accepted => {

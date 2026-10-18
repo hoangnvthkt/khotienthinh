@@ -12,7 +12,7 @@ import { SourceBook, type SourceRef } from './agent.ts';
 import { converse } from './loop.ts';
 import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
-import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, type ChatTurn } from './chat.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -67,7 +67,7 @@ Deno.serve(async request => {
     }
     // T1: nhà cung cấp nối được công cụ → Trợ lý tự tra (hồ sơ, tồn kho, đơn mua, đề xuất, việc của tôi) bằng JWT người hỏi.
     const withTools = supportsTools(target);
-    const prompt = buildChatPrompt(input, history, withTools);
+    const prompt = buildChatPrompt(input, history, withTools, vnTodayLabel(new Date()));
     const model = target.model;
     const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
     const redactNote = Object.keys(prompt.hits).length ? ` · đã che ${Object.entries(prompt.hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
@@ -86,7 +86,7 @@ Deno.serve(async request => {
           const used: string[] = [];
           const out = withTools
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
-              system: prompt.system, turns: prompt.messages, book, used, started })
+              system: prompt.system, turns: prompt.messages, book, used, started, runId })
             : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
               delta => send(sseEvent({ type: 'delta', text: delta })));
           if (!out.text.trim()) throw new Error('AI_EMPTY');

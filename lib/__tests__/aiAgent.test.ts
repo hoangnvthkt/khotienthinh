@@ -101,8 +101,8 @@ describe('Trợ lý T1 · công cụ đọc (lệnh máy chủ giả)', () => {
     expect(out).toMatchObject({ tong: 1, viec: [{ ref: 'h1', ma: 'PO-655', nguoi: 'Tâm' }] });
   });
 
-  it('chỉ có công cụ đọc: không công cụ nào tạo / sửa / xóa / duyệt', () => {
-    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi']);
+  it('công cụ đọc + chuẩn bị nháp; không công cụ nào sửa / xóa / duyệt / gửi', () => {
+    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi', 'chuan_bi_don_nghi_phep']);
     for (const t of TOOLS) expect(t.name).not.toMatch(/tao|sua|xoa|duyet|tra_lai|huy|gui/);
   });
 });

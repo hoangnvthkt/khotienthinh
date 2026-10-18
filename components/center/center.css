@@ -550,6 +550,32 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-msg-foot .vcc-turn-src { margin-top: 0; }
 .vcc-msg-foot .vcc-fb { margin-left: 0; }
 .vcc-msg-tools { font-size: 11.5px; color: var(--vcc-muted); }
+/* T2a: thẻ lệnh nháp — viền màu nhấn, nút chính một màu; xong thì thành dòng biên nhận gọn. */
+.vcc-cmds { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.vcc-cmd { border: 1px solid var(--vcc-border); border-left: 3px solid var(--vcc-accent); border-radius: 12px; background: var(--vcc-card); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.vcc-cmd[data-state="done"] { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; border-left-color: var(--vcc-num); }
+.vcc-cmd[data-state="cancelled"], .vcc-cmd[data-state="expired"] { border-left-color: var(--vcc-border); }
+.vcc-cmd-head { display: flex; align-items: center; gap: 8px; }
+.vcc-cmd-icon { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: var(--vcc-accent-soft); color: var(--vcc-accent); flex: none; }
+.vcc-cmd-title { margin: 0; flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--vcc-fg); }
+.vcc-cmd-tag { flex: none; font-size: 11px; font-weight: 600; color: var(--vcc-accent); background: var(--vcc-accent-soft); border-radius: 999px; padding: 2px 8px; }
+.vcc-cmd-facts { margin: 0; display: grid; gap: 4px; }
+.vcc-cmd-facts > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; font-size: 13px; }
+.vcc-cmd-facts dt { color: var(--vcc-muted); }
+.vcc-cmd-facts dd { margin: 0; color: var(--vcc-fg); font-weight: 500; }
+.vcc-cmd-warn { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--vcc-warn); }
+.vcc-cmd-warn svg { flex: none; margin-top: 2px; }
+.vcc-cmd-muted { margin: 0; font-size: 13px; color: var(--vcc-muted); }
+.vcc-cmd-done { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--vcc-num); }
+.vcc-cmd-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--vcc-muted); }
+.vcc-cmd-field textarea { resize: vertical; min-height: 44px; border: 1px solid var(--vcc-border); border-radius: 8px; padding: 6px 10px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 13.5px; }
+.vcc-cmd-field textarea:focus { outline: 2px solid var(--vcc-accent); outline-offset: 1px; }
+.vcc-cmd-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vcc-cmd-actions .vcc-btn[data-pri="true"] { background: var(--vcc-accent); border-color: var(--vcc-accent); color: #fff; }
+.dark .vcc-cmd-actions .vcc-btn[data-pri="true"] { color: #10251d; }
+.vcc-cmd-actions .vcc-btn:disabled { opacity: .55; cursor: not-allowed; }
+.vcc-cmd-note { font-size: 11.5px; color: var(--vcc-muted); }
+@media (max-width: 640px) { .vcc-cmd-facts > div { grid-template-columns: 1fr; gap: 0; } .vcc-cmd[data-state="done"] { flex-direction: column; align-items: flex-start; } }
 .vcc-chat-foot { flex: none; padding: 8px clamp(14px, 1.6vw, 24px) calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--vcc-bg); }
 .vcc-chat-foot .vcc-chips { margin-bottom: 8px; }
 .vcc-composer { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; border: 1px solid var(--vcc-border); border-radius: 16px; background: var(--vcc-card);
