@@ -10,6 +10,7 @@
 //   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
 //   chuan_bi_nhat_ky         assistant_daily_log_projects_v1 → lệnh nháp daily_log (thẻ đọc báo cáo bằng bộ của màn Nhật ký, tạo phiếu nháp)
+//   chuan_bi_ghi_nho         → lệnh nháp memory_note (T4b: thẻ sửa chữ, người dùng bấm Lưu ghi nhớ)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
@@ -33,7 +34,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
-  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -135,6 +136,14 @@ export const TOOLS: ToolSpec[] = [
     parameters: { type: 'object', additionalProperties: false, properties: {
       du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng / trong tin; chưa rõ thì bỏ trống — công cụ trả danh sách để hỏi lại.' },
       ngay_bao_cao: { type: 'string', description: 'Ngày báo cáo YYYY-MM-DD cho các dòng không ghi ngày (mặc định hôm nay).' },
+    } },
+  },
+  // T4b — trí nhớ cá nhân: chỉ chuẩn bị thẻ; người dùng sửa chữ rồi bấm Lưu ghi nhớ.
+  {
+    name: 'chuan_bi_ghi_nho',
+    description: 'CHUẨN BỊ một ghi nhớ cá nhân khi người dùng bảo nhớ giúp / ghi nhớ / từ nay hãy… (sở thích, thông tin nền về công việc của họ). Chỉ hiện thẻ; người dùng tự bấm Lưu ghi nhớ. Không dùng cho mật khẩu, số tài khoản, CCCD.',
+    parameters: { type: 'object', additionalProperties: false, required: ['noi_dung'], properties: {
+      noi_dung: { type: 'string', description: 'Nội dung ghi nhớ, một câu gọn, rõ nghĩa khi đọc riêng (3–300 ký tự).' },
     } },
   },
 ];
@@ -244,7 +253,10 @@ export const projectsMentioned = <T extends Record<string, unknown>>(text: strin
     if (words(p.name).some(w => w.length >= 4 && !NAME_COMMON.has(w) && !/^\d+$/.test(w) && have.has(w))) return true;
     const client = words(p.client).filter(w => !NAME_COMMON.has(w));
     const squashed = client.join('');
-    return client.some(w => w.length >= 4 && have.has(w)) || (squashed.length >= 5 && tw.some(w => w.length >= 5 && !NAME_COMMON.has(w) && squashed.includes(w)));
+    // Tên chủ đầu tư viết tách ("Xin Hai" ↔ "XIN HAI VINA"): hai chữ riêng liền nhau xuất hiện nguyên cụm trong tin (bộ kiểm hồi quy 18/10).
+    const pairs = client.slice(1).map((w, i) => `${client[i]} ${w}`).filter(pair => pair.length >= 6);
+    return client.some(w => w.length >= 4 && have.has(w)) || pairs.some(pair => joined.includes(` ${pair} `))
+      || (squashed.length >= 5 && tw.some(w => w.length >= 5 && !NAME_COMMON.has(w) && squashed.includes(w)));
   });
 };
 const projectLabel = (p: Record<string, unknown>) => [str(p.code, 40), str(p.name, 80)].filter(Boolean).join(' · ');
@@ -364,6 +376,18 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
     so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null,
     ghi_chu: 'Thẻ đơn mua nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, NCC, lý do mua chủ động, người duyệt rồi tự bấm Lưu nháp hoặc Gửi duyệt. Không nói là đã lập hay đã gửi đơn.',
   }));
+}
+
+async function prepareMemoryNote(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  const text = (str(args.noi_dung, 400) || '').replace(/\s+/g, ' ');
+  if (text.length < 3) return JSON.stringify({ loi: 'Chưa rõ cần nhớ gì. Hỏi lại người dùng một câu.' });
+  if (text.length > 300) return JSON.stringify({ loi: 'Ghi nhớ quá dài (trên 300 ký tự). Viết gọn lại rồi gọi lại công cụ.' });
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'memory_note', p_title: 'Ghi nhớ', p_payload: { text }, p_preview: {} });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được lệnh, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  return JSON.stringify({ da_hien_the: true, noi_dung: text,
+    ghi_chu: 'Thẻ ghi nhớ đã hiện: người dùng sửa chữ nếu cần rồi tự bấm Lưu ghi nhớ. Chỉ nói 1 câu; không nói là đã nhớ. Xem / quên ở nút Trí nhớ.' });
 }
 
 async function prepareDailyLog(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
@@ -531,6 +555,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
   if (name === 'chuan_bi_don_mua') return prepareOrder(args, ctx);
   if (name === 'chuan_bi_nhat_ky') return prepareDailyLog(args, ctx);
+  if (name === 'chuan_bi_ghi_nho') return prepareMemoryNote(args, ctx);
 
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }

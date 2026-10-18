@@ -443,6 +443,74 @@ test("T4a chưa đúng có lý do: bấm Chưa đúng → chọn lý do một ch
   expect(feedback[2].runId).not.toBe(feedback[0].runId);
 });
 
+test("T4b nhớ giúp: Trợ lý chỉ chuẩn bị thẻ, người dùng sửa rồi Lưu ghi nhớ; Trí nhớ hiện ghi nhớ, thêm, Quên", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Nhớ giúp anh là anh phụ trách SMB-2026 và DA29, báo cáo ngắn gọn số liệu trước");
+  const card = chat(page).getByTestId("command");
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card).toContainText("Nháp · chưa nhớ");
+  // Chưa bấm Lưu thì chưa nhớ gì.
+  expect((await aiCalls(page)).filter(call => call.memory)).toEqual([]);
+  await card.getByLabel("Nội dung ghi nhớ").fill("Phụ trách SMB-2026 và DA29");
+  await card.getByRole("button", { name: "Lưu ghi nhớ" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã lưu ghi nhớ: “Phụ trách SMB-2026 và DA29”");
+  expect((await aiCalls(page)).filter(call => call.memory)).toEqual([{ memory: "save-command", text: "Phụ trách SMB-2026 và DA29" }]);
+
+  await card.getByRole("button", { name: "Trí nhớ" }).click();
+  const panel = page.getByRole("region", { name: "Trí nhớ của Trợ lý" });
+  await expect(panel).toBeVisible();
+  await expect(page.getByLabel("Câu hỏi", { exact: true })).toBeHidden();
+  const notes = panel.getByRole("region", { name: "Ghi nhớ" }).getByRole("listitem");
+  await expect(notes).toHaveCount(1);
+  await expect(notes.first()).toContainText("Phụ trách SMB-2026 và DA29");
+  await expect(notes.first()).toContainText("Từ hội thoại");
+  await expect(panel.getByRole("region", { name: "Lựa chọn đã nhớ" })).toContainText("lần sau thẻ chọn sẵn người duyệt và kho");
+
+  await panel.getByLabel("Ghi nhớ mới").fill("Trả lời ngắn gọn, số liệu trước");
+  await panel.getByRole("button", { name: "Thêm" }).click();
+  await expect(panel.getByRole("status").filter({ hasText: "Đã lưu ghi nhớ" })).toBeVisible();
+  await expect(notes).toHaveCount(2);
+  await panel.getByRole("button", { name: "Quên ghi nhớ: Phụ trách SMB-2026 và DA29" }).click();
+  await expect(notes).toHaveCount(1);
+  expect((await aiCalls(page)).filter(call => call.memory === "forget")).toEqual([{ memory: "forget", scope: "personal", id: expect.stringMatching(/^note-/) }]);
+  await panel.getByRole("button", { name: "Về hội thoại" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByLabel("Câu hỏi", { exact: true })).toBeVisible();
+});
+
+test("T4b đã nhớ: thẻ đề xuất chọn sẵn kho + người duyệt lần trước (Đã nhớ); cách gọi chung quên phải xác nhận", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini&memory=1`);
+  await openAssistant(page, isMobile);
+  if (!isMobile) {
+    await ask(page, MR_ASK);
+    const form = chat(page).getByTestId("mr-form");
+    await expect(form.getByLabel("Kho nhận")).toHaveValue("wh-xh");
+    await expect(form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Bùi Thị Tâm" })).toHaveAttribute("aria-pressed", "true");
+    await expect(form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" })).toHaveAttribute("aria-pressed", "false");
+    await expect(form.locator(".vcc-mem-pill")).toHaveCount(2);
+    await form.getByLabel("Kho nhận").selectOption("wh-smb");
+    await expect(form.locator(".vcc-mem-pill")).toHaveCount(1);
+  }
+  await chat(page).getByRole("button", { name: /Trí nhớ/ }).first().click();
+  const panel = page.getByRole("region", { name: "Trí nhớ của Trợ lý" });
+  await expect(panel.getByRole("region", { name: "Lựa chọn đã nhớ" }).getByRole("listitem")).toHaveText([/Người duyệt đề xuất · SMB-2026: Bùi Thị Tâm/, /Kho nhận đề xuất · SMB-2026: Kho Xin Hai Vina/]);
+  await panel.getByRole("tab", { name: /Cách gọi chung · 2/ }).click();
+  await expect(panel.locator("details summary")).toHaveText([/Mua hàng · Báo giá/, /SMB-2026 · Đề xuất vật tư/]);
+  await panel.getByRole("button", { name: "Quên cách gọi: Ống PVC" }).click();
+  const confirm = panel.getByRole("group", { name: "Xác nhận quên “Ống PVC”" });
+  await expect(confirm).toContainText("Quên cho mọi người?");
+  await confirm.getByRole("button", { name: "Giữ" }).click();
+  expect((await aiCalls(page)).filter(call => call.memory === "forget")).toEqual([]);
+  await panel.getByRole("button", { name: "Quên cách gọi: Ống PVC" }).click();
+  await panel.getByRole("group", { name: "Xác nhận quên “Ống PVC”" }).getByRole("button", { name: "Quên" }).click();
+  await expect(panel.locator("details summary")).toHaveText([/Mua hàng · Báo giá/]);
+  expect((await aiCalls(page)).filter(call => call.memory === "forget")).toEqual([{ memory: "forget", scope: "shared", id: "al-1" }]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
 test("T2b form: gửi lỗi giữa chừng báo lý do rồi gửi lại được; dự án chưa có quy trình thì khóa Gửi duyệt, vẫn Lưu nháp", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=mr-fail`);

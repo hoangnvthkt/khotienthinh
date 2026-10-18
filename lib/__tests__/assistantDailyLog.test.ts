@@ -77,6 +77,9 @@ describe('Trợ lý T2d · nhật ký từ báo cáo Zalo', () => {
     expect(matchProjects('xin hai', P).map(p => p.id)).toEqual(['da29']);
     expect(matchProjects('Sơn Miền Bắc', P).map(p => p.id)).toEqual(['smb']);
     expect(projectsMentioned('Báo cáo công việc ngày 18/10 XinHai\n1) Nhà xưởng: Tổ Mr Ích 11 người', P).map(p => p.id)).toEqual(['da29']);
+    // Bộ kiểm hồi quy 18/10: tin ghi tách "Xin Hai" (đúng như tên CĐT) cũng nhận ra; một chữ "hai" lẻ thì không.
+    expect(projectsMentioned('BC ngày 15/10 Xin Hai\nNhà xưởng: Tổ Mr Ích 20 người', P).map(p => p.id)).toEqual(['da29']);
+    expect(projectsMentioned('BC ngày 15/10\nTổ Ích 20 người, hai ca', P)).toEqual([]);
     expect(projectsMentioned('Báo cáo công việc ngày:18/10/2026\n1)Nhà xưởng:\n*Tổ Mr Ích: 11 người\n- Lắp dựng cofa cổ cột, hố pít thang máy 2\n-GCLD cốt thép khu cầu công\n-Xây tường hàng lang trục A', P)).toEqual([]);
   });
 

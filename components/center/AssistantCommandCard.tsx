@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Brain, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
+import type { MemoryActions } from '../../lib/aiMemory';
 import { dailyLogSlipRoute, dailyLogView, isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
 import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
 import AssistantDailyLogForm, { type DailyLogReceiptSlip } from './AssistantDailyLogForm';
@@ -24,6 +25,9 @@ export interface CommandActions {
   poForm?: PoFormActions;
   /** Nhật ký từ báo cáo Zalo trong chat (T2d): đọc bằng bộ của màn Nhật ký, tạo phiếu nháp. */
   dailyLog?: DailyLogFormActions;
+  /** T4b: thẻ "nhớ giúp" — lưu ghi nhớ cá nhân; mở bảng Trí nhớ. */
+  memory?: MemoryActions;
+  openMemory?: () => void;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
@@ -286,6 +290,57 @@ const DailyLogCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
   );
 };
 
+/** T4b: Trợ lý chuẩn bị một ghi nhớ khi người dùng bảo "nhớ giúp" — sửa chữ rồi bấm Lưu ghi nhớ; chưa bấm thì chưa nhớ gì. */
+const MemoryNoteCard: React.FC<CardProps> = ({ command, now, actions }) => {
+  const [text, setText] = useState(typeof command.payload.text === 'string' ? command.payload.text : '');
+  const [busy, setBusy] = useState<null | 'save' | 'cancel'>(null);
+  const [error, setError] = useState<string | null>(command.status === 'failed' ? command.error : null);
+  const [current, setCurrent] = useState(command);
+  const expired = isCommandExpired(current, now);
+  const saved = typeof current.result.text === 'string' ? current.result.text : text;
+
+  if (current.status === 'done') {
+    return (
+      <div className="vcc-cmd" data-state="done" data-testid="command">
+        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" /> Đã lưu ghi nhớ: “{saved}”</p>
+        {actions.openMemory && <button type="button" className="vcc-chip" onClick={actions.openMemory}><Brain size={12} /> Trí nhớ</button>}
+      </div>
+    );
+  }
+  if (current.status === 'cancelled') return <div className="vcc-cmd" data-state="cancelled" data-testid="command"><p className="vcc-cmd-muted">Đã bỏ ghi nhớ.</p></div>;
+  const save = async () => {
+    if (text.trim().length < 3) { setError('Ghi nhớ quá ngắn.'); return; }
+    if (!actions.memory) return;
+    setBusy('save'); setError(null);
+    try { setCurrent(await actions.memory.saveNoteCommand(current, text)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa lưu được.'); } finally { setBusy(null); }
+  };
+  const cancel = async () => {
+    setBusy('cancel'); setError(null);
+    try { setCurrent(await actions.cancel(current)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa bỏ được.'); } finally { setBusy(null); }
+  };
+  return (
+    <div className="vcc-cmd" data-state={expired ? 'expired' : current.status} data-testid="command" role="group" aria-label="Ghi nhớ">
+      <div className="vcc-cmd-head">
+        <span className="vcc-cmd-icon" aria-hidden="true"><Brain size={15} /></span>
+        <p className="vcc-cmd-title">Ghi nhớ cho Trợ lý</p>
+        <span className="vcc-cmd-tag">Nháp · chưa nhớ</span>
+      </div>
+      <label className="vcc-cmd-field">
+        <span>Trợ lý sẽ nhớ</span>
+        <textarea value={text} onChange={e => setText(e.target.value)} maxLength={300} rows={2} aria-label="Nội dung ghi nhớ" disabled={Boolean(busy) || expired} />
+      </label>
+      {error && <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {error}</p>}
+      {expired ? <p className="vcc-cmd-muted">Thẻ đã cũ — nói lại điều cần nhớ.</p> : (
+        <div className="vcc-cmd-actions">
+          <button type="button" className="vcc-btn" data-pri="true" onClick={() => void save()} disabled={Boolean(busy) || !actions.memory}>
+            {busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Lưu ghi nhớ</button>
+          <button type="button" className="vcc-btn" onClick={() => void cancel()} disabled={Boolean(busy)}><X size={14} /> Bỏ</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /** Loại thẻ mới hơn bản app đang mở (trang mở từ trước khi cập nhật): nhắc tải lại thay vì im lặng không hiện gì (chủ SP 18/10). */
 const UnknownCard: React.FC<CardProps> = ({ command }) => (
   <div className="vcc-cmd" data-state="unknown" data-testid="command" role="group" aria-label={command.title}>
@@ -300,6 +355,7 @@ const AssistantCommandCard: React.FC<CardProps> = props =>
   props.command.kind === 'unknown' ? <UnknownCard {...props} />
     : props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
     : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} />
-      : props.command.kind === 'daily_log' ? <DailyLogCard {...props} /> : <LeaveCard {...props} />;
+      : props.command.kind === 'daily_log' ? <DailyLogCard {...props} />
+        : props.command.kind === 'memory_note' ? <MemoryNoteCard {...props} /> : <LeaveCard {...props} />;
 
 export default AssistantCommandCard;

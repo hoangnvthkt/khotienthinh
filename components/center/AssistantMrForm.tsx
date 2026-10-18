@@ -11,6 +11,10 @@ import { qtyInUnit, sameUnit } from '../../lib/materialRequestText';
 const qtyShow = (q: number | null) => (q == null ? '' : q.toLocaleString('vi-VN', { maximumFractionDigits: 3 }));
 const pill = (row: MrFormRow) => (row.itemId ? (row.remembered ? 'Đã nhớ' : 'Đã khớp') : row.candidates.length ? 'Chọn mã' : 'Chưa có mã');
 
+/** T4b: nhãn nhỏ cạnh ô đã chọn sẵn theo lần gửi trước. */
+export const Remembered: React.FC = () => <span className="vcc-mr-pill vcc-mem-pill" data-tone="ok" title="Lần trước bạn chọn — đổi được"><Brain size={11} aria-hidden="true" />Đã nhớ</span>;
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x));
+
 const AssistantMrForm: React.FC<{
   command: AssistantCommand;
   actions: MrFormActions;
@@ -41,8 +45,8 @@ const AssistantMrForm: React.FC<{
     actions.load(command).then(c => {
       if (!alive) return;
       setCtx(c);
-      setWarehouseId(c.defaultWarehouseId || '');
-      setApproverIds(c.approvers.length === 1 ? [c.approvers[0].id] : []);
+      setWarehouseId(c.rememberedWarehouseId || c.defaultWarehouseId || '');
+      setApproverIds(c.rememberedApproverIds?.length ? c.rememberedApproverIds : c.approvers.length === 1 ? [c.approvers[0].id] : []);
       const next = toFormRows(v.lines, c.catalog, c.memory);
       setRows(next);
       setShowSpec(new Set(next.filter(r => r.spec).map(r => r.key)));
@@ -70,6 +74,7 @@ const AssistantMrForm: React.FC<{
         lines: kept.map(r => ({ item: byId.get(r.itemId!)!, qty: parseQty(r.qty), spec: r.spec.trim(), reason: (r.reason || purpose).trim(),
           said: [r.line.name, r.line.spec].filter(Boolean).join(' ') })),
         approverIds, approverNames: ctx.approvers.filter(a => approverIds.includes(a.id)).map(a => a.name),
+        warehouseName: ctx.warehouses.find(w => w.id === warehouseId)?.name,
       });
       onDone(done);
     } catch (e) {
@@ -98,7 +103,7 @@ const AssistantMrForm: React.FC<{
           <input value={title} onChange={e => setTitle(e.target.value)} maxLength={200} disabled={locked} aria-label="Tên đề xuất" /></label>
         <label className="vcc-mr-field vcc-mr-wide"><span>Dùng cho</span>
           <input value={purpose} onChange={e => setPurpose(e.target.value)} maxLength={200} disabled={locked} aria-label="Dùng cho" placeholder="Lý do chung cho các dòng" /></label>
-        <label className="vcc-mr-field"><span>Kho nhận</span>
+        <label className="vcc-mr-field"><span>Kho nhận{ctx.rememberedWarehouseId && warehouseId === ctx.rememberedWarehouseId && <Remembered />}</span>
           <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} disabled={locked} aria-label="Kho nhận">
             <option value="">— Chọn kho nhận —</option>
             {ctx.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -176,7 +181,7 @@ const AssistantMrForm: React.FC<{
       </ul>
 
       <div className="vcc-mr-approvers">
-        <span className="vcc-mr-label">Người duyệt</span>
+        <span className="vcc-mr-label">Người duyệt{Boolean(ctx.rememberedApproverIds?.length) && sameSet(approverIds, ctx.rememberedApproverIds!) && <Remembered />}</span>
         {ctx.sendBlocked ? <p className="vcc-mr-warn"><AlertTriangle size={12} aria-hidden="true" /> {ctx.sendBlocked} Vẫn lưu nháp được.</p> : (
           <div className="vcc-mr-chips" role="group" aria-label="Chọn người duyệt">
             {ctx.approvers.map(a => {

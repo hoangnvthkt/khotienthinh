@@ -3,6 +3,7 @@ import { AlertTriangle, Brain, CheckCircle2, Loader2, Save, Search, Send, X } fr
 import { poView, type AssistantCommand, type PoReasonCode } from '../../lib/assistantCommands';
 import { PO_REASONS, applyItem, parseNum, poProblems, poTotals, purchaseQtyOf, type PoFormActions, type PoFormContext, type PoFormRow } from '../../lib/assistantPoForm';
 import { boqStatusOf, type ProcurementCatalogItem, type ProcurementVendor } from '../../lib/procurementInboxService';
+import { Remembered } from './AssistantMrForm';
 
 // Form đơn mua (PO chủ động) ngay trong khung chat (chủ SP 18/10/2026): Trợ lý tách báo giá → người Mua hàng chọn mã (gợi ý bấm), NCC
 // (gợi ý bấm), lý do mua chủ động, người duyệt rồi Lưu nháp / Gửi duyệt tại chỗ — lưu bằng đúng lệnh của màn Lập đơn chủ động.
@@ -45,8 +46,8 @@ const AssistantPoForm: React.FC<{
       if (!alive) return;
       setCtx(c); setRows(c.rows);
       if (c.rememberedVendor) { setVendor(cur => cur || c.rememberedVendor!); setVendorQuery(null); setVendorRemembered(true); }
-      setWarehouseId(w => w || c.warehouses[0]?.id || '');
-      setApproverId(c.approvers.length === 1 ? c.approvers[0].id : null);
+      setWarehouseId(w => w || c.rememberedWarehouseId || c.warehouses[0]?.id || '');
+      setApproverId(c.rememberedApproverId || (c.approvers.length === 1 ? c.approvers[0].id : null));
     }).catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : 'Chưa tải được danh mục / dự án để lập đơn.'); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,7 +84,7 @@ const AssistantPoForm: React.FC<{
     try {
       onDone(await actions.submit(command, {
         mode, warehouseId, vendor, deliveryDate: deliveryDate || null, vat: vatNum, reasonCode, reason, overBoqReason, note: v.note, rows,
-        approverId, approverName: ctx.approvers.find(a => a.id === approverId)?.name || null,
+        approverId, approverName: ctx.approvers.find(a => a.id === approverId)?.name || null, warehouseName: ctx.warehouses.find(w => w.id === warehouseId)?.name,
       }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Chưa lưu được đơn.');
@@ -125,7 +126,7 @@ const AssistantPoForm: React.FC<{
         )}
       </div>
       <div className="vcc-mr-fields">
-        <label className="vcc-mr-field"><span>Kho nhận</span>
+        <label className="vcc-mr-field"><span>Kho nhận{ctx.rememberedWarehouseId && warehouseId === ctx.rememberedWarehouseId && <Remembered />}</span>
           <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} disabled={locked} aria-label="Kho nhận">
             <option value="">— Chọn kho nhận —</option>
             {ctx.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -218,7 +219,7 @@ const AssistantPoForm: React.FC<{
       </div>
 
       <div className="vcc-mr-approvers">
-        <span className="vcc-mr-label">Người duyệt</span>
+        <span className="vcc-mr-label">Người duyệt{ctx.rememberedApproverId && approverId === ctx.rememberedApproverId && <Remembered />}</span>
         <div className="vcc-mr-chips" role="group" aria-label="Chọn người duyệt">
           {ctx.approvers.map(a => <button key={a.id} type="button" aria-pressed={approverId === a.id} disabled={locked} onClick={() => setApproverId(id => (id === a.id ? null : a.id))}>
             {approverId === a.id && <CheckCircle2 size={12} aria-hidden="true" />}{a.name}</button>)}

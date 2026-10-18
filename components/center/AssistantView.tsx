@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp, ArrowUpRight, ChevronRight, History, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
+  ArrowUp, ArrowUpRight, Brain, ChevronRight, History, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
@@ -20,6 +20,8 @@ import type { MrFormActions } from '../../lib/assistantMrForm';
 import { createPoFormActions, type PoFormActions } from '../../lib/assistantPoForm';
 import { defaultDailyLogFormActions, type DailyLogFormActions } from '../../lib/assistantDailyLogForm';
 import { displayCode } from '../../lib/center/workItemsService';
+import { defaultMemoryActions, type MemoryActions } from '../../lib/aiMemory';
+import AssistantMemoryPanel from './AssistantMemoryPanel';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
 // hôm nay; hỏi tiếp được (máy chủ đọc lại các lượt trước), trả lời chạy dần, mở lại từ Lịch sử (chỉ chủ xem, giữ 90 ngày).
@@ -41,8 +43,11 @@ export interface AssistantHooks {
   poForm?: PoFormActions;
   /** Nhật ký từ báo cáo Zalo trong chat (T2d) — đọc bằng bộ của màn Nhật ký, tạo phiếu nháp. */
   dailyLog?: DailyLogFormActions;
+  /** T4b: bảng "Trí nhớ" (xem / quên) + thẻ "nhớ giúp". */
+  memory?: MemoryActions;
 }
 export const defaultAssistantHooks: AssistantHooks = {
+  memory: defaultMemoryActions,
   poForm: createPoFormActions(),
   dailyLog: defaultDailyLogFormActions,
   status: () => aiGateway.status(),
@@ -241,6 +246,7 @@ const AssistantView: React.FC<{
   const [threadState, setThreadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [history, setHistory] = useState<{ open: boolean; list: ChatThreadSummary[] | 'loading' | 'error' | null }>({ open: false, list: null });
   const [question, setQuestion] = useState('');
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const started = useRef(false);
   const seq = useRef(0);
@@ -254,6 +260,7 @@ const AssistantView: React.FC<{
 
   const openThread = useCallback(async (id: string) => {
     setThreadState('loading');
+    setMemoryOpen(false);
     setHistory(h => ({ ...h, open: false }));
     try {
       const loaded = await hooks.getThread(id);
@@ -321,6 +328,7 @@ const AssistantView: React.FC<{
 
   const newThread = () => {
     abort.current?.abort();
+    setMemoryOpen(false);
     setThread({ id: null, title: '', startedAt: null });
     setMessages([]);
     setThreadState('idle');
@@ -363,6 +371,8 @@ const AssistantView: React.FC<{
     mrForm: hooks.mrForm,
     poForm: hooks.poForm,
     dailyLog: hooks.dailyLog,
+    memory: hooks.memory,
+    openMemory: hooks.memory ? () => setMemoryOpen(true) : undefined,
   };
 
   const askQuick = (id: string, text: string) => {
@@ -442,7 +452,12 @@ const AssistantView: React.FC<{
       <div className="vcc-chat-bar">
         <p className="vcc-chat-title" title={thread.title || undefined}>{thread.title || 'Hội thoại mới'}</p>
         <div className="vcc-chat-actions" ref={historyBox}>
-          <button type="button" className="vcc-btn" onClick={toggleHistory} aria-expanded={history.open} aria-haspopup="dialog" title="Hội thoại đã có">
+          {hooks.memory && (
+            <button type="button" className="vcc-btn" onClick={() => { setMemoryOpen(o => !o); setHistory(h => ({ ...h, open: false })); }} aria-pressed={memoryOpen} aria-label="Trí nhớ" title="Trợ lý đã nhớ gì — xem, quên">
+              <Brain size={14} /> <span className="vcc-chat-label">Trí nhớ</span>
+            </button>
+          )}
+          <button type="button" className="vcc-btn" onClick={() => { setMemoryOpen(false); toggleHistory(); }} aria-expanded={history.open} aria-haspopup="dialog" title="Hội thoại đã có">
             <History size={14} /> <span className="vcc-chat-label">Lịch sử</span>
           </button>
           <button type="button" className="vcc-btn" onClick={newThread} disabled={!thread.id && messages.length === 0} title="Bắt đầu hội thoại mới">
@@ -471,7 +486,8 @@ const AssistantView: React.FC<{
         </div>
       </div>
 
-      <div className="vcc-chat-scroll" ref={scroller} onScroll={onScroll}>
+      {memoryOpen && hooks.memory && <AssistantMemoryPanel actions={hooks.memory} you={you} onClose={() => setMemoryOpen(false)} />}
+      <div className="vcc-chat-scroll" ref={scroller} onScroll={onScroll} style={memoryOpen ? { display: 'none' } : undefined}>
         <div className="vcc-chat-col">
           {isToday ? (
             <BriefCard brief={brief} now={now} items={items} today={today} configured={configured} narration={narration}
@@ -571,7 +587,7 @@ const AssistantView: React.FC<{
         </div>
       </div>
 
-      <div className="vcc-chat-foot">
+      <div className="vcc-chat-foot" style={memoryOpen ? { display: 'none' } : undefined}>
         <div className="vcc-chat-col">
           {showChips && (
             <div className="vcc-chips" role="group" aria-label="Hỏi nhanh">
