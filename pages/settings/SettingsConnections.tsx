@@ -152,7 +152,7 @@ const SettingsConnections: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'error'>('loading');
   const [error, setError] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null, 'ai.assistant': null });
+  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null, 'ai.assistant': null, 'ai.decisions': null });
   const [envs, setEnvs] = useState<EnvConnection[] | null>(null);
   const [envResults, setEnvResults] = useState<Record<string, ProbeResult | 'testing' | undefined>>({});
   const [testingId, setTestingId] = useState<string | null>(null);

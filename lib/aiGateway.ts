@@ -2,7 +2,7 @@
 // máy chủ (edge function ai-gateway) giữ quyền, hạn mức, nhật ký và nhà cung cấp. Chưa có khóa → AI_NOT_CONFIGURED, màn hình làm tay như thường.
 import { supabase } from './supabase';
 
-export type AiProvider = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
+export type AiProvider = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible' | 'typesafe';
 export type AiGatewayCode = 'OK' | 'AI_NOT_CONFIGURED' | 'AI_DENIED' | 'AI_OFF' | 'AI_SKILL_OFF' | 'AI_SKILL_UNKNOWN' | 'AI_QUOTA' | 'AI_REFUSED' | 'AI_FAILED';
 export type AiGatewayErrorCode = Exclude<AiGatewayCode, 'OK'>;
 
@@ -16,7 +16,7 @@ export const AI_GATEWAY_MESSAGES: Record<AiGatewayErrorCode, string> = {
   AI_REFUSED: 'AI từ chối nội dung này.',
   AI_FAILED: 'AI chưa trả lời được.',
 };
-export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI' };
+export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI', typesafe: 'TypeSafe (Jev)' };
 /** Đích đang dùng cho một lớp model: kết nối ở Cài đặt → Kết nối, hoặc khóa trong Secrets. */
 export interface AiTargetInfo { source: 'connection' | 'secrets'; name: string; kind: AiProvider; label: string; model: string }
 export const AI_TIER_LABELS: Record<string, string> = { base: 'Nền', ops: 'Nghiệp vụ', analysis: 'Phân tích', executive: 'Điều hành' };

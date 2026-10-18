@@ -2,16 +2,18 @@
 // Khóa mã hóa trong Vault; màn hình chỉ gửi khóa lên khi nhập mới và không bao giờ nhận lại (chỉ 4 ký tự cuối).
 import { supabase } from './supabase';
 
-export type ConnectionKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible';
-export type ConnectionFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant';
+export type ConnectionKind = 'anthropic' | 'gemini' | 'openai' | 'openai_compatible' | 'typesafe';
+export type ConnectionFeature = 'ai.fast' | 'ai.reasoning' | 'wms.doc_reader' | 'ai.assistant' | 'ai.decisions';
 
 export const KIND_OPTIONS: Array<{ kind: ConnectionKind; label: string; baseUrl: string; keyHint: string; modelHint: string }> = [
   { kind: 'anthropic', label: 'Anthropic (Claude)', baseUrl: 'https://api.anthropic.com', keyHint: 'sk-ant-…', modelHint: 'claude-haiku-5-5' },
   { kind: 'gemini', label: 'Google (Gemini)', baseUrl: 'https://generativelanguage.googleapis.com', keyHint: 'AIza…', modelHint: 'gemini-2.5-flash' },
   { kind: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', keyHint: 'sk-…', modelHint: 'gpt-…' },
   { kind: 'openai_compatible', label: 'Chuẩn OpenAI khác (9Router, OpenRouter…)', baseUrl: '', keyHint: 'khóa của cổng', modelHint: 'tên model của cổng' },
+  // TypeSafe Jev (J1, 18/10): model quyết định có kiểu (không sinh chữ) — chỉ gán cho "Trợ lý · điều hướng Jev".
+  { kind: 'typesafe', label: 'TypeSafe (Jev · quyết định có kiểu)', baseUrl: 'https://api.typesafe.ai', keyHint: 'khóa tạo ở console.typesafe.ai', modelHint: 'jev-1.14.0' },
 ];
-const SHORT: Record<ConnectionKind, string> = { anthropic: 'Anthropic', gemini: 'Gemini', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI' };
+const SHORT: Record<ConnectionKind, string> = { anthropic: 'Anthropic', gemini: 'Gemini', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI', typesafe: 'TypeSafe Jev' };
 /** Tên ngắn: dùng làm tên mặc định khi thêm kết nối. */
 export const kindLabel = (kind: ConnectionKind) => SHORT[kind] || kind;
 
@@ -35,6 +37,8 @@ export const FEATURES: Array<{ feature: ConnectionFeature; label: string; emptyL
   // Trợ lý v2 (17/10): hội thoại ở tab Trợ lý; chủ SP chọn claude-sonnet-5-5.
   { feature: 'ai.assistant', label: 'Trợ lý · hội thoại', emptyLabel: 'Như Trợ lý · model suy luận' },
   { feature: 'wms.doc_reader', label: 'Đọc ảnh chứng từ · Kho, Đề xuất' },
+  // J1 (18/10): Jev chạy bóng cạnh hội thoại — chỉ ghi so sánh vào ai_decisions, không đổi câu trả lời. Gán kết nối TypeSafe.
+  { feature: 'ai.decisions', label: 'Trợ lý · điều hướng Jev (chạy bóng)', emptyLabel: 'Tắt — chưa ghi so sánh' },
 ];
 
 export interface TestSummary { ms: number | null; httpStatus: number | null; models: number | null; code: string | null; message: string | null }
@@ -126,7 +130,7 @@ export const integrationsService = {
     const a = raw.assignments || {};
     return {
       connections: (raw.connections || []).map(parseConnection),
-      assignments: { 'ai.fast': a['ai.fast'] || null, 'ai.reasoning': a['ai.reasoning'] || null, 'wms.doc_reader': a['wms.doc_reader'] || null, 'ai.assistant': a['ai.assistant'] || null },
+      assignments: { 'ai.fast': a['ai.fast'] || null, 'ai.reasoning': a['ai.reasoning'] || null, 'wms.doc_reader': a['wms.doc_reader'] || null, 'ai.assistant': a['ai.assistant'] || null, 'ai.decisions': a['ai.decisions'] || null},
     };
   },
   async envConnections(): Promise<EnvConnection[]> {
