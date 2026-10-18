@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, History, Loader2, Lock, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
+  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, FileText, History, Loader2, Lock, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
@@ -432,7 +432,7 @@ const AssistantView: React.FC<{
     const result = await hooks.chat(
       { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender), context,
         ...(files.length ? { images: files.flatMap(f => (f.kind === 'image' ? [{ mime: f.mime, b64: f.b64 }] : [])),
-          files: files.flatMap(f => (f.kind === 'table' ? [{ name: f.name, text: f.text }] : [])) } : {}) },
+          files: files.flatMap(f => (f.kind === 'image' ? [] : [{ name: f.name, text: f.text }])) } : {}) },
       {
         onStart: ({ runId }) => patch(m => ({ ...m, runId })),
         onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
@@ -640,9 +640,9 @@ const AssistantView: React.FC<{
             {(attachments.length > 0 || reading || fileErrors.length > 0) && (
               <div className="vcc-attach-tray" role="group" aria-label="Tệp đính kèm">
                 {attachments.map(a => (
-                  <span key={a.id} className="vcc-attach" data-kind={a.kind} title={a.kind === 'table' ? `${a.rows} hàng${a.truncated ? ' · tệp dài, chỉ gửi phần đầu' : ''}` : a.name}>
-                    {a.kind === 'image' ? <img src={a.previewUrl} alt="" /> : <FileSpreadsheet size={16} aria-hidden="true" />}
-                    <span className="vcc-attach-name">{a.kind === 'image' ? a.name : `${a.name} · ${a.rows} hàng`}</span>
+                  <span key={a.id} className="vcc-attach" data-kind={a.kind} title={a.kind === 'image' ? a.name : `${a.kind === 'table' ? `${a.rows} hàng` : `${a.pages} trang`}${a.truncated ? ' · tệp dài, chỉ gửi phần đầu' : ''}`}>
+                    {a.kind === 'image' ? <img src={a.previewUrl} alt="" /> : a.kind === 'doc' ? <FileText size={16} aria-hidden="true" /> : <FileSpreadsheet size={16} aria-hidden="true" />}
+                    <span className="vcc-attach-name">{a.kind === 'image' ? a.name : a.kind === 'doc' ? `${a.name} · ${a.pages} trang` : `${a.name} · ${a.rows} hàng`}</span>
                     <button type="button" onClick={() => unattach(a.id)} aria-label={`Bỏ tệp ${a.name}`} disabled={sending}>×</button>
                   </span>
                 ))}
@@ -655,7 +655,7 @@ const AssistantView: React.FC<{
               onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(Array.from(event.dataTransfer.files)); } }}>
               <input ref={filePicker} type="file" accept={ACCEPT} multiple hidden onChange={event => { void attach(Array.from(event.target.files || [])); event.target.value = ''; }} />
               <button type="button" className="vcc-composer-attach" onClick={() => filePicker.current?.click()} disabled={sending || reading}
-                aria-label="Đính kèm ảnh hoặc Excel" title="Đính kèm ảnh (báo giá, phiếu, báo cáo) hoặc Excel / CSV — đọc ngay trên máy"><Paperclip size={17} /></button>
+                aria-label="Đính kèm ảnh, PDF hoặc Excel" title="Đính kèm ảnh (báo giá, phiếu, báo cáo), PDF (≤ 50 MB) hoặc Excel / CSV — đọc ngay trên máy"><Paperclip size={17} /></button>
               <textarea
                 ref={input}
                 className="vcc-composer-input"

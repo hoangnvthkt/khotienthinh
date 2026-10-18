@@ -114,6 +114,9 @@ export const CASES: EvalCase[] = [
   { id: 'po-from-excel', bug: 'T3: báo giá Excel đọc trên máy → thẻ đơn mua đúng SL / giá', q: 'Lập đơn mua cho SMB theo file báo giá này',
     files: [{ name: 'bao-gia-hanaka.xlsx', text: '[Sheet Báo giá · 6 hàng]\n| BÁO GIÁ THÉP - CÔNG TY TNHH HANAKA VIỆT NAM |  |  |  |  |  |\n| STT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền |\n| 1 | Thép vằn D16 CB400 | kg | 6300 | 15850 | 99855000 |\n| 2 | Thép vằn D20 CB400 | kg | 4928 | 15750 | 77616000 |\n| 3 | Thép cuộn D8 CB240 | kg | 2000 | 16100 | 32200000 |\n|  | Cộng |  |  |  | 209671000 |' }],
     check: poQuoteCheck },
+  { id: 'po-from-pdf', bug: 'PDF báo giá đọc trên máy (chữ kiểu Việt 6.300, cột cách " | ") → thẻ đơn mua đúng SL / giá', q: 'Lập đơn mua cho SMB theo báo giá PDF này',
+    files: [{ name: 'bao-gia-hanaka.pdf', text: '[PDF · 1 trang]\n[Trang 1]\nCÔNG TY TNHH HANAKA VIỆT NAM\nMST: 0101234567 · BÁO GIÁ SỐ BG-1810 · Ngày 18/10/2026\nSTT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền\n1 | Thép vằn D16 CB400 | kg | 6.300 | 15.850 | 99.855.000\n2 | Thép vằn D20 CB400 | kg | 4.928 | 15.750 | 77.616.000\n3 | Thép cuộn D8 CB240 | kg | 2.000 | 16.100 | 32.200.000\nCộng | 209.671.000\nVAT 8% | 16.773.680\nGiao trong 3 ngày kể từ ngày đặt.' }],
+    check: poQuoteCheck },
 ];
 
 const loadTarget = async (envPath: string) => {
