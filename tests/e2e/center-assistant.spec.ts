@@ -844,3 +844,27 @@ test("chọn model ở ô hỏi: chỉ model được cấp, nhớ lựa chọn;
   await expect(chat(page).getByText("Claude Sonnet 5.5", { exact: true })).toBeVisible();
   await expect(chat(page).getByRole("button", { name: /^Model:/ })).toHaveCount(0);
 });
+
+test("lần đầu được cấp: tin chào + thẻ Thử ngay (gửi ngay / điền sẵn để sửa); Đã hiểu thì ẩn hẳn", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  const welcome = chat(page).getByRole("region", { name: "Chào mừng đến Trợ lý" });
+  await expect(welcome).toContainText("Trợ lý AI đã mở cho anh");
+  const cards = welcome.getByRole("group", { name: "Thử ngay" }).getByRole("button");
+  await expect(cards).toHaveCount(5);
+  await cards.filter({ hasText: "Xin nghỉ phép" }).click();
+  await expect(page.getByLabel("Câu hỏi", { exact: true })).toHaveValue("Xin nghỉ phép năm ngày mai, lý do ");
+  await expect(page.getByLabel("Câu hỏi", { exact: true })).toBeFocused();
+  await page.getByLabel("Câu hỏi", { exact: true }).fill("");
+  await cards.filter({ hasText: "Việc gì gấp nhất?" }).click();
+  await expect(chat(page).getByTestId("turn").first()).toHaveAttribute("data-state", "done");
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat").map(c => c.question)).toEqual(["Hôm nay việc gì gấp nhất?"]);
+  await expect(welcome).toHaveCount(0);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await chat(page).getByRole("region", { name: "Chào mừng đến Trợ lý" }).getByRole("button", { name: "Đã hiểu" }).click();
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByRole("region", { name: "Chào mừng đến Trợ lý" })).toHaveCount(0);
+});

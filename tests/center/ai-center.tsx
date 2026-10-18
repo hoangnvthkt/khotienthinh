@@ -5,7 +5,7 @@ import '../../index.css';
 import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import AiCenter from '../../pages/AiCenter';
-import type { AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
+import type { AiActivity, AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
 
 // Trung tâm AI · fixture (không gọi Supabase). ?role=staff: người không phải Admin. ?empty=1: chưa cấp ai.
 const params = new URLSearchParams(location.search);
@@ -81,8 +81,29 @@ const service: AiAdminService = {
     state.grants = state.grants.map(g => ({ ...g, effective: effective(g) }));
   },
   deleteTemplate: async id => { calls.push({ deleteTemplate: id }); state.templates = state.templates.filter(t => t.id !== id); },
+  activity: async days => { calls.push({ activity: days }); await sleep(60); if (params.get('activity') === 'fail') throw new Error('Mất kết nối'); return { ...ACTIVITY, days }; },
   saveModel: async m => { calls.push({ saveModel: m }); state.connections = state.connections.map(c => (c.id === m.id ? { ...c, ...m } : c)); },
   setSkillAccess: async (code, access) => { calls.push({ setSkillAccess: code, access }); state.skills = state.skills.map(s => (s.code === code ? { ...s, access } : s)); },
+};
+
+// Hoạt động 14 ngày của nhóm thí điểm (số giả lập); ?activity=fail → lỗi tải.
+const PILOT = ['Dương Xuân Thịnh', 'Nguyễn Thị Mơ', 'Hà Đức Chuẩn', 'Đặng Thị Thu Hà', 'Nguyễn Thị Hương', 'Bùi Thị Tâm', 'Nguyễn Văn Năm', 'Đoàn Văn Dương', 'Bùi Quang Chung', 'Nguyễn Thị Giang'];
+const day = (offset: number) => { const d = new Date(); d.setDate(d.getDate() - offset); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const ACTIVITY: AiActivity = {
+  days: 14, granted: 16,
+  totals: { questions: 186, askers: 9, runs: 241, costUsd: 4.12, likes: 31, dislikes: 6, errors: 2, blocked: 3, withFiles: 22 },
+  daily: [[13, 4, 2], [12, 9, 4], [11, 15, 6], [10, 11, 5], [9, 0, 0], [8, 0, 0], [7, 18, 7], [6, 21, 8], [5, 17, 7], [4, 24, 9], [3, 19, 8], [2, 0, 0], [1, 22, 8], [0, 26, 9]]
+    .map(([o, q, p]) => ({ day: day(o), questions: q, people: p })),
+  topics: [{ topic: 'lookup', questions: 74 }, { topic: 'chat', questions: 41 }, { topic: 'purchase_order', questions: 23 }, { topic: 'material_request', questions: 19 },
+    { topic: 'daily_log', questions: 14 }, { topic: 'leave_request', questions: 9 }, { topic: 'memory_note', questions: 4 }, { topic: 'refused', questions: 2 }],
+  commands: [{ kind: 'purchase_order', prepared: 21, done: 14, cancelled: 4, failed: 1, open: 1, expired: 1 }, { kind: 'material_request', prepared: 17, done: 12, cancelled: 3, failed: 0, open: 1, expired: 1 },
+    { kind: 'daily_log', prepared: 13, done: 11, cancelled: 1, failed: 0, open: 0, expired: 1 }, { kind: 'leave_request', prepared: 8, done: 7, cancelled: 1, failed: 0, open: 0, expired: 0 }],
+  people: PILOT.map((name, i) => ({ userId: `p-${i}`, name, granted: true, template: i < 5 ? 'Nâng cao' : 'Tiêu chuẩn', questions: i === 7 ? 0 : 42 - i * 4, runs: i === 7 ? 0 : 50 - i * 4,
+    costUsd: i === 7 ? 0 : Math.round((0.9 - i * 0.08) * 100) / 100, likes: i === 7 ? 0 : 5 - Math.floor(i / 2), dislikes: i === 3 ? 3 : i === 1 ? 1 : 0, blocked: i === 6 ? 2 : 0,
+    lastAt: i === 7 ? null : new Date(Date.now() - (i + 1) * 3_600_000).toISOString(), commands: i === 7 ? 0 : 9 - i, done: i === 7 ? 0 : Math.max(0, 7 - i) })),
+  models: [{ model: 'claude-sonnet-5-5', runs: 201, costUsd: 3.98 }, { model: 'deepseek-v4.1-flash', runs: 40, costUsd: 0.14 }],
+  dislikes: [{ at: new Date().toISOString(), name: 'Đặng Thị Thu Hà', skill: 'assistant_chat', reason: 'wrong_data', note: 'Báo giá Hòa Phát đọc sai đơn giá dòng 3' },
+    { at: new Date(Date.now() - 86_400_000).toISOString(), name: 'Nguyễn Thị Mơ', skill: 'assistant_chat', reason: 'incomplete', note: null }],
 };
 
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}</p>; };

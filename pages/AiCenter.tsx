@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Check, ChevronDown, Cpu, Eye, EyeOff, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { Activity, Bot, Check, ChevronDown, Coins, Cpu, RefreshCcw, Settings, Eye, EyeOff, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import { Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../components/procurement/hub/hubUi';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
+import { ENT, Kpi } from '../components/finance/financeUi';
+import AiActivityPanel from '../components/aiCenter/AiActivityPanel';
 import {
   aiAdminService, modelLabel, usd, usedPct, type AiAdminOverview, type AiConnectionRow, type AiAdminService, type AiGrant, type AiGrantValues, type AiPerson, type AiTemplate, type SkillAccess,
 } from '../lib/aiAdmin';
@@ -13,7 +15,7 @@ import {
 // Người không phải Admin vào đây thấy lời mời dùng Trợ lý trong Trung tâm điều hành.
 
 type Load<T> = T | 'loading' | 'error' | 'denied';
-type Tab = 'people' | 'templates' | 'models' | 'skills';
+type Tab = 'people' | 'activity' | 'templates' | 'models' | 'skills';
 const nf = new Intl.NumberFormat('vi-VN');
 const EMPTY_GRANT: AiGrantValues = { enabled: true, templateId: null, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '' };
 const numOrNull = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? null : Number(v.replace(',', '.')));
@@ -24,13 +26,6 @@ const Meter: React.FC<{ pct: number | null; label: string }> = ({ pct, label }) 
   </span>
 );
 
-const Kpi: React.FC<{ label: string; value: React.ReactNode; hint?: React.ReactNode }> = ({ label, value, hint }) => (
-  <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-    <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-    <p className="mt-1 text-xl font-bold tabular-nums text-foreground">{value}</p>
-    {hint && <div className="mt-1.5 text-xs text-muted-foreground">{hint}</div>}
-  </div>
-);
 
 const Switch: React.FC<{ on: boolean; label: string; busy?: boolean; onChange: () => void }> = ({ on, label, busy, onChange }) => (
   // Vùng chạm do nút (≥ 44 px trên màn cảm ứng), phần hiển thị là rãnh 44 × 24 bên trong.
@@ -368,26 +363,33 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-teal-500 to-leaf-600 text-white shadow-md shadow-teal-500/20"><Bot size={22} /></span>
-          <div><h1 className="text-xl font-bold text-foreground">Trung tâm AI</h1><p className="text-sm text-muted-foreground">Cấp AI tới từng người · model · trần · skill</p></div>
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-teal-700 text-white"><Bot size={22} /></span>
+          <div><h1 className="text-xl font-bold text-foreground md:text-2xl">Trung tâm AI</h1><p className="text-sm text-muted-foreground">Cấp AI tới từng người, theo dõi dùng và chi phí</p></div>
         </div>
-        <button type="button" className={primaryBtn} onClick={() => { setTab('people'); setGrantDrawer({ editing: null }); }}><Plus size={16} /> Cấp AI</button>
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
+          <a href="#/settings?tab=ai-gateway" className={`${secondaryBtn} flex-1 md:flex-none`} title="Bật tắt AI, trần chung, khóa model, lượt gần nhất"><Settings size={15} /> Cổng AI</a>
+          <button type="button" className={`${secondaryBtn} flex-1 md:flex-none`} onClick={() => { setData('loading'); load(); }}><RefreshCcw size={15} /> Làm mới</button>
+          <button type="button" className={`${primaryBtn} flex-1 md:flex-none`} onClick={() => { setTab('people'); setGrantDrawer({ editing: null }); }}><Plus size={16} /> Cấp AI</button>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Người được dùng" value={`${enabledCount}`} hint={`${data.grants.length - enabledCount} đang tắt`} />
-        <Kpi label="Chi phí tháng này" value={usd(data.month.costUsd)} hint={<><span>Trần chung {usd(data.settings.monthlyCostCapUsd)}</span><span className="mt-1 block"><Meter pct={capPct} label="Đã dùng trần chung" /></span></>} />
-        <Kpi label="Lượt AI tháng này" value={nf.format(data.month.runs)} hint={data.settings.monthlyRunCap ? `Trần ${nf.format(data.settings.monthlyRunCap)} lượt` : undefined} />
-        <Kpi label="Mẫu cấp phát" value={`${data.templates.length}`} hint={data.templates.map(t => t.name).join(' · ') || 'Chưa có'} />
+        <Kpi active={tab === 'people'} onClick={() => setTab('people')} icon={Users} tone="text-leaf-600" label="Người được dùng" value={`${enabledCount}`}
+          hint={data.grants.length - enabledCount ? `${data.grants.length - enabledCount} đang tắt` : 'đang bật hết'} />
+        <Kpi active={tab === 'activity'} onClick={() => setTab('activity')} icon={Coins} tone={capPct != null && capPct >= 80 ? 'text-rose-600' : 'text-sky-600'} label="Chi phí tháng này"
+          value={usd(data.month.costUsd)} hint={`${capPct != null ? `${capPct}% ` : ''}trần chung ${usd(data.settings.monthlyCostCapUsd)}`} />
+        <Kpi active={false} onClick={() => setTab('activity')} icon={Activity} tone="text-teal-600" label="Lượt AI tháng này" value={nf.format(data.month.runs)}
+          hint={data.settings.monthlyRunCap ? `trần ${nf.format(data.settings.monthlyRunCap)} lượt` : 'không trần lượt'} />
+        <Kpi active={tab === 'templates'} onClick={() => setTab('templates')} icon={Layers} tone="text-mint-600" label="Mẫu cấp phát" value={`${data.templates.length}`}
+          hint={data.templates.map(t => t.name).join(' · ') || 'Chưa có'} />
       </div>
 
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Trung tâm AI">
-        {([['people', 'Người dùng', Users, data.grants.length], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
+      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1" role="tablist" aria-label="Trung tâm AI">
+        {([['people', 'Người dùng', Users, data.grants.length], ['activity', 'Hoạt động', Activity, null], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
-            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === key ? 'border-leaf-600 text-leaf-700 dark:text-leaf-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-            <Icon size={15} /> {label} <span className="text-xs font-medium text-muted-foreground">{n}</span></button>
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === key ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+            <Icon size={15} /> {label} {n != null && <span className={`text-xs font-medium ${tab === key ? 'text-teal-100' : 'text-muted-foreground'}`}>{n}</span>}</button>
         ))}
-        <a href="#/settings?tab=ai-gateway" className="ml-auto hidden shrink-0 px-2 py-2 text-xs md:inline font-semibold text-teal-700 hover:underline dark:text-teal-400" title="Bật tắt AI, trần chung, khóa model, lượt gần nhất">Cài đặt cổng AI · Kết nối →</a>
       </div>
 
       {tab === 'people' && (
@@ -403,7 +405,7 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
                 return (
                   <li key={g.userId} className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center ${g.enabled ? '' : 'opacity-60'}`} aria-label={g.name}>
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-foreground">{g.name}</p>
+                      <p className={`truncate ${ENT}`}>{g.name}</p>
                       <p className="truncate text-xs text-muted-foreground">{g.email}{g.note ? ` · ${g.note}` : ''}</p>
                     </div>
                     <div className="min-w-0 text-sm">
@@ -431,6 +433,8 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
           )}
         </section>
       )}
+
+      {tab === 'activity' && <div role="tabpanel" aria-label="Hoạt động"><AiActivityPanel load={service.activity} /></div>}
 
       {tab === 'templates' && (
         <section role="tabpanel" aria-label="Mẫu cấp phát" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -488,7 +492,6 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
         </section>
       )}
 
-      <a href="#/settings?tab=ai-gateway" className="block text-center text-xs font-semibold text-teal-700 hover:underline md:hidden dark:text-teal-400">Cài đặt cổng AI · Kết nối →</a>
       {grantDrawer && <GrantDrawer data={data} service={service} editing={grantDrawer.editing} onClose={() => setGrantDrawer(null)} onSaved={() => { setGrantDrawer(null); load(); }} />}
       {templateDrawer && <TemplateDrawer data={data} service={service} editing={templateDrawer.editing} onClose={() => setTemplateDrawer(null)} onSaved={() => { setTemplateDrawer(null); load(); }} />}
     </div>

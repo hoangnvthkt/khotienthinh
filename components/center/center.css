@@ -817,3 +817,22 @@ button.vcc-model:hover:not(:disabled) { background: var(--vcc-hover); color: var
   .vcc-quick-card { flex: none; min-height: 40px; padding: 6px 12px 6px 8px; white-space: nowrap; }
   .vcc-quick-icon { width: 26px; height: 26px; }
 }
+
+/* Tin chào lần đầu được cấp Trợ lý + thẻ "Thử ngay". */
+.vcc-welcome { margin-top: 14px; padding: 14px; border: 1px solid var(--vcc-border); border-radius: 16px; background: linear-gradient(180deg, var(--vcc-accent-soft), var(--vcc-card) 70%); }
+.vcc-welcome-head { display: flex; align-items: flex-start; gap: 10px; }
+.vcc-welcome-head > div { flex: 1; min-width: 0; }
+.vcc-welcome-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--vcc-fg); }
+.vcc-welcome-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--vcc-muted); }
+.vcc-welcome-badge { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: var(--vcc-accent); color: #fff; }
+.vcc-welcome-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-top: 12px; }
+.vcc-welcome-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--vcc-border); border-radius: 12px; background: var(--vcc-card); text-align: left; }
+.vcc-welcome-card:hover { border-color: var(--vcc-accent); }
+.vcc-welcome-card b { display: block; font-size: 13px; font-weight: 650; color: var(--vcc-fg); }
+.vcc-welcome-card span span { display: block; font-size: 11.5px; color: var(--vcc-muted); }
+@media (max-width: 640px) {
+  .vcc-welcome { padding: 12px; }
+  .vcc-welcome-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .vcc-welcome-card { flex-direction: column; align-items: flex-start; gap: 6px; padding: 9px 10px; }
+  .vcc-welcome-card span span { display: none; }
+}
