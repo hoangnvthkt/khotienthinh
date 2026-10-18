@@ -348,17 +348,20 @@ export const leaveService = {
   async submit(input: {
     type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession;
     minutes: number | null; subtype: string | null; reason: string; employeeId?: string; files?: File[];
-  }): Promise<void> {
+  }): Promise<{ id: string; code: string } | null> {
     const paths: string[] = [];
     if (input.files?.length && input.employeeId) {
       for (const file of input.files.slice(0, LEAVE_MAX_ATTACHMENTS)) paths.push(await uploadEvidence(input.employeeId, file));
     }
-    const { error } = await supabase.rpc('submit_my_leave_request', {
+    const { data, error } = await supabase.rpc('submit_my_leave_request', {
       p_type: input.type, p_start: input.start, p_end: input.end,
       p_start_session: input.startSession, p_end_session: input.endSession,
       p_minutes: input.minutes, p_subtype: input.subtype, p_reason: input.reason, p_attachment_paths: paths,
     });
     if (error) fail(error, 'Không gửi được đơn.');
+    // Mã đơn (NP-…) cho biên nhận của Trợ lý; form thường bỏ qua.
+    const row = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    return typeof row.id === 'string' ? { id: row.id, code: typeof row.code === 'string' ? row.code : '' } : null;
   },
 
   /** Short-lived links to a request's papers (owner, its approvers, HR). */

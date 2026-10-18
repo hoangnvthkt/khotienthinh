@@ -10,7 +10,8 @@
 import type { SourceBook, ToolSpec } from './agent.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
-export interface ToolContext { rpc: Rpc; book: SourceBook }
+/** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a). */
+export interface ToolContext { rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void }
 
 export const KIND_LABEL: Record<string, string> = {
   project: 'Dự án', employee: 'Nhân viên', item: 'Vật tư', wms_tx: 'Phiếu kho', material_code: 'Đề xuất cấp mã', purchase_order: 'Đơn hàng',
@@ -22,6 +23,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép',
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -60,6 +62,19 @@ export const TOOLS: ToolSpec[] = [
     parameters: { type: 'object', additionalProperties: false, required: ['nhom'], properties: {
       nhom: { type: 'string', enum: ['cho_toi', 'toi_gui', 'theo_doi'] },
       tu_khoa: { type: 'string', description: 'Lọc theo chữ trong mã / tiêu đề (không bắt buộc).' },
+    } },
+  },
+  // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
+  {
+    name: 'chuan_bi_don_nghi_phep',
+    description: 'CHUẨN BỊ đơn nghỉ phép nháp cho chính người hỏi (không gửi): kiểm tra số ngày, người duyệt, phép còn, vấn đề; rồi hiện thẻ để người dùng xem và tự bấm Gửi đơn. Chỉ dùng khi người dùng yêu cầu rõ và đã có loại nghỉ, ngày, lý do.',
+    parameters: { type: 'object', additionalProperties: false, required: ['loai', 'tu_ngay', 'ly_do'], properties: {
+      loai: { type: 'string', description: 'Loại nghỉ theo lời người dùng, VD "phép năm", "nghỉ ốm", "việc riêng không lương".' },
+      tu_ngay: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD.' },
+      den_ngay: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD (bỏ trống = nghỉ trong một ngày).' },
+      buoi_bat_dau: { type: 'string', enum: ['ca_ngay', 'sang', 'chieu'], description: 'Ngày đầu nghỉ cả ngày / buổi sáng / buổi chiều.' },
+      buoi_ket_thuc: { type: 'string', enum: ['ca_ngay', 'sang', 'chieu'], description: 'Ngày cuối nghỉ cả ngày / buổi sáng / buổi chiều.' },
+      ly_do: { type: 'string', description: 'Lý do nghỉ (ít nhất 3 ký tự), theo lời người dùng.' },
     } },
   },
 ];
@@ -111,6 +126,65 @@ const resolveOne = async (ctx: ToolContext, ma: string, kind: string, refBook: M
   const exact = found.records.find(r => String(r.code || '').toLowerCase().replace(/[^a-z0-9]/g, '') === folded);
   return { record: exact || found.records[0] || null, error: null };
 };
+
+// ── T2a: lệnh nháp ─────────────────────────────────────────────────────────────────────────────────────────────────────
+const fold = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
+const SESSION: Record<string, 'full' | 'morning' | 'afternoon'> = { ca_ngay: 'full', sang: 'morning', chieu: 'afternoon' };
+const SESSION_LABEL: Record<string, string> = { full: 'cả ngày', morning: 'buổi sáng', afternoon: 'buổi chiều' };
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Từ chung trong câu xin nghỉ, không dùng để phân biệt loại ("xin nghỉ", "đơn nghỉ"). */
+const GENERIC_WORDS = new Set(['nghi', 'xin', 'don', 'loai']);
+const words = (v: unknown) => fold(v).split(/[^a-z0-9]+/).filter(Boolean);
+/**
+ * "phép năm" / "ốm" / "đi muộn" → loại nghỉ đang dùng: trùng mã, hoặc mọi từ (bỏ dấu, bỏ từ chung) đều có trong tên loại.
+ * Khớp nhiều loại hoặc không loại nào → null (Trợ lý hỏi lại kèm danh sách).
+ */
+export const matchLeaveType = (text: string, types: Array<Record<string, unknown>>) => {
+  const q = fold(text);
+  if (!q) return null;
+  const byCode = types.filter(t => fold(t.code) === q || fold(t.name) === q);
+  if (byCode.length === 1) return byCode[0];
+  const wanted = words(q).filter(w => !GENERIC_WORDS.has(w));
+  if (!wanted.length) return null;
+  const hits = types.filter(t => { const name = new Set(words(t.name)); return wanted.every(w => name.has(w)); });
+  return hits.length === 1 ? hits[0] : null;
+};
+
+async function prepareLeave(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  const typesRes = await ctx.rpc('assistant_leave_types_v1', {});
+  if (typesRes.error) return toolError(typesRes.error, 'loại nghỉ phép');
+  const types = asArray(typesRes.data).map(asObject);
+  const type = matchLeaveType(str(args.loai, 80) || '', types);
+  if (!type) return JSON.stringify({ loi: 'Chưa rõ loại nghỉ. Hỏi lại người dùng chọn một loại.', cac_loai: types.map(t => str(t.name)).filter(Boolean) });
+  if (type.unit === 'minute') return JSON.stringify({ loi: `${str(type.name)} tính theo phút — người dùng mở màn Nghỉ phép để điền.` });
+  const start = str(args.tu_ngay, 10);
+  const end = str(args.den_ngay, 10) || start;
+  if (!start || !end || !ISO_DAY.test(start) || !ISO_DAY.test(end) || end < start) return JSON.stringify({ loi: 'Ngày chưa đúng (YYYY-MM-DD, ngày kết thúc không trước ngày bắt đầu). Hỏi lại người dùng.' });
+  const reason = str(args.ly_do, 300);
+  if (!reason || reason.length < 3) return JSON.stringify({ loi: 'Thiếu lý do nghỉ. Hỏi lại người dùng.' });
+  const startSession = SESSION[String(args.buoi_bat_dau)] || 'full';
+  const endSession = SESSION[String(args.buoi_ket_thuc)] || (start === end ? startSession : 'full');
+  const pv = await ctx.rpc('preview_my_leave_request', { p_type: type.code, p_start: start, p_end: end, p_start_session: startSession, p_end_session: endSession, p_minutes: null, p_subtype: null });
+  if (pv.error) return JSON.stringify({ loi: pv.error.message || 'Chưa kiểm tra được đơn nghỉ.' });
+  const d = asObject(pv.data);
+  const steps = asArray(d.steps).map(asObject).map(st => compact({ buoc: str(st.label, 60), nguoi: str(st.name, 80) }));
+  const problems = asArray(d.problems).map(p => str(p, 200)).filter((p): p is string => Boolean(p));
+  const days = num(d.days);
+  const payload = { type: type.code, typeName: str(type.name), start, end, startSession, endSession, reason, requiresAttachment: type.requiresAttachment === true };
+  const preview = compact({ days, annualRemaining: num(d.annualRemaining), steps: steps.map(st => ({ label: st.buoc, name: st.nguoi })), problems });
+  const when = start === end ? `${start.slice(8, 10)}/${start.slice(5, 7)}` : `${start.slice(8, 10)}/${start.slice(5, 7)}–${end.slice(8, 10)}/${end.slice(5, 7)}`;
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'leave_request', p_title: `Đơn ${String(type.name).toLowerCase()} ${when}`, p_payload: payload, p_preview: preview });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được lệnh, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  return JSON.stringify(compact({
+    da_hien_the: true, loai: str(type.name), tu: start, den: end, buoi_dau: SESSION_LABEL[startSession], buoi_cuoi: SESSION_LABEL[endSession], so_ngay: days,
+    nguoi_duyet: steps, phep_nam_con: num(d.annualRemaining), van_de: problems,
+    can_dinh_kem: type.requiresAttachment === true ? 'Loại này cần giấy tờ: người dùng mở màn Nghỉ phép để đính kèm.' : null,
+    ghi_chu: 'Thẻ đơn nháp đã hiện cho người dùng; họ tự xem và bấm Gửi đơn. Không nói là đã gửi hay đã tạo.',
+  }));
+}
 
 // ── các công cụ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function runTool(name: string, rawArgs: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>): Promise<string> {
@@ -202,6 +276,8 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
       loai_viec: str(i.kind, 20), nguoi: str(i.who), ghi_chu: str(i.meta, 120), han: str(i.dueAt, 40), trang_thai: str(i.status, 40) })),
       con: items.length > 15 ? items.length - 15 : null }));
   }
+
+  if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
 
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }

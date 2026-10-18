@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
+import type { AssistantCommand } from '../../lib/assistantCommands';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
@@ -223,7 +224,7 @@ const aiStatus = (configured: boolean) => ({
   keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['assistant_chat', 'morning_brief'],
   targets: { fast: null, reasoning: null },
 });
-type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: string[]; runId: string | null; accepted: boolean | null; createdAt: string }> };
+type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: string[]; runId: string | null; accepted: boolean | null; createdAt: string; commands?: AssistantCommand[] }> };
 const THREADS_KEY = 'center-fixture-ai-threads';
 const loadThreads = (): FxThread[] => { try { return JSON.parse(sessionStorage.getItem(THREADS_KEY) || '[]'); } catch { return []; } };
 const saveThreads = (list: FxThread[]) => sessionStorage.setItem(THREADS_KEY, JSON.stringify(list));
@@ -236,6 +237,16 @@ if (params.get('threads') && !sessionStorage.getItem(THREADS_KEY)) {
   ] }]);
 }
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const saveCommand = (command: AssistantCommand) => saveThreads(loadThreads().map(t => ({ ...t, messages: t.messages.map(m => ({ ...m,
+  commands: (m.commands || []).map(c => (c.id === command.id ? command : c)) })) })));
+// Lệnh nháp giả lập: câu xin nghỉ → Trợ lý gọi công cụ chuẩn bị, hiện thẻ (không gửi). ?ai=leave-short: thiếu phép (nút Gửi khóa).
+const leaveCommand = (): AssistantCommand => ({
+  id: `cmd-${Date.now()}`, kind: 'leave_request', status: 'prepared', title: 'Đơn phép năm 21/10',
+  payload: { type: 'annual', typeName: 'Phép năm', start: '2026-10-21', end: '2026-10-21', startSession: 'full', endSession: 'full', reason: 'Việc gia đình', requiresAttachment: false },
+  preview: { days: 1, annualRemaining: AI === 'leave-short' ? 0.5 : 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }],
+    problems: AI === 'leave-short' ? ['Phép năm còn 0,5 ngày, không đủ 1 ngày.'] : [] },
+  result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
 const assistantHooks: AssistantHooks = {
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
@@ -249,7 +260,22 @@ const assistantHooks: AssistantHooks = {
     await sleep(30);
     const t = loadThreads().find(x => x.id === id);
     if (!t) throw new Error('AI_THREAD_NOT_FOUND');
-    return { ...t, messageCount: t.messages.length };
+    return { ...t, messageCount: t.messages.length, messages: t.messages.map(m => ({ ...m, commands: m.commands || [] })) };
+  },
+  // T2a: Xác nhận lệnh nháp. ?ai=leave-fail lần gửi đầu báo lỗi (trùng ngày); trạng thái thẻ lưu cùng hội thoại (tải lại vẫn thấy).
+  runCommand: async (command, edits) => {
+    aiCalls.push({ command: 'run', id: command.id, reason: edits.reason });
+    await sleep(80);
+    if (AI === 'leave-fail' && !aiCalls.some(c => c.command === 'failed')) { aiCalls.push({ command: 'failed' }); throw new Error('Ngày 21/10 đã có đơn nghỉ khác.'); }
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'NP-2026-0099', id: 'lr-1', route: '/hrm/leave' }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+  cancelCommand: async command => {
+    aiCalls.push({ command: 'cancel', id: command.id });
+    const cancelled: AssistantCommand = { ...command, status: 'cancelled' };
+    saveCommand(cancelled);
+    return cancelled;
   },
   chat: async (input, handlers, signal) => {
     const runId = `run-${aiCalls.length + 1}`;
@@ -270,7 +296,10 @@ const assistantHooks: AssistantHooks = {
       : { tool: { name: 'chi_tiet_don_mua', label: 'Chi tiết đơn mua', query: 'PO-646' }, text: 'PO-646 còn phải giao **8 tấn** thép D16, còn nợ NCC 280.000.000đ [[h1]].',
         record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
-    const answer = refused ?? lookup?.text ?? (prior
+    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup;
+    const command = wantsLeave ? leaveCommand() : null;
+    if (command) { await sleep(120); handlers.onTool?.({ name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' }); await sleep(150); handlers.onCommand?.(command); }
+    const answer = refused ?? lookup?.text ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
       : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);
     let sent = '';
@@ -288,10 +317,10 @@ const assistantHooks: AssistantHooks = {
     if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
     const messageId = `msg-${aiCalls.length}`;
     thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
-      { id: messageId, role: 'assistant', content: answer, sources: lookup ? [] : keys, runId, accepted: null, createdAt: at });
+      { id: messageId, role: 'assistant', content: answer, sources: lookup || command ? [] : keys, runId, accepted: null, createdAt: at, commands: command ? [command] : [] });
     thread.lastMessageAt = at;
     saveThreads(all);
-    const sources = refused ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
+    const sources = refused || command ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
     return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources, model: 'gemini-2.5-pro', saved: true };
   },
 };

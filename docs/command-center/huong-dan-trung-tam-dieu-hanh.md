@@ -10,7 +10,7 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 |---|---|
 | **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), mặc định thu gọn — đầu nhóm có số việc và "N gấp"; bấm tên nhóm để mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
 | **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng) với **màn xử lý của module ngay tại chỗ** (duyệt / từ chối / sửa như ở module). Nút **Mở ở màn … ↗** góc trên chỉ khi muốn sang hẳn module. |
-| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | Khung chat: **bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, hỏi và hỏi tiếp, **Lịch sử** hội thoại. Xem mục "Tab Trợ lý". |
+| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | Khung chat: **bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, hỏi và hỏi tiếp, tự tra cứu, **chuẩn bị đơn nghỉ phép** để bạn bấm Gửi, **Lịch sử** hội thoại. Xem mục "Tab Trợ lý". |
 
 ## Tab "Hôm nay"
 
@@ -40,7 +40,8 @@ Hỏi Trợ lý:
 - **Lịch sử** mở lại các hội thoại cũ; **Hội thoại mới** quay về bản tin hôm nay. Hội thoại có tin trong hôm nay tự mở lại khi tải lại trang. Hội thoại chỉ chính bạn xem được, tự xóa sau 90 ngày không dùng.
 - **Tự tra cứu** trong phạm vi bạn được xem (như khi bạn tự mở màn đó): tìm hồ sơ theo mã / tên (dự án, PO, đề xuất, phiếu kho, NCC, hợp đồng, nhân viên…), tồn kho một vật tư theo kho, chi tiết đơn mua (đã giao, còn thiếu, thanh toán), chi tiết đề xuất vật tư (đã đặt, đã nhận), việc bạn gửi / theo dõi. Khi đang tra hiện dòng "Đang tra …"; dưới câu trả lời ghi "Đã tra: …" và có nút mở đúng hồ sơ.
 - Không thấy trong phạm vi được xem thì Trợ lý nói rõ, không đoán.
-- Trợ lý **chỉ đọc**: không gửi, duyệt, trả lại, xóa hay ghi sổ gì — việc đó bạn tự làm ở màn gốc.
+- **Chuẩn bị đơn nghỉ phép**: gõ "Xin nghỉ phép năm thứ 4 21/10, việc gia đình" (hoặc "nghỉ ốm chiều mai"…). Thiếu loại, ngày hay lý do thì Trợ lý hỏi lại. Đủ thì hiện **thẻ đơn nháp**: loại, thời gian, số ngày, người duyệt, phép năm còn; sửa lý do ngay trên thẻ rồi bấm **Gửi đơn** — đơn đi đúng như gửi ở màn Nghỉ phép, thẻ đổi thành "Đã gửi đơn NP-… · chờ … duyệt" kèm nút **Mở**. Bấm **Bỏ** nếu không gửi. Thiếu phép thì thẻ báo đỏ và khóa nút Gửi; loại cần giấy tờ thì thẻ có nút **Mở màn Nghỉ phép** để đính kèm. Thẻ cũ quá 24 giờ phải hỏi lại để chuẩn bị lại.
+- Trợ lý **không tự gửi, duyệt, trả lại, xóa hay ghi sổ gì**: chỉ chuẩn bị nháp; chưa có gì được gửi tới khi chính bạn bấm nút trên thẻ. Duyệt, trả lại, xóa… bạn tự làm ở màn gốc.
 
 ## Trên điện thoại
 

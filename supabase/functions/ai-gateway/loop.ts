@@ -16,6 +16,8 @@ export interface ConverseDeps {
   book: SourceBook;
   /** Tên công cụ đã gọi (ghi nhật ký). */
   used: string[];
+  /** Lượt AI (ai_runs) — công cụ chuẩn bị lệnh nháp ghi vào đây. */
+  runId?: string;
   started: number;
   now?: () => number;
   maxTokens?: number;
@@ -49,7 +51,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
       const query = String(call.args.tu_khoa ?? call.args.vat_tu ?? call.args.ma ?? '').slice(0, 60);
       d.emit({ type: 'tool', name: call.name, label: TOOL_LABEL[call.name] || call.name, query });
       let content: string;
-      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book }, refBook); } catch (e) {
+      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit }, refBook); } catch (e) {
         console.error('ai-gateway tool failed', call.name, e instanceof Error ? e.message : e);
         content = JSON.stringify({ loi: 'Chưa tra được, thử lại sau.' });
       }

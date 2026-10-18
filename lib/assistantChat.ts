@@ -5,6 +5,7 @@ import type { AiGatewayErrorCode, AiQuotaReason } from './aiGateway';
 import { parseSearchResponse } from './search/globalSearchService';
 import type { ServerRecord } from './search/searchTypes';
 import { parseWorkItem, type WorkItem } from './center/workItemsService';
+import { parseCommand, parseCommands, type AssistantCommand } from './assistantCommands';
 
 export const CHAT_SKILL = 'assistant_chat';
 
@@ -21,6 +22,8 @@ export interface ChatMessage {
   runId: string | null;
   accepted: boolean | null;
   createdAt: string;
+  /** T2a: lệnh nháp Trợ lý chuẩn bị trong câu trả lời này (thẻ Xác nhận / biên nhận). */
+  commands: AssistantCommand[];
 }
 export interface ChatThreadSummary { id: string; title: string; messageCount: number; lastMessageAt: string }
 export interface ChatThread extends ChatThreadSummary { messages: ChatMessage[] }
@@ -32,7 +35,10 @@ export interface ChatSendInput {
   pronoun: 'Anh' | 'Chị' | 'Bạn';
   context: Record<string, unknown>;
 }
-export interface ChatHandlers { onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void }
+export interface ChatHandlers {
+  onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;
+  onCommand?: (command: AssistantCommand) => void;
+}
 export type ChatSendResult =
   | { code: 'OK'; runId: string; threadId: string | null; messageId: string | null; answer: string; sources: ChatSource[]; model: string; saved: boolean }
   | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; partial?: string };
@@ -61,6 +67,7 @@ export const parseMessage = (raw: unknown): ChatMessage | null => {
   return {
     id: str(o.id) || `${o.role}-${str(o.createdAt)}`, role: o.role, content: str(o.content), sources: parseSources(o.sources),
     runId: str(o.runId) || null, accepted: typeof o.accepted === 'boolean' ? o.accepted : null, createdAt: str(o.createdAt),
+    commands: parseCommands(o.commands),
   };
 };
 const parseSummary = (raw: unknown): ChatThreadSummary => {
@@ -166,6 +173,7 @@ export const assistantChat = {
           if (event.type === 'start') { runId = str(event.runId); handlers.onStart?.({ runId, model: str(event.model) }); }
           else if (event.type === 'delta') { const d = str(event.text); partial += d; handlers.onDelta(d); }
           else if (event.type === 'tool') handlers.onTool?.({ name: str(event.name), label: str(event.label) || str(event.name), query: str(event.query) });
+          else if (event.type === 'command') { const command = parseCommand(event.command); if (command) handlers.onCommand?.(command); }
           else if (event.type === 'done') {
             result = { code: 'OK', runId, threadId: str(event.threadId) || null, messageId: str(event.messageId) || null, answer: str(event.answer) || partial,
               sources: parseSources(event.sources), model: str(event.model), saved: event.saved !== false };
