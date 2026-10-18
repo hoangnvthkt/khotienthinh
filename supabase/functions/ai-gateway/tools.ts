@@ -222,21 +222,29 @@ export const matchProjects = <T extends Record<string, unknown>>(text: string, p
   if (!wanted.length) return [];
   return projects.filter(p => {
     const code = fold(p.code);
-    const have = new Set(words(`${code} ${fold(p.name)}`));
-    return wanted.every(w => have.has(w) || code.includes(w));
+    // Mã + tên + tên chủ đầu tư ("Dự án xinhai" ↔ CĐT "CÔNG TY TNHH XIN HAI VINA"); viết liền / tách đều khớp.
+    const hay = `${code} ${fold(p.name)} ${fold(p.client)}`;
+    const have = new Set(words(hay));
+    const squashed = words(hay).join('');
+    return wanted.every(w => have.has(w) || code.includes(w) || (w.length >= 4 && squashed.includes(w)));
   });
 };
-// Chữ chung trong tên dự án — không dùng để nhận dự án từ tin báo cáo.
-const NAME_COMMON = new Set(['nha', 'may', 'san', 'xuat', 'gia', 'cong', 'cac', 'pham', 'giai', 'doan', 'du', 'an', 'trinh', 'xuong', 'van', 'phong', 'khu', 'cong', 'ty', 'tnhh', 'viet', 'nam', 'hung', 'yen', 'ha', 'noi', 'the', 'kho', 'xay', 'dung', 'mo', 'rong', 'moi', 'bong', 'thu', 'nhoi', 'gd', 'gd2', 'gd1']);
-/** Dự án có mã, hoặc chữ riêng trong tên (≥ 4 ký tự, không phải chữ chung), xuất hiện nguyên chữ trong tin. */
+// Chữ chung trong tên dự án / chủ đầu tư — không dùng để nhận dự án từ tin báo cáo.
+const NAME_COMMON = new Set(['nha', 'may', 'san', 'xuat', 'gia', 'cong', 'cac', 'pham', 'giai', 'doan', 'du', 'an', 'trinh', 'xuong', 'van', 'phong', 'khu', 'ty', 'tnhh', 'viet', 'nam', 'hung', 'yen', 'ha', 'noi', 'the', 'kho', 'xay', 'dung', 'mo', 'rong', 'moi', 'bong', 'thu', 'nhoi', 'gd', 'gd2', 'gd1', 'vina', 'phan', 'co', 'tap', 'doan', 'quoc', 'te', 'mot', 'thanh', 'vien', 'company', 'limited', 'ltd']);
+/** Dự án có mã, chữ riêng trong tên (≥ 4 ký tự, không phải chữ chung) xuất hiện nguyên chữ trong tin, hoặc tên chủ đầu tư viết liền
+ *  ("XinHai" ↔ "XIN HAI VINA", từ ≥ 5 ký tự). */
 export const projectsMentioned = <T extends Record<string, unknown>>(text: string, projects: T[]): T[] => {
-  const have = new Set(words(text));
-  const joined = ` ${words(text).join(' ')} `;
+  const tw = words(text);
+  const have = new Set(tw);
+  const joined = ` ${tw.join(' ')} `;
   return projects.filter(p => {
     const code = words(p.code);
     if (code.length && joined.includes(` ${code.join(' ')} `)) return true;
     if (code.some(w => w.length >= 3 && !/^\d+$/.test(w) && have.has(w))) return true;
-    return words(p.name).some(w => w.length >= 4 && !NAME_COMMON.has(w) && !/^\d+$/.test(w) && have.has(w));
+    if (words(p.name).some(w => w.length >= 4 && !NAME_COMMON.has(w) && !/^\d+$/.test(w) && have.has(w))) return true;
+    const client = words(p.client).filter(w => !NAME_COMMON.has(w));
+    const squashed = client.join('');
+    return client.some(w => w.length >= 4 && have.has(w)) || (squashed.length >= 5 && tw.some(w => w.length >= 5 && !NAME_COMMON.has(w) && squashed.includes(w)));
   });
 };
 const projectLabel = (p: Record<string, unknown>) => [str(p.code, 40), str(p.name, 80)].filter(Boolean).join(' · ');

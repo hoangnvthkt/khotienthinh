@@ -5,7 +5,8 @@
 import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
-export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log';
+/** 'unknown': loại lệnh mới hơn bản app đang mở (trang mở từ trước khi cập nhật) — thẻ nhắc tải lại trang thay vì biến mất. */
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'unknown';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -31,9 +32,9 @@ const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 export const parseCommand = (raw: unknown): AssistantCommand | null => {
   const o = obj(raw);
-  if (!str(o.id) || !KINDS.has(str(o.kind))) return null;
+  if (!str(o.id) || !str(o.kind)) return null;
   return {
-    id: str(o.id), kind: o.kind as CommandKind, status: (STATUSES.has(str(o.status)) ? o.status : 'prepared') as CommandStatus,
+    id: str(o.id), kind: (KINDS.has(str(o.kind)) ? o.kind : 'unknown') as CommandKind, status: (STATUSES.has(str(o.status)) ? o.status : 'prepared') as CommandStatus,
     title: str(o.title) || 'Lệnh nháp', payload: obj(o.payload), preview: obj(o.preview), result: obj(o.result),
     error: str(o.error) || null, createdAt: str(o.createdAt), confirmedAt: str(o.confirmedAt) || null,
   };

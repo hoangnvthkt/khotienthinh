@@ -286,8 +286,19 @@ const DailyLogCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
   );
 };
 
+/** Loại thẻ mới hơn bản app đang mở (trang mở từ trước khi cập nhật): nhắc tải lại thay vì im lặng không hiện gì (chủ SP 18/10). */
+const UnknownCard: React.FC<CardProps> = ({ command }) => (
+  <div className="vcc-cmd" data-state="unknown" data-testid="command" role="group" aria-label={command.title}>
+    <p className="vcc-cmd-warn"><AlertTriangle size={14} aria-hidden="true" /> Trợ lý đã chuẩn bị “{command.title}” nhưng bản app đang mở chưa hiển thị được loại thẻ này.</p>
+    <div className="vcc-cmd-actions">
+      <button type="button" className="vcc-btn" data-pri="true" onClick={() => window.location.reload()}><RotateCcw size={14} /> Tải lại trang để xem</button>
+    </div>
+  </div>
+);
+
 const AssistantCommandCard: React.FC<CardProps> = props =>
-  props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
+  props.command.kind === 'unknown' ? <UnknownCard {...props} />
+    : props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
     : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} />
       : props.command.kind === 'daily_log' ? <DailyLogCard {...props} /> : <LeaveCard {...props} />;
 
