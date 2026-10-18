@@ -9,6 +9,7 @@ import { finishCommand, poView, type AssistantCommand, type PoReasonCode } from 
 import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 import { duplicateItemSpecProblems } from './materialLineDescription';
 import { aiLearning, recall, type LearnedAlias } from './aiLearning';
+import { aiMemory, habitKey, rememberedIds, type PersonalMemory } from './aiMemory';
 
 export const PO_REASONS: Array<{ code: PoReasonCode; label: string }> = [
   { code: 'price_lock', label: 'Chốt giá tốt' }, { code: 'long_lead', label: 'Hàng đặt dài ngày' },
@@ -36,6 +37,9 @@ export interface PoFormContext {
   rows: PoFormRow[];
   /** T4a: NCC đã nhớ cho tên NCC trên báo giá (người mua đã chọn trước đây). */
   rememberedVendor?: { id: string; name: string } | null;
+  /** T4b: kho nhận (theo dự án) / người duyệt người mua đã chọn ở lần gửi trước. */
+  rememberedWarehouseId?: string | null;
+  rememberedApproverId?: string | null;
 }
 export interface PoFormSubmit {
   mode: 'draft' | 'send';
@@ -50,6 +54,7 @@ export interface PoFormSubmit {
   rows: PoFormRow[];
   approverId: string | null;
   approverName: string | null;
+  warehouseName?: string;
 }
 export interface PoFormActions {
   load: (command: AssistantCommand) => Promise<PoFormContext>;
@@ -163,7 +168,10 @@ export const createPoFormActions = (): PoFormActions => {
   return {
     async load(command) {
       const v = poView(command);
-      const memory = await aiLearning.get('purchase_order', null).catch(() => [] as LearnedAlias[]);
+      const [memory, personal] = await Promise.all([
+        aiLearning.get('purchase_order', null).catch(() => [] as LearnedAlias[]),
+        aiMemory.personal().catch(() => null as PersonalMemory | null),
+      ]);
       const [options, approvers, rows] = await Promise.all([
         procurementInboxService.proactiveOptions(),
         supabase.rpc('assistant_po_approvers_v1').then(({ data, error }) => { if (error) throw error; return (Array.isArray(data) ? data : []) as Array<{ id: string; name: string }>; }),
@@ -171,7 +179,10 @@ export const createPoFormActions = (): PoFormActions => {
       ]);
       const project = options.projects.find(p => p.id === v.projectId);
       const vendor = !v.vendorId && v.vendorQuery ? recall(memory, 'vendor', v.vendorQuery) : null;
-      return { warehouses: project?.warehouses || [], approvers, rows, rememberedVendor: vendor ? { id: vendor.targetId, name: vendor.targetLabel } : null };
+      const warehouses = project?.warehouses || [];
+      return { warehouses, approvers, rows, rememberedVendor: vendor ? { id: vendor.targetId, name: vendor.targetLabel } : null,
+        rememberedWarehouseId: rememberedIds(personal, habitKey.poWarehouse(v.projectId), warehouses)[0] ?? null,
+        rememberedApproverId: rememberedIds(personal, habitKey.poApprover(), approvers)[0] ?? null };
     },
     searchItems: (projectId, query) => procurementInboxService.searchItems(projectId, query),
     searchVendors: query => procurementInboxService.vendors(query),
@@ -220,6 +231,10 @@ export const createPoFormActions = (): PoFormActions => {
       void aiLearning.learn('purchase_order', null, [
         ...kept.map(r => ({ kind: 'item' as const, alias: [r.source.name, r.source.spec].filter(Boolean).join(' '), targetId: r.item!.id, targetLabel: r.item!.name })),
         ...(v.vendorQuery ? [{ kind: 'vendor' as const, alias: v.vendorQuery, targetId: input.vendor.id, targetLabel: input.vendor.name }] : []),
+      ]);
+      void aiMemory.learnHabits([
+        { key: habitKey.poWarehouse(v.projectId), value: input.warehouseId, label: input.warehouseName || input.warehouseId },
+        ...(input.mode === 'send' && input.approverId ? [{ key: habitKey.poApprover(), value: input.approverId, label: input.approverName || input.approverId }] : []),
       ]);
       const receipt = { code: result.poNumber, id: result.purchaseOrderId, submitted: input.mode === 'send', approvers: input.approverName ? [input.approverName] : [],
         total: Math.round(totals.total), budgetPending: budget.pending || undefined, budgetApprovers: budget.names.length ? budget.names : undefined };

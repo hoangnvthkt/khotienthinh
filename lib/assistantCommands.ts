@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
 /** 'unknown': loại lệnh mới hơn bản app đang mở (trang mở từ trước khi cập nhật) — thẻ nhắc tải lại trang thay vì biến mất. */
-export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'unknown';
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'memory_note' | 'unknown';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -25,7 +25,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log', 'memory_note']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');

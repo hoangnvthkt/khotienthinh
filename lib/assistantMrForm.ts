@@ -13,6 +13,7 @@ import { projectWorkflowService } from './projectWorkflowService';
 import { projectPermissionRoomService } from './projectPermissionRoomService';
 import { duplicateItemSpecProblems } from './materialLineDescription';
 import { aiLearning, recall, type LearnedAlias } from './aiLearning';
+import { aiMemory, habitKey, rememberedIds, type PersonalMemory } from './aiMemory';
 
 export type MrCatalogItem = Pick<InventoryItem, 'id' | 'name' | 'unit'> & { sku?: string; status?: string; mergedIntoId?: string | null };
 export interface MrFormContext {
@@ -24,6 +25,9 @@ export interface MrFormContext {
   sendBlocked: string | null;
   /** T4a: cách gọi đã được người dùng xác nhận ở dự án này ("xi măng PCB40" → mã). */
   memory: LearnedAlias[];
+  /** T4b: kho nhận / người duyệt người dùng đã chọn ở lần gửi trước của dự án này (còn chọn được hôm nay). */
+  rememberedWarehouseId?: string | null;
+  rememberedApproverIds?: string[];
 }
 /** said: chữ Trợ lý tách từ lời người dùng — dạy AI cặp "chữ → mã" sau khi lưu / gửi thành công. */
 export interface MrFormSubmitLine { item: MrCatalogItem; qty: number; spec: string; reason: string; said?: string }
@@ -35,6 +39,7 @@ export interface MrFormSubmit {
   lines: MrFormSubmitLine[];
   approverIds: string[];
   approverNames: string[];
+  warehouseName?: string;
 }
 export interface MrFormActions {
   load: (command: AssistantCommand) => Promise<MrFormContext>;
@@ -116,7 +121,7 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
   return {
     async load(command) {
       const v = mrView(command);
-      const [catalog, warehouses, approvers, memory] = await Promise.all([
+      const [catalog, warehouses, approvers, memory, personal] = await Promise.all([
         materialRequestService.getProjectCatalog(v.projectId, v.siteId),
         supabase.from('warehouses').select('id, name, type, project_id, is_default_for_site').eq('is_archived', false).limit(500)
           .then(({ data, error }) => { if (error) throw error; return (data || []) as Array<{ id: string; name: string; type: string; project_id: string | null; is_default_for_site: boolean | null }>; }),
@@ -135,17 +140,21 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
           }
         })(),
         aiLearning.get('material_request', v.projectId).catch(() => [] as LearnedAlias[]),
+        aiMemory.personal().catch(() => null as PersonalMemory | null),
       ]);
       // Kho của dự án lên đầu; kho mặc định của công trường chọn sẵn.
       const own = warehouses.filter(w => w.project_id === v.projectId).sort((a, b) => Number(Boolean(b.is_default_for_site)) - Number(Boolean(a.is_default_for_site)));
       const others = warehouses.filter(w => w.project_id !== v.projectId && w.type === 'SITE');
+      const list = [...own, ...others].map(w => ({ id: w.id, name: w.name }));
       return {
         catalog,
-        warehouses: [...own, ...others].map(w => ({ id: w.id, name: w.name })),
+        warehouses: list,
         defaultWarehouseId: own[0]?.id ?? null,
         approvers: approvers.list,
         sendBlocked: approvers.blocked,
         memory,
+        rememberedWarehouseId: rememberedIds(personal, habitKey.mrWarehouse(v.projectId), list)[0] ?? null,
+        rememberedApproverIds: rememberedIds(personal, habitKey.mrApprovers(v.projectId), approvers.list),
       };
     },
 
@@ -182,6 +191,11 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
       issued.delete(command.id);
       // Người dùng đã xác nhận bằng hành động → dạy AI cách gọi của dự án này (không chặn biên nhận).
       void aiLearning.learn('material_request', v.projectId, input.lines.filter(l => l.said).map(l => ({ kind: 'item' as const, alias: l.said!, targetId: l.item.id, targetLabel: l.item.name })));
+      // T4b: nhớ kho nhận + người duyệt người dùng vừa chọn cho dự án này (lần sau thẻ chọn sẵn).
+      void aiMemory.learnHabits([
+        { key: habitKey.mrWarehouse(v.projectId), value: input.warehouseId, label: input.warehouseName || input.warehouseId },
+        ...(input.mode === 'send' && input.approverIds.length ? [{ key: habitKey.mrApprovers(v.projectId), value: input.approverIds.join(','), label: input.approverNames.join(', ') }] : []),
+      ]);
       const result = { code, id: draft.id, submitted: input.mode === 'send', approvers: input.approverNames };
       return (await finishCommand(command.id, 'done', result).catch(() => null)) || { ...command, status: 'done', result, confirmedAt: now };
     },

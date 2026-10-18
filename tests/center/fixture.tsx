@@ -10,6 +10,7 @@ import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
+import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type SharedGroup } from '../../lib/aiMemory';
 import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
 import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
 import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
@@ -270,6 +271,57 @@ const mrCommand = (): AssistantCommand => ({
   saveCommand(done);
   notifyCommandChanged(done);
 };
+// T4b: trí nhớ giả lập (sessionStorage). ?memory=1: đã có 1 ghi nhớ, đã nhớ người duyệt Bùi Thị Tâm + Kho Xin Hai Vina ở SMB-2026, 2 cách gọi chung.
+const MEMORY_KEY = 'center-fixture-memory';
+type FxMemory = PersonalMemory & { shared: SharedGroup[] };
+const loadMemory = (): FxMemory => {
+  try { const raw = sessionStorage.getItem(MEMORY_KEY); if (raw) return JSON.parse(raw); } catch { /* bỏ qua */ }
+  const at = new Date(NOW).toISOString();
+  return params.get('memory') ? {
+    notes: [{ id: 'note-1', text: 'Phụ trách dự án SMB-2026', source: 'user', createdAt: at }],
+    habits: [{ id: 'hb-1', key: habitKey.mrApprovers('smb'), value: 'u-tam', label: 'Bùi Thị Tâm', scopeLabel: 'SMB-2026', hits: 3, updatedAt: at },
+      { id: 'hb-2', key: habitKey.mrWarehouse('smb'), value: 'wh-xh', label: 'Kho Xin Hai Vina', scopeLabel: 'SMB-2026', hits: 1, updatedAt: at }],
+    shared: [
+      { key: 'company:procurement:po', title: 'Mua hàng · Báo giá', kind: 'po', items: [{ id: 'al-2', kind: 'vendor', alias: 'Hòa Phát', target: 'Công ty CP Thép Hòa Phát', hits: 5, lastUsedAt: at, by: 'Bùi Thị Tâm' }] },
+      { key: 'project:smb:mr', title: 'SMB-2026 · Đề xuất vật tư', kind: 'mr', items: [{ id: 'al-1', kind: 'item', alias: 'Ống PVC', target: 'Ống PVC 42', hits: 2, lastUsedAt: at, by: 'Phạm Ngọc Sơn' }] },
+    ],
+  } : { notes: [], habits: [], shared: [] };
+};
+const saveMemory = (m: FxMemory) => sessionStorage.setItem(MEMORY_KEY, JSON.stringify(m));
+const memory: MemoryActions = {
+  personal: async () => { await sleep(60); const { notes, habits } = loadMemory(); return { notes, habits }; },
+  shared: async () => { await sleep(60); return loadMemory().shared; },
+  addNote: async text => {
+    aiCalls.push({ memory: 'add', text });
+    const m = loadMemory();
+    const same = m.notes.find(n => n.text.toLowerCase() === text.trim().toLowerCase());
+    if (same) return { id: same.id, created: false };
+    const note = { id: `note-${Date.now()}`, text: text.trim(), source: 'user' as const, createdAt: new Date(NOW).toISOString() };
+    saveMemory({ ...m, notes: [note, ...m.notes] });
+    return { id: note.id, created: true };
+  },
+  forget: async (scope, id) => {
+    aiCalls.push({ memory: 'forget', scope, id });
+    await sleep(40);
+    const m = loadMemory();
+    saveMemory({ ...m, notes: m.notes.filter(n => n.id !== id), habits: m.habits.filter(h => h.id !== id),
+      shared: m.shared.map(g => ({ ...g, items: g.items.filter(i => i.id !== id) })).filter(g => g.items.length) });
+  },
+  saveNoteCommand: async (command, text) => {
+    aiCalls.push({ memory: 'save-command', text });
+    const m = loadMemory();
+    const note = { id: `note-${Date.now()}`, text: text.trim(), source: 'assistant' as const, createdAt: new Date(NOW).toISOString() };
+    saveMemory({ ...m, notes: [note, ...m.notes] });
+    const done: AssistantCommand = { ...command, status: 'done', result: { id: note.id, text: note.text, created: true }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+const memoryCommand = (text: string): AssistantCommand => ({
+  id: `cmd-mem-${Date.now()}`, kind: 'memory_note', status: 'prepared', title: 'Ghi nhớ', payload: { text }, preview: {}, result: {}, error: null,
+  createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+
 // Form đề xuất ngay trong chat (bản thử): danh mục 175 mã thật, 2 kho, 2 người duyệt. ?ai=mr-noflow: dự án chưa có workflow (chỉ lưu nháp);
 // ?ai=mr-fail: lần gửi đầu mất kết nối (giữ mã đã cấp, gửi lại được); ?mrform=0: bản cũ không có form (thẻ mở form của dự án).
 const MR_CATALOG = (MR_CATALOG_RAW as Array<{ id: string; sku: string; name: string; unit: string }>).map(i => ({ id: i.id, sku: i.sku, name: i.name, unit: i.unit }));
@@ -279,8 +331,12 @@ const mrForm: MrFormActions = {
     aiCalls.push({ mrForm: 'load' });
     // ?memory=1: dự án đã nhớ "Ống PVC" = Ống PVC 42 (người dùng xác nhận lần trước) → thẻ chọn sẵn, không bắt chọn lại.
     const memory = params.get('memory') ? [{ kind: 'item' as const, alias: 'Ống PVC', aliasNorm: 'ong pvc', targetId: 'it-1a7f772d34ab4306be08e57a597b0641', targetLabel: 'Ống PVC 42', hits: 2 }] : [];
-    return { memory, catalog: MR_CATALOG, warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }], defaultWarehouseId: 'wh-smb',
-      approvers: [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
+    const warehouses = [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }];
+    const approvers = [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }];
+    const personal = loadMemory();
+    return { memory, catalog: MR_CATALOG, warehouses, defaultWarehouseId: 'wh-smb', approvers,
+      rememberedWarehouseId: rememberedIds(personal, habitKey.mrWarehouse('smb'), warehouses)[0] ?? null,
+      rememberedApproverIds: rememberedIds(personal, habitKey.mrApprovers('smb'), approvers),
       sendBlocked: AI === 'mr-noflow' ? 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.' : null };
   },
   submit: async (command, input) => {
@@ -367,6 +423,7 @@ const dailyLog: DailyLogFormActions = {
 };
 const assistantHooks: AssistantHooks = {
   poForm,
+  memory,
   dailyLog,
   ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
@@ -418,6 +475,27 @@ const assistantHooks: AssistantHooks = {
         record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
     // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
+    // T4b: "nhớ giúp …" → thẻ ghi nhớ (người dùng tự bấm Lưu).
+    const wantsNote = /nhớ giúp|ghi nhớ/i.test(input.question) && !refused && !lookup;
+    if (wantsNote) {
+      const note = memoryCommand('Phụ trách SMB-2026 và DA29; báo cáo ngắn gọn, số liệu trước');
+      await sleep(120);
+      handlers.onTool?.({ name: 'chuan_bi_ghi_nho', label: 'Chuẩn bị ghi nhớ', query: '' });
+      await sleep(100);
+      handlers.onCommand?.(note);
+      const text = 'Em đã chuẩn bị ghi nhớ — anh kiểm chữ rồi bấm **Lưu ghi nhớ** trên thẻ.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(20); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [note] });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
     const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
     const wantsDl = /^(BC|báo cáo) ngày/i.test(input.question.trim()) && !refused && !lookup;
     const wantsPo = /báo giá|đơn mua|đặt hàng/i.test(input.question) && !refused && !lookup && !wantsDl;
