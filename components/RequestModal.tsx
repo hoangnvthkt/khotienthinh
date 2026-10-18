@@ -29,7 +29,7 @@ import {
     WorkflowNodeType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
-import { QuickRequestLines, type QuickLine } from './QuickRequestLines';
+import { QuickRequestLines, type QuickLine, type QuickLinesInitial } from './QuickRequestLines';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
 import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
@@ -171,7 +171,8 @@ interface RequestModalProps {
     projectWorkflowReturnTargetNode?: WorkflowNode | null;
     canViewAvailableStock?: boolean;
     onProjectWorkflowAction?: (context: ProjectWorkflowActionContext) => void | Promise<void>;
-    onSaved?: (request: MaterialRequest) => void;
+    /** submitted: phiếu đã gửi duyệt (false = mới lưu nháp). */
+    onSaved?: (request: MaterialRequest, meta?: { submitted: boolean }) => void;
     onDeleted?: (requestId: string) => void;
 }
 
@@ -191,6 +192,8 @@ export type MaterialRequestInitialDraft = {
         materialGroupSource?: 'summary_aggregate' | string | null;
         materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
     }>;
+    /** Trợ lý chuẩn bị (T2b): mở sẵn Gõ nhanh với các dòng Trợ lý tách — người dùng khớp mã, kiểm rồi thêm vào phiếu. */
+    quick?: QuickLinesInitial | null;
 };
 
 type RequestLineDraft = {
@@ -950,6 +953,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftBudgetQtyById({});
                 setDraftNeededDate('');
                 setDraftLineNote('');
+                if (initialDraft?.quick?.lines.length) setQuickLinesOpen(true);
             }
         }
     }, [canEditProjectRequest, canReviewProjectWorkflow, defaultSiteWarehouseId, initialDraft, isOpen, isProjectRequest, items, materialBudgetMap, request, user]);
@@ -1204,7 +1208,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
             recordSpecOutcome(reqItems, requestToSave.code);
             toast.success(successTitle, successMessage);
-            onSaved?.(requestToSave);
+            onSaved?.(requestToSave, { submitted: false });
             onClose();
         } catch (err: any) {
             logApiError('requestModal.save', err);
@@ -1272,7 +1276,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
             setSubmittingProjectRequest(null);
             toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
-            onSaved?.(savedForCallback);
+            onSaved?.(savedForCallback, { submitted: true });
             onClose();
         } catch (err: any) {
             logApiError('requestModal.submitApproval', err);
@@ -3720,6 +3724,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             allowAllItems={isProjectRequest}
                             onAdd={handleAddQuickLines}
                             onClose={() => setQuickLinesOpen(false)}
+                            initial={!request ? initialDraft?.quick : null}
                         />
                     )}
 

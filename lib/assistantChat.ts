@@ -95,6 +95,16 @@ export const displayText = (text: string) => text
   .replace(/\s?\[$/, '')
   .replace(/[ \t]+([.,;:!?])/g, '$1');
 
+/** Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm nhãn [[goi_y:…]] → nút; bấm là gửi đúng câu đó, không phải gõ lại. Tối đa 6, bỏ trùng. */
+export const suggestionsOf = (text: string): string[] => {
+  const out: string[] = [];
+  for (const m of text.matchAll(/\[\[goi_y:([^[\]\n]{1,116})\]\]/g)) {
+    const option = m[1].trim().slice(0, 60);
+    if (option && !out.some(o => o.toLowerCase() === option.toLowerCase())) out.push(option);
+  }
+  return out.slice(0, 6);
+};
+
 export type TextBlock = { kind: 'p'; text: string } | { kind: 'ul' | 'ol'; items: string[] };
 /** Markdown tối giản AI được dùng: đoạn, gạch đầu dòng "- " / "• ", danh sách "1. ". Chữ đậm xử lý ở boldParts. */
 export const textBlocks = (text: string): TextBlock[] => {

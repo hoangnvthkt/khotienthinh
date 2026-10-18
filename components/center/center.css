@@ -575,6 +575,19 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .dark .vcc-cmd-actions .vcc-btn[data-pri="true"] { color: #10251d; }
 .vcc-cmd-actions .vcc-btn:disabled { opacity: .55; cursor: not-allowed; }
 .vcc-cmd-note { font-size: 11.5px; color: var(--vcc-muted); }
+/* T2b: dòng vật tư trên thẻ đề xuất — tên trái, số lượng phải; thiếu số lượng in nghiêng màu nhạt. */
+.vcc-cmd-lines { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-top: 1px solid var(--vcc-border); }
+.vcc-cmd-lines li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--vcc-border); font-size: 13px; color: var(--vcc-fg); }
+.vcc-cmd-lines li span { min-width: 0; overflow-wrap: anywhere; }
+.vcc-cmd-lines li b { flex: none; font-weight: 600; color: var(--vcc-num); font-variant-numeric: tabular-nums; }
+.vcc-cmd-lines li em { font-style: normal; font-weight: 500; color: var(--vcc-muted); }
+.vcc-cmd-lines .vcc-cmd-more { color: var(--vcc-muted); font-size: 12.5px; border-bottom: 0; }
+/* Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm phương án → nút; bấm là gửi đúng câu đó. */
+.vcc-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.vcc-suggest button { min-height: 32px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 13px; font-weight: 600; text-align: left; }
+.vcc-suggest button:hover:not(:disabled) { background: var(--vcc-accent); color: #fff; }
+.dark .vcc-suggest button:hover:not(:disabled) { color: #10251d; }
+.vcc-suggest button:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 640px) { .vcc-cmd-facts > div { grid-template-columns: 1fr; gap: 0; } .vcc-cmd[data-state="done"] { flex-direction: column; align-items: flex-start; } }
 .vcc-chat-foot { flex: none; padding: 8px clamp(14px, 1.6vw, 24px) calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--vcc-bg); }
 .vcc-chat-foot .vcc-chips { margin-bottom: 8px; }

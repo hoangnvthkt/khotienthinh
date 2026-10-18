@@ -1,5 +1,5 @@
 // Gõ nhanh đề xuất (A1): khung gõ / dán danh sách → dòng nháp có mã. Danh mục là 175 mã thật (16/10/2026); không gọi Supabase.
-// ?ai=none (chưa bật AI) · ?ai=fail · ?project=0 (đề xuất kho, không có ô lý do)
+// ?ai=none (chưa bật AI) · ?ai=fail · ?project=0 (đề xuất kho, không có ô lý do) · ?assistant=1 (mở từ thẻ nháp của Trợ lý, dòng đã tách sẵn)
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../index.css';
@@ -25,6 +25,15 @@ const PHOTO_READ = {
   ],
   purpose: 'Thoát nước mưa nhà xưởng 1', neededDate: '2026-10-20', warnings: ['Dòng 3: số lượng viết đè, đọc là 2 — kiểm lại.'],
 };
+// Thẻ nháp Trợ lý (T2b): dòng Trợ lý tách từ câu "Đề xuất 2 tấn xi măng PCB40, 20 cây ống PVC, dây thép buộc cho đổ sàn tầng 4, cần 23/10".
+const ASSISTANT = params.get('assistant') === '1' ? {
+  lines: [
+    { name: 'Xi măng PCB40', spec: null, qty: 2, unit: 'tấn', note: null },
+    { name: 'Ống PVC', spec: null, qty: 20, unit: 'cây', note: null },
+    { name: 'Dây buộc inox', spec: null, qty: null, unit: 'kg', note: null },
+  ],
+  purpose: 'Đổ bê tông sàn tầng 4', neededDate: '2026-10-23',
+} : null;
 const hooks: QuickLinesHooks = {
   aiStatus: async () => ({ text: params.get('ai') !== 'none', photo: params.get('ai') !== 'none' }),
   readPhotos: async () => {
@@ -57,7 +66,7 @@ const Fixture: React.FC = () => {
         </table>
         {!open && <button type="button" onClick={() => setOpen(true)} className="w-full py-3 text-xs font-bold text-indigo-700">Gõ nhanh</button>}
       </div>
-      {open && <QuickRequestLines items={ITEMS} withReason={project} allowAllItems hooks={hooks}
+      {open && <QuickRequestLines items={ITEMS} withReason={project} allowAllItems hooks={hooks} initial={ASSISTANT}
         onAdd={l => { setLines(prev => [...prev, ...l]); setOpen(false); }} onClose={() => setOpen(false)} />}
     </div>
   </div>;

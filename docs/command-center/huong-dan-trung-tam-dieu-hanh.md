@@ -10,7 +10,7 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 |---|---|
 | **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), mặc định thu gọn — đầu nhóm có số việc và "N gấp"; bấm tên nhóm để mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
 | **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng) với **màn xử lý của module ngay tại chỗ** (duyệt / từ chối / sửa như ở module). Nút **Mở ở màn … ↗** góc trên chỉ khi muốn sang hẳn module. |
-| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | Khung chat: **bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, hỏi và hỏi tiếp, tự tra cứu, **chuẩn bị đơn nghỉ phép** để bạn bấm Gửi, **Lịch sử** hội thoại. Xem mục "Tab Trợ lý". |
+| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | Khung chat: **bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, hỏi và hỏi tiếp, tự tra cứu, **chuẩn bị đơn nghỉ phép, đề xuất vật tư** để bạn bấm Gửi, **Lịch sử** hội thoại. Xem mục "Tab Trợ lý". |
 
 ## Tab "Hôm nay"
 
@@ -41,7 +41,9 @@ Hỏi Trợ lý:
 - **Tự tra cứu** trong phạm vi bạn được xem (như khi bạn tự mở màn đó): tìm hồ sơ theo mã / tên (dự án, PO, đề xuất, phiếu kho, NCC, hợp đồng, nhân viên…), tồn kho một vật tư theo kho, chi tiết đơn mua (đã giao, còn thiếu, thanh toán), chi tiết đề xuất vật tư (đã đặt, đã nhận), việc bạn gửi / theo dõi. Khi đang tra hiện dòng "Đang tra …"; dưới câu trả lời ghi "Đã tra: …" và có nút mở đúng hồ sơ.
 - Không thấy trong phạm vi được xem thì Trợ lý nói rõ, không đoán.
 - **Chuẩn bị đơn nghỉ phép**: gõ "Xin nghỉ phép năm thứ 4 21/10, việc gia đình" (hoặc "nghỉ ốm chiều mai"…). Thiếu loại, ngày hay lý do thì Trợ lý hỏi lại. Đủ thì hiện **thẻ đơn nháp**: loại, thời gian, số ngày, người duyệt, phép năm còn; sửa lý do ngay trên thẻ rồi bấm **Gửi đơn** — đơn đi đúng như gửi ở màn Nghỉ phép, thẻ đổi thành "Đã gửi đơn NP-… · chờ … duyệt" kèm nút **Mở**. Bấm **Bỏ** nếu không gửi. Thiếu phép thì thẻ báo đỏ và khóa nút Gửi; loại cần giấy tờ thì thẻ có nút **Mở màn Nghỉ phép** để đính kèm. Thẻ cũ quá 24 giờ phải hỏi lại để chuẩn bị lại.
-- Trợ lý **không tự gửi, duyệt, trả lại, xóa hay ghi sổ gì**: chỉ chuẩn bị nháp; chưa có gì được gửi tới khi chính bạn bấm nút trên thẻ. Duyệt, trả lại, xóa… bạn tự làm ở màn gốc.
+- **Chuẩn bị đề xuất vật tư**: gõ như nói, ví dụ "Đề xuất 2 tấn xi măng PCB40, 50 cây thép D16, dây thép buộc cho đổ sàn tầng 4, cần 23/10". Trợ lý tách từng dòng, lấy dự án đang xem (hoặc dự án bạn nói), hiện **thẻ đề xuất nháp**: tên phiếu, dự án, dùng cho, ngày cần, các dòng (dòng chưa có số lượng ghi "chưa có SL"). Bấm **Mở form đề xuất**: form Đề xuất vật tư của dự án mở với **Gõ nhanh** điền sẵn các dòng, ô Dùng cho và ngày cần. Dòng chưa chắc mã có nút **Gợi ý** — bấm là chọn mã; kiểm số lượng, **Thêm** vào phiếu rồi **Tạo nháp** hoặc **Gửi** như thường. Lưu xong, thẻ trong khung chat thành "Đã gửi đề xuất MR-…" (hoặc "Đã lưu nháp") kèm nút **Mở**.
+- **Gợi ý bấm**: khi Trợ lý cần hỏi lại mà có vài phương án (loại nghỉ, dự án…), dưới câu hỏi có các nút — bấm là trả lời luôn, không phải gõ.
+- Trợ lý **không tự gửi, duyệt, trả lại, xóa hay ghi sổ gì**: chỉ chuẩn bị nháp; chưa có gì được gửi tới khi chính bạn bấm nút trên thẻ hoặc trong form. Duyệt, trả lại, xóa… bạn tự làm ở màn gốc.
 
 ## Trên điện thoại
 

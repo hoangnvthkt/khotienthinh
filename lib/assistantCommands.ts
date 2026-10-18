@@ -1,10 +1,11 @@
 // Trợ lý v2 · T2a — lệnh nháp (chủ SP duyệt 18/10/2026). Trợ lý chỉ CHUẨN BỊ (cổng AI ghi assistant_commands + hiện thẻ);
 // người dùng bấm Xác nhận trên thẻ → màn hình gọi ĐÚNG lệnh gửi của module (như form thường) → ghi biên nhận.
 // AI không có đường nào tự gửi: lệnh gửi chỉ chạy ở đây, bằng phiên người dùng, khi họ bấm nút.
+// T2b đề xuất vật tư: thẻ không gửi thẳng — mở form Đề xuất thật của dự án (Gõ nhanh điền sẵn), form lưu xong mới ghi biên nhận.
 import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
-export type CommandKind = 'leave_request';
+export type CommandKind = 'leave_request' | 'material_request';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -23,7 +24,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -85,6 +86,54 @@ export const executeCommand = async (command: AssistantCommand, edits: { reason?
     return { code: row?.code || null, id: row?.id || null, route: '/hrm/leave' };
   }
   throw new Error('Lệnh này chưa hỗ trợ.');
+};
+
+// ── Đề xuất vật tư (T2b) ──────────────────────────────────────────────────────────────────────────────────────────────
+export interface MrDraftLine { name: string; spec: string | null; qty: number | null; unit: string | null; note: string | null }
+export interface MrCommandView {
+  projectId: string; projectCode: string; projectName: string; siteId: string | null;
+  title: string; purpose: string; neededDate: string | null; lines: MrDraftLine[];
+}
+const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+export const mrView = (command: AssistantCommand): MrCommandView => {
+  const p = command.payload;
+  return {
+    projectId: str(p.projectId), projectCode: str(p.projectCode), projectName: str(p.projectName), siteId: str(p.siteId) || null,
+    title: str(p.title), purpose: str(p.purpose), neededDate: /^\d{4}-\d{2}-\d{2}$/.test(str(p.neededDate)) ? str(p.neededDate) : null,
+    lines: (Array.isArray(p.lines) ? p.lines : []).map(obj).filter(l => str(l.name))
+      .map(l => ({ name: str(l.name), spec: str(l.spec) || null, qty: numOrNull(l.qty), unit: str(l.unit) || null, note: str(l.note) || null })),
+  };
+};
+/** Màn Đề xuất vật tư của dự án; form tự mở lệnh nháp theo ?assistantDraft=. */
+export const mrDraftRoute = (command: AssistantCommand) => {
+  const v = mrView(command);
+  const q = new URLSearchParams({ projectId: v.projectId, tab: 'material', materialTab: 'request', assistantDraft: command.id });
+  if (v.siteId) q.set('siteId', v.siteId);
+  return `/da?${q.toString()}`;
+};
+export const mrRequestRoute = (command: AssistantCommand) => {
+  const v = mrView(command);
+  const id = typeof command.result.id === 'string' ? command.result.id : '';
+  return `/da?${new URLSearchParams({ projectId: v.projectId, tab: 'material', materialTab: 'request', ...(id ? { requestId: id } : {}) }).toString()}`;
+};
+
+export const getCommand = async (id: string): Promise<AssistantCommand | null> => {
+  const { data, error } = await supabase.rpc('assistant_command_get_v1', { p_id: id });
+  if (error) throw error;
+  return parseCommand(data);
+};
+
+// Thẻ trong khung chat và form ở tab khác cùng trang: form lưu xong báo để thẻ đổi thành biên nhận ngay.
+const CHANGED = 'vioo:assistant-command';
+export const notifyCommandChanged = (command: AssistantCommand) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<AssistantCommand>(CHANGED, { detail: command }));
+};
+export const onCommandChanged = (id: string, listener: (command: AssistantCommand) => void) => {
+  if (typeof window === 'undefined') return () => undefined;
+  const handle = (event: Event) => { const c = (event as CustomEvent<AssistantCommand>).detail; if (c?.id === id) listener(c); };
+  window.addEventListener(CHANGED, handle);
+  return () => window.removeEventListener(CHANGED, handle);
 };
 
 export const finishCommand = async (id: string, status: Exclude<CommandStatus, 'prepared'>, result: Record<string, unknown> = {}, error: string | null = null): Promise<AssistantCommand | null> => {

@@ -12,11 +12,15 @@ import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
 // Tách bằng quy tắc ngay khi gõ; câu khó thì "Nhờ AI tách" (skill mr_text_lines). Người dùng xem, đổi mã rồi mới thêm vào phiếu.
 // Chụp phiếu viết tay (chủ SP 16/10): camera của Kho (tự cắt khung) → AI đọc ảnh (skill mr_photo_lines, kết nối đọc ảnh) → chữ đọc được
 // hiện trong ô gõ để sửa, dòng khớp mã như Gõ nhanh. Ảnh chỉ để đọc, không lưu kèm phiếu.
+// Trợ lý (T2b, 18/10): thẻ nháp trong khung chat mở form với các dòng Trợ lý đã tách (`initial`) — khớp mã ở đây như chữ AI đọc ảnh.
+// Dòng chưa chắc mã có nút gợi ý mã bấm là chọn (chủ SP 18/10: nhiều phương án thì cho bấm, không bắt gõ / dò lại).
 
 export interface QuickLine { item: InventoryItem; qty: number; specification: string; reason: string; neededDate?: string }
 type AiLine = Pick<TextLine, 'name' | 'spec' | 'qty' | 'unit' | 'note'>;
 export interface PhotoRead { lines: AiLine[]; purpose: string | null; neededDate: string | null; warnings: string[] }
 export interface PhotoImage { mime: string; b64: string }
+/** Dòng Trợ lý đã tách sẵn (thẻ nháp đề xuất vật tư). */
+export interface QuickLinesInitial { lines: AiLine[]; purpose?: string | null; neededDate?: string | null }
 export interface QuickLinesHooks {
   aiStatus: () => Promise<{ text: boolean; photo: boolean }>;
   split: (text: string) => Promise<AiRunResult<{ lines: AiLine[] }>>;
@@ -77,7 +81,8 @@ export const QuickRequestLines: React.FC<{
   onAdd: (lines: QuickLine[]) => void;
   onClose: () => void;
   hooks?: QuickLinesHooks;
-}> = ({ items, boost, withReason, filterWarehouseId, allowAllItems = true, onAdd, onClose, hooks = defaultQuickLinesHooks }) => {
+  initial?: QuickLinesInitial | null;
+}> = ({ items, boost, withReason, filterWarehouseId, allowAllItems = true, onAdd, onClose, hooks = defaultQuickLinesHooks, initial = null }) => {
   const catalog = useMemo(() => items.filter(i => i.status !== 'retired' && !i.mergedIntoId), [items]);
   const byId = useMemo(() => new Map(catalog.map(i => [i.id, i])), [catalog]);
   const [text, setText] = useState('');
@@ -92,6 +97,8 @@ export const QuickRequestLines: React.FC<{
   // Chữ AI vừa đổ vào ô gõ: không tách lại bằng quy tắc (giữ dòng AI đọc) cho tới khi người dùng sửa.
   const aiTextRef = useRef<string | null>(null);
   const readToken = useRef(0);
+  const [fromAssistant, setFromAssistant] = useState(false);
+  const initialApplied = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -106,6 +113,19 @@ export const QuickRequestLines: React.FC<{
     return () => window.clearTimeout(t);
   }, [text, catalog, boost]);
   useEffect(() => () => { photo?.urls.forEach(u => URL.revokeObjectURL(u)); }, [photo?.urls]);
+  // Dòng Trợ lý tách: đổ vào ô gõ + khớp mã một lần khi danh mục đã có (danh mục tải sau thì đợi). Đặt SAU hiệu ứng tách khi gõ
+  // để lượt đầu không xóa dấu "chữ AI" (aiTextRef).
+  useEffect(() => {
+    if (initialApplied.current || !initial?.lines.length || !catalog.length) return;
+    initialApplied.current = true;
+    const transcript = initial.lines.map(lineText).join('\n');
+    aiTextRef.current = transcript;
+    setText(transcript);
+    setRows(toRows(matchLines(initial.lines.map(l => ({ ...l, raw: [l.name, l.spec].filter(Boolean).join(' ') })), catalog, { boost })));
+    if (initial.purpose) setReasonAll(v => v || initial.purpose || '');
+    if (initial.neededDate) setNeededDate(initial.neededDate);
+    setFromAssistant(true);
+  }, [initial, catalog, boost]);
 
   const readPhotos = async (files: File[]) => {
     setCamera(false);
@@ -164,7 +184,7 @@ export const QuickRequestLines: React.FC<{
     if (!out.length) return;
     const untouched = ready.every(r => r.itemId === r.line.pick?.id);
     const fromPhoto = photo?.state === 'done' && fromAiText;
-    recordSuggestionEvent({ screen: 'material_request', field: fromPhoto ? 'photo_lines' : ai.runId ? 'text_lines_ai' : 'text_lines', outcome: untouched && out.length === rows.length ? 'accepted' : 'edited', suggested: rows.length, accepted: out.length });
+    recordSuggestionEvent({ screen: 'material_request', field: fromAssistant && fromAiText ? 'assistant_lines' : fromPhoto ? 'photo_lines' : ai.runId ? 'text_lines_ai' : 'text_lines', outcome: untouched && out.length === rows.length ? 'accepted' : 'edited', suggested: rows.length, accepted: out.length });
     if (ai.runId) hooks.feedback(ai.runId, true);
     if (fromPhoto && photo?.runId) hooks.feedback(photo.runId, true);
     onAdd(out);
@@ -198,7 +218,12 @@ export const QuickRequestLines: React.FC<{
         </span>
       </div>
     </div>}
-    <textarea value={text} onChange={e => setText(e.target.value)} rows={3} autoFocus aria-label="Danh sách vật tư"
+    {fromAssistant && fromAiText && <div data-testid="quick-assistant" className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-card p-2 text-xs">
+      <p className="flex min-w-0 basis-full items-center gap-1.5 font-semibold text-foreground sm:basis-auto sm:flex-1"><Sparkles size={13} className="shrink-0 text-indigo-600" />Trợ lý đã tách {rows.length} dòng · kiểm mã, số lượng rồi thêm</p>
+      {neededDate && <span className="text-muted-foreground">Ngày cần <b className="text-foreground">{dmy(neededDate)}</b>
+        <button type="button" onClick={() => setNeededDate(null)} className="ml-1 font-semibold text-indigo-700 hover:underline dark:text-indigo-300">Bỏ</button></span>}
+    </div>}
+    <textarea value={text} onChange={e => setText(e.target.value)} rows={3} autoFocus={!initial} aria-label="Danh sách vật tư"
       placeholder="VD: ống PVC 110 C1 20 cây, cút PVC 110 15 cái, keo dán ống 2 hộp cho thoát nước mưa xưởng 1"
       className={`${inputCls} resize-y`} />
     {withReason && <input value={reasonAll} onChange={e => setReasonAll(e.target.value)} aria-label="Dùng cho" placeholder="Dùng cho (điền các dòng chưa có lý do)" className={inputCls} />}
@@ -245,6 +270,12 @@ export const QuickRequestLines: React.FC<{
                   <span className="pointer-events-none absolute right-2 top-1/2 max-w-[2.6rem] -translate-y-1/2 truncate text-xs text-muted-foreground">{item?.unit || row.line.unit || ''}</span>
                 </label>
               </div>
+              {!item && row.line.candidates.length > 0 && <div className="flex flex-wrap items-center gap-1" role="group" aria-label={`Gợi ý mã cho ${row.line.name}`}>
+                <span className="text-xs text-muted-foreground">Gợi ý:</span>
+                {row.line.candidates.slice(0, 3).map(c => <button key={c.item.id} type="button" onClick={() => choose(row, c.item)}
+                  className="max-w-full truncate rounded-full border border-indigo-200 bg-card px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300">
+                  {c.item.name} · {c.item.unit}</button>)}
+              </div>}
               {(row.showSpec || (withReason && row.showReason)) && <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {row.showSpec && <input value={row.spec} onChange={e => update(row.key, { spec: e.target.value })} aria-label="Quy cách" placeholder="Quy cách" className={inputCls} />}
                 {withReason && row.showReason && <input value={row.reason} onChange={e => update(row.key, { reason: e.target.value })} aria-label="Lý do" placeholder={reasonAll || 'Lý do'} className={inputCls} />}

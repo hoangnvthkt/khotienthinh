@@ -287,6 +287,64 @@ test("T2a điện thoại: thẻ đơn nghỉ không tràn ngang, bấm Gửi đ
   await expect(card).toContainText("Đã gửi đơn NP-2026-0099");
 });
 
+test("gợi ý bấm: Trợ lý hỏi lại kèm phương án → nút; bấm là gửi đúng câu, ra thẻ đơn; nhãn không hiện thành chữ", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Xin nghỉ");
+  const turn = chat(page).getByTestId("turn").last();
+  await expect(turn.locator(".vcc-msg-a")).toHaveText("Anh nghỉ loại nào?");
+  const options = chat(page).getByRole("group", { name: "Gợi ý trả lời" });
+  await expect(options.getByRole("button")).toHaveText(["Phép năm", "Ốm đau (BHXH)", "Việc riêng không lương"]);
+  await options.getByRole("button", { name: "Phép năm" }).click();
+  await expect(chat(page).locator(".vcc-msg-q").last()).toHaveText("Phép năm");
+  await expect(chat(page).getByTestId("command")).toHaveAttribute("data-state", "prepared");
+  // Đã trả lời rồi thì gợi ý cũ biến mất (chỉ câu trả lời cuối có nút).
+  await expect(chat(page).getByRole("group", { name: "Gợi ý trả lời" })).toHaveCount(0);
+  expect((await aiCalls(page)).filter(call => call.skill === "assistant_chat").map(call => call.question)).toEqual(["Xin nghỉ", "Phép năm"]);
+});
+
+test("T2b đề xuất vật tư: thẻ dòng vật tư → Mở form đề xuất đúng dự án; form lưu xong thẻ thành biên nhận; tải lại vẫn thấy", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Đề xuất cho SMB 2 tấn xi măng PCB40, 50 cây thép D16, dây thép buộc, cần 23/10 đổ sàn tầng 4");
+  const card = chat(page).getByTestId("command");
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card.locator(".vcc-cmd-title")).toHaveText("Vật tư đổ bê tông sàn tầng 4");
+  await expect(card.locator(".vcc-cmd-facts")).toContainText("SMB-2026 · Nhà máy SMB");
+  await expect(card.locator(".vcc-cmd-facts")).toContainText("23/10");
+  await expect(card.getByRole("list", { name: "Vật tư" }).getByRole("listitem")).toHaveText(["Xi măng PCB402 tấn", "Thép D1650 cây", "Dây thép buộcchưa có SL"]);
+  await expect(card.getByText("Chọn mã và gửi ở form — chưa gửi gì tới khi anh bấm.")).toBeVisible();
+  await expect(chat(page).getByTestId("turn").locator(".vcc-msg-tools")).toHaveCount(0);
+  await card.getByRole("button", { name: "Mở form đề xuất" }).click();
+  await expect(workTabs(page).getByRole("tab", { name: /Đề xuất · SMB-2026/ })).toHaveAttribute("aria-selected", "true");
+  // Form thật lưu / gửi xong báo về thẻ (bản thử gọi thẳng) → biên nhận, có nút mở phiếu.
+  await page.evaluate(() => (window as unknown as { __fxSaveMr: (submitted: boolean) => void }).__fxSaveMr(true));
+  await openAssistant(page, false);
+  const done = chat(page).getByTestId("command");
+  await expect(done).toHaveAttribute("data-state", "done");
+  await expect(done).toContainText("Đã gửi đề xuất MR-2026-0042");
+  await page.reload();
+  await openAssistant(page, false);
+  await expect(chat(page).getByTestId("command")).toContainText("Đã gửi đề xuất MR-2026-0042");
+  await chat(page).getByTestId("command").getByRole("button", { name: "Mở" }).click();
+  await expect(workTabs(page).getByRole("tab", { name: /MR-2026-0042/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("T2b điện thoại: thẻ đề xuất không tràn ngang, nút Mở form đề xuất bấm được", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "chỉ đo trên điện thoại");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, true);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  await box.fill("Đề xuất 2 tấn xi măng PCB40, 50 cây thép D16, dây thép buộc");
+  await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap();
+  const card = chat(page).getByTestId("command");
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(card.getByRole("button", { name: "Mở form đề xuất" })).toBeVisible();
+});
+
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=busy`);
