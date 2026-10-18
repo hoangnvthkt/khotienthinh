@@ -347,7 +347,8 @@
     "20261018100100_vpp_requests.sql",
     "20261018130000_daily_log_from_report.sql",
     "20261018150000_ai_assistant_threads.sql",
-    "20261018170000_ai_guardrails_costs.sql"
+    "20261018170000_ai_guardrails_costs.sql",
+    "20261018190000_ai_assistant_tools.sql"
   ],
   "forbidIncludeAll": true
 }

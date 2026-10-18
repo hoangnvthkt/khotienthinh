@@ -2,15 +2,22 @@
 // Máy chủ: skill assistant_chat của cổng AI (stream text/event-stream) + RPC list/get_ai_thread_v1 (chỉ chủ hội thoại xem, giữ 90 ngày).
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 import type { AiGatewayErrorCode, AiQuotaReason } from './aiGateway';
+import { parseSearchResponse } from './search/globalSearchService';
+import type { ServerRecord } from './search/searchTypes';
+import { parseWorkItem, type WorkItem } from './center/workItemsService';
 
 export const CHAT_SKILL = 'assistant_chat';
+
+/** Nguồn của câu trả lời: khóa dòng số liệu bản tin, hồ sơ công cụ tìm được (màn hình tự biết mở màn nào) hoặc một việc. */
+export type ChatSource = string | { ref: string; type: 'record'; record: ServerRecord } | { ref: string; type: 'work'; item: WorkItem };
+export interface ChatToolUse { name: string; label: string; query: string }
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  /** Khóa dòng số liệu AI dẫn → nút mở chứng từ / màn gốc. */
-  sources: string[];
+  /** Nguồn AI dẫn → nút mở chứng từ / màn gốc. */
+  sources: ChatSource[];
   runId: string | null;
   accepted: boolean | null;
   createdAt: string;
@@ -25,19 +32,34 @@ export interface ChatSendInput {
   pronoun: 'Anh' | 'Chị' | 'Bạn';
   context: Record<string, unknown>;
 }
-export interface ChatHandlers { onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void }
+export interface ChatHandlers { onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void }
 export type ChatSendResult =
-  | { code: 'OK'; runId: string; threadId: string | null; messageId: string | null; answer: string; sources: string[]; model: string; saved: boolean }
+  | { code: 'OK'; runId: string; threadId: string | null; messageId: string | null; answer: string; sources: ChatSource[]; model: string; saved: boolean }
   | { code: AiGatewayErrorCode; runId?: string; error?: string; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; partial?: string };
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
+/** Nguồn từ máy chủ (đã lưu hoặc vừa trả): bỏ mục hỏng. */
+export const parseSources = (raw: unknown): ChatSource[] => (Array.isArray(raw) ? raw : []).flatMap((s): ChatSource[] => {
+  if (typeof s === 'string') return s ? [s] : [];
+  const o = (s && typeof s === 'object' ? s : {}) as Record<string, unknown>;
+  const ref = str(o.ref);
+  if (o.type === 'record') {
+    const record = parseSearchResponse({ records: [o.record] }).records[0];
+    return record ? [{ ref, type: 'record', record }] : [];
+  }
+  if (o.type === 'work') {
+    const item = parseWorkItem(o.item);
+    return item ? [{ ref, type: 'work', item }] : [];
+  }
+  return [];
+});
 
 export const parseMessage = (raw: unknown): ChatMessage | null => {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   if ((o.role !== 'user' && o.role !== 'assistant') || !str(o.content)) return null;
   return {
-    id: str(o.id) || `${o.role}-${str(o.createdAt)}`, role: o.role, content: str(o.content), sources: strings(o.sources),
+    id: str(o.id) || `${o.role}-${str(o.createdAt)}`, role: o.role, content: str(o.content), sources: parseSources(o.sources),
     runId: str(o.runId) || null, accepted: typeof o.accepted === 'boolean' ? o.accepted : null, createdAt: str(o.createdAt),
   };
 };
@@ -143,9 +165,10 @@ export const assistantChat = {
         for (const event of taken.events) {
           if (event.type === 'start') { runId = str(event.runId); handlers.onStart?.({ runId, model: str(event.model) }); }
           else if (event.type === 'delta') { const d = str(event.text); partial += d; handlers.onDelta(d); }
+          else if (event.type === 'tool') handlers.onTool?.({ name: str(event.name), label: str(event.label) || str(event.name), query: str(event.query) });
           else if (event.type === 'done') {
             result = { code: 'OK', runId, threadId: str(event.threadId) || null, messageId: str(event.messageId) || null, answer: str(event.answer) || partial,
-              sources: strings(event.sources), model: str(event.model), saved: event.saved !== false };
+              sources: parseSources(event.sources), model: str(event.model), saved: event.saved !== false };
           } else if (event.type === 'error') result = { code: errorCode(event.code), runId, error: str(event.error) || undefined, partial };
         }
       }

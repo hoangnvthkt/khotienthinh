@@ -38,7 +38,8 @@ Hỏi Trợ lý:
 - Khi quản trị đã bật AI (Cài đặt → Kết nối, dòng **Trợ lý · hội thoại**), ô nhập ở đáy màn: gõ câu hỏi, **Enter** để gửi, **Shift+Enter** để xuống dòng. Câu trả lời chạy dần; bấm **■** để dừng. Mỗi ý có nút mở chứng từ / màn gốc; bấm 👍 / 👎 để chấm.
 - **Hỏi tiếp** ngay bên dưới: Trợ lý nhớ các lượt trước trong cùng hội thoại (ví dụ hỏi "Còn PO-116 thì sao?" sau câu trước).
 - **Lịch sử** mở lại các hội thoại cũ; **Hội thoại mới** quay về bản tin hôm nay. Hội thoại có tin trong hôm nay tự mở lại khi tải lại trang. Hội thoại chỉ chính bạn xem được, tự xóa sau 90 ngày không dùng.
-- Đợt này Trợ lý trả lời từ số liệu bản tin hôm nay; câu cần tra sâu hơn (tồn kho một mã, chi tiết một đơn…) Trợ lý sẽ nói chưa tra được và gợi ý màn nên mở.
+- **Tự tra cứu** trong phạm vi bạn được xem (như khi bạn tự mở màn đó): tìm hồ sơ theo mã / tên (dự án, PO, đề xuất, phiếu kho, NCC, hợp đồng, nhân viên…), tồn kho một vật tư theo kho, chi tiết đơn mua (đã giao, còn thiếu, thanh toán), chi tiết đề xuất vật tư (đã đặt, đã nhận), việc bạn gửi / theo dõi. Khi đang tra hiện dòng "Đang tra …"; dưới câu trả lời ghi "Đã tra: …" và có nút mở đúng hồ sơ.
+- Không thấy trong phạm vi được xem thì Trợ lý nói rõ, không đoán.
 - Trợ lý **chỉ đọc**: không gửi, duyệt, trả lại, xóa hay ghi sổ gì — việc đó bạn tự làm ở màn gốc.
 
 ## Trên điện thoại

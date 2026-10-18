@@ -549,6 +549,7 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-msg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .vcc-msg-foot .vcc-turn-src { margin-top: 0; }
 .vcc-msg-foot .vcc-fb { margin-left: 0; }
+.vcc-msg-tools { font-size: 11.5px; color: var(--vcc-muted); }
 .vcc-chat-foot { flex: none; padding: 8px clamp(14px, 1.6vw, 24px) calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--vcc-bg); }
 .vcc-chat-foot .vcc-chips { margin-bottom: 8px; }
 .vcc-composer { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; border: 1px solid var(--vcc-border); border-radius: 16px; background: var(--vcc-card);

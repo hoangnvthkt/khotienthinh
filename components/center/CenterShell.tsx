@@ -668,6 +668,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
               onDrill={onDrill}
               onOpenItem={openItem}
               onRetry={() => setTodayAttempt(value => value + 1)}
+              onOpenRoute={openRoute}
               hooks={assistant}
             />
           </div>}

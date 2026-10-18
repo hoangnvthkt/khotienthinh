@@ -8,7 +8,7 @@ vi.mock('../supabase', () => ({
 }));
 
 import {
-  assistantChat, boldParts, displayText, isTodayThread, takeSseEvents, textBlocks, threadDayLabel, threadTimeLabel,
+  assistantChat, boldParts, displayText, isTodayThread, parseSources, takeSseEvents, textBlocks, threadDayLabel, threadTimeLabel,
 } from '../assistantChat';
 
 const sse = (...events: unknown[]) => events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
@@ -51,6 +51,28 @@ describe('Trợ lý v2 · màn hình — chữ', () => {
     expect(threadDayLabel(new Date(2026, 9, 4, 9, 15).toISOString())).toBe('04/10');
     expect(isTodayThread({ lastMessageAt: new Date(2026, 9, 18, 7, 0).toISOString() }, now)).toBe(true);
     expect(isTodayThread({ lastMessageAt: new Date(2026, 9, 17, 23, 59).toISOString() }, now)).toBe(false);
+  });
+});
+
+describe('Trợ lý T1 · màn hình — nguồn và công cụ', () => {
+  it('nguồn: khóa bản tin giữ nguyên; hồ sơ / việc đọc thành đối tượng mở được; mục hỏng bỏ', () => {
+    const out = parseSources(['item.po.po-116', { ref: 'h1', type: 'record', record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Thép' } },
+      { ref: 'h2', type: 'work', item: { source: 'po', module: 'procurement', id: 'po-9', code: 'PO-655', title: 'Xi măng' } },
+      { ref: 'h3', type: 'record', record: { kind: 'bịa', id: 'x' } }, { type: 'khác' }, '']);
+    expect(out).toHaveLength(3);
+    expect(out[0]).toBe('item.po.po-116');
+    expect(out[1]).toMatchObject({ ref: 'h1', type: 'record', record: { kind: 'purchase_order', code: 'PO-646' } });
+    expect(out[2]).toMatchObject({ ref: 'h2', type: 'work', item: { source: 'po', code: 'PO-655' } });
+  });
+
+  it('sự kiện "tool" → onTool (đang tra gì)', async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: 'jwt' } } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([sse({ type: 'start', runId: 'r1' }, { type: 'tool', name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' },
+      { type: 'delta', text: 'Còn 12,4 tấn' }, { type: 'done', answer: 'Còn 12,4 tấn [[h1]]', sources: [{ ref: 'h1', type: 'record', record: { kind: 'item', id: 'it-1', code: 'THEP-D16' } }] })])));
+    const tools: unknown[] = [];
+    const result = await assistantChat.send(input, { onDelta: () => {}, onTool: t => tools.push(t) });
+    expect(tools).toEqual([{ name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }]);
+    expect(result).toMatchObject({ code: 'OK', sources: [{ ref: 'h1', type: 'record', record: { code: 'THEP-D16' } }] });
   });
 });
 

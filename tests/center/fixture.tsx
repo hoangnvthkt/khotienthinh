@@ -263,7 +263,14 @@ const assistantHooks: AssistantHooks = {
     const keys = input.facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
     // ?ai=refuse: lời lẽ khiếm nhã → AI mở đầu bằng nhãn từ chối (màn hình phải ẩn), máy chủ trả câu đã bỏ nhãn.
     const refused = AI === 'refuse' ? '[[tu_choi:khiem_nha]] Em mong anh dùng từ ngữ lịch sự hơn ạ. Anh cần xem việc nào hôm nay?' : null;
-    const answer = refused ?? (prior
+    // T1: câu hỏi cần tra (tồn kho, PO) → giả lập Trợ lý gọi công cụ rồi dẫn hồ sơ [[h1]] (nguồn dạng hồ sơ, màn hình tự mở đúng màn).
+    const lookup = /tồn|PO-6/i.test(input.question) && !refused && !prior ? (/tồn/i.test(input.question)
+      ? { tool: { name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }, text: 'Thép CB400 D16 còn **42,4 tấn**: Kho SMB 12,4 tấn, Kho tổng Hưng Yên 30 tấn [[h1]].',
+        record: { kind: 'item', id: 'it-1', code: 'THEP-D16', title: 'Thép CB400 D16', subtitle: 'tấn · Thép', extra: { unit: 'tấn' } } }
+      : { tool: { name: 'chi_tiet_don_mua', label: 'Chi tiết đơn mua', query: 'PO-646' }, text: 'PO-646 còn phải giao **8 tấn** thép D16, còn nợ NCC 280.000.000đ [[h1]].',
+        record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
+    if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
+    const answer = refused ?? lookup?.text ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
       : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);
     let sent = '';
@@ -281,10 +288,11 @@ const assistantHooks: AssistantHooks = {
     if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
     const messageId = `msg-${aiCalls.length}`;
     thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
-      { id: messageId, role: 'assistant', content: answer, sources: keys, runId, accepted: null, createdAt: at });
+      { id: messageId, role: 'assistant', content: answer, sources: lookup ? [] : keys, runId, accepted: null, createdAt: at });
     thread.lastMessageAt = at;
     saveThreads(all);
-    return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources: refused ? [] : keys, model: 'gemini-2.5-pro', saved: true };
+    const sources = refused ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
+    return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources, model: 'gemini-2.5-pro', saved: true };
   },
 };
 
