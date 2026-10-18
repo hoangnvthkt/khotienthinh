@@ -9,6 +9,7 @@
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
 //   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
+//   chuan_bi_nhat_ky         assistant_daily_log_projects_v1 → lệnh nháp daily_log (thẻ đọc báo cáo bằng bộ của màn Nhật ký, tạo phiếu nháp)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
@@ -16,7 +17,11 @@ import type { SourceBook, ToolSpec } from './agent.ts';
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
 /** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a).
  *  projectId: dự án đang xem ở Trung tâm — chỉ để xếp lên đầu khi hỏi lại; không tự ghép khi người dùng chưa nói dự án (chủ SP 18/10). */
-export interface ToolContext { rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void; projectId?: string | null }
+export interface ToolContext {
+  rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void; projectId?: string | null;
+  /** Nguyên văn tin người dùng vừa gửi (báo cáo Zalo dán vào) — công cụ nhật ký lưu nguyên văn, không bắt model chép lại. */
+  question?: string;
+}
 
 export const KIND_LABEL: Record<string, string> = {
   project: 'Dự án', employee: 'Nhân viên', item: 'Vật tư', wms_tx: 'Phiếu kho', material_code: 'Đề xuất cấp mã', purchase_order: 'Đơn hàng',
@@ -28,7 +33,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
-  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký',
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -123,6 +128,15 @@ export const TOOLS: ToolSpec[] = [
         } } },
     } },
   },
+  // T2d — nhật ký từ báo cáo Zalo: công cụ lưu nguyên văn tin + dự án; thẻ đọc bằng bộ của màn Nhật ký, người dùng tạo phiếu nháp.
+  {
+    name: 'chuan_bi_nhat_ky',
+    description: 'CHUẨN BỊ phiếu nhật ký công trường nháp từ báo cáo Zalo / tin báo cáo ngày người dùng vừa dán (không lưu, không gửi). Công cụ tự lấy nguyên văn tin; thẻ sẽ tách ngày × mũi × dòng việc, gắn hạng mục kế hoạch, tổ đội để người dùng kiểm rồi bấm Tạo phiếu nháp. Dùng khi người dùng dán báo cáo thi công / muốn ghi nhật ký.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng / trong tin; chưa rõ thì bỏ trống — công cụ trả danh sách để hỏi lại.' },
+      ngay_bao_cao: { type: 'string', description: 'Ngày báo cáo YYYY-MM-DD cho các dòng không ghi ngày (mặc định hôm nay).' },
+    } },
+  },
 ];
 
 // ── tiện ích ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -210,6 +224,19 @@ export const matchProjects = <T extends Record<string, unknown>>(text: string, p
     const code = fold(p.code);
     const have = new Set(words(`${code} ${fold(p.name)}`));
     return wanted.every(w => have.has(w) || code.includes(w));
+  });
+};
+// Chữ chung trong tên dự án — không dùng để nhận dự án từ tin báo cáo.
+const NAME_COMMON = new Set(['nha', 'may', 'san', 'xuat', 'gia', 'cong', 'cac', 'pham', 'giai', 'doan', 'du', 'an', 'trinh', 'xuong', 'van', 'phong', 'khu', 'cong', 'ty', 'tnhh', 'viet', 'nam', 'hung', 'yen', 'ha', 'noi', 'the', 'kho', 'xay', 'dung', 'mo', 'rong', 'moi', 'bong', 'thu', 'nhoi', 'gd', 'gd2', 'gd1']);
+/** Dự án có mã, hoặc chữ riêng trong tên (≥ 4 ký tự, không phải chữ chung), xuất hiện nguyên chữ trong tin. */
+export const projectsMentioned = <T extends Record<string, unknown>>(text: string, projects: T[]): T[] => {
+  const have = new Set(words(text));
+  const joined = ` ${words(text).join(' ')} `;
+  return projects.filter(p => {
+    const code = words(p.code);
+    if (code.length && joined.includes(` ${code.join(' ')} `)) return true;
+    if (code.some(w => w.length >= 3 && !/^\d+$/.test(w) && have.has(w))) return true;
+    return words(p.name).some(w => w.length >= 4 && !NAME_COMMON.has(w) && !/^\d+$/.test(w) && have.has(w));
   });
 };
 const projectLabel = (p: Record<string, unknown>) => [str(p.code, 40), str(p.name, 80)].filter(Boolean).join(' · ');
@@ -329,6 +356,40 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
     so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null,
     ghi_chu: 'Thẻ đơn mua nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, NCC, lý do mua chủ động, người duyệt rồi tự bấm Lưu nháp hoặc Gửi duyệt. Không nói là đã lập hay đã gửi đơn.',
   }));
+}
+
+async function prepareDailyLog(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  const text = String(ctx.question || '').trim();
+  if (text.length < 20) return JSON.stringify({ loi: 'Chưa thấy nội dung báo cáo. Nhờ người dùng dán tin báo cáo Zalo (có thể nhiều ngày) vào một tin.' });
+  if (text.length > 15000) return JSON.stringify({ loi: 'Tin quá dài (trên 15.000 ký tự). Nhờ người dùng dán tối đa 7 ngày mỗi lần.' });
+  const reportDate = str(args.ngay_bao_cao, 10) || vnToday();
+  if (!ISO_DAY.test(reportDate) || reportDate > vnToday()) return JSON.stringify({ loi: 'Ngày báo cáo chưa đúng (YYYY-MM-DD, không sau hôm nay).' });
+  const list = await ctx.rpc('assistant_daily_log_projects_v1', {});
+  if (list.error) return toolError(list.error, 'dự án');
+  const projects = asArray(list.data).map(asObject).filter(p => str(p.id));
+  if (!projects.length) return JSON.stringify({ loi: 'Người hỏi chưa được ghi nhật ký ở dự án nào — nói rõ và gợi ý nhờ quản lý dự án cấp quyền Nhật ký.' });
+  // Như đề xuất / đơn mua: chưa rõ dự án thì hỏi lại bằng gợi ý bấm (dự án đang xem đứng đầu); chỉ một dự án thì dùng luôn.
+  // Dự án theo lời người dùng; không nói thì tìm mã / tên riêng của dự án ngay trong tin ("XinHai", "DA29") — đúng một thì dùng.
+  const asked = str(args.du_an, 80);
+  const hits = asked ? matchProjects(asked, projects) : projectsMentioned(text, projects);
+  const project = hits.length === 1 ? hits[0] : !asked && projects.length === 1 ? projects[0] : null;
+  if (!project) {
+    const pool = hits.length > 1 ? hits : projects;
+    const current = pool.find(p => p.id === ctx.projectId);
+    const options = [...(current ? [current] : []), ...pool.filter(p => p !== current)].slice(0, 6);
+    return JSON.stringify(compact({ loi: asked && !hits.length ? `Không thấy dự án "${asked}" trong các dự án ghi nhật ký được.` : 'Chưa rõ báo cáo của dự án nào.',
+      can_hoi: 'Hỏi lại một câu: báo cáo của dự án nào; mỗi dự án dưới đây là một gợi ý bấm, ghi đúng như danh sách. Khi người dùng chọn, gọi lại công cụ với du_an (báo cáo đã dán vẫn dùng được). Chưa chuẩn bị gì.',
+      cac_du_an: options.map(projectLabel), du_an_dang_xem: current ? projectLabel(current) : null }));
+  }
+  const code = str(project.code, 40) || str(project.name, 40) || 'dự án';
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'daily_log', p_title: `Nhật ký từ báo cáo Zalo · ${code}`,
+    p_payload: compact({ projectId: str(project.id, 80), projectCode: str(project.code, 40), projectName: str(project.name, 160), siteId: str(project.siteId, 80), reportDate, text }),
+    p_preview: { chars: text.length } });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được lệnh, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  return JSON.stringify({ da_hien_the: true, du_an: projectLabel(project), ngay_bao_cao: reportDate,
+    ghi_chu: 'Thẻ nhật ký đã hiện và đang tự đọc báo cáo (10–40 giây) bằng bộ của màn Nhật ký: tách ngày, mũi, dòng việc, hạng mục, tổ đội. Người dùng kiểm, sửa hạng mục rồi tự bấm Tạo phiếu nháp. Không tự tóm tắt hạng mục / tiến độ, không nói là đã ghi nhật ký.' });
 }
 
 async function prepareLeave(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
@@ -461,6 +522,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
   if (name === 'chuan_bi_don_mua') return prepareOrder(args, ctx);
+  if (name === 'chuan_bi_nhat_ky') return prepareDailyLog(args, ctx);
 
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }

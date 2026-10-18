@@ -475,6 +475,66 @@ test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp đượ
   await expect(chat(page).getByTestId("command")).toContainText("Đã lưu nháp đơn PO-2026-0712");
 });
 
+const DL_PASTE = `BC ngày 13/10
+Tổ a Ích 40 ng, công nhật a Đoàn 2
+- SXLD ván khuôn cột tầng 1 nhà Văn Phòng
+- Xây bể làm mát nhà xưởng
+- SXLD ván khuôn cốt thép sàn mái, lắp đặt ubot sàn mái tầng 2 nhà nghỉ ca
+
+BC ngày 14/10
+Tổ a Ích 40, công nhật 1
+- Tập kết vật liệu
+
+15/10:
+Tổ Mr Ích 35 người, cn a Đoàn 2
+- Xây tường hành lang nhà xưởng`;
+
+test("T2d nhật ký trong chat: dán báo cáo Zalo → thẻ đọc ngày × mũi × hạng mục → bỏ hạng mục, bỏ mũi → Tạo phiếu nháp → biên nhận, Mở phiếu", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, DL_PASTE);
+  const card = chat(page).getByTestId("command");
+  const form = card.getByTestId("dl-form");
+  await expect(form).toContainText("17 dòng việc · 8 phiếu · 3 ngày");
+  await expect(form.getByRole("region")).toHaveCount(3);
+  await expect(form.getByTestId("dl-slip")).toHaveCount(8);
+  await expect(form).toContainText("ngoài kế hoạch — chờ QS");
+  const chips = form.getByRole("button", { name: /^Bỏ hạng mục/ });
+  const before = await chips.count();
+  expect(before).toBeGreaterThan(0);
+  await chips.first().click();
+  await expect(chips).toHaveCount(before - 1);
+  await form.getByRole("region", { name: /15\/10/ }).getByTestId("dl-slip").first().getByLabel("Tạo phiếu").uncheck();
+  await expect(form).toContainText("7 phiếu");
+  await form.getByRole("button", { name: "Tạo 7 phiếu nháp" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã tạo 6 phiếu nhật ký nháp · DA29 · Nhà xưởng XinHai");
+  await expect(card).toContainText("Đã có phiếu của mũi này trong ngày — mở để bổ sung.");
+  const calls = await aiCalls(page);
+  expect(calls.filter(c => c.dailyLog === "create")).toHaveLength(7);
+  expect(calls.some(c => c.dailyLog === "learn")).toBe(true);
+  expect(calls.find(c => c.dailyLog === "read")).toMatchObject({ reportDate: "2026-10-15" });
+  await card.getByRole("button", { name: "Mở phiếu" }).first().click();
+  await expect(workTabs(page).getByRole("tab", { name: /Nhật ký 13\/10/ })).toHaveAttribute("aria-selected", "true");
+  await page.reload();
+  await openAssistant(page, false);
+  await expect(chat(page).getByTestId("command")).toContainText("Đã tạo 6 phiếu nhật ký nháp");
+});
+
+test("T2d: AI đọc lỗi thì báo rõ, Đọc lại được; điện thoại không tràn ngang", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=dl-fail`);
+  await openAssistant(page, isMobile);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  await box.fill(DL_PASTE);
+  if (isMobile) await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap(); else await box.press("Enter");
+  const card = chat(page).getByTestId("command");
+  await expect(card.getByRole("alert")).toContainText("Thử lại, hoặc ghi phiếu như bình thường.");
+  await card.getByRole("button", { name: "Đọc lại" }).click();
+  await expect(card.getByTestId("dl-form")).toContainText("17 dòng việc");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});
+
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=busy`);
@@ -489,8 +549,8 @@ test("chống spam + từ chối lịch sự: còn câu đang trả lời / gử
   await page.goto(`${base}?ai=refuse`);
   await openAssistant(page, false);
   const box = page.getByLabel("Câu hỏi", { exact: true });
-  await box.fill("x".repeat(820));
-  await expect(chat(page).locator(".vcc-composer-count")).toHaveText("820/1000");
+  await box.fill("x".repeat(7200));
+  await expect(chat(page).locator(".vcc-composer-count")).toHaveText("7.200/8.000");
   await box.fill("Mày trả lời ngu thế");
   await expect(chat(page).locator(".vcc-composer-count")).toHaveCount(0);
   await box.press("Enter");

@@ -4,7 +4,7 @@
 import { MAX_AGENT_STEPS, MAX_TOOL_CALLS, type AgentMsg, type SourceBook, type ToolCall, type ToolSpec } from './agent.ts';
 import { TOOLS, TOOL_LABEL, runTool, type Rpc } from './tools.ts';
 
-export interface StepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none'; maxTokens: number; noThinking?: boolean }
+export interface StepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none' | { name: string }; maxTokens: number; noThinking?: boolean }
 export interface StepResult { text: string; toolCalls: ToolCall[]; usage: { tokensIn: number | null; tokensOut: number | null } }
 export interface ConverseDeps {
   step: (req: StepRequest, onDelta: (text: string) => void) => Promise<StepResult>;
@@ -20,6 +20,10 @@ export interface ConverseDeps {
   runId?: string;
   /** Dự án đang xem ở Trung tâm (mặc định cho lệnh theo dự án). */
   projectId?: string | null;
+  /** Nguyên văn tin người dùng (công cụ nhật ký lưu báo cáo dán vào). */
+  question?: string;
+  /** Bước đầu buộc gọi công cụ này (máy chủ nhận ra loại tin chắc chắn — VD báo cáo thi công dán vào). */
+  forceTool?: string;
   started: number;
   now?: () => number;
   maxTokens?: number;
@@ -37,7 +41,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
     let fresh = true;
     const out = await d.step({
       system: last ? `${d.system}\nĐã tra đủ: trả lời ngay từ dữ liệu đã có, không gọi thêm công cụ.` : d.system,
-      messages, tools: TOOLS, toolChoice: last ? 'none' : 'auto', maxTokens: d.maxTokens ?? 1200, noThinking: true,
+      messages, tools: TOOLS, toolChoice: last ? 'none' : step === 0 && d.forceTool ? { name: d.forceTool } : 'auto', maxTokens: d.maxTokens ?? 1200, noThinking: true,
     }, delta => {
       // Chữ của bước sau nối xuống dòng mới (VD câu dẫn trước khi tra rồi câu trả lời).
       const chunk = fresh && text && !text.endsWith('\n') ? `\n\n${delta}` : delta;
@@ -53,7 +57,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
       const query = String(call.args.tu_khoa ?? call.args.vat_tu ?? call.args.ma ?? '').slice(0, 60);
       d.emit({ type: 'tool', name: call.name, label: TOOL_LABEL[call.name] || call.name, query });
       let content: string;
-      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit, projectId: d.projectId }, refBook); } catch (e) {
+      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit, projectId: d.projectId, question: d.question }, refBook); } catch (e) {
         console.error('ai-gateway tool failed', call.name, e instanceof Error ? e.message : e);
         content = JSON.stringify({ loi: 'Chưa tra được, thử lại sau.' });
       }

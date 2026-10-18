@@ -12,6 +12,10 @@ import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistant
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
 import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
+import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
+import type { ReportRead } from '../../lib/dailyLogReport';
+import type { ProjectTask } from '../../types';
+import DL_DATA from '../daily-log/report-fixture-data.json';
 import MR_CATALOG_RAW from '../material-request/quick-lines-items.json';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
@@ -326,8 +330,42 @@ const poForm: PoFormActions = {
     return done;
   },
 };
+// T2d: báo cáo Zalo dán vào → thẻ nhật ký. Cây hạng mục thật DA29 + kết quả AI thật (tin 3 ngày 13–15/10), như bộ test màn Nhật ký.
+const dlCommand = (text: string): AssistantCommand => ({
+  id: `cmd-dl-${Date.now()}`, kind: 'daily_log', status: 'prepared', title: 'Nhật ký từ báo cáo Zalo · DA29',
+  payload: { projectId: 'da29', projectCode: 'DA29', projectName: 'Nhà xưởng XinHai', siteId: 'site-da29', reportDate: '2026-10-15', text },
+  preview: { chars: text.length }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+const dailyLog: DailyLogFormActions = {
+  tasks: async () => DL_DATA.tasks as unknown as ProjectTask[],
+  hooks: {
+    read: async input => {
+      aiCalls.push({ dailyLog: 'read', reportDate: input.reportDate, taskLines: input.tasks.split('\n').length });
+      await sleep(400);
+      if (AI === 'dl-fail' && !aiCalls.some(c => c.dailyLog === 'failed')) { aiCalls.push({ dailyLog: 'failed' }); return { code: 'AI_FAILED', error: 'AI_HTTP_502' }; }
+      return { code: 'OK', runId: 'run-dl', result: DL_DATA.read as unknown as ReportRead, model: 'claude-sonnet-5-5', provider: 'openai_compatible', usage: { tokensIn: 14198, tokensOut: 3110, costUsd: null, durationMs: 29630 } };
+    },
+    feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+    memory: async () => [],
+    learn: async (_p, _s, pairs) => { aiCalls.push({ dailyLog: 'learn', pairs: pairs.length }); },
+    recentAreas: async () => [{ code: 'NX1', name: 'Nhà xưởng' }, { code: 'NHA-NGHI-CA', name: 'Nhà Nghỉ ca' }, { code: 'NVP', name: 'Nhà văn phòng' }],
+    knownCrews: async () => ['Tổ Đỗ Duy Ích', 'Tổ công nhật Đỗ Hiệp Đoàn'],
+    createDraft: async ({ slip }) => {
+      await sleep(60);
+      aiCalls.push({ dailyLog: 'create', date: slip.date, area: slip.areaCode, works: slip.works.length });
+      if (slip.date === '2026-10-13' && slip.areaCode === 'NX1') return { slip, status: 'exists', contributionId: 'existing-nx1-1310', message: 'Đã có phiếu của mũi này trong ngày — mở để bổ sung.' };
+      return { slip, status: 'created', contributionId: `c-${slip.date}-${slip.areaCode}` };
+    },
+  },
+  finish: async (command, result) => {
+    const done: AssistantCommand = { ...command, status: 'done', result, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
 const assistantHooks: AssistantHooks = {
   poForm,
+  dailyLog,
   ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
@@ -379,19 +417,21 @@ const assistantHooks: AssistantHooks = {
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
     // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
     const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
-    const wantsPo = /báo giá|đơn mua|đặt hàng/i.test(input.question) && !refused && !lookup;
-    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup && !wantsPo;
-    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup && !asksType && !wantsMr;
-    const command = wantsPo ? poCommand() : wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
+    const wantsDl = /^(BC|báo cáo) ngày/i.test(input.question.trim()) && !refused && !lookup;
+    const wantsPo = /báo giá|đơn mua|đặt hàng/i.test(input.question) && !refused && !lookup && !wantsDl;
+    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup && !wantsPo && !wantsDl;
+    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup && !asksType && !wantsMr && !wantsDl;
+    const command = wantsDl ? dlCommand(input.question) : wantsPo ? poCommand() : wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
     if (command) {
       await sleep(120);
-      handlers.onTool?.(wantsPo ? { name: 'chuan_bi_don_mua', label: 'Chuẩn bị đơn mua', query: '' }
+      handlers.onTool?.(wantsDl ? { name: 'chuan_bi_nhat_ky', label: 'Chuẩn bị nhật ký', query: '' } : wantsPo ? { name: 'chuan_bi_don_mua', label: 'Chuẩn bị đơn mua', query: '' }
         : wantsMr ? { name: 'chuan_bi_de_xuat_vat_tu', label: 'Chuẩn bị đề xuất vật tư', query: '' } : { name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' });
       await sleep(150);
       handlers.onCommand?.(command);
     }
     const answer = refused ?? lookup?.text
       ?? (asksType ? 'Anh nghỉ loại nào? [[goi_y:Phép năm]] [[goi_y:Ốm đau (BHXH)]] [[goi_y:Việc riêng không lương]]' : null)
+      ?? (wantsDl ? 'Em đã nhận báo cáo **DA29**. Thẻ bên dưới đang đọc ngày, mũi, hạng mục — anh kiểm rồi bấm **Tạo phiếu nháp**.' : null)
       ?? (wantsPo ? 'Em đã chuẩn bị **đơn mua Hòa Phát · SMB-2026** gồm 3 dòng theo báo giá, VAT 8%. NCC có 2 công ty gần giống — anh bấm chọn, kiểm mã, chọn lý do và người duyệt rồi bấm **Gửi duyệt** trên thẻ.' : null)
       ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 4 dòng; dây thép buộc chưa có số lượng. Anh chọn mã, kiểm số lượng, chọn người duyệt rồi bấm **Gửi duyệt** ngay trên thẻ.' : null)
       ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior

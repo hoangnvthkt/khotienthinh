@@ -352,7 +352,8 @@
     "20261018210000_ai_price_per_call.sql",
     "20261018230000_assistant_commands.sql",
     "20261019090000_assistant_mr_commands.sql",
-    "20261019110000_assistant_po_commands.sql"
+    "20261019110000_assistant_po_commands.sql",
+    "20261019130000_assistant_daily_log_commands.sql"
   ],
   "forbidIncludeAll": true
 }

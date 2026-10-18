@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
-export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order';
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -24,7 +24,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -142,6 +142,20 @@ export const poView = (command: AssistantCommand): PoCommandView => {
 };
 /** Đơn mua ở màn Mua hàng (mở ngăn chi tiết đơn). */
 export const poRoute = (purchaseOrderId: string) => `/procurement?${new URLSearchParams({ po: purchaseOrderId }).toString()}`;
+
+// ── Nhật ký từ báo cáo Zalo (T2d) ────────────────────────────────────────────────────────────────────────────────────
+export interface DailyLogCommandView { projectId: string; projectCode: string; projectName: string; siteId: string | null; reportDate: string; text: string }
+export const dailyLogView = (command: AssistantCommand): DailyLogCommandView => {
+  const p = command.payload;
+  return { projectId: str(p.projectId), projectCode: str(p.projectCode), projectName: str(p.projectName), siteId: str(p.siteId) || null,
+    reportDate: /^\d{4}-\d{2}-\d{2}$/.test(str(p.reportDate)) ? str(p.reportDate) : new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10), text: str(p.text) };
+};
+/** Mở đúng phiếu kỹ sư nháp ở màn Nhật ký của dự án (ngày + phiếu). */
+export const dailyLogSlipRoute = (v: Pick<DailyLogCommandView, 'projectId' | 'siteId'>, date: string, contributionId: string) => {
+  const q = new URLSearchParams({ projectId: v.projectId, tab: 'dailylog', slipDate: date, slipContribution: contributionId });
+  if (v.siteId) q.set('siteId', v.siteId);
+  return `/da?${q.toString()}`;
+};
 
 export const getCommand = async (id: string): Promise<AssistantCommand | null> => {
   const { data, error } = await supabase.rpc('assistant_command_get_v1', { p_id: id });

@@ -18,6 +18,7 @@ import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { createPoFormActions, type PoFormActions } from '../../lib/assistantPoForm';
+import { defaultDailyLogFormActions, type DailyLogFormActions } from '../../lib/assistantDailyLogForm';
 import { displayCode } from '../../lib/center/workItemsService';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -38,9 +39,12 @@ export interface AssistantHooks {
   mrForm?: MrFormActions;
   /** Form đơn mua trong chat (T2c) — chỉ gọi lệnh máy chủ nên có sẵn trong bản mặc định. */
   poForm?: PoFormActions;
+  /** Nhật ký từ báo cáo Zalo trong chat (T2d) — đọc bằng bộ của màn Nhật ký, tạo phiếu nháp. */
+  dailyLog?: DailyLogFormActions;
 }
 export const defaultAssistantHooks: AssistantHooks = {
   poForm: createPoFormActions(),
+  dailyLog: defaultDailyLogFormActions,
   status: () => aiGateway.status(),
   narrate: (facts, context) => aiGateway.run<{ brief: string }>('morning_brief', { facts }, context),
   feedback: (runId, accepted) => aiGateway.feedback(runId, accepted),
@@ -188,6 +192,8 @@ const BriefCard: React.FC<{
 
 const STOP_ERRORS = new Set(['AI_ABORTED']);
 /** "Đang tra tồn kho: thép D16…"; công cụ chuẩn bị lệnh nháp: "Đang chuẩn bị đơn nghỉ phép…". */
+/** Tin tối đa 8.000 ký tự (báo cáo Zalo nhiều ngày dán vào để ghi nhật ký) — bằng giới hạn lưu tin của hội thoại. */
+const QUESTION_MAX = 8000;
 const isPrepareTool = (tool: ChatToolUse) => tool.name.startsWith('chuan_bi_');
 const toolStatus = (tool: ChatToolUse) => (isPrepareTool(tool) ? `Đang ${tool.label.toLowerCase()}…`
   : `Đang tra ${tool.label.toLowerCase()}${tool.query ? `: ${tool.query}` : ''}…`);
@@ -337,6 +343,7 @@ const AssistantView: React.FC<{
     openRoute: (route, title) => (onOpenRoute ? onOpenRoute(route, title) : onDrill({ kind: 'route', path: route, title })),
     mrForm: hooks.mrForm,
     poForm: hooks.poForm,
+    dailyLog: hooks.dailyLog,
   };
 
   const askQuick = (id: string, text: string) => {
@@ -553,7 +560,7 @@ const AssistantView: React.FC<{
                 className="vcc-composer-input"
                 value={question}
                 rows={1}
-                maxLength={1000}
+                maxLength={QUESTION_MAX}
                 aria-label="Câu hỏi"
                 placeholder="Hỏi về việc, vật tư, tiền…"
                 onChange={event => setQuestion(event.target.value)}
@@ -562,7 +569,7 @@ const AssistantView: React.FC<{
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!sending) submit(); }
                 }}
               />
-              {question.length > 800 && <span className="vcc-composer-count" aria-live="polite">{question.length}/1000</span>}
+              {question.length > QUESTION_MAX - 1000 && <span className="vcc-composer-count" aria-live="polite">{question.length.toLocaleString('vi-VN')}/{QUESTION_MAX.toLocaleString('vi-VN')}</span>}
               {sending ? (
                 <button type="submit" className="vcc-composer-send" aria-label="Dừng" title="Dừng"><Square size={13} fill="currentColor" /></button>
               ) : (

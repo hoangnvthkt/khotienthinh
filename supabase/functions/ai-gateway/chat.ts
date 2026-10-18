@@ -23,7 +23,8 @@ const asObject = (raw: unknown): Record<string, unknown> => (raw && typeof raw =
 
 export const parseChatInput = (raw: unknown): ChatInput => {
   const o = asObject(raw);
-  const question = clampText(o.question, 1000).trim();
+  // 8.000 ký tự: báo cáo Zalo nhiều ngày dán vào để ghi nhật ký (bằng giới hạn lưu tin hội thoại).
+  const question = clampText(o.question, 8000).trim();
   if (question.length < 2) throw new Error('AI_BAD_INPUT');
   return {
     threadId: typeof o.threadId === 'string' && UUID.test(o.threadId) ? o.threadId : null,
@@ -76,6 +77,21 @@ const CHAT_GUARD = [
   'Không bịa số liệu, tên người, mã chứng từ, ngày tháng; thiếu thì nói rõ là chưa có.',
 ].join(' ');
 
+/** Tin dán là báo cáo thi công ngày (Zalo): ≥ 3 dòng, có "BC / báo cáo" và tổ / người / công nhật → máy chủ buộc gọi chuan_bi_nhat_ky
+ *  ở bước đầu (thử thật 18/10: model không tự gọi, có lần còn nói "đã chuẩn bị" mà không làm gì). */
+export const looksLikeDailyReport = (text: string) => {
+  const lines = text.split('\n').filter(l => l.trim()).length;
+  const f = foldVi(text);
+  return lines >= 3 && /\b(bc|bao cao)\b/.test(f) && /\b(to|nguoi|cong nhat|cn|ng)\b/.test(f);
+};
+
+/** Nguyên văn báo cáo cho công cụ nhật ký: tin hiện tại nếu đủ dài; tin ngắn (bấm chọn dự án) thì lấy tin dài gần nhất của người dùng. */
+export const reportTextOf = (question: string, history: ChatTurn[], min = 80) => {
+  if (question.trim().length >= min) return question;
+  const earlier = [...history].reverse().find(t => t.role === 'user' && t.content.trim().length >= min);
+  return earlier ? earlier.content : question;
+};
+
 const foldVi = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 /** Câu hỏi (hoặc 2 câu hỏi gần nhất) nói về nghỉ phép → cổng nạp danh sách loại nghỉ thật vào lời nhắc. */
 export const mentionsLeave = (question: string, history: ChatTurn[] = []) =>
@@ -107,6 +123,7 @@ export const chatSystem = (pronoun: Pronoun, older: string[], tools = false, tod
       `Công cụ chỉ trả dữ liệu ${you} được xem: không thấy thì nói rõ "không thấy trong phạm vi ${you} được xem", không khẳng định là không tồn tại. Tiền ghi kèm đơn vị (đ), số lượng kèm đơn vị tính.`,
       `Lệnh nháp: ${me} chỉ được CHUẨN BỊ (công cụ chuan_bi_…) khi ${you} yêu cầu rõ. Gọi công cụ ngay với những gì ${you} đã nói, bỏ trống phần chưa có: công cụ trả lại danh sách thật (loại nghỉ, dự án…) và điều còn thiếu (loại, ngày, lý do…) để hỏi lại. Công cụ chỉ hiện thẻ nháp; ${you} tự bấm nút trên thẻ. Không bao giờ nói là đã gửi, đã tạo hay đã duyệt. Có vấn đề (thiếu phép, trùng ngày…) thì nói rõ và đề nghị đổi.`,
       `Đề xuất vật tư: đủ tên vật tư là gọi công cụ ngay (số lượng, ngày cần thiếu thì để trống, ${you} điền ở form). ${you[0].toUpperCase()}${you.slice(1)} chưa nói dự án thì để trống du_an — công cụ trả danh sách dự án để hỏi lại bằng gợi ý bấm; không tự chọn dự án. Thẻ là form gọn ngay trong chat: sau khi thẻ hiện, nói gọn mấy dòng, dòng nào thiếu số lượng, và nhắc ${you} chọn mã, kiểm số lượng, chọn người duyệt rồi bấm **Gửi duyệt** ngay trên thẻ.`,
+      `Nhật ký công trường (dán báo cáo Zalo / tin báo cáo thi công ngày, có thể nhiều ngày): gọi chuan_bi_nhat_ky ngay — công cụ tự lấy nguyên văn tin, không chép lại; dự án nhận ra từ tin hoặc lời ${you}, chưa rõ thì để trống để hỏi lại bằng gợi ý bấm. Khi ${you} bấm chọn dự án ở lượt sau, gọi lại chuan_bi_nhat_ky với du_an — báo cáo vẫn là tin dán trước đó. Sau khi thẻ hiện chỉ nói 1–2 câu: thẻ đang đọc báo cáo, ${you} kiểm hạng mục rồi bấm **Tạo phiếu nháp**.`,
       `Đơn mua (báo giá NCC dán vào, "đặt hàng", "lập PO"): gọi chuan_bi_don_mua ngay với NCC, từng dòng hàng (đơn giá đúng như báo giá), VAT, ngày giao; chưa nói dự án thì để trống du_an để hỏi lại bằng gợi ý bấm. Sau khi thẻ hiện, nói gọn: NCC, số dòng, dòng thiếu giá, tạm tính / tổng ĐÚNG số công cụ trả (tam_tinh, tong) — không tự nhân, cộng tiền; nhắc ${you} kiểm mã, chọn lý do và người duyệt rồi bấm **Gửi duyệt** trên thẻ. Người không có quyền lập đơn mua thì gợi ý gửi đề xuất vật tư.`,
     ] : [
       `Câu hỏi cần dữ liệu không có trong các dòng đó (tồn kho một mã, chi tiết một đơn, dự án khác…): nói rõ ${me} chưa tra được ở đây và gợi ý màn nên mở. Không đoán.`,

@@ -649,6 +649,28 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
   .vcc-mr-row-main.vcc-po-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .vcc-mr-row-main.vcc-po-main > select { grid-column: 1 / -1; }
 }
+/* Nhật ký từ báo cáo Zalo trong chat (T2d): ngày → mũi → dòng việc + hạng mục; biên nhận liệt kê phiếu nháp. */
+.vcc-dl-day { display: flex; flex-direction: column; gap: 6px; }
+.vcc-dl-day h4 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--vcc-fg); text-transform: capitalize; }
+.vcc-dl-head { flex-wrap: wrap; white-space: normal; }
+.vcc-dl-area { color: var(--vcc-accent); font-size: 13px; }
+.vcc-dl-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--vcc-muted); }
+.vcc-mr .vcc-dl-toggle input { width: auto; height: auto; }
+.vcc-dl-works { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.vcc-dl-works li { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--vcc-border); padding-top: 6px; }
+.vcc-dl-works li:first-child { border-top: 0; padding-top: 0; }
+.vcc-dl-works p { margin: 0; font-size: 13px; color: var(--vcc-fg); overflow-wrap: anywhere; }
+.vcc-dl-task { display: inline-flex; align-items: flex-start; gap: 4px; max-width: 100%; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-fg); border-radius: 8px; padding: 2px 6px; font-size: 12px; overflow-wrap: anywhere; }
+.vcc-dl-task b { font-family: ui-monospace, monospace; color: var(--vcc-accent); }
+.vcc-dl-task button { flex: none; color: var(--vcc-muted); }
+.vcc-dl-add { max-width: 28rem; }
+.vcc-dl-note { font-size: 12px; overflow-wrap: anywhere; }
+.vcc-dl-warn { font-size: 12px; color: var(--vcc-warn); }
+.vcc-dl-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.vcc-dl-done { flex-direction: column !important; align-items: stretch !important; }
+.vcc-dl-receipt { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.vcc-dl-receipt li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.vcc-dl-receipt li span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
 /* Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm phương án → nút; bấm là gửi đúng câu đó. */
 .vcc-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .vcc-suggest button { min-height: 32px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 13px; font-weight: 600; text-align: left; }

@@ -67,6 +67,47 @@ export const defaultReportImportHooks: ReportImportHooks = {
   },
 };
 
+// ── Đọc báo cáo + tạo phiếu nháp: dùng chung cho màn Nhật ký và thẻ Trợ lý trong khung chat (chủ SP 18/10/2026) ──────
+export type ReportReadOutcome = { ok: true; drafts: DraftSlip[]; warnings: string[]; runId: string | null } | { ok: false; error: string };
+/** Một lượt đọc: trí nhớ + mũi + tổ gần đây + cửa sổ kế hoạch → skill daily_log_from_report → bản nháp theo (ngày × mũi). */
+export const readReportDrafts = async (hooks: ReportImportHooks, input: {
+  projectId: string; siteId: string | null; rows: ReportTaskRow[]; text: string; images: Array<{ mime: string; b64: string }>; reportDate: string;
+}): Promise<ReportReadOutcome> => {
+  const { projectId, siteId, rows, text, images, reportDate } = input;
+  if (!rows.length) return { ok: false, error: 'Dự án chưa có hạng mục kế hoạch để gắn. Kiểm tra tab Tiến độ.' };
+  const dates = Array.from(new Set([reportDate, ...datesInText(text, reportDate)]));
+  const [memory, areas, crews] = await Promise.all([hooks.memory(projectId, siteId), hooks.recentAreas(projectId, siteId, reportDate), hooks.knownCrews(projectId, siteId, reportDate)]);
+  const planRows = reportTaskWindow(rows, dates);
+  const r = await hooks.read({ text: text.trim(), images, reportDate, tasks: planRows.map(formatTaskRow).join('\n'),
+    areas: areas.map(a => `${a.code} | ${a.name}`).join('\n'), crews: crews.join('\n'), hints: memoryHints(memory, rows) });
+  if (r.code !== 'OK') return { ok: false, error: `${aiErrorMessage(r)} Thử lại, hoặc ghi phiếu như bình thường.` };
+  const drafts = buildDrafts(r.result, { reportDate, rows, areas, memory });
+  if (!drafts.length) return { ok: false, error: 'AI không thấy dòng việc nào — dán rõ hơn hoặc chụp lại sổ.' };
+  return { ok: true, drafts, warnings: r.result.warnings, runId: r.runId };
+};
+
+/** Tạo phiếu nháp lần lượt bằng đúng RPC phiếu kỹ sư; xong thì học cách gọi + ghi chấm điểm AI + thống kê gợi ý. */
+export const createReportDrafts = async (hooks: ReportImportHooks, input: {
+  projectId: string; siteId: string | null; slips: DraftSlip[]; rows: ReportTaskRow[]; runId: string | null; initialTasks: Map<string, string>;
+  onProgress?: (done: number) => void; source?: 'report' | 'assistant';
+}): Promise<DraftResult[]> => {
+  const out: DraftResult[] = [];
+  for (const slip of input.slips) {
+    out.push(await hooks.createDraft({ projectId: input.projectId, siteId: input.siteId, slip }));
+    input.onProgress?.(out.length);
+  }
+  const made = out.filter(r => r.status === 'created').map(r => r.slip);
+  if (made.length) {
+    void hooks.learn(input.projectId, input.siteId, learnPairs(made, input.rows));
+    if (input.runId) hooks.feedback(input.runId, true);
+    const kept = made.reduce((n, slip) => n + slip.works.filter(work => input.initialTasks.get(work.key) === work.taskIds.join(',')).length, 0);
+    const lines = made.reduce((n, slip) => n + slip.works.length, 0);
+    recordSuggestionEvent({ screen: 'daily_log', field: input.source === 'assistant' ? 'report_ai_assistant' : 'report_ai', outcome: kept === lines ? 'accepted' : 'edited',
+      suggested: lines, accepted: kept, source: { slips: made.length, days: new Set(made.map(s => s.date)).size } });
+  }
+  return out;
+};
+
 const dayLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export const DailyLogReportImport: React.FC<{
@@ -108,18 +149,12 @@ export const DailyLogReportImport: React.FC<{
     if (!rows.length) { setError('Dự án chưa có hạng mục kế hoạch để gắn. Kiểm tra tab Tiến độ.'); return; }
     setError(''); setStep('reading');
     try {
-      const dates = Array.from(new Set([reportDate, ...textDates]));
-      const [memory, areas, crews] = await Promise.all([hooks.memory(projectId, constructionSiteId), hooks.recentAreas(projectId, constructionSiteId, reportDate),
-        hooks.knownCrews(projectId, constructionSiteId, reportDate)]);
-      const planRows = reportTaskWindow(rows, dates);
       const prepared = await Promise.all(files.slice(0, 4).map(f => prepareCapturePhoto(f).catch(() => f)));
       const images = await Promise.all(prepared.map(async f => ({ mime: f.type || 'image/jpeg', b64: await fileToB64(f) })));
-      const r = await hooks.read({ text: text.trim(), images, reportDate, tasks: planRows.map(formatTaskRow).join('\n'),
-        areas: areas.map(a => `${a.code} | ${a.name}`).join('\n'), crews: crews.join('\n'), hints: memoryHints(memory, rows) });
-      if (r.code !== 'OK') { setError(`${aiErrorMessage(r)} Thử lại, hoặc ghi phiếu như bình thường.`); setStep('input'); return; }
-      const drafts = buildDrafts(r.result, { reportDate, rows, areas, memory });
-      if (!drafts.length) { setError('AI không thấy dòng việc nào — dán rõ hơn hoặc chụp lại sổ.'); setStep('input'); return; }
-      setSlips(drafts); setWarnings(r.result.warnings); setRunId(r.runId); setSkipped(new Set());
+      const outcome = await readReportDrafts(hooks, { projectId, siteId: constructionSiteId, rows, text, images, reportDate });
+      if ('error' in outcome) { setError(outcome.error); setStep('input'); return; }
+      const drafts = outcome.drafts;
+      setSlips(drafts); setWarnings(outcome.warnings); setRunId(outcome.runId); setSkipped(new Set());
       setInitialTasks(new Map(drafts.flatMap(slip => slip.works.map(work => [work.key, work.taskIds.join(',')] as [string, string]))));
       setStep('review');
     } catch (caught) {
@@ -140,21 +175,9 @@ export const DailyLogReportImport: React.FC<{
   const create = async () => {
     if (!chosen.length) return;
     setStep('creating'); setProgress(0);
-    const out: DraftResult[] = [];
-    for (const slip of chosen) {
-      out.push(await hooks.createDraft({ projectId, siteId: constructionSiteId, slip }));
-      setProgress(out.length);
-    }
+    const out = await createReportDrafts(hooks, { projectId, siteId: constructionSiteId, slips: chosen, rows, runId, initialTasks, onProgress: setProgress });
     setResults(out); setStep('done');
-    const made = out.filter(r => r.status === 'created').map(r => r.slip);
-    if (made.length) {
-      onCreated();
-      void hooks.learn(projectId, constructionSiteId, learnPairs(made, rows));
-      if (runId) hooks.feedback(runId, true);
-      const kept = made.reduce((n, slip) => n + slip.works.filter(work => initialTasks.get(work.key) === work.taskIds.join(',')).length, 0);
-      const lines = made.reduce((n, slip) => n + slip.works.length, 0);
-      recordSuggestionEvent({ screen: 'daily_log', field: 'report_ai', outcome: kept === lines ? 'accepted' : 'edited', suggested: lines, accepted: kept, source: { slips: made.length, days: new Set(made.map(s => s.date)).size } });
-    }
+    if (out.some(r => r.status === 'created')) onCreated();
   };
 
   const taskChip = (slip: DraftSlip, workKey: string, taskIds: string[], taskId: string) => {
