@@ -74,6 +74,18 @@ export const defaultAssistantHooks: AssistantHooks = {
   cancelCommand: async command => (await finishCommand(command.id, 'cancelled')) ?? { ...command, status: 'cancelled' },
 };
 
+/** Lần đầu được cấp Trợ lý (chưa có hội thoại nào): tin chào + thẻ "Thử ngay" — bấm là gửi / điền sẵn câu, không phải nghĩ nên hỏi gì. */
+const WELCOME_KEY = 'vcc-assistant-welcome-done';
+const welcomeDone = () => { try { return localStorage.getItem(WELCOME_KEY) === '1'; } catch { return false; } };
+interface TryCard { id: string; icon: React.ElementType; title: string; text: string; send?: boolean; attach?: boolean }
+const tryCards = (you: string): TryCard[] => [
+  { id: 'urgent', icon: Sparkles, title: 'Việc gì gấp nhất?', text: 'Hôm nay việc gì gấp nhất?', send: true },
+  { id: 'quote', icon: Paperclip, title: 'Đơn mua từ ảnh / PDF báo giá', text: 'Lập đơn mua theo báo giá này', attach: true },
+  { id: 'mr', icon: Package, title: 'Đề xuất vật tư một câu', text: 'Đề xuất 2 tấn xi măng PCB40, 50 cây thép D16 cho ' },
+  { id: 'leave', icon: CalendarCheck, title: 'Xin nghỉ phép', text: 'Xin nghỉ phép năm ngày mai, lý do ' },
+  { id: 'note', icon: Brain, title: 'Nhờ Trợ lý ghi nhớ', text: `Nhớ giúp ${you}: ` },
+];
+
 /** Câu hỏi nhanh dạng thẻ có biểu tượng (học từ màn /ai cũ). */
 const QUICK_ICON: Record<string, React.ElementType> = { project: Building2, supply: Package, finance: Wallet, hrm: CalendarCheck };
 
@@ -259,6 +271,7 @@ const AssistantView: React.FC<{
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [access, setAccess] = useState<MyAiAccess | null>(null);
   const [asked, setAsked] = useState(0);
+  const [welcomeHidden, setWelcomeHidden] = useState(() => welcomeDone());
   const [modelId, setModelId] = useState<string | null>(() => readStoredModel());
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [reading, setReading] = useState(false);
@@ -543,6 +556,28 @@ const AssistantView: React.FC<{
               onRefresh={refresh} onOpenItem={onOpenItem} onDrill={onDrill} />
           ) : (
             <p className="vcc-chat-day">Hội thoại ngày {threadDayLabel(thread.startedAt || '')}</p>
+          )}
+          {configured && !welcomeHidden && Array.isArray(historyList) && historyList.length === 0 && messages.length === 0 && (
+            <section className="vcc-welcome" aria-label="Chào mừng đến Trợ lý">
+              <div className="vcc-welcome-head">
+                <span className="vcc-welcome-badge" aria-hidden="true"><Sparkles size={18} /></span>
+                <div><h3>Trợ lý AI đã mở cho {you}</h3><p>Bấm một thẻ để thử — Trợ lý chỉ chuẩn bị nháp, {you} tự bấm gửi.</p></div>
+                <button type="button" className="vcc-link" onClick={() => { setWelcomeHidden(true); try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* bỏ qua */ } }}>Đã hiểu</button>
+              </div>
+              <div className="vcc-welcome-grid" role="group" aria-label="Thử ngay">
+                {tryCards(you).map(c => (
+                  <button key={c.id} type="button" className="vcc-welcome-card" onClick={() => {
+                    if (c.send) { void send(c.text); return; }
+                    setQuestion(c.text);
+                    requestAnimationFrame(() => { input.current?.focus(); const el = input.current; if (el) el.selectionStart = el.selectionEnd = el.value.length; });
+                    if (c.attach) filePicker.current?.click();
+                  }}>
+                    <span className="vcc-quick-icon" aria-hidden="true"><c.icon size={16} /></span>
+                    <span><b>{c.title}</b><span>{c.send ? 'Hỏi ngay' : c.attach ? 'Chọn ảnh hoặc PDF báo giá' : 'Điền sẵn — sửa rồi gửi'}</span></span>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
 
           {threadState === 'loading' && <p className="vcc-chat-note" role="status">Đang mở hội thoại…</p>}

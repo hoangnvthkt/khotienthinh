@@ -94,3 +94,20 @@ test("Model: đặt tên dễ hiểu, mô tả, đọc ảnh; mẫu có model m�
   await drawer.getByRole("button", { name: "Lưu mẫu" }).click();
   expect((await calls(page)).at(-1)).toMatchObject({ saveTemplate: { name: "Hai model", connectionId: "c-claude", extraConnectionIds: ["c-deepseek"] } });
 });
+
+test("Hoạt động: câu hỏi, thẻ gửi thật / chuẩn bị, hỏi về gì, theo người (ai chưa dùng), 👎 gần đây; đổi kỳ 7 / 14 / 30 ngày", async ({ page, isMobile }) => {
+  await page.goto(base);
+  await page.getByRole("tab", { name: /Hoạt động/ }).click();
+  const act = page.getByRole("region", { name: "Hoạt động AI" });
+  await expect(act).toContainText("186");
+  await expect(act).toContainText("44/59");
+  await expect(act).toContainText("9/16 người đã hỏi · 1 chưa dùng");
+  await expect(act.getByRole("list", { name: "Chủ đề câu hỏi" }).getByRole("listitem").first()).toContainText("Tra cứu hồ sơ, tồn kho, việc");
+  await expect(act.getByRole("table", { name: "Thẻ nháp theo loại" }).getByRole("row", { name: /Đơn mua/ })).toContainText("21");
+  await expect(act.getByRole("row", { name: "Đoàn Văn Dương" })).toContainText("Chưa dùng");
+  await expect(act.getByRole("list", { name: "Đánh giá chưa đúng gần đây" })).toContainText("Báo giá Hòa Phát đọc sai đơn giá dòng 3");
+  await act.getByRole("radio", { name: "30 ngày" }).click();
+  await expect(act.getByRole("radio", { name: "30 ngày" })).toHaveAttribute("aria-checked", "true");
+  expect((await calls(page)).filter(c => "activity" in c).map(c => c.activity)).toEqual([14, 30]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});

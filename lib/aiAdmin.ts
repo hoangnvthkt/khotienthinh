@@ -71,6 +71,8 @@ export interface AiAdminService {
   deleteTemplate: (id: string) => Promise<void>;
   setSkillAccess: (code: string, access: SkillAccess) => Promise<void>;
   saveModel: (m: Pick<AiConnectionRow, 'id' | 'displayName' | 'blurb' | 'icon' | 'vision'>) => Promise<void>;
+  /** Tab Hoạt động (không có → tab báo chưa có dữ liệu). */
+  activity?: (days: number) => Promise<AiActivity>;
 }
 
 export const aiAdminService: AiAdminService = {
@@ -97,6 +99,7 @@ export const aiAdminService: AiAdminService = {
     const { error } = await supabase.rpc('ai_admin_template_delete_v1', { p_id: id });
     if (error) fail(error);
   },
+  activity: days => aiActivityService.get(days),
   async saveModel(m) {
     const { error } = await supabase.rpc('ai_admin_model_save_v1', { p: { id: m.id, displayName: m.displayName.trim(), blurb: m.blurb.trim(), icon: m.icon.trim(), vision: m.vision } });
     if (error) fail(error);
@@ -110,3 +113,58 @@ export const aiAdminService: AiAdminService = {
 export const usd = (v: number | null | undefined) => (v == null ? '—' : `$${v.toLocaleString('en-US', { minimumFractionDigits: v < 10 ? 2 : 0, maximumFractionDigits: 2 })}`);
 /** Phần trăm đã dùng của trần (0–100+); không trần → null. */
 export const usedPct = (used: number, cap: number | null) => (cap == null || cap <= 0 ? null : Math.round((used / cap) * 100));
+
+// ── Hoạt động (tab "Hoạt động" của Trung tâm AI) ──────────────────────────────────────────────────────────────────────
+export interface AiActivity {
+  days: number;
+  totals: { questions: number; askers: number; runs: number; costUsd: number; likes: number; dislikes: number; errors: number; blocked: number; withFiles: number };
+  granted: number;
+  daily: Array<{ day: string; questions: number; people: number }>;
+  topics: Array<{ topic: string; questions: number }>;
+  commands: Array<{ kind: string; prepared: number; done: number; cancelled: number; failed: number; open: number; expired: number }>;
+  people: Array<{ userId: string; name: string; granted: boolean; template: string | null; questions: number; runs: number; costUsd: number; likes: number; dislikes: number;
+    blocked: number; lastAt: string | null; commands: number; done: number }>;
+  models: Array<{ model: string; runs: number; costUsd: number }>;
+  dislikes: Array<{ at: string; name: string; skill: string; reason: string | null; note: string | null }>;
+}
+export const TOPIC_LABEL: Record<string, string> = {
+  lookup: 'Tra cứu hồ sơ, tồn kho, việc', chat: 'Hỏi đáp chung', purchase_order: 'Đơn mua', material_request: 'Đề xuất vật tư', daily_log: 'Nhật ký công trường',
+  leave_request: 'Nghỉ phép', memory_note: 'Ghi nhớ', refused: 'Bị từ chối (ngoài công việc…)',
+};
+export const COMMAND_LABEL: Record<string, string> = {
+  leave_request: 'Đơn nghỉ phép', material_request: 'Đề xuất vật tư', purchase_order: 'Đơn mua', daily_log: 'Nhật ký', memory_note: 'Ghi nhớ',
+};
+const n0 = (v: unknown) => num(v) ?? 0;
+export const parseActivity = (raw: unknown): AiActivity => {
+  const o = obj(raw); const t = obj(o.totals);
+  return {
+    days: n0(o.days) || 14,
+    totals: { questions: n0(t.questions), askers: n0(t.askers), runs: n0(t.runs), costUsd: n0(t.costUsd), likes: n0(t.likes), dislikes: n0(t.dislikes),
+      errors: n0(t.errors), blocked: n0(t.blocked), withFiles: n0(t.withFiles) },
+    granted: n0(o.granted),
+    daily: arr(o.daily).map(d => ({ day: str(d.day), questions: n0(d.questions), people: n0(d.people) })).filter(d => d.day),
+    topics: arr(o.topics).map(x => ({ topic: str(x.topic), questions: n0(x.questions) })).filter(x => x.topic),
+    commands: arr(o.commands).map(c => ({ kind: str(c.kind), prepared: n0(c.prepared), done: n0(c.done), cancelled: n0(c.cancelled), failed: n0(c.failed), open: n0(c.open), expired: n0(c.expired) })),
+    people: arr(o.people).filter(p => str(p.userId)).map(p => ({ userId: str(p.userId), name: str(p.name), granted: p.granted === true, template: str(p.template) || null,
+      questions: n0(p.questions), runs: n0(p.runs), costUsd: n0(p.costUsd), likes: n0(p.likes), dislikes: n0(p.dislikes), blocked: n0(p.blocked),
+      lastAt: str(p.lastAt) || null, commands: n0(p.commands), done: n0(p.done) })),
+    models: arr(o.models).map(m => ({ model: str(m.model), runs: n0(m.runs), costUsd: n0(m.costUsd) })),
+    dislikes: arr(o.dislikes).map(d => ({ at: str(d.at), name: str(d.name), skill: str(d.skill), reason: str(d.reason) || null, note: str(d.note) || null })),
+  };
+};
+/** Mọi ngày trong kỳ (kể cả ngày không ai hỏi) để biểu đồ không bị nhảy cóc. */
+export const fillDays = (daily: AiActivity['daily'], days: number, today: Date): AiActivity['daily'] => {
+  const byDay = new Map(daily.map(d => [d.day, d]));
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1 - i));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return byDay.get(key) || { day: key, questions: 0, people: 0 };
+  });
+};
+export const aiActivityService = {
+  async get(days: number): Promise<AiActivity> {
+    const { data, error } = await supabase.rpc('get_ai_activity_v1', { p_days: days });
+    if (error) fail(error);
+    return parseActivity(data);
+  },
+};

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trợ lý AI Vioo — hướng dẫn nhanh</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --g: #1f8a70; --g2: #43992f; --soft: #e8f3ee; --steel: #2e6f80; --steel-s: #e7f0f3; --fg: #1a1a1a; --fg2: #444; --mut: #6b7280; --bd: #e5e7eb; --amber: #b45309; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, system-ui, sans-serif; color: var(--fg); background: #f4f6f5; }
+  .page { width: 1080px; margin: 0 auto; padding: 56px 60px 48px; background: #fff; }
+  header { display: flex; align-items: center; gap: 20px; }
+  .logo { width: 76px; height: 76px; border-radius: 22px; background: linear-gradient(135deg, #2bb38f, var(--g2)); display: grid; place-items: center; color: #fff; font-size: 38px; box-shadow: 0 8px 22px rgba(31,138,112,.25); }
+  h1 { margin: 0; font-size: 44px; font-weight: 800; letter-spacing: -.02em; }
+  .sub { margin: 6px 0 0; font-size: 21px; color: var(--mut); }
+  .where { margin-top: 30px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .step { border: 1px solid var(--bd); border-radius: 18px; padding: 18px 20px; }
+  .step > b { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+  .step > b span { width: 32px; height: 32px; border-radius: 50%; background: var(--g); color: #fff; display: grid; place-items: center; font-size: 17px; flex: none; }
+  .step p { margin: 8px 0 0; font-size: 17px; line-height: 1.45; color: var(--fg2); }
+  h2 { margin: 36px 0 14px; font-size: 26px; font-weight: 800; }
+  .tries { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .try { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--bd); border-radius: 18px; padding: 16px 18px; background: #fff; }
+  .ico { flex: none; width: 46px; height: 46px; border-radius: 13px; background: var(--soft); display: grid; place-items: center; font-size: 24px; }
+  .try h3 { margin: 0; font-size: 19px; }
+  .try q { display: block; margin-top: 6px; font-size: 17px; color: var(--g); font-weight: 600; quotes: "“" "”"; }
+  .try small { display: block; margin-top: 4px; font-size: 15px; color: var(--mut); }
+  .roles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 22px; }
+  .role { padding: 12px 0; border-bottom: 1px solid var(--bd); }
+  .role b { font-size: 17px; }
+  .role span { display: block; margin-top: 3px; font-size: 16px; color: var(--fg2); }
+  .tips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .tip { border-radius: 18px; padding: 16px 18px; background: var(--steel-s); }
+  .tip b { font-size: 18px; color: var(--steel); }
+  .tip p { margin: 6px 0 0; font-size: 16px; line-height: 1.45; color: var(--fg2); }
+  .rule { margin-top: 30px; padding: 20px 24px; border-radius: 20px; background: var(--soft); border: 1px solid #cfe7dd; font-size: 18px; line-height: 1.5; }
+  .rule b { color: var(--g); }
+  footer { margin-top: 26px; display: flex; justify-content: space-between; font-size: 15px; color: var(--mut); }
+</style></head>
+<body><div class="page">
+  <header><div class="logo">✦</div><div><h1>Trợ lý AI Vioo</h1><p class="sub">Dùng thử cho nhóm 15 người · từ 19/10/2026 · hỏi, tra cứu, lập phiếu nháp bằng một câu</p></div></header>
+
+  <div class="where">
+    <div class="step"><b><span>1</span>Mở Trợ lý</b><p>Vioo → <b>Trung tâm điều hành</b> → tab <b>Trợ lý</b>. Điện thoại: nút <b>✦ Trợ lý</b> ở thanh dưới.</p></div>
+    <div class="step"><b><span>2</span>Gõ như nói</b><p>Hỏi bằng tiếng Việt bình thường. Thiếu gì Trợ lý hỏi lại kèm <b>nút bấm</b> — không phải gõ lại.</p></div>
+    <div class="step"><b><span>3</span>Bấm gửi trên thẻ</b><p>Trợ lý chỉ <b>chuẩn bị nháp</b>. Kiểm thẻ, sửa nếu cần, rồi chính bạn bấm <b>Gửi</b>.</p></div>
+  </div>
+
+  <h2>Thử ngay 6 câu này</h2>
+  <div class="tries">
+    <div class="try"><div class="ico">⚡</div><div><h3>Việc gấp hôm nay</h3><q>Hôm nay việc gì gấp nhất?</q><small>Mỗi ý có nút mở đúng chứng từ.</small></div></div>
+    <div class="try"><div class="ico">📄</div><div><h3>Đơn mua từ báo giá</h3><q>Lập đơn mua cho SMB theo báo giá này</q><small>Bấm 📎 gửi ảnh, PDF (≤ 50 MB) hoặc Excel báo giá.</small></div></div>
+    <div class="try"><div class="ico">📦</div><div><h3>Đề xuất vật tư</h3><q>Đề xuất 2 tấn xi măng PCB40, 50 cây thép D16 cho SMB, cần 23/10</q><small>Thẻ tự khớp mã — chọn người duyệt rồi Gửi duyệt.</small></div></div>
+    <div class="try"><div class="ico">🏗️</div><div><h3>Nhật ký từ báo cáo Zalo</h3><q>(dán nguyên tin báo cáo Zalo)</q><small>Tách ngày, mũi, hạng mục → Tạo phiếu nháp.</small></div></div>
+    <div class="try"><div class="ico">🌴</div><div><h3>Xin nghỉ phép</h3><q>Xin nghỉ phép năm thứ 4 tuần này, việc gia đình</q><small>Thẻ báo phép còn, người duyệt — bấm Gửi đơn.</small></div></div>
+    <div class="try"><div class="ico">🧠</div><div><h3>Nhờ ghi nhớ</h3><q>Nhớ giúp: tôi phụ trách SMB-2026, trả lời ngắn gọn</q><small>Xem / quên ở nút <b>Trí nhớ</b> đầu khung chat.</small></div></div>
+  </div>
+
+  <h2>Gợi ý theo việc của bạn</h2>
+  <div class="roles">
+    <div class="role"><b>Ban lãnh đạo</b><span>“Dự án SMB đang chậm những việc nào, vì sao?” · “Đơn mua nào trên 500 triệu đang chờ duyệt?”</span></div>
+    <div class="role"><b>Vật tư – Thiết bị</b><span>“Tồn thép D16 ở các kho?” · gửi ảnh / PDF báo giá → thẻ đơn mua</span></div>
+    <div class="role"><b>Tài chính – Kế toán</b><span>“PO-646 đã trả NCC bao nhiêu, còn nợ bao nhiêu?” · “Đề nghị chi nào chờ tôi?”</span></div>
+    <div class="role"><b>Chỉ huy / QS công trường</b><span>Dán báo cáo Zalo → phiếu nhật ký nháp · “Đề xuất vật tư cho XinHai…”</span></div>
+    <div class="role"><b>Kế hoạch – Quản lý dự án</b><span>“Hạng mục nào trễ so với kế hoạch tuần này?” · “Việc tôi gửi đang chờ ai?”</span></div>
+    <div class="role"><b>Hành chính – Nhân sự</b><span>“Đơn nghỉ phép nào chờ tôi duyệt?” · “Tôi còn bao nhiêu ngày phép?”</span></div>
+  </div>
+
+  <h2>Mẹo nhỏ</h2>
+  <div class="tips">
+    <div class="tip"><b>🧠 Chọn model ở ô hỏi</b><p>Bấm tên model cạnh nút Gửi: Claude Sonnet (hiểu sâu, đọc ảnh) hoặc DeepSeek (nhanh). Câu có ảnh tự dùng model đọc ảnh.</p></div>
+    <div class="tip"><b>📎 Gửi tệp</b><p>Tối đa 4 ảnh + 3 tệp Excel / PDF mỗi câu. Kéo thả hoặc dán ảnh chụp màn hình vào ô hỏi.</p></div>
+    <div class="tip"><b>👎 Chưa đúng? Chấm và chọn lý do</b><p>Quản trị AI xem để sửa. Bấm 👍 khi đúng — giúp Trợ lý tốt hơn cho cả nhóm.</p></div>
+    <div class="tip"><b>⏳ Số câu mỗi ngày</b><p>Mỗi người có trần câu / ngày (hiện dưới ô hỏi khi gần hết). Cần thêm thì báo Quản trị AI.</p></div>
+  </div>
+
+  <div class="rule"><b>Trợ lý không tự gửi, duyệt, trả lại, xóa hay ghi sổ gì.</b> Mọi phiếu chỉ là nháp cho tới khi bạn bấm nút trên thẻ. Chỉ thấy dữ liệu bạn có quyền xem. Không gửi mật khẩu, số tài khoản, CCCD.</div>
+
+  <footer><span>Hỏi đáp, cấp thêm quyền: <b>Admin Hoàng</b> (Quản trị AI)</span><span>Vioo · Tiến Thịnh · 10/2026</span></footer>
+</div></body></html>

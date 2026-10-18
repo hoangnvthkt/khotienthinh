@@ -358,7 +358,8 @@
     "20261019170000_ai_learning_v1.sql",
     "20261019190000_ai_personal_memory.sql",
     "20261019210000_ai_admin_center.sql",
-    "20261019230000_ai_model_choice.sql"
+    "20261019230000_ai_model_choice.sql",
+    "20261020090000_ai_activity.sql"
   ],
   "forbidIncludeAll": true
 }
