@@ -520,11 +520,11 @@ test("T3 tệp trong chat: ghim Excel + ảnh → khay tệp (bỏ được), t�
   await expect(send).toBeDisabled();
   const file = (name: string, mimeType: string) => ({ name, mimeType, buffer: readFileSync(`${files}/${name}`) });
   await page.locator('input[type="file"]').setInputFiles([file("bao-gia-hanaka.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-    file("bao-gia-hanaka.jpg", "image/jpeg"), { name: "hop-dong.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") }]);
+    file("bao-gia-hanaka.jpg", "image/jpeg"), { name: "hop-dong.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: Buffer.from("PK") }]);
   const tray = page.getByRole("group", { name: "Tệp đính kèm" });
   await expect(tray.getByText("bao-gia-hanaka.xlsx · 6 hàng")).toBeVisible();
   await expect(tray.getByText("bao-gia-hanaka.jpg")).toBeVisible();
-  await expect(tray.getByRole("alert")).toHaveText("hop-dong.pdf: chưa đọc được loại tệp này (dùng ảnh, Excel hoặc CSV).");
+  await expect(tray.getByRole("alert")).toHaveText("hop-dong.docx: chưa đọc được loại tệp này (dùng ảnh, PDF, Excel hoặc CSV).");
   await expect(send).toBeEnabled();
   await send.click();
   const user = chat(page).locator('.vcc-msg[data-role="user"]').last();
@@ -790,4 +790,23 @@ test("Trung tâm AI: chưa được cấp Trợ lý thì báo rõ ai cấp, bả
   await page.goto(`${base}?ai=gemini&access=cap`);
   await openAssistant(page, isMobile);
   await expect(chat(page).getByText("Còn 3 câu hôm nay")).toBeVisible();
+});
+
+test("PDF trong chat: PDF có chữ đọc trên máy thành chữ từng trang (cột cách |); PDF scan thành ảnh trang đầu", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: readFileSync(`tests/center/files/${name}`) });
+  await page.locator('input[type="file"]').setInputFiles([pdf("bao-gia-hanaka.pdf"), pdf("bao-gia-scan.pdf")]);
+  const tray = page.getByRole("group", { name: "Tệp đính kèm" });
+  await expect(tray.getByText("bao-gia-hanaka.pdf · 1 trang")).toBeVisible({ timeout: 15000 });
+  await expect(tray.getByText("bao-gia-scan.pdf · trang 1")).toBeVisible({ timeout: 15000 });
+  await expect(tray.locator('[data-kind="image"] img')).toHaveCount(1);
+  await page.getByRole("button", { name: "Gửi", exact: true }).click();
+  await expect(chat(page).getByTestId("turn").last()).toHaveAttribute("data-state", "done");
+  const call = (await aiCalls(page)).filter(c => c.skill === "assistant_chat").at(-1) as Record<string, unknown> & { files: Array<{ name: string; head: string }> };
+  expect(call.images).toBe(1);
+  expect(call.files.map(f => f.name)).toEqual(["bao-gia-hanaka.pdf"]);
+  expect(call.files[0].head).toContain("[PDF · 1 trang]");
+  expect(call.files[0].head).toContain("STT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền");
+  await expect(chat(page).locator('.vcc-msg[data-role="user"]').last()).toContainText("📎 bao-gia-hanaka.pdf · 1 ảnh");
 });

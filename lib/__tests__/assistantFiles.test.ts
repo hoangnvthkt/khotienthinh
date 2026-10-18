@@ -32,9 +32,9 @@ describe('Trợ lý T3 · tệp trong chat — đọc trên máy', () => {
     expect(table).toMatchObject({ kind: 'table', name: 'bao-gia-hanaka.xlsx', rows: 6, sheets: ['Báo giá'], truncated: false });
     expect(table.text).toContain('| 1 | Thép vằn D16 CB400 | kg | 6300 | 15850 | 99855000 |');
     const images: ChatAttachment[] = Array.from({ length: 4 }, (_, i) => ({ kind: 'image', id: `i${i}`, name: `a${i}.jpg`, mime: 'image/jpeg', b64: B64, previewUrl: '' }));
-    const out = await addAttachments(images, [new File(['x'], 'hop-dong.pdf', { type: 'application/pdf' }), new File(['x'], 'b.jpg', { type: 'image/jpeg' }), xlsx]);
+    const out = await addAttachments(images, [new File(['x'], 'hop-dong.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), new File(['x'], 'b.jpg', { type: 'image/jpeg' }), xlsx]);
     expect(out.list.map(a => a.name)).toEqual(['a0.jpg', 'a1.jpg', 'a2.jpg', 'a3.jpg', 'bao-gia-hanaka.xlsx']);
-    expect(out.errors).toEqual(['hop-dong.pdf: chưa đọc được loại tệp này (dùng ảnh, Excel hoặc CSV).', 'Tối đa 4 ảnh mỗi lần.']);
+    expect(out.errors).toEqual(['hop-dong.docx: chưa đọc được loại tệp này (dùng ảnh, PDF, Excel hoặc CSV).', 'Tối đa 4 ảnh mỗi lần.']);
     expect(attachmentLabel(out.list)).toBe('📎 bao-gia-hanaka.xlsx · 4 ảnh');
   });
 });

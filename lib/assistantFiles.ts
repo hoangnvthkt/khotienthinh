@@ -1,20 +1,25 @@
 // Trợ lý v2 · T3 — tệp trong chat (chủ SP 18/10/2026). Bảng tính (Excel / CSV) đọc NGAY TRÊN MÁY thành bảng chữ, số giữ nguyên
 // (không dấu phân cách nghìn → AI không nhầm 6.300 với 6,3); ảnh thu về cạnh 2000 px rồi gửi kèm câu hỏi. Không lưu tệp ở máy chủ:
-// hội thoại chỉ ghi tên tệp, lượt sau cần thì gửi lại.
+// hội thoại chỉ ghi tên tệp, lượt sau cần thì gửi lại. PDF (≤ 50 MB): chữ đọc trên máy, PDF scan → ảnh các trang đầu (lib/assistantPdf).
 import { loadXlsx } from './loadXlsx';
 import { prepareCapturePhoto } from './wmsDeliveryCaptureService';
+import { isPdfFile, readPdf } from './assistantPdf';
 
 export interface ImageAttachment { kind: 'image'; id: string; name: string; mime: 'image/jpeg' | 'image/png' | 'image/webp'; b64: string; previewUrl: string }
 export interface TableAttachment { kind: 'table'; id: string; name: string; text: string; rows: number; sheets: string[]; truncated: boolean }
-export type ChatAttachment = ImageAttachment | TableAttachment;
+/** PDF có chữ: gửi như bảng tính (chữ từng trang). */
+export interface DocAttachment { kind: 'doc'; id: string; name: string; text: string; pages: number; truncated: boolean }
+export type ChatAttachment = ImageAttachment | TableAttachment | DocAttachment;
 
 export const MAX_IMAGES = 4;
 export const MAX_TABLES = 3;
+/** Tổng chữ của bảng tính + PDF mỗi lần gửi (cổng AI nhận tối đa 30.000). */
+const MAX_FILES_TEXT = 29000;
 const MAX_TABLE_CHARS = 14000;
 const MAX_ROWS = 200;
 const MAX_COLS = 15;
 const MAX_CELL = 60;
-export const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,.xlsx,.xls,.csv';
+export const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.pdf,.xlsx,.xls,.csv';
 
 const TABLE_EXT = /\.(xlsx|xls|csv)$/i;
 export const isTableFile = (file: Pick<File, 'name' | 'type'>) => TABLE_EXT.test(file.name) || /spreadsheet|excel|csv/i.test(file.type);
@@ -90,18 +95,37 @@ export const readImageFile = async (file: File): Promise<ImageAttachment> => {
   return { kind: 'image', id: uid(), name: file.name || 'ảnh', mime, b64, previewUrl: URL.createObjectURL(prepared) };
 };
 
-/** Thêm tệp vào danh sách đính kèm: giữ giới hạn 4 ảnh / 3 bảng tính; tệp lạ hoặc quá giới hạn báo lý do (không chặn tệp khác). */
+const textUsed = (list: ChatAttachment[]) => list.reduce((n, a) => n + (a.kind === 'image' ? 0 : a.text.length), 0);
+const blobToImage = async (blob: Blob, name: string): Promise<ImageAttachment> =>
+  ({ kind: 'image', id: uid(), name, mime: 'image/jpeg', b64: await fileToB64(blob), previewUrl: URL.createObjectURL(blob) });
+
+/** Thêm tệp vào danh sách đính kèm: giữ giới hạn 4 ảnh / 3 tệp chữ (Excel, CSV, PDF); tệp lạ hoặc quá giới hạn báo lý do (không chặn tệp khác). */
 export const addAttachments = async (current: ChatAttachment[], files: File[]): Promise<{ list: ChatAttachment[]; errors: string[] }> => {
   const list = [...current]; const errors: string[] = [];
+  const textFiles = () => list.filter(a => a.kind !== 'image').length;
+  const images = () => list.filter(a => a.kind === 'image').length;
   for (const file of files) {
     try {
-      if (isTableFile(file)) {
-        if (list.filter(a => a.kind === 'table').length >= MAX_TABLES) { errors.push(`Tối đa ${MAX_TABLES} bảng tính mỗi lần.`); continue; }
-        list.push(await readTableFile(file));
+      if (isPdfFile(file)) {
+        const budget = MAX_FILES_TEXT - textUsed(list);
+        const read = await readPdf(file, MAX_IMAGES - images(), Math.min(14000, budget));
+        if (read.kind === 'text' && read.text) {
+          if (textFiles() >= MAX_TABLES) { errors.push(`Tối đa ${MAX_TABLES} tệp Excel / PDF mỗi lần.`); continue; }
+          if (budget < 1500) { errors.push(`${file.name}: các tệp đã đủ dài — gửi riêng PDF này ở câu sau.`); continue; }
+          list.push({ kind: 'doc', id: uid(), name: file.name, text: read.text.text, pages: read.pages, truncated: read.text.truncated });
+        } else {
+          for (const img of read.images || []) list.push(await blobToImage(img.blob, `${file.name} · trang ${img.page}`));
+          if (read.pages > (read.images || []).length) errors.push(`${file.name}: PDF scan — chỉ gửi ${(read.images || []).length}/${read.pages} trang đầu dạng ảnh.`);
+        }
+      } else if (isTableFile(file)) {
+        if (textFiles() >= MAX_TABLES) { errors.push(`Tối đa ${MAX_TABLES} tệp Excel / PDF mỗi lần.`); continue; }
+        const table = await readTableFile(file);
+        if (textUsed(list) + table.text.length > MAX_FILES_TEXT) { errors.push(`${file.name}: các tệp đã đủ dài — gửi riêng tệp này ở câu sau.`); continue; }
+        list.push(table);
       } else if (isImageFile(file)) {
-        if (list.filter(a => a.kind === 'image').length >= MAX_IMAGES) { errors.push(`Tối đa ${MAX_IMAGES} ảnh mỗi lần.`); continue; }
+        if (images() >= MAX_IMAGES) { errors.push(`Tối đa ${MAX_IMAGES} ảnh mỗi lần.`); continue; }
         list.push(await readImageFile(file));
-      } else errors.push(`${file.name}: chưa đọc được loại tệp này (dùng ảnh, Excel hoặc CSV).`);
+      } else errors.push(`${file.name}: chưa đọc được loại tệp này (dùng ảnh, PDF, Excel hoặc CSV).`);
     } catch (e) { errors.push(e instanceof Error ? e.message : `${file.name}: chưa đọc được.`); }
   }
   return { list, errors: Array.from(new Set(errors)) };
@@ -109,7 +133,7 @@ export const addAttachments = async (current: ChatAttachment[], files: File[]): 
 
 /** Dòng tên tệp hiện dưới câu hỏi (giống dòng cổng AI ghi vào hội thoại). */
 export const attachmentLabel = (list: ChatAttachment[]) => {
-  const tables = list.filter(a => a.kind === 'table').map(a => a.name);
+  const tables = list.filter(a => a.kind !== 'image').map(a => a.name);
   const images = list.filter(a => a.kind === 'image').length;
   const names = [...tables, ...(images ? [`${images} ảnh`] : [])];
   return names.length ? `📎 ${names.join(' · ')}` : '';
