@@ -36,7 +36,7 @@ Hướng dẫn người dùng: `docs/command-center/huong-dan-trung-tam-dieu-han
 | E2E | `npx playwright test -c tests/center/playwright.config.ts tests/e2e/center-assistant.spec.ts tests/e2e/center-ai-admin.spec.ts` (desktop + mobile-safari). Chạy cả bộ có vài ca chập chờn khi tải nặng (T2a, T2b, 3D) — chạy riêng là đạt |
 | Kiểm tra trước PR | `npm run check:supabase-migrations && npm run lint && npm run check:supabase-queries && TZ=UTC npx vitest run && npm run build` (dùng `set -o pipefail`, đừng `\| tail` che lỗi) |
 | Type-check cổng AI | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json` |
-| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **13 ca, phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
+| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **15 ca, phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
 | SQL trên Cloud | `CLOUD_SQL_ENV=/Users/admin/khotienthinh/.env node scripts/cloud-sql.mjs "select …"` (chỉ đọc); `--file x.sql --rollback` (chạy thử); `--file x.sql --write` (ghi thật) |
 | Smoke migration (giao dịch rollback) | `SUPABASE_ACCESS_TOKEN=… node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/<m>.sql --smoke supabase/tests/<s>.sql` |
 | Áp migration | thêm tên tệp vào `supabase/baseline/current.json` (sửa bằng parse JSON) → `export SUPABASE_ACCESS_TOKEN=$(grep '^SUPABASE_ACCESS_TOKEN=' /Users/admin/khotienthinh/.env \| cut -d= -f2- \| tr -d '"')` → `npx --no-install supabase db push --linked --dry-run` → `echo Y \| npx --no-install supabase db push --linked` |
@@ -56,7 +56,8 @@ ai-gateway (supabase/functions/ai-gateway)
   chat.ts    lời nhắc (CHAT_GUARD, quy tắc gợi ý [[goi_y:…]], từ chối [[tu_choi:…]], tệp <du_lieu loai="tep">, ghi nhớ <du_lieu loai="ghi_nho">),
              parseChatInput (≤4 ảnh, ≤3 tệp chữ ≤30.000), isDailyReportTurn / looksLikeDailyReport (buộc gọi công cụ nhật ký)
   loop.ts    vòng gọi công cụ ≤5 bước / 8 lần tra / 80 s; ảnh gắn lượt hỏi cuối; forceTool
-  tools.ts   đọc: tim_ho_so, ton_kho, chi_tiet_don_mua, chi_tiet_de_xuat, viec_cua_toi
+  tools.ts   đọc: tim_ho_so, ton_kho, chi_tiet_don_mua, chi_tiet_de_xuat, viec_cua_toi, phep_nhan_vien (số phép của mình / người khác / toàn công ty —
+             get_hrm_leave_ledger · list_hrm_leave_balances tự chặn 42501; quyền do RPC quyết, lời nhắc không tự giới hạn)
              chuẩn bị (chỉ ghi assistant_commands + emit thẻ): chuan_bi_don_nghi_phep, chuan_bi_de_xuat_vat_tu, chuan_bi_don_mua (tự tính tiền,
              đối chiếu thanh_tien: lệch đúng 1.000 lần thì sửa SL), chuan_bi_nhat_ky (nguyên văn tin / noi_dung chép từ ảnh), chuan_bi_ghi_nho
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
@@ -129,6 +130,7 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 - Test giờ: CI chạy **UTC** → `TZ=UTC npx vitest run`.
 - CSS điện thoại toàn cục: `button` cảm ứng min 44px (công tắc phải bọc rãnh bên trong); `.text-xs` trong `.grid > div` bị ép một dòng ≤768px.
 - `vitest --root /` quét cả máy → treo; chạy test thăm dò bên trong repo.
+- Lời nhắc tự giới hạn phạm vi ("nhân sự của chính người hỏi") làm Admin bị từ chối xem phép người khác dù có quyền HR (18/10 tối) → phạm vi ghi "trong quyền xem", công cụ gọi RPC và để RPC chặn.
 - Quy chuẩn "không dùng pdf.js để **xem** PDF": Trợ lý dùng `pdfjs-dist` 4.10.38 **legacy** chỉ để **đọc chữ**, tải lười khi ghim PDF, lỗi thì báo người dùng (không sập).
 
 ## 8. Việc còn mở / sẽ làm

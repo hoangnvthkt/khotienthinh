@@ -11,7 +11,8 @@ import { targetFromConnection } from '../../supabase/functions/_shared/aiTargets
 type Rpc = { data: unknown; error: { message: string; code: string } | null };
 interface Created { p_kind: string; p_title: string; p_payload: Record<string, unknown> }
 interface Outcome { text: string; refusal: string | null; chips: string[]; created: Created[]; tools: string[] }
-interface EvalCase { id: string; bug: string; q: string; history?: ChatTurn[]; projectId?: string | null; notes?: string[]; images?: string[]; files?: Array<{ name: string; text: string }>; check: (o: Outcome) => string | null }
+/** deny: lệnh máy chủ giả trả 42501 trong ca này (người hỏi không có quyền). */
+interface EvalCase { id: string; bug: string; q: string; history?: ChatTurn[]; projectId?: string | null; notes?: string[]; images?: string[]; files?: Array<{ name: string; text: string }>; deny?: string[]; check: (o: Outcome) => string | null }
 
 const LEAVE_TYPES = [{ code: 'annual', name: 'Phép năm', unit: 'day' }, { code: 'personal_unpaid', name: 'Việc riêng không lương', unit: 'day' },
   { code: 'sick', name: 'Ốm đau (BHXH)', unit: 'day' }, { code: 'business_trip', name: 'Công tác', unit: 'day' }, { code: 'late_early', name: 'Đi muộn / về sớm có lý do', unit: 'minute' }];
@@ -20,13 +21,22 @@ const PROJECTS = [
   { id: 'p-da29', code: 'DA29', name: 'Nhà máy sản xuất GĐ2', client: 'Công ty TNHH Xin Hai Việt Nam', siteId: 's-da29', warehouses: [] },
 ];
 
-const fakeRpc = (created: Created[]) => async (fn: string, args: Record<string, unknown>): Promise<Rpc> => {
+const HUONG = { kind: 'employee', id: 'e-huong', code: 'TT123456', title: 'Nguyễn Thị Hương', subtitle: 'TP TCKT', status: 'Đang làm việc', extra: {} };
+const HUONG_LEDGER = { balance: { year: 2026, accruedDays: 12, usedPaidDays: 2.5, usedUnpaidDays: 0, carriedDays: 0, carryUsedDays: 0, carryExpiredDays: 0, carryExpiresOn: null, carryLeft: 0, availableDays: 9.5, pendingDays: 1 },
+  entries: [{ id: 'l1', kind: 'leave', days: -1.5, balanceAfter: 9.5, createdAt: '2026-10-02T03:00:00Z', leaveCode: 'NP-2026-031', leaveStart: '2026-10-06', leaveEnd: '2026-10-07' }] };
+
+const fakeRpc = (created: Created[], deny: string[] = []) => async (fn: string, args: Record<string, unknown>): Promise<Rpc> => {
+  if (deny.includes(fn)) return { data: null, error: { message: 'Chỉ xem được sổ phép của chính mình.', code: '42501' } };
+  if (fn === 'get_hrm_leave_ledger') return { data: args.p_employee_id === 'e-huong' ? HUONG_LEDGER : { balance: null, entries: [] }, error: null };
   if (fn === 'assistant_leave_types_v1') return { data: LEAVE_TYPES, error: null };
   if (fn === 'preview_my_leave_request') return { data: { days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] }, error: null };
   if (fn === 'assistant_mr_projects_v1' || fn === 'assistant_daily_log_projects_v1') return { data: PROJECTS, error: null };
   if (fn === 'list_procurement_proactive_options_v1') return { data: { projects: PROJECTS, stockWarehouses: [] }, error: null };
   if (fn === 'list_procurement_vendors_v1') return { data: /hanaka/i.test(String(args.p_search)) ? [{ id: 'v-hk', name: 'CÔNG TY TNHH HANAKA VIỆT NAM', taxCode: '0101234567' }] : [], error: null };
-  if (fn === 'search_global_v1') return { data: { records: [] }, error: null };
+  if (fn === 'search_global_v1') {
+    const employee = (args.p_kinds as string[] | null)?.includes('employee') && JSON.stringify(args.p_terms).includes('huong');
+    return { data: { records: employee ? [HUONG] : [] }, error: null };
+  }
   if (fn === 'vcc_my_work_items_v1') return { data: [], error: null };
   if (fn === 'assistant_command_create_v1') {
     created.push(args as unknown as Created);
@@ -117,6 +127,15 @@ export const CASES: EvalCase[] = [
   { id: 'po-from-pdf', bug: 'PDF báo giá đọc trên máy (chữ kiểu Việt 6.300, cột cách " | ") → thẻ đơn mua đúng SL / giá', q: 'Lập đơn mua cho SMB theo báo giá PDF này',
     files: [{ name: 'bao-gia-hanaka.pdf', text: '[PDF · 1 trang]\n[Trang 1]\nCÔNG TY TNHH HANAKA VIỆT NAM\nMST: 0101234567 · BÁO GIÁ SỐ BG-1810 · Ngày 18/10/2026\nSTT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền\n1 | Thép vằn D16 CB400 | kg | 6.300 | 15.850 | 99.855.000\n2 | Thép vằn D20 CB400 | kg | 4.928 | 15.750 | 77.616.000\n3 | Thép cuộn D8 CB240 | kg | 2.000 | 16.100 | 32.200.000\nCộng | 209.671.000\nVAT 8% | 16.773.680\nGiao trong 3 ngày kể từ ngày đặt.' }],
     check: poQuoteCheck },
+  { id: 'leave-balance-other', bug: 'Chủ SP 18/10 tối: Admin (có quyền HR) hỏi phép của nhân viên khác → Trợ lý tự nói "chỉ xem được của chính anh" thay vì tra',
+    q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?',
+    check: o => firstFail(fail(!o.tools.includes('Số phép nhân viên'), `không gọi phep_nhan_vien (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/chỉ (xem|tra|đọc) được .*(chính anh|của anh|bản thân)/i.test(o.text), 'vẫn nói chỉ xem được của chính mình'),
+      fail(!/9[,.]5/.test(o.text), 'không nêu số phép còn lại 9,5'), fail(!/\[\[h\d+\]\]/.test(o.text), 'không gắn mã nguồn')) },
+  { id: 'leave-balance-denied', bug: 'Nhân viên thường hỏi phép người khác: máy chủ chặn 42501 → từ chối theo quyền, không bịa số', deny: ['get_hrm_leave_ledger'],
+    q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?',
+    check: o => firstFail(fail(!o.tools.includes('Số phép nhân viên'), `không gọi phep_nhan_vien (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/\b\d+([,.]\d+)? ngày/.test(o.text), `bịa số: "${o.text.match(/\d+([,.]\d+)? ngày/)?.[0]}"`), fail(!/quyền|phạm vi|không (xem|tra|đọc) được|chỉ (HR|Admin|nhân sự)/i.test(o.text), 'không nói rõ là ngoài quyền xem')) },
 ];
 
 const loadTarget = async (envPath: string) => {
@@ -148,7 +167,7 @@ export async function runEvals(envPath: string, only: string[] = [], root = proc
     const started = Date.now();
     let why: string | null;
     try {
-      const out = await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc: fakeRpc(created),
+      const out = await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc: fakeRpc(created, c.deny),
         emit: e => { if (e.type === 'tool') tools.push(String((e as { label?: unknown }).label)); }, redact: t => redact(t).text,
         system: prompt.system, turns: prompt.messages, images: images.length ? images : undefined, book: new SourceBook(), used: [], started, runId: 'eval-run', projectId: c.projectId ?? null,
         question: reportTextOf(c.q, history), forceTool: isDailyReportTurn(c.q, history) ? 'chuan_bi_nhat_ky' : undefined });

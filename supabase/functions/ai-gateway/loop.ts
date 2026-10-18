@@ -58,7 +58,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
     for (const call of out.toolCalls) {
       if (calls >= MAX_TOOL_CALLS) { results.push({ id: call.id, name: call.name, content: JSON.stringify({ loi: 'Đã tra đủ số lần cho câu này.' }) }); continue; }
       calls++; d.used.push(call.name);
-      const query = String(call.args.tu_khoa ?? call.args.vat_tu ?? call.args.ma ?? '').slice(0, 60);
+      const query = String(call.args.tu_khoa ?? call.args.vat_tu ?? call.args.ma ?? call.args.ten ?? '').slice(0, 60);
       d.emit({ type: 'tool', name: call.name, label: TOOL_LABEL[call.name] || call.name, query });
       let content: string;
       try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit, projectId: d.projectId, question: d.question }, refBook); } catch (e) {
