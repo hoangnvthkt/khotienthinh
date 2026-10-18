@@ -2,10 +2,12 @@
 //   * Tin nhắn trung lập (AgentMsg) → định dạng từng nhà cung cấp (chuẩn OpenAI / Anthropic). Gemini chưa nối công cụ.
 //   * Mỗi hồ sơ công cụ trả về được đánh mã ngắn h1, h2… AI dẫn [[h2]] ngay sau ý; cổng chỉ giữ mã có thật → nút mở hồ sơ.
 // Tệp này không dùng API Deno để vitest kiểm thử được.
+import type { ImagePart } from './images.ts';
 
 export interface ToolCall { id: string; name: string; args: Record<string, unknown> }
 export type AgentMsg =
-  | { role: 'user'; content: string }
+  /** images (T3): ảnh người dùng đính kèm lượt hỏi này — chỉ gửi ở lượt vừa hỏi, không lưu, không gửi lại ở lượt sau. */
+  | { role: 'user'; content: string; images?: ImagePart[] }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
   | { role: 'tool'; results: Array<{ id: string; name: string; content: string }> };
 
@@ -57,6 +59,9 @@ export const toOpenAIMessages = (system: string, msgs: AgentMsg[]): OpenAIMessag
       return [{ role: 'assistant', content: m.content || null,
         tool_calls: m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } })) }];
     }
+    if (m.role === 'user' && m.images?.length) {
+      return [{ role: 'user', content: [...m.images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text: m.content }] }];
+    }
     return [{ role: m.role, content: m.content }];
   }),
 ];
@@ -68,6 +73,9 @@ export const toAnthropicMessages = (msgs: AgentMsg[]) => msgs.map(m => {
       ...(m.content ? [{ type: 'text', text: m.content }] : []),
       ...m.toolCalls.map(c => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args })),
     ] };
+  }
+  if (m.role === 'user' && m.images?.length) {
+    return { role: 'user', content: [...m.images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.b64 } })), { type: 'text', text: m.content }] };
   }
   return { role: m.role, content: m.content };
 });

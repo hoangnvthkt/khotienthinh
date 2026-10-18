@@ -34,6 +34,9 @@ export interface ChatSendInput {
   facts: string;
   pronoun: 'Anh' | 'Chị' | 'Bạn';
   context: Record<string, unknown>;
+  /** T3: ảnh (base64 đã thu nhỏ) + bảng tính đã đọc trên máy — chỉ gửi ở lượt này. */
+  images?: Array<{ mime: string; b64: string }>;
+  files?: Array<{ name: string; text: string }>;
 }
 export interface ChatHandlers {
   onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;
@@ -155,7 +158,7 @@ export const assistantChat = {
       res = await fetch(`${supabaseUrl}/functions/v1/ai-gateway`, {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
-        body: JSON.stringify({ skill: CHAT_SKILL, input: { threadId: input.threadId, question: input.question, facts: input.facts, pronoun: input.pronoun }, context: input.context }),
+        body: JSON.stringify({ skill: CHAT_SKILL, input: { threadId: input.threadId, question: input.question, facts: input.facts, pronoun: input.pronoun, ...(input.images?.length ? { images: input.images } : {}), ...(input.files?.length ? { files: input.files } : {}) }, context: input.context }),
       });
     } catch (e) {
       return { code: 'AI_FAILED', error: signal?.aborted ? 'AI_ABORTED' : e instanceof Error ? e.message : 'AI_FAILED' };

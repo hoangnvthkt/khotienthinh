@@ -1,6 +1,7 @@
 // Trợ lý v2 · T1: vòng gọi công cụ (chủ SP 18/10/2026) — tối đa 5 bước model / 8 lần tra; quá 80 s hoặc hết lượt tra thì bắt
 // trả lời ngay (không gọi thêm công cụ). Mỗi lần tra báo màn hình "đang tra gì"; kết quả tra được che SĐT / CCCD / STK trước khi
 // đưa model. Bước model truyền vào (`step`) nên vitest chạy được với model giả; cổng truyền agentStep thật.
+import type { ImagePart } from './images.ts';
 import { MAX_AGENT_STEPS, MAX_TOOL_CALLS, type AgentMsg, type SourceBook, type ToolCall, type ToolSpec } from './agent.ts';
 import { TOOLS, TOOL_LABEL, runTool, type Rpc } from './tools.ts';
 
@@ -13,6 +14,8 @@ export interface ConverseDeps {
   redact: (text: string) => string;
   system: string;
   turns: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** T3: ảnh đính kèm câu vừa hỏi (gắn vào lượt người dùng cuối). */
+  images?: ImagePart[];
   book: SourceBook;
   /** Tên công cụ đã gọi (ghi nhật ký). */
   used: string[];
@@ -32,7 +35,8 @@ export interface ConverseDeps {
 
 export async function converse(d: ConverseDeps): Promise<{ text: string; usage: { tokensIn: number | null; tokensOut: number | null; calls: number } }> {
   const now = d.now || Date.now;
-  const messages: AgentMsg[] = d.turns.map(t => ({ role: t.role, content: t.content }));
+  const messages: AgentMsg[] = d.turns.map((t, i) => (t.role === 'user' && i === d.turns.length - 1 && d.images?.length
+    ? { role: 'user', content: t.content, images: d.images } : { role: t.role, content: t.content }));
   const refBook = new Map<string, Record<string, unknown>>();
   let text = ''; let tokensIn: number | null = null; let tokensOut: number | null = null; let calls = 0; let steps = 0;
   const add = (a: number | null, b: number | null) => (a == null && b == null ? null : (a || 0) + (b || 0));

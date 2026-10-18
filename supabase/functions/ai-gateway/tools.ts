@@ -101,7 +101,7 @@ export const TOOLS: ToolSpec[] = [
         type: 'object', additionalProperties: false, required: ['ten'], properties: {
           ten: { type: 'string', description: 'Tên vật tư, VD "xi măng PCB40", "thép D16".' },
           quy_cach: { type: 'string', description: 'Quy cách / kích thước nếu có, VD "dày 0.45mm", "D110 C1".' },
-          so_luong: { type: 'number', description: 'Số lượng (bỏ trống nếu người dùng chưa nói).' },
+          so_luong: { type: 'number', description: 'Số lượng (bỏ trống nếu người dùng chưa nói). Số kiểu Việt: dấu chấm phân cách nghìn (6.300 = 6300), dấu phẩy thập phân (7,5 = 7.5).' },
           don_vi: { type: 'string', description: 'Đơn vị theo lời người dùng: bao, tấn, cây, m, m3, cái…' },
           ghi_chu: { type: 'string', description: 'Ghi chú riêng của dòng (dùng cho khu nào, tổ nào…).' },
         } } },
@@ -123,9 +123,10 @@ export const TOOLS: ToolSpec[] = [
         type: 'object', additionalProperties: false, required: ['ten'], properties: {
           ten: { type: 'string', description: 'Tên hàng, VD "Thép D16 CB400".' },
           quy_cach: { type: 'string', description: 'Quy cách / kích thước / mác nếu có.' },
-          so_luong: { type: 'number', description: 'Số lượng theo báo giá.' },
+          so_luong: { type: 'number', description: 'Số lượng theo báo giá. Số kiểu Việt: dấu chấm phân cách nghìn (6.300 = 6300), dấu phẩy thập phân (7,5 = 7.5).' },
           don_vi: { type: 'string', description: 'Đơn vị theo báo giá: kg, tấn, cây, m, bao…' },
-          don_gia: { type: 'number', description: 'Đơn giá (đồng) theo đơn vị trên báo giá, chưa VAT nếu báo giá tách VAT.' },
+          don_gia: { type: 'number', description: 'Đơn giá (đồng) theo đơn vị trên báo giá, chưa VAT nếu báo giá tách VAT. Số kiểu Việt: dấu chấm phân cách nghìn (6.300 = 6300), dấu phẩy thập phân (7,5 = 7.5).' },
+          thanh_tien: { type: 'number', description: 'Thành tiền của dòng nếu báo giá ghi (để công cụ đối chiếu SL × đơn giá).' },
         } } },
     } },
   },
@@ -136,6 +137,7 @@ export const TOOLS: ToolSpec[] = [
     parameters: { type: 'object', additionalProperties: false, properties: {
       du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng / trong tin; chưa rõ thì bỏ trống — công cụ trả danh sách để hỏi lại.' },
       ngay_bao_cao: { type: 'string', description: 'Ngày báo cáo YYYY-MM-DD cho các dòng không ghi ngày (mặc định hôm nay).' },
+      noi_dung: { type: 'string', description: 'Chỉ khi báo cáo nằm trong ẢNH đính kèm: chép nguyên văn chữ trong ảnh (giữ xuống dòng). Báo cáo dán dạng chữ thì bỏ trống.' },
     } },
   },
   // T4b — trí nhớ cá nhân: chỉ chuẩn bị thẻ; người dùng sửa chữ rồi bấm Lưu ghi nhớ.
@@ -310,9 +312,17 @@ async function prepareMaterialRequest(args: Record<string, unknown>, ctx: ToolCo
 
 async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  // Đối chiếu thành tiền (T3, thử thật ảnh báo giá: model đọc "6.300 kg" thành 6,3): SL × giá lệch đúng 1.000 lần thì sửa SL, lệch khác thì cảnh báo.
+  const checks: string[] = [];
   const lines = asArray(args.dong).map(asObject).map(l => {
-    const qty = num(l.so_luong); const price = num(l.don_gia);
-    return compact({ name: str(l.ten, 160), spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), price: price != null && price >= 0 ? price : null });
+    let qty = num(l.so_luong); const price = num(l.don_gia); const amount = num(l.thanh_tien);
+    const name = str(l.ten, 160);
+    if (qty != null && qty > 0 && price != null && price > 0 && amount != null && amount > 0) {
+      const ratio = amount / (qty * price);
+      if (Math.abs(ratio - 1000) < 10) { checks.push(`${name}: sửa SL ${qty} → ${qty * 1000} theo thành tiền`); qty *= 1000; }
+      else if (Math.abs(amount - qty * price) > Math.max(1000, price * 0.5)) checks.push(`${name}: SL × đơn giá khác thành tiền trên báo giá — kiểm lại`);
+    }
+    return compact({ name, spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), price: price != null && price >= 0 ? price : null });
   }).filter(l => l.name).slice(0, 40);
   if (!lines.length) return JSON.stringify({ loi: 'Chưa có mặt hàng nào. Hỏi lại người dùng mua gì, bao nhiêu, giá bao nhiêu.' });
   const delivery = str(args.ngay_giao, 10);
@@ -373,7 +383,7 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
     tam_tinh: priced.length ? money(subtotal) : null, vat: vatRate != null ? `${vatRate}%` : null,
     tong: priced.length && vatRate != null ? money(subtotal * (1 + vatRate / 100)) : null,
     da_hien_the: true, du_an: projectLabel(project), ncc: vendorName || (vendorOptions.length ? `chưa chắc (${vendorOptions.length} NCC gần giống, người dùng bấm chọn trên thẻ)` : vendorQuery ? `không thấy "${vendorQuery}" — người dùng tìm NCC trên thẻ` : 'chưa có — người dùng chọn trên thẻ'),
-    so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null,
+    so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null, doi_chieu: checks.length ? checks : null,
     ghi_chu: 'Thẻ đơn mua nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, NCC, lý do mua chủ động, người duyệt rồi tự bấm Lưu nháp hoặc Gửi duyệt. Không nói là đã lập hay đã gửi đơn.',
   }));
 }
@@ -392,7 +402,10 @@ async function prepareMemoryNote(args: Record<string, unknown>, ctx: ToolContext
 
 async function prepareDailyLog(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
-  const text = String(ctx.question || '').trim();
+  // Báo cáo trong ảnh (T3): model chép nguyên văn vào noi_dung; báo cáo dán chữ thì lấy nguyên văn tin (không bắt model chép lại).
+  const typed = String(ctx.question || '').trim();
+  const fromImage = typeof args.noi_dung === 'string' ? args.noi_dung.trim() : '';
+  const text = typed.length >= 80 || !fromImage ? typed : fromImage.slice(0, 15000);
   if (text.length < 20) return JSON.stringify({ loi: 'Chưa thấy nội dung báo cáo. Nhờ người dùng dán tin báo cáo Zalo (có thể nhiều ngày) vào một tin.' });
   if (text.length > 15000) return JSON.stringify({ loi: 'Tin quá dài (trên 15.000 ký tự). Nhờ người dùng dán tối đa 7 ngày mỗi lần.' });
   const reportDate = str(args.ngay_bao_cao, 10) || vnToday();

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 
 // Tab Trợ lý v2 · T0 (chủ SP 17/10): khung chat — bản tin gọn (một câu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại hôm nay;
@@ -509,6 +510,57 @@ test("T4b đã nhớ: thẻ đề xuất chọn sẵn kho + người duyệt l�
   await expect(panel.locator("details summary")).toHaveText([/Mua hàng · Báo giá/]);
   expect((await aiCalls(page)).filter(call => call.memory === "forget")).toEqual([{ memory: "forget", scope: "shared", id: "al-1" }]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("T3 tệp trong chat: ghim Excel + ảnh → khay tệp (bỏ được), tệp lạ báo lý do; chỉ gửi tệp → Trợ lý hỏi làm gì; bấm gợi ý gửi lại đúng tệp", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  const files = "tests/center/files";
+  const send = page.getByRole("button", { name: "Gửi", exact: true });
+  await expect(send).toBeDisabled();
+  const file = (name: string, mimeType: string) => ({ name, mimeType, buffer: readFileSync(`${files}/${name}`) });
+  await page.locator('input[type="file"]').setInputFiles([file("bao-gia-hanaka.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    file("bao-gia-hanaka.jpg", "image/jpeg"), { name: "hop-dong.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") }]);
+  const tray = page.getByRole("group", { name: "Tệp đính kèm" });
+  await expect(tray.getByText("bao-gia-hanaka.xlsx · 6 hàng")).toBeVisible();
+  await expect(tray.getByText("bao-gia-hanaka.jpg")).toBeVisible();
+  await expect(tray.getByRole("alert")).toHaveText("hop-dong.pdf: chưa đọc được loại tệp này (dùng ảnh, Excel hoặc CSV).");
+  await expect(send).toBeEnabled();
+  await send.click();
+  const user = chat(page).locator('.vcc-msg[data-role="user"]').last();
+  await expect(user).toContainText("Xem tệp đính kèm.");
+  await expect(user).toContainText("📎 bao-gia-hanaka.xlsx · 1 ảnh");
+  await expect(tray).toHaveCount(0);
+  const turn = chat(page).getByTestId("turn").last();
+  await expect(turn).toHaveAttribute("data-state", "done");
+  const first = (await aiCalls(page)).filter(call => call.skill === "assistant_chat").at(-1) as Record<string, unknown> & { files: Array<{ name: string; head: string }> };
+  expect(first).toMatchObject({ question: "Xem tệp đính kèm.", images: 1 });
+  expect(first.files[0].name).toBe("bao-gia-hanaka.xlsx");
+  expect(first.files[0].head).toContain("| STT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền |");
+  expect(first.files[0].head).toContain("| 1 | Thép vằn D16 CB400 | kg | 6300 | 15850 | 99855000 |");
+  await turn.getByRole("group", { name: "Gợi ý trả lời" }).getByRole("button", { name: "Lập đơn mua theo báo giá này" }).click();
+  await expect(chat(page).getByTestId("command")).toBeVisible();
+  const second = (await aiCalls(page)).filter(call => call.skill === "assistant_chat").at(-1) as Record<string, unknown> & { files: unknown[] };
+  expect(second).toMatchObject({ question: "Lập đơn mua theo báo giá này", images: 1 });
+  expect(second.files).toHaveLength(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("T3: bỏ tệp khỏi khay trước khi gửi; dán ảnh vào ô hỏi cũng đính kèm", async ({ page, isMobile }) => {
+  test.skip(isMobile, "dán ảnh đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await page.locator('input[type="file"]').setInputFiles(["tests/center/files/bao-gia-hanaka.xlsx"]);
+  const tray = page.getByRole("group", { name: "Tệp đính kèm" });
+  await tray.getByRole("button", { name: "Bỏ tệp bao-gia-hanaka.xlsx" }).click();
+  await expect(tray).toHaveCount(0);
+  await page.getByLabel("Câu hỏi", { exact: true }).evaluate(async el => {
+    const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], "chup-man-hinh.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(tray.locator('[data-kind="image"]')).toHaveCount(1);
 });
 
 test("T2b form: gửi lỗi giữa chừng báo lý do rồi gửi lại được; dự án chưa có quy trình thì khóa Gửi duyệt, vẫn Lưu nháp", async ({ page, isMobile }) => {

@@ -21,5 +21,5 @@ const outfile = join(outDir, `evals-${Date.now()}.mjs`);
 await build({ entryPoints: [join(here, 'evals.ts')], bundle: true, platform: 'node', format: 'esm', outfile, nodePaths: [modules], logLevel: 'warning',
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } });
 const { runEvals } = await import(pathToFileURL(outfile).href);
-const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), process.argv.slice(2));
+const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), process.argv.slice(2), root);
 process.exit(failed ? 1 : 0);
