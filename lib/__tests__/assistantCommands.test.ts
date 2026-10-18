@@ -188,9 +188,9 @@ describe('Trợ lý T2b · công cụ chuẩn bị đề xuất vật tư (lện
     expect(matchProjects('dự án', PROJECTS)).toEqual([]);
   });
 
-  it('chuẩn bị: dự án đang xem, ghi lệnh material_request vào lượt AI, hiện thẻ; không gọi lệnh lập / gửi phiếu', async () => {
-    const t = ctx(ok, 'p-smb');
-    const out = JSON.parse(await runTool('chuan_bi_de_xuat_vat_tu', { muc_dich: 'Đổ bê tông sàn tầng 4', ngay_can: '2099-12-31', dong: LINES }, t.ctx, new Map()));
+  it('chuẩn bị: dự án theo lời người dùng, ghi lệnh material_request vào lượt AI, hiện thẻ; không gọi lệnh lập / gửi phiếu', async () => {
+    const t = ctx(ok, 'p-da29');
+    const out = JSON.parse(await runTool('chuan_bi_de_xuat_vat_tu', { du_an: 'SMB-2026 · Nhà máy SMB Hưng Yên', muc_dich: 'Đổ bê tông sàn tầng 4', ngay_can: '2099-12-31', dong: LINES }, t.ctx, new Map()));
     expect(t.calls.map(c => c[0])).toEqual(['assistant_mr_projects_v1', 'assistant_command_create_v1']);
     expect(t.calls[1][1]).toMatchObject({ p_run_id: 'run-2', p_kind: 'material_request', p_title: 'Đề xuất vật tư SMB-2026',
       p_payload: { projectId: 'p-smb', siteId: 's-1', title: 'Đổ bê tông sàn tầng 4', neededDate: '2099-12-31',
@@ -199,6 +199,16 @@ describe('Trợ lý T2b · công cụ chuẩn bị đề xuất vật tư (lện
     expect(t.events).toEqual([{ type: 'command', command: { ...MR, id: 'cmd-mr' } }]);
     expect(out).toMatchObject({ da_hien_the: true, du_an: 'SMB-2026 · Nhà máy SMB Hưng Yên', so_dong: 2, dong_chua_co_so_luong: 1 });
     expect(out.ghi_chu).toContain('Không nói là đã gửi');
+  });
+
+  it('chưa nói dự án → KHÔNG tự lấy dự án đang xem: hỏi lại, dự án đang xem đứng đầu gợi ý (chủ SP 18/10)', async () => {
+    const t = ctx(ok, 'p-da29');
+    const out = JSON.parse(await runTool('chuan_bi_de_xuat_vat_tu', { dong: LINES }, t.ctx, new Map()));
+    expect(out.cac_du_an).toEqual(['DA29 · Nhà xưởng XinHai', 'SMB-2026 · Nhà máy SMB Hưng Yên', 'HY-VPP · Văn phòng Hưng Yên']);
+    expect(out.du_an_dang_xem).toBe('DA29 · Nhà xưởng XinHai');
+    expect(out.can_hoi).toContain('Chưa chuẩn bị gì');
+    expect(t.calls.some(c => c[0] === 'assistant_command_create_v1')).toBe(false);
+    expect(t.events).toEqual([]);
   });
 
   it('dự án chưa rõ → trả danh sách để hỏi bằng gợi ý bấm, không ghi lệnh; chỉ có một dự án thì dùng luôn', async () => {
