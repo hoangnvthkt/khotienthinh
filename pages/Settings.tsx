@@ -157,7 +157,7 @@ const Settings: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState(
-    readOfficePermissionFocus(location.search) ? 'users' : new URLSearchParams(location.search).get('tab') === 'ai-gateway' ? 'ai-gateway' : location.pathname === '/settings/role-templates'
+    readOfficePermissionFocus(location.search) ? 'users' : ['ai-gateway', 'connections'].includes(new URLSearchParams(location.search).get('tab') || '') ? new URLSearchParams(location.search).get('tab')! : location.pathname === '/settings/role-templates'
       ? 'role-templates'
       : location.pathname === '/settings/permission-health'
       ? 'permission-health'

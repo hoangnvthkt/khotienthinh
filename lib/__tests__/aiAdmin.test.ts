@@ -19,7 +19,7 @@ describe('Trung tâm AI · cấp AI theo người', () => {
       connections: [{ id: 'c1', name: 'RevidAPI', model: 'claude-sonnet-5-5', enabled: true, pricePerCall: '0.008000' }],
       settings: { monthlyCostCapUsd: '20.00', monthlyRunCap: 3000 }, month: { runs: 214, costUsd: '3.42' },
     });
-    expect(o.templates).toEqual([{ id: 't1', name: 'Tiêu chuẩn', connectionId: 'c1', monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: '', users: 2 }]);
+    expect(o.templates).toEqual([{ id: 't1', name: 'Tiêu chuẩn', connectionId: 'c1', extraConnectionIds: [], monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: '', users: 2 }]);
     expect(o.grants[0]).toMatchObject({ dailyQuestionCap: 40, skills: null, monthlyCostCapUsd: null, effective: { monthlyCostCapUsd: 3, dailyQuestionCap: 40 }, usage: { monthRuns: 54, monthCostUsd: 0.56 } });
     expect(o.skills.map(s => s.access)).toEqual(['granted', 'everyone']);
     expect(o.connections[0].pricePerCall).toBe(0.008);
@@ -31,12 +31,12 @@ describe('Trung tâm AI · cấp AI theo người', () => {
   });
 
   it('lưu cấp phát: null = theo mẫu (gửi chuỗi rỗng); lỗi máy chủ thành lời dễ hiểu', async () => {
-    expect(grantPayload({ enabled: true, templateId: 't1', connectionId: null, monthlyCostCapUsd: null, dailyQuestionCap: 20, skills: null, note: ' thử ' }))
-      .toEqual({ enabled: true, templateId: 't1', connectionId: '', monthlyCostCapUsd: '', dailyQuestionCap: 20, skills: null, note: 'thử' });
+    expect(grantPayload({ enabled: true, templateId: 't1', connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: 20, skills: null, note: ' thử ' }))
+      .toEqual({ enabled: true, templateId: 't1', connectionId: '', extraConnectionIds: null, monthlyCostCapUsd: '', dailyQuestionCap: 20, skills: null, note: 'thử' });
     mocks.rpc.mockResolvedValueOnce({ data: { saved: 2 }, error: null });
-    await aiAdminService.saveGrants(['u1', 'u2'], { enabled: true, templateId: 't1', connectionId: 'c2', monthlyCostCapUsd: 5, dailyQuestionCap: null, skills: ['assistant_chat'], note: '' });
+    await aiAdminService.saveGrants(['u1', 'u2'], { enabled: true, templateId: 't1', connectionId: 'c2', extraConnectionIds: ['c3'], monthlyCostCapUsd: 5, dailyQuestionCap: null, skills: ['assistant_chat'], note: '' });
     expect(mocks.rpc).toHaveBeenLastCalledWith('ai_admin_grant_save_v1', { p_user_ids: ['u1', 'u2'],
-      p: { enabled: true, templateId: 't1', connectionId: 'c2', monthlyCostCapUsd: 5, dailyQuestionCap: '', skills: ['assistant_chat'], note: '' } });
+      p: { enabled: true, templateId: 't1', connectionId: 'c2', extraConnectionIds: ['c3'], monthlyCostCapUsd: 5, dailyQuestionCap: '', skills: ['assistant_chat'], note: '' } });
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'AI_TEMPLATE_IN_USE' } });
     await expect(aiAdminService.deleteTemplate('t1')).rejects.toThrow('Mẫu đang được dùng');
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'AI_ADMIN_REQUIRED' } });
@@ -44,7 +44,10 @@ describe('Trung tâm AI · cấp AI theo người', () => {
   });
 
   it('quyền AI của tôi + lời báo khi chưa được cấp / hết trần theo người', async () => {
-    expect(parseMyAccess({ assistant: false, usedToday: 3, admin: 'Admin Hoàng' })).toEqual({ assistant: false, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 3, monthCostUsd: 0, admin: 'Admin Hoàng' });
+    expect(parseMyAccess({ assistant: false, usedToday: 3, admin: 'Admin Hoàng' })).toEqual({ assistant: false, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 3, monthCostUsd: 0, admin: 'Admin Hoàng', models: [] });
+    expect(parseMyAccess({ models: [{ id: 'c1', name: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5', blurb: 'Hiểu sâu', icon: '🧠', vision: true, default: true }, { id: 'c2', model: 'deepseek', vision: false }, { name: 'hỏng' }] }).models)
+      .toEqual([{ id: 'c1', name: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5', blurb: 'Hiểu sâu', icon: '🧠', vision: true, isDefault: true },
+        { id: 'c2', name: 'deepseek', model: 'deepseek', blurb: '', icon: '', vision: false, isDefault: false }]);
     expect(parseMyAccess({}).assistant).toBe(true);
     mocks.rpc.mockResolvedValueOnce({ data: { assistant: true, dailyQuestionCap: 30, usedToday: 27, monthlyCostCapUsd: '3.00', monthCostUsd: '0.4' }, error: null });
     expect(await aiGateway.myAccess()).toMatchObject({ dailyQuestionCap: 30, usedToday: 27, monthlyCostCapUsd: 3, monthCostUsd: 0.4 });
