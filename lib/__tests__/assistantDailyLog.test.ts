@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dailyLogSlipRoute, dailyLogView, parseCommand } from '../assistantCommands';
 import { SourceBook } from '../../supabase/functions/ai-gateway/agent';
-import { projectsMentioned, runTool, type Rpc } from '../../supabase/functions/ai-gateway/tools';
+import { matchProjects, projectsMentioned, runTool, type Rpc } from '../../supabase/functions/ai-gateway/tools';
 import { looksLikeDailyReport, reportTextOf } from '../../supabase/functions/ai-gateway/chat';
 import { converse } from '../../supabase/functions/ai-gateway/loop';
 
@@ -68,6 +68,16 @@ describe('Trợ lý T2d · nhật ký từ báo cáo Zalo', () => {
     expect(looksLikeDailyReport('Báo cáo ngày 16/10\nTổ a Ích 35 người: đổ bê tông giằng móng\nTổ nề 6 người: xây tường bao')).toBe(true);
     expect(looksLikeDailyReport('Báo cáo tiến độ SMB tuần này thế nào?')).toBe(false);
     expect(looksLikeDailyReport('PO-646 giao đủ chưa\ncòn nợ bao nhiêu\ntổ nào nhận')).toBe(false);
+  });
+
+  it('dự án theo tên chủ đầu tư (thật 18/10: "Dự án xinhai" ↔ DA29, CĐT "CÔNG TY TNHH XIN HAI VINA")', () => {
+    const P = [{ id: 'da29', code: 'DA29', name: 'NHÀ MÁY SẢN XUẤT, GIA CÔNG  CÁC SẢN PHẨM THÚ NHỒI BÔNG - GIAI ĐOẠN 2', client: 'CÔNG TY TNHH XIN HAI VINA' },
+      { id: 'smb', code: 'SMB-2026', name: 'DỰ ÁN SƠN MIỀN BẮC', client: 'Công ty TNHH Dragon' }];
+    expect(matchProjects('Dự án xinhai', P).map(p => p.id)).toEqual(['da29']);
+    expect(matchProjects('xin hai', P).map(p => p.id)).toEqual(['da29']);
+    expect(matchProjects('Sơn Miền Bắc', P).map(p => p.id)).toEqual(['smb']);
+    expect(projectsMentioned('Báo cáo công việc ngày 18/10 XinHai\n1) Nhà xưởng: Tổ Mr Ích 11 người', P).map(p => p.id)).toEqual(['da29']);
+    expect(projectsMentioned('Báo cáo công việc ngày:18/10/2026\n1)Nhà xưởng:\n*Tổ Mr Ích: 11 người\n- Lắp dựng cofa cổ cột, hố pít thang máy 2\n-GCLD cốt thép khu cầu công\n-Xây tường hàng lang trục A', P)).toEqual([]);
   });
 
   it('nhận dự án từ tin: mã (DA29, SMB) hoặc chữ riêng trong tên (XinHai); chữ chung (nhà xưởng, Hưng Yên) không tính', () => {

@@ -35,7 +35,8 @@ const rpcOf = (table: Record<string, unknown>) => {
 
 describe('Trợ lý T2a · lệnh nháp — màn hình', () => {
   it('đọc lệnh: bỏ loại lạ; thẻ nghỉ phép: buổi, số ngày, người duyệt', () => {
-    expect(parseCommands([RAW, { id: 'x', kind: 'xoa_du_lieu' }, null])).toHaveLength(1);
+    // Loại lạ (bản app cũ gặp loại lệnh mới) vẫn giữ để thẻ nhắc tải lại; thiếu id / kind thì bỏ.
+    expect(parseCommands([RAW, { id: 'x', kind: 'loai_moi' }, { id: 'y' }, null]).map(c => c.kind)).toEqual(['leave_request', 'unknown']);
     const v = leaveView(parseCommand(RAW)!);
     expect(v).toMatchObject({ typeName: 'Phép năm', days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] });
     expect(leaveRangeLabel(v)).toBe('21/10 buổi chiều → 22/10 buổi sáng');
