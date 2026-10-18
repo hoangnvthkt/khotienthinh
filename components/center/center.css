@@ -634,6 +634,21 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
   .vcc-mr-extra { grid-template-columns: 1fr; }
   .vcc-mr input, .vcc-mr select { height: 40px; font-size: 16px; }
 }
+/* Form đơn mua trong chat (T2c): mã | SL | đơn giá; dòng mua theo đơn vị khác; dải tiền. */
+.vcc-mr-row-main.vcc-po-main { grid-template-columns: minmax(0, 1fr) 7.5rem 9.5rem; }
+.vcc-po-alt { display: flex; align-items: center; gap: 8px; }
+.vcc-mr-picked { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 10px; border-radius: 999px; background: var(--vcc-accent); color: #fff; font-size: 12.5px; font-weight: 600; }
+.dark .vcc-mr-picked { color: #10251d; }
+.vcc-po-alt input { max-width: 9rem; }
+.vcc-po-totals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--vcc-muted); border-top: 1px solid var(--vcc-border); padding-top: 8px; }
+.vcc-po-totals b { color: var(--vcc-fg); font-variant-numeric: tabular-nums; }
+.vcc-po-totals label { display: inline-flex; align-items: center; gap: 6px; }
+.vcc-mr .vcc-po-totals input { width: 4.5rem; height: 30px; text-align: right; }
+.vcc-mr-approvers > input { margin-top: 2px; }
+@media (max-width: 640px) {
+  .vcc-mr-row-main.vcc-po-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .vcc-mr-row-main.vcc-po-main > select { grid-column: 1 / -1; }
+}
 /* Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm phương án → nút; bấm là gửi đúng câu đó. */
 .vcc-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .vcc-suggest button { min-height: 32px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 13px; font-weight: 600; text-align: left; }

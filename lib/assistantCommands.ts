@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
-export type CommandKind = 'leave_request' | 'material_request';
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -24,7 +24,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -116,6 +116,32 @@ export const mrRequestRoute = (command: AssistantCommand) => {
   const id = typeof command.result.id === 'string' ? command.result.id : '';
   return `/da?${new URLSearchParams({ projectId: v.projectId, tab: 'material', materialTab: 'request', ...(id ? { requestId: id } : {}) }).toString()}`;
 };
+
+// ── Đơn mua từ báo giá (T2c) ─────────────────────────────────────────────────────────────────────────────────────────
+export interface PoDraftLine { name: string; spec: string | null; qty: number | null; unit: string | null; price: number | null }
+export type PoReasonCode = 'price_lock' | 'long_lead' | 'min_stock' | 'other';
+export interface PoCommandView {
+  projectId: string; projectCode: string; projectName: string; warehouseId: string | null;
+  vendorId: string | null; vendorName: string | null; vendorQuery: string | null; vendorOptions: Array<{ id: string; name: string; taxCode: string | null }>;
+  reasonCode: PoReasonCode | null; reason: string; vat: number | null; deliveryDate: string | null; note: string; lines: PoDraftLine[];
+}
+const REASONS: ReadonlySet<string> = new Set(['price_lock', 'long_lead', 'min_stock', 'other']);
+const numOrNullAny = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+export const poView = (command: AssistantCommand): PoCommandView => {
+  const p = command.payload;
+  return {
+    projectId: str(p.projectId), projectCode: str(p.projectCode), projectName: str(p.projectName), warehouseId: str(p.warehouseId) || null,
+    vendorId: str(p.vendorId) || null, vendorName: str(p.vendorName) || null, vendorQuery: str(p.vendorQuery) || null,
+    vendorOptions: (Array.isArray(p.vendorOptions) ? p.vendorOptions : []).map(obj).filter(v => str(v.id)).map(v => ({ id: str(v.id), name: str(v.name), taxCode: str(v.taxCode) || null })),
+    reasonCode: REASONS.has(str(p.reasonCode)) ? p.reasonCode as PoReasonCode : null, reason: str(p.reason),
+    vat: numOrNullAny(p.vat), deliveryDate: /^\d{4}-\d{2}-\d{2}$/.test(str(p.deliveryDate)) ? str(p.deliveryDate) : null, note: str(p.note),
+    lines: (Array.isArray(p.lines) ? p.lines : []).map(obj).filter(l => str(l.name)).map(l => ({
+      name: str(l.name), spec: str(l.spec) || null, qty: numOrNull(l.qty), unit: str(l.unit) || null, price: (() => { const n = numOrNullAny(l.price); return n != null && n >= 0 ? n : null; })(),
+    })),
+  };
+};
+/** Đơn mua ở màn Mua hàng (mở ngăn chi tiết đơn). */
+export const poRoute = (purchaseOrderId: string) => `/procurement?${new URLSearchParams({ po: purchaseOrderId }).toString()}`;
 
 export const getCommand = async (id: string): Promise<AssistantCommand | null> => {
   const { data, error } = await supabase.rpc('assistant_command_get_v1', { p_id: id });
