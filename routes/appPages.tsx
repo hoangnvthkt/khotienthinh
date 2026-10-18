@@ -67,7 +67,7 @@ const ChatV2 = React.lazy(() => import('../pages/ChatV2'));
 const DataStorage = React.lazy(() => import('../pages/DataStorage'));
 
 // AI Assistant
-const AiAssistant = React.lazy(() => import('../pages/AiAssistant'));
+const AiCenter = React.lazy(() => import('../pages/AiCenter'));
 const ExecutiveAI = React.lazy(() => import('../pages/ExecutiveAI'));
 const AiReports = React.lazy(() => import('../pages/AiReports'));
 
@@ -213,7 +213,7 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="procurement/project-po" element={<ProjectPoPage />} />
     <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
     <Route path="storage" element={<DataStorage />} />
-    <Route path="ai" element={<AiAssistant />} />
+    <Route path="ai" element={<AiCenter />} />
     <Route path="ai/executive" element={<ExecutiveAI />} />
     <Route path="ai/reports" element={<AiReports />} />
     <Route path="knowledge-base" element={<KnowledgeBase />} />

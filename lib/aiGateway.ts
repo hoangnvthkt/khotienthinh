@@ -8,7 +8,7 @@ export type AiGatewayErrorCode = Exclude<AiGatewayCode, 'OK'>;
 
 export const AI_GATEWAY_MESSAGES: Record<AiGatewayErrorCode, string> = {
   AI_NOT_CONFIGURED: 'Chưa cấu hình khóa AI — làm tay như thường.',
-  AI_DENIED: 'Bạn chưa được cấp loại AI này.',
+  AI_DENIED: 'Bạn chưa được cấp loại AI này — nhờ Quản trị AI cấp ở Trung tâm AI.',
   AI_OFF: 'Cổng AI đang tắt.',
   AI_SKILL_OFF: 'Tính năng AI này đang tắt.',
   AI_SKILL_UNKNOWN: 'Tính năng AI chưa được đăng ký.',
@@ -39,7 +39,8 @@ export interface AiGatewayStatus {
 }
 
 /** Hết lượt vì: ngày · trần tháng · gửi quá nhanh trong một phút · còn một câu đang trả lời (chống spam, 18/10). */
-export type AiQuotaReason = 'day' | 'month' | 'minute' | 'busy';
+export type AiQuotaReason = 'day' | 'month' | 'minute' | 'busy' | 'user_day' | 'user_month';
+export const AI_QUOTA_REASONS: readonly AiQuotaReason[] = ['day', 'month', 'minute', 'busy', 'user_day', 'user_month'];
 export interface AiUsage { tokensIn: number | null; tokensOut: number | null; costUsd: number | null; durationMs: number }
 export type AiRunResult<T> =
   | { code: 'OK'; runId: string; result: T; model: string; provider: AiProvider; usage: AiUsage }
@@ -131,6 +132,11 @@ export const aiGateway = {
   },
 
   /** Admin: phản hồi N ngày theo skill × lý do + ghi chú gần đây (Cài đặt → Cổng AI). */
+  async myAccess(): Promise<MyAiAccess> {
+    const { data, error } = await supabase.rpc('get_my_ai_access_v1');
+    if (error) throw error;
+    return parseMyAccess(data);
+  },
   async feedbackStats(days = 30): Promise<AiFeedbackStats> {
     const { data, error } = await supabase.rpc('get_ai_feedback_v1', { p_days: days });
     if (error) throw error;
@@ -183,10 +189,22 @@ export const aiGateway = {
 };
 
 /** Câu báo cho người dùng theo mã; hết lượt thì kèm số. */
+/** Trung tâm AI: quyền AI của chính tôi (được cấp Trợ lý chưa, trần câu / ngày, đã dùng). */
+export interface MyAiAccess { assistant: boolean; dailyQuestionCap: number | null; monthlyCostCapUsd: number | null; usedToday: number; monthCostUsd: number; admin: string | null }
+export const parseMyAccess = (raw: unknown): MyAiAccess => {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const n = (v: unknown) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  return { assistant: o.assistant !== false, dailyQuestionCap: n(o.dailyQuestionCap), monthlyCostCapUsd: n(o.monthlyCostCapUsd),
+    usedToday: n(o.usedToday) ?? 0, monthCostUsd: n(o.monthCostUsd) ?? 0, admin: typeof o.admin === 'string' && o.admin ? o.admin : null };
+};
+
 export const aiErrorMessage = (outcome: { code: AiGatewayErrorCode; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; error?: string }) => {
   if (outcome.code === 'AI_QUOTA') {
     if (outcome.reason === 'busy') return 'Trợ lý đang trả lời câu trước — đợi xong rồi hỏi tiếp.';
     if (outcome.reason === 'minute') return 'Bạn gửi hơi nhanh — đợi vài giây rồi hỏi tiếp.';
+    // Trần theo người (Trung tâm AI): Admin đặt cho từng người.
+    if (outcome.reason === 'user_day') return `Bạn đã dùng hết${outcome.dailyLimit ? ` ${outcome.dailyLimit}` : ''} câu AI hôm nay — mai dùng tiếp, hoặc nhờ Quản trị AI nâng trần.`;
+    if (outcome.reason === 'user_month') return 'Bạn đã dùng hết trần AI tháng này — nhờ Quản trị AI nâng trần.';
     return outcome.reason === 'month' ? 'Hết trần AI tháng này — làm tay như thường.'
       : `Hết lượt AI hôm nay${outcome.dailyLimit ? ` (${outcome.usedToday ?? outcome.dailyLimit}/${outcome.dailyLimit})` : ''}.`;
   }

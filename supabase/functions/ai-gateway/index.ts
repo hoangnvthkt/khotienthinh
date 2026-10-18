@@ -41,6 +41,11 @@ Deno.serve(async request => {
     if (r.error) { console.error('ai-gateway connection read failed', r.error.message); return null; }
     return targetFromConnection(r.data, cls);
   };
+  const byConnection = async (id: string, cls: ModelClass) => {
+    const r = await service.rpc('integration_secret_v1', { p_id: id, p_feature: null });
+    if (r.error || !r.data || (r.data as { enabled?: boolean }).enabled === false) { if (r.error) console.error('ai-gateway connection read failed', r.error.message); return null; }
+    return targetFromConnection(r.data, cls);
+  };
   const resolveTarget = async (cls: ModelClass): Promise<AiTarget | null> =>
     (await assigned(cls === 'reasoning' ? 'ai.reasoning' : 'ai.fast', cls)) ?? envTarget(config, cls) ?? (cls === 'reasoning' ? await assigned('ai.fast', cls) : null);
   const describe = (t: AiTarget | null) => t ? { source: t.source, name: t.name, kind: t.kind, label: KIND_LABEL[t.kind], model: t.model } : null;
@@ -53,11 +58,12 @@ Deno.serve(async request => {
   // Trợ lý · hội thoại (T0, chủ SP 17/10): trả lời chạy dần (text/event-stream: start → delta… → done | error).
   // Lỗi trước khi bắt đầu (đầu vào, chưa có khóa, hội thoại không phải của mình) → JSON như skill thường.
   // Xong thì ghi lượt hỏi–đáp vào hội thoại bằng JWT người hỏi; người dùng rời trang giữa chừng vẫn ghi để mở lại thấy.
-  const chat = async (runId: string, finish: (p: Record<string, unknown>) => PromiseLike<void>, rawInput: unknown, context: { projectId?: unknown }): Promise<Response> => {
+  const chat = async (runId: string, finish: (p: Record<string, unknown>) => PromiseLike<void>, rawInput: unknown, context: { projectId?: unknown }, connectionId?: string | null): Promise<Response> => {
     let input: ReturnType<typeof parseChatInput>;
     try { input = parseChatInput(rawInput); } catch { await finish({ status: 'error', error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', runId, error: 'AI_BAD_INPUT' }); }
     // Kết nối "Trợ lý · hội thoại" (Cài đặt → Kết nối) → lớp suy luận như cũ.
-    const target = (await assigned('ai.assistant', 'reasoning')) ?? await resolveTarget('reasoning');
+    // Trung tâm AI: model riêng Admin cấp cho người hỏi (kết nối đang bật); không có thì như cũ.
+    const target = (connectionId ? await byConnection(connectionId, 'reasoning') : null) ?? (await assigned('ai.assistant', 'reasoning')) ?? await resolveTarget('reasoning');
     if (!target) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
     let history: ChatTurn[] = [];
     if (input.threadId) {
@@ -141,13 +147,13 @@ Deno.serve(async request => {
 
   const begin = await user.rpc('ai_gateway_begin_v1', { p_skill: body.skill, p_context: context });
   if (begin.error) return json({ code: 'AI_DENIED', error: begin.error.message }, begin.error.code === '42501' ? 403 : 409);
-  const opened = begin.data as { code: string; runId?: string; skill?: { modelClass: 'fast' | 'reasoning'; name: string }; reason?: string; usedToday?: number; dailyLimit?: number };
+  const opened = begin.data as { code: string; runId?: string; skill?: { modelClass: 'fast' | 'reasoning'; name: string }; reason?: string; usedToday?: number; dailyLimit?: number; connectionId?: string | null };
   if (opened.code !== 'OK' || !opened.runId) return json(opened);
 
   const runId = opened.runId;
   const finish = (p: Record<string, unknown>) => user.rpc('ai_gateway_finish_v1', { p_run_id: runId, p }).then(r => { if (r.error) console.error('ai-gateway finish failed', r.error.message); });
 
-  if (body.skill === CHAT_SKILL) return chat(runId, finish, body.input, context);
+  if (body.skill === CHAT_SKILL) return chat(runId, finish, body.input, context, opened.connectionId);
 
   const def = SKILLS[body.skill];
   if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }

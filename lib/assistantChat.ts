@@ -1,7 +1,7 @@
 // Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): hội thoại nhiều lượt ở tab Trợ lý, trả lời chạy dần, mở lại được từ Lịch sử.
 // Máy chủ: skill assistant_chat của cổng AI (stream text/event-stream) + RPC list/get_ai_thread_v1 (chỉ chủ hội thoại xem, giữ 90 ngày).
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
-import type { AiGatewayErrorCode, AiQuotaReason } from './aiGateway';
+import { AI_QUOTA_REASONS, type AiGatewayErrorCode, type AiQuotaReason } from './aiGateway';
 import { parseSearchResponse } from './search/globalSearchService';
 import type { ServerRecord } from './search/searchTypes';
 import { parseWorkItem, type WorkItem } from './center/workItemsService';
@@ -169,7 +169,7 @@ export const assistantChat = {
       // Lỗi trước khi bắt đầu (chưa có khóa, hết lượt, không quyền…) trả JSON như skill thường.
       const body = await res.json().catch(() => ({})) as Record<string, unknown>;
       return { code: errorCode(body.code), runId: str(body.runId) || undefined, error: str(body.error) || undefined,
-        reason: (['day', 'month', 'minute', 'busy'] as const).find(r => r === body.reason),
+        reason: AI_QUOTA_REASONS.find(r => r === body.reason),
         usedToday: typeof body.usedToday === 'number' ? body.usedToday : undefined, dailyLimit: typeof body.dailyLimit === 'number' ? body.dailyLimit : undefined };
     }
     const reader = res.body.getReader();

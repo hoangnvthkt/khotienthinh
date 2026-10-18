@@ -66,7 +66,7 @@ const MODULE_CONFIG = [
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
   { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' },
   { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
-  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
+  { key: 'AI' as const, icon: Bot, label: 'Trung tâm AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners', gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
   { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq', gradient: 'from-indigo-600 to-purple-700', shadow: 'shadow-indigo-600/25' },
@@ -193,7 +193,7 @@ export const useModuleNavigation = () => {
       { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
     ],
     AI: [
-      { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
+      { to: '/ai', icon: Bot, label: 'Trung tâm AI' },
       { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
       { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
     ],
