@@ -14,7 +14,7 @@ import type { SourceBook, ToolSpec } from './agent.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
 /** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a).
- *  projectId: dự án đang xem ở Trung tâm — mặc định cho lệnh theo dự án (đề xuất vật tư) khi người dùng không nói dự án. */
+ *  projectId: dự án đang xem ở Trung tâm — chỉ để xếp lên đầu khi hỏi lại; không tự ghép khi người dùng chưa nói dự án (chủ SP 18/10). */
 export interface ToolContext { rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void; projectId?: string | null }
 
 export const KIND_LABEL: Record<string, string> = {
@@ -86,7 +86,7 @@ export const TOOLS: ToolSpec[] = [
     name: 'chuan_bi_de_xuat_vat_tu',
     description: 'CHUẨN BỊ phiếu đề xuất vật tư nháp cho dự án (không gửi): tách lời người dùng thành từng dòng vật tư rồi hiện thẻ; người dùng bấm "Mở form đề xuất" để khớp mã, kiểm và tự gửi. Dùng khi người dùng muốn đề xuất / xin / cần vật tư cho công trường và đã nói ít nhất một vật tư.',
     parameters: { type: 'object', additionalProperties: false, required: ['dong'], properties: {
-      du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng (bỏ trống = dự án đang xem).' },
+      du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng; chưa nói thì bỏ trống — công cụ trả danh sách dự án để hỏi lại.' },
       ten_de_xuat: { type: 'string', description: 'Tên phiếu ngắn, VD "Vật tư đổ bê tông sàn tầng 4" (bỏ trống thì lấy theo mục đích).' },
       muc_dich: { type: 'string', description: 'Dùng cho việc gì / hạng mục nào, theo lời người dùng.' },
       ngay_can: { type: 'string', description: 'Ngày cần vật tư YYYY-MM-DD (nếu người dùng nói).' },
@@ -207,13 +207,18 @@ async function prepareMaterialRequest(args: Record<string, unknown>, ctx: ToolCo
   if (list.error) return toolError(list.error, 'dự án');
   const projects = asArray(list.data).map(asObject).filter(p => str(p.id));
   if (!projects.length) return JSON.stringify({ loi: 'Người hỏi chưa được lập đề xuất vật tư ở dự án nào — nói rõ và gợi ý nhờ quản lý dự án cấp quyền.' });
+  // Chủ SP 18/10: chưa nói dự án thì HỎI LẠI bằng gợi ý bấm (dự án đang xem đứng đầu), không tự ghép vào dự án đang xem.
+  // Chỉ được lập đề xuất ở đúng một dự án thì dùng luôn (thẻ ghi rõ dự án).
   const asked = str(args.du_an, 80);
-  const hits = asked ? matchProjects(asked, projects) : projects.filter(p => p.id === ctx.projectId);
+  const hits = asked ? matchProjects(asked, projects) : [];
   const project = hits.length === 1 ? hits[0] : !asked && projects.length === 1 ? projects[0] : null;
   if (!project) {
-    const options = (hits.length > 1 ? hits : projects).slice(0, 6);
-    return JSON.stringify({ loi: asked && !hits.length ? `Không thấy dự án "${asked}" trong các dự án người hỏi được lập đề xuất.` : 'Chưa rõ dự án nào.',
-      can_hoi: 'Hỏi lại người dùng chọn dự án; mỗi dự án dưới đây là một gợi ý bấm (ghi mã dự án).', cac_du_an: options.map(projectLabel) });
+    const pool = hits.length > 1 ? hits : projects;
+    const current = pool.find(p => p.id === ctx.projectId);
+    const options = [...(current ? [current] : []), ...pool.filter(p => p !== current)].slice(0, 6);
+    return JSON.stringify(compact({ loi: asked && !hits.length ? `Không thấy dự án "${asked}" trong các dự án người hỏi được lập đề xuất.` : 'Người dùng chưa nói đề xuất cho dự án nào.',
+      can_hoi: 'Hỏi lại một câu: đề xuất cho dự án nào; mỗi dự án dưới đây là một gợi ý bấm, ghi đúng như danh sách. Chưa chuẩn bị gì.',
+      cac_du_an: options.map(projectLabel), du_an_dang_xem: current ? projectLabel(current) : null }));
   }
   const purpose = str(args.muc_dich, 200);
   const first = String(lines[0].name);
