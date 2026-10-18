@@ -17,6 +17,7 @@ import { recordTarget } from '../../lib/search/recordPresentation';
 import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
 import type { MrFormActions } from '../../lib/assistantMrForm';
+import { createPoFormActions, type PoFormActions } from '../../lib/assistantPoForm';
 import { displayCode } from '../../lib/center/workItemsService';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -35,8 +36,11 @@ export interface AssistantHooks {
   cancelCommand: (command: AssistantCommand) => Promise<AssistantCommand>;
   /** Form đề xuất vật tư ngay trong chat (app thật: CenterPage dựng bằng addRequest của app). Không có → thẻ mở form của dự án. */
   mrForm?: MrFormActions;
+  /** Form đơn mua trong chat (T2c) — chỉ gọi lệnh máy chủ nên có sẵn trong bản mặc định. */
+  poForm?: PoFormActions;
 }
 export const defaultAssistantHooks: AssistantHooks = {
+  poForm: createPoFormActions(),
   status: () => aiGateway.status(),
   narrate: (facts, context) => aiGateway.run<{ brief: string }>('morning_brief', { facts }, context),
   feedback: (runId, accepted) => aiGateway.feedback(runId, accepted),
@@ -332,6 +336,7 @@ const AssistantView: React.FC<{
     cancel: command => hooks.cancelCommand(command),
     openRoute: (route, title) => (onOpenRoute ? onOpenRoute(route, title) : onDrill({ kind: 'route', path: route, title })),
     mrForm: hooks.mrForm,
+    poForm: hooks.poForm,
   };
 
   const askQuick = (id: string, text: string) => {
@@ -368,7 +373,9 @@ const AssistantView: React.FC<{
     abort.current = null;
     setSending(false);
     if (result.code === 'OK') {
-      patch(m => ({ ...m, state: 'done', content: result.answer, sources: result.sources, runId: result.runId, id: result.messageId || m.id }));
+      // Giữ nguyên id hiển thị (không đổi sang id máy chủ): đổi khóa sẽ dựng lại thẻ lệnh nháp, mất những gì người dùng đang chọn / gõ
+      // trên thẻ trong lúc chữ còn chạy (lỗi thấy ở form đơn mua trên điện thoại, 18/10).
+      patch(m => ({ ...m, state: 'done', content: result.answer, sources: result.sources, runId: result.runId }));
       if (result.threadId && !thread.id) setThread({ id: result.threadId, title: q.slice(0, 80), startedAt: now.toISOString() });
       setHistory(h => ({ ...h, list: null }));
     } else if ('error' in result && result.error && STOP_ERRORS.has(result.error)) {

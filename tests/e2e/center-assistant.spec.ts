@@ -415,6 +415,66 @@ test("T2b form: gửi lỗi giữa chừng báo lý do rồi gửi lại đượ
   expect((await aiCalls(page)).filter(call => call.mrForm === "submit").at(-1)).toMatchObject({ mode: "draft", approverIds: [] });
 });
 
+const PO_ASK = "Lập đơn mua theo báo giá Hòa Phát cho SMB: xi măng PCB40 10 tấn 1.650.000, thép XD D16 50 cây 280.000, ống PVC 20 cây 95.000, VAT 8%, giao 25/10";
+
+test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý do, vượt BOQ, người duyệt, tổng tiền → Gửi duyệt ra biên nhận", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, PO_ASK);
+  const card = chat(page).getByTestId("command");
+  const form = card.getByTestId("po-form");
+  await expect(form.getByLabel("Mã vật tư cho Xi măng PCB40")).toHaveValue("it-boq-ximang-pcb40");
+  await expect(form.getByLabel("Số lượng Xi măng PCB40")).toHaveValue("10");
+  await expect(form.getByLabel("Đơn giá Xi măng PCB40")).toHaveValue("1650000");
+  await expect(form.getByLabel("Mã vật tư cho Thép XD D16")).toHaveValue("it-1779153359828-833-2jd93");
+  await expect(form.getByLabel("Ngày giao")).toHaveValue("2026-10-25");
+  await expect(form.getByLabel("Thuế VAT %")).toHaveValue("8");
+  const rows = form.getByRole("list", { name: "Dòng đơn mua" }).locator(":scope > li");
+  await expect(rows.nth(0)).toContainText("Vượt BOQ");
+  await expect(rows.nth(1)).toContainText("Ngoài BOQ");
+  await expect(form.getByLabel("Tiền đơn")).toContainText("Tạm tính 32.400.000đ");
+  await expect(form.getByLabel("Tiền đơn")).toContainText("Tổng 34.992.000đ");
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(form.getByRole("alert")).toContainText("Chọn nhà cung cấp.");
+  await expect(form.getByRole("alert")).toContainText("Chọn lý do mua chủ động.");
+  await expect(form.getByRole("alert")).toContainText("ghi lý do mua vượt");
+  await expect(form.getByRole("alert")).toContainText("Chọn người duyệt.");
+  await form.getByRole("group", { name: "Chọn nhà cung cấp" }).getByRole("button", { name: /Công ty CP Thép Hòa Phát/ }).click();
+  await expect(form.getByRole("group", { name: "Nhà cung cấp đã chọn" })).toContainText("Công ty CP Thép Hòa Phát");
+  await form.getByRole("group", { name: "Lý do mua chủ động" }).getByRole("button", { name: "Chốt giá tốt" }).click();
+  await form.getByLabel("Lý do mua vượt BOQ").fill("Chốt giá trước tăng giá tháng 11");
+  await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" }).click();
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã gửi đơn PO-2026-0712");
+  await expect(card).toContainText("chờ Hà Đức Chuẩn duyệt");
+  const submit = (await aiCalls(page)).find(call => call.poForm === "submit") as Record<string, unknown> & { lines: unknown[] };
+  expect(submit).toMatchObject({ mode: "send", vendorId: "v-hp", warehouseId: "wh-smb", vat: 8, reasonCode: "price_lock", approverId: "u-chuan", deliveryDate: "2026-10-25",
+    overBoqReason: "Chốt giá trước tăng giá tháng 11" });
+  expect(submit.lines).toHaveLength(3);
+  await card.getByRole("button", { name: "Mở" }).click();
+  await expect(workTabs(page).getByRole("tab", { name: /PO-2026-0712/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "chỉ đo trên điện thoại");
+  await page.goto(`${base}?ai=po-noapprover`);
+  await openAssistant(page, true);
+  await page.getByLabel("Câu hỏi", { exact: true }).fill(PO_ASK);
+  await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap();
+  const form = chat(page).getByTestId("po-form");
+  await expect(form).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(form.getByRole("button", { name: "Gửi duyệt" })).toBeDisabled();
+  await form.getByRole("group", { name: "Chọn nhà cung cấp" }).getByRole("button").first().tap();
+  await expect(form.getByRole("group", { name: "Nhà cung cấp đã chọn" })).toBeVisible();
+  await form.getByRole("group", { name: "Lý do mua chủ động" }).getByRole("button", { name: "Hàng đặt dài ngày" }).tap();
+  await form.getByLabel("Lý do mua vượt BOQ").fill("Đặt sớm cho kịp tiến độ");
+  await form.getByRole("button", { name: "Lưu nháp" }).tap();
+  await expect(chat(page).getByTestId("command")).toContainText("Đã lưu nháp đơn PO-2026-0712");
+});
+
 test("chống spam + từ chối lịch sự: còn câu đang trả lời / gửi quá nhanh báo rõ; nhãn từ chối không hiện; tin dài có bộ đếm", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=busy`);

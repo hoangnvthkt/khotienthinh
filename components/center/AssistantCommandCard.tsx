@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
-import { isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
+import { isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
+import type { PoFormActions } from '../../lib/assistantPoForm';
 import AssistantMrForm from './AssistantMrForm';
+import AssistantPoForm from './AssistantPoForm';
 
 // Thẻ lệnh nháp của Trợ lý (T2a, chủ SP duyệt 18/10/2026): Trợ lý chỉ chuẩn bị; người dùng xem, sửa lý do, bấm Gửi đơn.
 // Gửi = đúng lệnh gửi của module (như form thường). Sau đó thẻ thành biên nhận (mã đơn + Mở). Không gửi gì tới khi người dùng bấm.
@@ -16,6 +18,8 @@ export interface CommandActions {
   openRoute: (route: string, title: string) => void;
   /** Form đề xuất vật tư trong chat: tải danh mục / kho / người duyệt của dự án, lưu nháp / gửi duyệt. */
   mrForm?: MrFormActions;
+  /** Form đơn mua trong chat (T2c): khớp mã / NCC, lưu nháp / gửi duyệt bằng lệnh của màn Lập đơn chủ động. */
+  poForm?: PoFormActions;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
@@ -175,7 +179,57 @@ const MaterialRequestCard: React.FC<CardProps> = ({ command, now, you, actions }
   );
 };
 
+const PurchaseOrderCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
+  const v = poView(command);
+  const [current, setCurrent] = useState(command);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const expired = isCommandExpired(current, now);
+  const project = v.projectCode && v.projectName ? `${v.projectCode} · ${v.projectName}` : v.projectCode || v.projectName || 'dự án';
+  if (current.status === 'done') {
+    const code = typeof current.result.code === 'string' ? current.result.code : '';
+    const id = typeof current.result.id === 'string' ? current.result.id : '';
+    const submitted = current.result.submitted === true;
+    const approvers = Array.isArray(current.result.approvers) ? current.result.approvers.filter((n): n is string => typeof n === 'string') : [];
+    const budget = Array.isArray(current.result.budgetApprovers) ? current.result.budgetApprovers.filter((n): n is string => typeof n === 'string') : [];
+    const total = typeof current.result.total === 'number' ? ` · ${Math.round(current.result.total).toLocaleString('vi-VN')}đ` : '';
+    return (
+      <div className="vcc-cmd" data-state="done" data-testid="command">
+        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" />
+          {submitted
+            ? current.result.budgetPending ? `Đã gửi đơn ${code}${total} · vượt dự toán, chờ ${budget.join(', ') || 'người duyệt ngân sách'} duyệt trước`
+              : `Đã gửi đơn ${code}${total}${approvers.length ? ` · chờ ${approvers.join(', ')} duyệt` : ''}`
+            : `Đã lưu nháp đơn ${code}${total} · mở để gửi duyệt`}</p>
+        {id && <button type="button" className="vcc-chip" onClick={() => actions.openRoute(poRoute(id), code || 'Đơn mua')}><ArrowUpRight size={12} /> Mở</button>}
+      </div>
+    );
+  }
+  if (current.status === 'cancelled') {
+    return <div className="vcc-cmd" data-state="cancelled" data-testid="command"><p className="vcc-cmd-muted">Đã bỏ {current.title.toLowerCase()}.</p></div>;
+  }
+  const cancel = async () => {
+    setBusy(true); setError(null);
+    try { setCurrent(await actions.cancel(current)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa bỏ được.'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="vcc-cmd" data-state={expired ? 'expired' : current.status} data-testid="command" role="group" aria-label={current.title}>
+      <div className="vcc-cmd-head">
+        <span className="vcc-cmd-icon" aria-hidden="true"><Package size={15} /></span>
+        <p className="vcc-cmd-title">{current.title}</p>
+        <span className="vcc-cmd-tag">Nháp · Trợ lý chuẩn bị</span>
+      </div>
+      <dl className="vcc-cmd-facts"><div><dt>Dự án</dt><dd>{project}</dd></div></dl>
+      {error && <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {error}</p>}
+      {expired ? <p className="vcc-cmd-muted">Thẻ đã cũ — hỏi lại Trợ lý để chuẩn bị lại.</p>
+        : actions.poForm ? <AssistantPoForm command={current} actions={actions.poForm} you={you} onDone={setCurrent} onCancel={() => void cancel()} busyCancel={busy}
+          onOpenProcurement={() => actions.openRoute('/procurement', 'Mua hàng')} />
+          : <p className="vcc-cmd-muted">Mở Mua hàng → Lập đơn chủ động để lập đơn này.</p>}
+    </div>
+  );
+};
+
 const AssistantCommandCard: React.FC<CardProps> = props =>
-  props.command.kind === 'material_request' ? <MaterialRequestCard {...props} /> : <LeaveCard {...props} />;
+  props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
+    : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} /> : <LeaveCard {...props} />;
 
 export default AssistantCommandCard;

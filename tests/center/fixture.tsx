@@ -10,6 +10,8 @@ import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
+import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
+import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
 import MR_CATALOG_RAW from '../material-request/quick-lines-items.json';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
@@ -290,7 +292,42 @@ const mrForm: MrFormActions = {
     return done;
   },
 };
+// T2c: báo giá dán vào → thẻ đơn mua. Danh mục mua hàng = 175 mã thật (Xi măng PCB40 trong BOQ còn 8 tấn); NCC "Hòa Phát" có 2 công ty gần giống.
+const PO_CATALOG: ProcurementCatalogItem[] = MR_CATALOG.map(i => ({ id: i.id, name: i.name, sku: i.sku, unit: i.unit, purchaseUnit: null, purchaseFactor: null,
+  inBoq: i.name === 'Xi măng PCB40', boqQty: i.name === 'Xi măng PCB40' ? 20 : 0, orderedQty: i.name === 'Xi măng PCB40' ? 12 : 0 }));
+const fold = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+const poSearch = async (q: string) => { const words = fold(q).split(/\s+/).filter(Boolean); return PO_CATALOG.filter(i => words.every(w => fold(`${i.name} ${i.sku}`).includes(w))).slice(0, 20); };
+const PO_VENDORS = [{ id: 'v-hp', name: 'Công ty CP Thép Hòa Phát', taxCode: '0900189284', recentOrders: 12 }, { id: 'v-hpdn', name: 'Thép Hòa Phát Dung Quất', taxCode: '4300381300', recentOrders: 2 }];
+const poCommand = (): AssistantCommand => ({
+  id: `cmd-po-${Date.now()}`, kind: 'purchase_order', status: 'prepared', title: 'Đơn mua Hòa Phát · SMB-2026',
+  payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', warehouseId: 'wh-smb', vendorQuery: 'Hòa Phát',
+    vendorOptions: PO_VENDORS.map(({ recentOrders: _r, ...v }) => v), vat: 8, deliveryDate: '2026-10-25', note: 'Báo giá BG-1810',
+    lines: [{ name: 'Xi măng PCB40', qty: 10, unit: 'tấn', price: 1650000 }, { name: 'Thép XD D16', qty: 50, unit: 'cây', price: 280000 }, { name: 'Ống PVC', qty: 20, unit: 'cây', price: 95000 }] },
+  preview: { lineCount: 3 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+const poForm: PoFormActions = {
+  load: async command => {
+    await sleep(80);
+    aiCalls.push({ poForm: 'load' });
+    const lines = (command.payload.lines as Array<{ name: string; qty: number; unit: string; price: number }>).map(l => ({ name: l.name, spec: null, qty: l.qty, unit: l.unit, price: l.price }));
+    return { warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }], approvers: AI === 'po-noapprover' ? [] : [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
+      rows: await buildRows(lines, poSearch) };
+  },
+  searchItems: async (_p, q) => poSearch(q),
+  searchVendors: async q => PO_VENDORS.filter(v => fold(v.name).includes(fold(q))),
+  submit: async (command, input) => {
+    aiCalls.push({ poForm: 'submit', mode: input.mode, vendorId: input.vendor.id, warehouseId: input.warehouseId, vat: input.vat, reasonCode: input.reasonCode,
+      overBoqReason: input.overBoqReason, approverId: input.approverId, deliveryDate: input.deliveryDate,
+      lines: input.rows.filter(r => r.item).map(r => ({ item: r.item!.name, qty: r.stockQty, price: r.price })) });
+    await sleep(120);
+    const done: AssistantCommand = { ...command, status: 'done', confirmedAt: new Date(NOW).toISOString(),
+      result: { code: 'PO-2026-0712', id: 'po-712', submitted: input.mode === 'send', approvers: input.approverName ? [input.approverName] : [], total: 20_520_000 } };
+    saveCommand(done);
+    return done;
+  },
+};
 const assistantHooks: AssistantHooks = {
+  poForm,
   ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
@@ -342,17 +379,20 @@ const assistantHooks: AssistantHooks = {
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
     // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
     const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
-    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup;
+    const wantsPo = /báo giá|đơn mua|đặt hàng/i.test(input.question) && !refused && !lookup;
+    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup && !wantsPo;
     const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup && !asksType && !wantsMr;
-    const command = wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
+    const command = wantsPo ? poCommand() : wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
     if (command) {
       await sleep(120);
-      handlers.onTool?.(wantsMr ? { name: 'chuan_bi_de_xuat_vat_tu', label: 'Chuẩn bị đề xuất vật tư', query: '' } : { name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' });
+      handlers.onTool?.(wantsPo ? { name: 'chuan_bi_don_mua', label: 'Chuẩn bị đơn mua', query: '' }
+        : wantsMr ? { name: 'chuan_bi_de_xuat_vat_tu', label: 'Chuẩn bị đề xuất vật tư', query: '' } : { name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' });
       await sleep(150);
       handlers.onCommand?.(command);
     }
     const answer = refused ?? lookup?.text
       ?? (asksType ? 'Anh nghỉ loại nào? [[goi_y:Phép năm]] [[goi_y:Ốm đau (BHXH)]] [[goi_y:Việc riêng không lương]]' : null)
+      ?? (wantsPo ? 'Em đã chuẩn bị **đơn mua Hòa Phát · SMB-2026** gồm 3 dòng theo báo giá, VAT 8%. NCC có 2 công ty gần giống — anh bấm chọn, kiểm mã, chọn lý do và người duyệt rồi bấm **Gửi duyệt** trên thẻ.' : null)
       ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 4 dòng; dây thép buộc chưa có số lượng. Anh chọn mã, kiểm số lượng, chọn người duyệt rồi bấm **Gửi duyệt** ngay trên thẻ.' : null)
       ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`

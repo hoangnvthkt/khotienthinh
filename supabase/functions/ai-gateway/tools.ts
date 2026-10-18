@@ -8,6 +8,7 @@
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
 //   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
+//   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
@@ -27,7 +28,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
-  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua',
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -97,6 +98,28 @@ export const TOOLS: ToolSpec[] = [
           so_luong: { type: 'number', description: 'Số lượng (bỏ trống nếu người dùng chưa nói).' },
           don_vi: { type: 'string', description: 'Đơn vị theo lời người dùng: bao, tấn, cây, m, m3, cái…' },
           ghi_chu: { type: 'string', description: 'Ghi chú riêng của dòng (dùng cho khu nào, tổ nào…).' },
+        } } },
+    } },
+  },
+  // T2c — đơn mua từ báo giá: tách NCC + dòng hàng + đơn giá; thẻ là form đơn mua trong chat, người Mua hàng tự Lưu nháp / Gửi duyệt.
+  {
+    name: 'chuan_bi_don_mua',
+    description: 'CHUẨN BỊ đơn mua (PO chủ động) nháp từ báo giá / lời người dùng (không lưu, không gửi): tách nhà cung cấp, từng dòng hàng (tên, quy cách, số lượng, đơn vị, đơn giá), VAT, ngày giao; rồi hiện thẻ form đơn mua để người Mua hàng chọn mã, NCC, lý do, người duyệt và tự bấm Gửi duyệt. Dùng khi người dùng muốn lập / đặt đơn mua, dán báo giá NCC.',
+    parameters: { type: 'object', additionalProperties: false, required: ['dong'], properties: {
+      du_an: { type: 'string', description: 'Mã hoặc tên dự án nhận hàng theo lời người dùng; chưa nói thì bỏ trống — công cụ trả danh sách để hỏi lại.' },
+      ncc: { type: 'string', description: 'Tên hoặc mã số thuế nhà cung cấp trên báo giá / theo lời người dùng.' },
+      ly_do: { type: 'string', enum: ['price_lock', 'long_lead', 'min_stock', 'other'], description: 'Lý do mua chủ động nếu người dùng nói: chốt giá / hàng đặt dài ngày / bù tồn / khác.' },
+      ly_do_khac: { type: 'string', description: 'Lý do cụ thể (khi "khác" hoặc người dùng giải thích).' },
+      vat: { type: 'number', description: 'Thuế VAT % trên báo giá (VD 8, 10).' },
+      ngay_giao: { type: 'string', description: 'Ngày NCC hẹn giao YYYY-MM-DD (nếu có).' },
+      ghi_chu: { type: 'string', description: 'Ghi chú đơn (số báo giá, điều kiện giao…).' },
+      dong: { type: 'array', minItems: 1, maxItems: 40, description: 'Mỗi mặt hàng một dòng, chép đúng báo giá.', items: {
+        type: 'object', additionalProperties: false, required: ['ten'], properties: {
+          ten: { type: 'string', description: 'Tên hàng, VD "Thép D16 CB400".' },
+          quy_cach: { type: 'string', description: 'Quy cách / kích thước / mác nếu có.' },
+          so_luong: { type: 'number', description: 'Số lượng theo báo giá.' },
+          don_vi: { type: 'string', description: 'Đơn vị theo báo giá: kg, tấn, cây, m, bao…' },
+          don_gia: { type: 'number', description: 'Đơn giá (đồng) theo đơn vị trên báo giá, chưa VAT nếu báo giá tách VAT.' },
         } } },
     } },
   },
@@ -238,6 +261,76 @@ async function prepareMaterialRequest(args: Record<string, unknown>, ctx: ToolCo
   }));
 }
 
+async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  const lines = asArray(args.dong).map(asObject).map(l => {
+    const qty = num(l.so_luong); const price = num(l.don_gia);
+    return compact({ name: str(l.ten, 160), spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), price: price != null && price >= 0 ? price : null });
+  }).filter(l => l.name).slice(0, 40);
+  if (!lines.length) return JSON.stringify({ loi: 'Chưa có mặt hàng nào. Hỏi lại người dùng mua gì, bao nhiêu, giá bao nhiêu.' });
+  const delivery = str(args.ngay_giao, 10);
+  if (delivery && (!ISO_DAY.test(delivery) || delivery < vnToday())) return JSON.stringify({ loi: 'Ngày giao chưa đúng (YYYY-MM-DD, không trước hôm nay). Hỏi lại người dùng.' });
+  const vat = num(args.vat);
+  // Lập đơn chủ động là việc của phòng Mua hàng (quyền quản lý Mua hàng) — như màn Lập đơn chủ động.
+  const options = await ctx.rpc('list_procurement_proactive_options_v1', {});
+  if (options.error) return denied(options.error)
+    ? JSON.stringify({ loi: 'Người hỏi chưa có quyền lập đơn mua (quản lý Mua hàng). Nói rõ: nhờ phòng Mua hàng lập, hoặc gửi đề xuất vật tư.' })
+    : toolError(options.error, 'dự án');
+  const projects = asArray(asObject(options.data).projects).map(asObject).filter(p => str(p.id));
+  if (!projects.length) return JSON.stringify({ loi: 'Chưa có dự án nào để lập đơn mua.' });
+  // Như đề xuất vật tư: chưa nói dự án thì hỏi lại bằng gợi ý bấm (dự án đang xem đứng đầu), không tự chọn.
+  const asked = str(args.du_an, 80);
+  const hits = asked ? matchProjects(asked, projects) : [];
+  const project = hits.length === 1 ? hits[0] : !asked && projects.length === 1 ? projects[0] : null;
+  if (!project) {
+    const pool = hits.length > 1 ? hits : projects;
+    const current = pool.find(p => p.id === ctx.projectId);
+    const options6 = [...(current ? [current] : []), ...pool.filter(p => p !== current)].slice(0, 6);
+    return JSON.stringify(compact({ loi: asked && !hits.length ? `Không thấy dự án "${asked}" trong các dự án lập đơn mua được.` : 'Người dùng chưa nói đơn mua cho dự án nào.',
+      can_hoi: 'Hỏi lại một câu: đơn mua cho dự án nào; mỗi dự án dưới đây là một gợi ý bấm, ghi đúng như danh sách. Chưa chuẩn bị gì.',
+      cac_du_an: options6.map(projectLabel), du_an_dang_xem: current ? projectLabel(current) : null }));
+  }
+  // NCC: khớp một thì chọn sẵn; nhiều thì đưa lên thẻ làm nút chọn (người dùng bấm, không phải gõ lại).
+  const vendorQuery = str(args.ncc, 120);
+  let vendor: Record<string, unknown> | null = null;
+  let vendorOptions: Array<Record<string, unknown>> = [];
+  if (vendorQuery) {
+    const found = await ctx.rpc('list_procurement_vendors_v1', { p_search: vendorQuery });
+    const vendors = found.error ? [] : asArray(found.data).map(asObject).filter(v => str(v.id));
+    const q = fold(vendorQuery);
+    const exact = vendors.filter(v => fold(v.name) === q || (str(v.taxCode) && fold(v.taxCode) === q));
+    vendor = exact.length === 1 ? exact[0] : vendors.length === 1 ? vendors[0] : null;
+    vendorOptions = vendor ? [] : vendors.slice(0, 5);
+  }
+  const warehouses = asArray(project.warehouses).map(asObject);
+  const code = str(project.code, 40) || str(project.name, 40) || 'dự án';
+  const vendorName = vendor ? str(vendor.name, 120) : null;
+  const payload = compact({
+    projectId: str(project.id, 80), projectCode: str(project.code, 40), projectName: str(project.name, 160),
+    warehouseId: str(warehouses[0]?.id, 80), vendorId: vendor ? str(vendor.id, 80) : null, vendorName, vendorQuery,
+    vendorOptions: vendorOptions.length ? vendorOptions.map(v => compact({ id: str(v.id, 80), name: str(v.name, 120), taxCode: str(v.taxCode, 20) })) : null,
+    reasonCode: typeof args.ly_do === 'string' && ['price_lock', 'long_lead', 'min_stock', 'other'].includes(args.ly_do) ? args.ly_do : null,
+    reason: str(args.ly_do_khac, 200), vat: vat != null && vat >= 0 && vat <= 100 ? vat : null, deliveryDate: delivery, note: str(args.ghi_chu, 300), lines,
+  });
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'purchase_order',
+    p_title: `Đơn mua ${vendorName || vendorQuery || ''} · ${code}`.replace(/\s+·/, ' ·').slice(0, 160), p_payload: payload,
+    p_preview: compact({ lineCount: lines.length, missingPrice: lines.filter(l => l.price == null).length || null }) });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được lệnh, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  // Tiền do công cụ tính (model hay cộng sai số lớn) — theo SL × đơn giá trên báo giá, thẻ tính lại theo mã đã chọn.
+  const priced = lines.filter(l => l.qty != null && l.price != null);
+  const subtotal = priced.reduce((s, l) => s + Number(l.qty) * Number(l.price), 0);
+  const vatRate = vat != null && vat >= 0 && vat <= 100 ? vat : null;
+  const money = (n: number) => `${Math.round(n).toLocaleString('vi-VN')}đ`;
+  return JSON.stringify(compact({
+    tam_tinh: priced.length ? money(subtotal) : null, vat: vatRate != null ? `${vatRate}%` : null,
+    tong: priced.length && vatRate != null ? money(subtotal * (1 + vatRate / 100)) : null,
+    da_hien_the: true, du_an: projectLabel(project), ncc: vendorName || (vendorOptions.length ? `chưa chắc (${vendorOptions.length} NCC gần giống, người dùng bấm chọn trên thẻ)` : vendorQuery ? `không thấy "${vendorQuery}" — người dùng tìm NCC trên thẻ` : 'chưa có — người dùng chọn trên thẻ'),
+    so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null,
+    ghi_chu: 'Thẻ đơn mua nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, NCC, lý do mua chủ động, người duyệt rồi tự bấm Lưu nháp hoặc Gửi duyệt. Không nói là đã lập hay đã gửi đơn.',
+  }));
+}
+
 async function prepareLeave(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
   const typesRes = await ctx.rpc('assistant_leave_types_v1', {});
@@ -367,6 +460,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
+  if (name === 'chuan_bi_don_mua') return prepareOrder(args, ctx);
 
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }
