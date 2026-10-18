@@ -241,7 +241,7 @@ describe('Trợ lý T2b · công cụ chuẩn bị đề xuất vật tư (lện
     const system = chatSystem('Anh', [], true);
     expect(system).toContain('[[goi_y:Phép năm]]');
     expect(system).toContain('không liệt kê lại các phương án bằng chữ');
-    expect(system).toContain('Mở form đề xuất');
+    expect(system).toContain('bấm **Gửi duyệt** ngay trên thẻ');
     expect(chatSystem('Anh', [], false)).toContain('Gợi ý bấm');
   });
 

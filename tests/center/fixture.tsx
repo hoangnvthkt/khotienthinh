@@ -9,6 +9,8 @@ import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOu
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
+import type { MrFormActions } from '../../lib/assistantMrForm';
+import MR_CATALOG_RAW from '../material-request/quick-lines-items.json';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
@@ -251,8 +253,8 @@ const leaveCommand = (): AssistantCommand => ({
 const mrCommand = (): AssistantCommand => ({
   id: `cmd-mr-${Date.now()}`, kind: 'material_request', status: 'prepared', title: 'Đề xuất vật tư SMB-2026',
   payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', title: 'Vật tư đổ bê tông sàn tầng 4', purpose: 'Đổ bê tông sàn tầng 4',
-    neededDate: '2026-10-23', lines: [{ name: 'Xi măng PCB40', qty: 2, unit: 'tấn' }, { name: 'Thép', spec: 'D16', qty: 50, unit: 'cây' }, { name: 'Dây thép buộc', unit: 'kg' }] },
-  preview: { lineCount: 3, missingQty: 1 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+    neededDate: '2026-10-23', lines: [{ name: 'Xi măng PCB40', qty: 2, unit: 'tấn' }, { name: 'Thép', spec: 'D16', qty: 50, unit: 'cây' }, { name: 'Ống PVC', qty: 20, unit: 'cây' }, { name: 'Dây thép buộc', unit: 'kg' }] },
+  preview: { lineCount: 4, missingQty: 1 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
 });
 // Form Đề xuất (bản thử) lưu xong: báo thẻ cùng trang đổi thành biên nhận như form thật.
 (window as unknown as { __fxSaveMr: (submitted: boolean) => void }).__fxSaveMr = submitted => {
@@ -262,7 +264,34 @@ const mrCommand = (): AssistantCommand => ({
   saveCommand(done);
   notifyCommandChanged(done);
 };
+// Form đề xuất ngay trong chat (bản thử): danh mục 175 mã thật, 2 kho, 2 người duyệt. ?ai=mr-noflow: dự án chưa có workflow (chỉ lưu nháp);
+// ?ai=mr-fail: lần gửi đầu mất kết nối (giữ mã đã cấp, gửi lại được); ?mrform=0: bản cũ không có form (thẻ mở form của dự án).
+const MR_CATALOG = (MR_CATALOG_RAW as Array<{ id: string; sku: string; name: string; unit: string }>).map(i => ({ id: i.id, sku: i.sku, name: i.name, unit: i.unit }));
+const mrForm: MrFormActions = {
+  load: async () => {
+    await sleep(80);
+    aiCalls.push({ mrForm: 'load' });
+    return { catalog: MR_CATALOG, warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }], defaultWarehouseId: 'wh-smb',
+      approvers: [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
+      sendBlocked: AI === 'mr-noflow' ? 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.' : null };
+  },
+  submit: async (command, input) => {
+    aiCalls.push({ mrForm: 'submit', mode: input.mode, title: input.title, warehouseId: input.warehouseId, neededDate: input.neededDate, approverIds: input.approverIds,
+      lines: input.lines.map(l => ({ item: l.item.name, qty: l.qty, spec: l.spec, reason: l.reason })) });
+    await sleep(120);
+    if (AI === 'mr-fail' && !aiCalls.some(c => c.mrForm === 'failed')) {
+      aiCalls.push({ mrForm: 'failed' });
+      saveCommand({ ...command, status: 'failed', result: { code: 'MR-2026-0042', id: 'mr-42' }, error: 'Mất kết nối, chưa gửi được.' });
+      throw new Error('Mất kết nối, chưa gửi được.');
+    }
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'MR-2026-0042', id: 'mr-42', submitted: input.mode === 'send', approvers: input.approverNames },
+      confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
 const assistantHooks: AssistantHooks = {
+  ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
     aiCalls.push({ skill: 'morning_brief', factLines: facts.split('\n').length, context });
@@ -324,7 +353,7 @@ const assistantHooks: AssistantHooks = {
     }
     const answer = refused ?? lookup?.text
       ?? (asksType ? 'Anh nghỉ loại nào? [[goi_y:Phép năm]] [[goi_y:Ốm đau (BHXH)]] [[goi_y:Việc riêng không lương]]' : null)
-      ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 3 dòng; dây thép buộc chưa có số lượng. Anh bấm Mở form đề xuất để khớp mã rồi gửi.' : null)
+      ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 4 dòng; dây thép buộc chưa có số lượng. Anh chọn mã, kiểm số lượng, chọn người duyệt rồi bấm **Gửi duyệt** ngay trên thẻ.' : null)
       ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
       : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);

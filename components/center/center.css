@@ -582,6 +582,58 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-cmd-lines li b { flex: none; font-weight: 600; color: var(--vcc-num); font-variant-numeric: tabular-nums; }
 .vcc-cmd-lines li em { font-style: normal; font-weight: 500; color: var(--vcc-muted); }
 .vcc-cmd-lines .vcc-cmd-more { color: var(--vcc-muted); font-size: 12.5px; border-bottom: 0; }
+/* Form đề xuất vật tư ngay trong chat (chủ SP 18/10): ô nhập gọn, dòng vật tư thành khối nhỏ, gợi ý mã / người duyệt là nút bấm. */
+.vcc-mr { display: flex; flex-direction: column; gap: 10px; }
+.vcc-mr-loading { display: flex; align-items: center; gap: 6px; }
+.vcc-mr-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.vcc-mr-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--vcc-muted); min-width: 0; }
+.vcc-mr-wide { grid-column: span 1; }
+.vcc-mr input, .vcc-mr select { height: 34px; min-width: 0; width: 100%; border: 1px solid var(--vcc-border); border-radius: 8px; padding: 0 10px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 13.5px; }
+.vcc-mr input:focus, .vcc-mr select:focus { outline: 2px solid var(--vcc-accent); outline-offset: 1px; }
+.vcc-mr input[data-warn="true"] { border-color: var(--vcc-warn); }
+.vcc-mr-rows { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.vcc-mr-row { border: 1px solid var(--vcc-border); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--vcc-card); }
+.vcc-mr-row[data-state="todo"] { border-style: dashed; }
+.vcc-mr-row-head { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--vcc-muted); }
+.vcc-mr-said { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcc-mr-pill { flex: none; display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; padding: 1px 7px; font-weight: 600; font-size: 11px; background: var(--vcc-card2); color: var(--vcc-muted); }
+.vcc-mr-pill[data-tone="ok"] { background: var(--vcc-accent-soft); color: var(--vcc-num); }
+.vcc-mr-pill[data-tone="warn"] { background: var(--vcc-card2); color: var(--vcc-warn); }
+.vcc-mr-x { flex: none; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--vcc-muted); }
+.vcc-mr-x:hover:not(:disabled) { background: var(--vcc-hover); color: var(--vcc-fg); }
+.vcc-mr-row-main { display: grid; grid-template-columns: minmax(0, 1fr) 8.5rem; gap: 6px; }
+.vcc-mr-qty { position: relative; display: block; }
+.vcc-mr-qty input { padding-right: 44px; }
+.vcc-mr-qty span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); max-width: 2.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--vcc-muted); pointer-events: none; }
+.vcc-mr-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 12px; color: var(--vcc-muted); }
+.vcc-mr-chips button { min-height: 28px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.vcc-mr-chips button:hover:not(:disabled) { background: var(--vcc-accent); color: #fff; }
+.dark .vcc-mr-chips button:hover:not(:disabled) { color: #10251d; }
+.vcc-mr-chips button[aria-pressed="false"] { background: var(--vcc-card); color: var(--vcc-fg2); border-color: var(--vcc-border); }
+.vcc-mr-chips button[aria-pressed="true"] { background: var(--vcc-accent); color: #fff; border-color: var(--vcc-accent); }
+.dark .vcc-mr-chips button[aria-pressed="true"] { color: #10251d; }
+.vcc-mr-search { display: flex; flex-direction: column; gap: 6px; }
+.vcc-mr-search label { position: relative; display: block; }
+.vcc-mr-search label svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--vcc-muted); }
+.vcc-mr-search input { padding-left: 28px; }
+.vcc-mr-extra { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.vcc-mr-links { margin: 0; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+.vcc-mr-links button { color: var(--vcc-accent); font-weight: 600; }
+.vcc-mr-links button:hover:not(:disabled) { text-decoration: underline; }
+.vcc-mr-warn { margin: 0; display: flex; gap: 5px; align-items: flex-start; font-size: 12px; color: var(--vcc-warn); }
+.vcc-mr-warn svg { flex: none; margin-top: 2px; }
+.vcc-mr-approvers { display: flex; flex-direction: column; gap: 5px; }
+.vcc-mr-label { font-size: 12px; color: var(--vcc-muted); }
+.vcc-mr-problems { margin: 0; padding: 8px 10px; list-style: none; border-radius: 8px; border: 1px solid var(--vcc-warn); background: var(--vcc-card); display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--vcc-warn); }
+.vcc-mr-problems li { display: flex; gap: 5px; align-items: flex-start; }
+.vcc-mr-problems svg { flex: none; margin-top: 3px; }
+.vcc-mr .vcc-cmd-note { margin: 0; display: flex; align-items: center; gap: 4px; }
+@media (max-width: 640px) {
+  .vcc-mr-fields { grid-template-columns: 1fr; }
+  .vcc-mr-row-main { grid-template-columns: minmax(0, 1fr) 6.5rem; }
+  .vcc-mr-extra { grid-template-columns: 1fr; }
+  .vcc-mr input, .vcc-mr select { height: 40px; font-size: 16px; }
+}
 /* Gợi ý bấm (chủ SP 18/10): AI hỏi lại kèm phương án → nút; bấm là gửi đúng câu đó. */
 .vcc-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .vcc-suggest button { min-height: 32px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); font-size: 13px; font-weight: 600; text-align: left; }
