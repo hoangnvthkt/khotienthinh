@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, History, Loader2, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
+  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, History, Loader2, Lock, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
@@ -8,7 +8,7 @@ import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workIte
 import {
   answerQuick, availableQuickQuestions, briefDateLabel, briefFacts, buildBrief, linesByKeys, pronounOf, type Brief, type BriefLine,
 } from '../../lib/center/assistantBrief';
-import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult, AI_FEEDBACK_REASONS, type AiFeedbackReason } from '../../lib/aiGateway';
+import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult, AI_FEEDBACK_REASONS, type AiFeedbackReason, type MyAiAccess } from '../../lib/aiGateway';
 import {
   assistantChat, boldParts, displayText, isTodayThread, suggestionsOf, textBlocks, threadDayLabel, threadTimeLabel,
   type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
@@ -46,9 +46,12 @@ export interface AssistantHooks {
   dailyLog?: DailyLogFormActions;
   /** T4b: bảng "Trí nhớ" (xem / quên) + thẻ "nhớ giúp". */
   memory?: MemoryActions;
+  /** Trung tâm AI: người dùng đã được cấp Trợ lý chưa, trần câu / ngày. Không có → coi như được dùng (bản cũ). */
+  access?: () => Promise<MyAiAccess>;
 }
 export const defaultAssistantHooks: AssistantHooks = {
   memory: defaultMemoryActions,
+  access: () => aiGateway.myAccess(),
   poForm: createPoFormActions(),
   dailyLog: defaultDailyLogFormActions,
   status: () => aiGateway.status(),
@@ -250,6 +253,8 @@ const AssistantView: React.FC<{
   const [history, setHistory] = useState<{ open: boolean; list: ChatThreadSummary[] | 'loading' | 'error' | null }>({ open: false, list: null });
   const [question, setQuestion] = useState('');
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [access, setAccess] = useState<MyAiAccess | null>(null);
+  const [asked, setAsked] = useState(0);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [reading, setReading] = useState(false);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
@@ -285,6 +290,7 @@ const AssistantView: React.FC<{
     if (!started.current) {
       started.current = true;
       hooks.status().then(setAi).catch(() => setAi(null));
+      hooks.access?.().then(setAccess).catch(() => setAccess(null));
       // Hội thoại có tin trong hôm nay → mở lại để hỏi tiếp (tải lại trang không mất).
       hooks.listThreads().then(list => {
         setHistory(h => ({ ...h, list }));
@@ -302,7 +308,11 @@ const AssistantView: React.FC<{
     () => buildBrief(todayData, Array.isArray(items) ? items : null, now, person.gender),
     [todayData, items, now, person.gender],
   );
-  const configured = !!ai?.configured;
+  // Cổng AI đã có khóa (Tóm tắt bản tin dùng) + người này được cấp Trợ lý (Trung tâm AI) thì mới hỏi đáp được.
+  const aiReady = !!ai?.configured;
+  const notGranted = aiReady && access?.assistant === false;
+  const configured = aiReady && !notGranted;
+  const leftToday = access?.dailyQuestionCap != null ? Math.max(0, access.dailyQuestionCap - access.usedToday - asked) : null;
   const quick = availableQuickQuestions(brief);
   const context = { projectId: todayData?.project?.id || null, tab: 'assistant' };
   const isToday = !thread.startedAt || isTodayThread({ lastMessageAt: thread.startedAt }, now);
@@ -433,6 +443,7 @@ const AssistantView: React.FC<{
     ).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
     abort.current = null;
     setSending(false);
+    if (result.code === 'OK') setAsked(n => n + 1);
     if (result.code === 'OK') {
       // Giữ nguyên id hiển thị (không đổi sang id máy chủ): đổi khóa sẽ dựng lại thẻ lệnh nháp, mất những gì người dùng đang chọn / gõ
       // trên thẻ trong lúc chữ còn chạy (lỗi thấy ở form đơn mua trên điện thoại, 18/10).
@@ -516,7 +527,7 @@ const AssistantView: React.FC<{
       <div className="vcc-chat-scroll" ref={scroller} onScroll={onScroll} style={memoryOpen ? { display: 'none' } : undefined}>
         <div className="vcc-chat-col">
           {isToday ? (
-            <BriefCard brief={brief} now={now} items={items} today={today} configured={configured} narration={narration}
+            <BriefCard brief={brief} now={now} items={items} today={today} configured={aiReady} narration={narration}
               onNarrate={narrate} onNarrationFeedback={accepted => { sendFeedback(narration.runId, accepted); setNarration(n => ({ ...n, feedback: accepted })); }}
               onRefresh={refresh} onOpenItem={onOpenItem} onDrill={onDrill} />
           ) : (
@@ -621,6 +632,9 @@ const AssistantView: React.FC<{
               {quick.map(q => <button key={q.id} type="button" className="vcc-chip" onClick={() => askQuick(q.id, q.text)}>{q.text}</button>)}
             </div>
           )}
+          {notGranted && (
+            <p className="vcc-chat-denied" role="status"><Lock size={14} aria-hidden="true" /> Trợ lý AI chưa được cấp cho {you}{access?.admin ? ` — nhờ ${access.admin} cấp ở Trung tâm AI` : ' — nhờ Quản trị AI cấp ở Trung tâm AI'}. Bản tin và các nút bên trên vẫn dùng được.</p>
+          )}
           {configured && (
             <>
             {(attachments.length > 0 || reading || fileErrors.length > 0) && (
@@ -668,6 +682,7 @@ const AssistantView: React.FC<{
                 <button type="submit" className="vcc-composer-send" aria-label="Gửi" title="Gửi (Enter)" disabled={reading || (question.trim().length < 2 && !attachments.length)}><ArrowUp size={16} /></button>
               )}
             </form>
+            {leftToday != null && <p className="vcc-chat-left" data-low={leftToday <= 3 || undefined}>Còn {leftToday} câu hôm nay</p>}
             </>
           )}
         </div>

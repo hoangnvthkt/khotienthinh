@@ -424,6 +424,12 @@ const dailyLog: DailyLogFormActions = {
 const assistantHooks: AssistantHooks = {
   poForm,
   memory,
+  // Trung tâm AI: ?access=none → chưa được cấp Trợ lý; ?access=cap → trần 30 câu/ngày, đã dùng 27.
+  access: async () => (params.get('access') === 'none'
+    ? { assistant: false, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }
+    : params.get('access') === 'cap'
+      ? { assistant: true, dailyQuestionCap: 30, monthlyCostCapUsd: 3, usedToday: 27, monthCostUsd: 0.4, admin: 'Admin Hoàng' }
+      : { assistant: true, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }),
   dailyLog,
   ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),

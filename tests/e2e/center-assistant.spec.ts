@@ -780,3 +780,14 @@ test("như app thật (không truyền hàm tải việc): mở Trợ lý không
   await expect(page.getByText("Đã xảy ra lỗi hệ thống")).toHaveCount(0);
   expect(errors.filter(message => /is not a function/.test(message))).toEqual([]);
 });
+
+test("Trung tâm AI: chưa được cấp Trợ lý thì báo rõ ai cấp, bản tin vẫn dùng; có trần thì hiện số câu còn lại", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini&access=none`);
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByRole("status").filter({ hasText: "Trợ lý AI chưa được cấp" })).toContainText("nhờ Admin Hoàng cấp ở Trung tâm AI");
+  await expect(page.getByLabel("Câu hỏi", { exact: true })).toHaveCount(0);
+  await expect(brief(page)).toBeVisible();
+  await page.goto(`${base}?ai=gemini&access=cap`);
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByText("Còn 3 câu hôm nay")).toBeVisible();
+});
