@@ -1,17 +1,21 @@
 // Trợ lý v2 · T1: công cụ ĐỌC của Trợ lý (chủ SP 18/10/2026). Mỗi công cụ gọi lệnh máy chủ sẵn có bằng JWT người hỏi —
-// RLS / kiểm quyền của module quyết định thấy gì; AI không bao giờ thấy nhiều hơn người hỏi. Không có công cụ ghi.
+// RLS / kiểm quyền của module quyết định thấy gì; AI không bao giờ thấy nhiều hơn người hỏi. Không có công cụ ghi nghiệp vụ:
+// công cụ chuan_bi_… (T2) chỉ ghi lệnh nháp + hiện thẻ, người dùng tự bấm gửi ở thẻ / form của module.
 //   tim_ho_so          search_global_v1 (20 loại hồ sơ, như ô Tìm kiếm)
 //   ton_kho            search_global_v1 (vật tư) → ai_stock_by_items_v1 (tồn theo kho người hỏi xem được)
 //   chi_tiet_don_mua   get_procurement_order_v1 + get_procurement_po_payment_status_v1
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
+//   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
+//   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
-/** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a). */
-export interface ToolContext { rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void }
+/** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a).
+ *  projectId: dự án đang xem ở Trung tâm — mặc định cho lệnh theo dự án (đề xuất vật tư) khi người dùng không nói dự án. */
+export interface ToolContext { rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void; projectId?: string | null }
 
 export const KIND_LABEL: Record<string, string> = {
   project: 'Dự án', employee: 'Nhân viên', item: 'Vật tư', wms_tx: 'Phiếu kho', material_code: 'Đề xuất cấp mã', purchase_order: 'Đơn hàng',
@@ -23,7 +27,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
-  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư',
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -67,14 +71,33 @@ export const TOOLS: ToolSpec[] = [
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
   {
     name: 'chuan_bi_don_nghi_phep',
-    description: 'CHUẨN BỊ đơn nghỉ phép nháp cho chính người hỏi (không gửi): kiểm tra số ngày, người duyệt, phép còn, vấn đề; rồi hiện thẻ để người dùng xem và tự bấm Gửi đơn. Chỉ dùng khi người dùng yêu cầu rõ và đã có loại nghỉ, ngày, lý do.',
-    parameters: { type: 'object', additionalProperties: false, required: ['loai', 'tu_ngay', 'ly_do'], properties: {
+    description: 'CHUẨN BỊ đơn nghỉ phép nháp cho chính người hỏi (không gửi): kiểm tra số ngày, người duyệt, phép còn, vấn đề; rồi hiện thẻ để người dùng xem và tự bấm Gửi đơn. Dùng khi người dùng muốn xin nghỉ; chưa rõ loại thì gọi với loai bỏ trống để lấy danh sách loại thật (đưa thành gợi ý bấm), thiếu ngày / lý do thì công cụ báo để hỏi lại.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
       loai: { type: 'string', description: 'Loại nghỉ theo lời người dùng, VD "phép năm", "nghỉ ốm", "việc riêng không lương".' },
       tu_ngay: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD.' },
       den_ngay: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD (bỏ trống = nghỉ trong một ngày).' },
       buoi_bat_dau: { type: 'string', enum: ['ca_ngay', 'sang', 'chieu'], description: 'Ngày đầu nghỉ cả ngày / buổi sáng / buổi chiều.' },
       buoi_ket_thuc: { type: 'string', enum: ['ca_ngay', 'sang', 'chieu'], description: 'Ngày cuối nghỉ cả ngày / buổi sáng / buổi chiều.' },
       ly_do: { type: 'string', description: 'Lý do nghỉ (ít nhất 3 ký tự), theo lời người dùng.' },
+    } },
+  },
+  // T2b — đề xuất vật tư: tách câu thành dòng + chọn dự án; thẻ mở form Đề xuất thật (Gõ nhanh điền sẵn), người dùng khớp mã và tự gửi.
+  {
+    name: 'chuan_bi_de_xuat_vat_tu',
+    description: 'CHUẨN BỊ phiếu đề xuất vật tư nháp cho dự án (không gửi): tách lời người dùng thành từng dòng vật tư rồi hiện thẻ; người dùng bấm "Mở form đề xuất" để khớp mã, kiểm và tự gửi. Dùng khi người dùng muốn đề xuất / xin / cần vật tư cho công trường và đã nói ít nhất một vật tư.',
+    parameters: { type: 'object', additionalProperties: false, required: ['dong'], properties: {
+      du_an: { type: 'string', description: 'Mã hoặc tên dự án theo lời người dùng (bỏ trống = dự án đang xem).' },
+      ten_de_xuat: { type: 'string', description: 'Tên phiếu ngắn, VD "Vật tư đổ bê tông sàn tầng 4" (bỏ trống thì lấy theo mục đích).' },
+      muc_dich: { type: 'string', description: 'Dùng cho việc gì / hạng mục nào, theo lời người dùng.' },
+      ngay_can: { type: 'string', description: 'Ngày cần vật tư YYYY-MM-DD (nếu người dùng nói).' },
+      dong: { type: 'array', minItems: 1, maxItems: 30, description: 'Mỗi vật tư một dòng, giữ nguyên cách gọi của người dùng.', items: {
+        type: 'object', additionalProperties: false, required: ['ten'], properties: {
+          ten: { type: 'string', description: 'Tên vật tư, VD "xi măng PCB40", "thép D16".' },
+          quy_cach: { type: 'string', description: 'Quy cách / kích thước nếu có, VD "dày 0.45mm", "D110 C1".' },
+          so_luong: { type: 'number', description: 'Số lượng (bỏ trống nếu người dùng chưa nói).' },
+          don_vi: { type: 'string', description: 'Đơn vị theo lời người dùng: bao, tấn, cây, m, m3, cái…' },
+          ghi_chu: { type: 'string', description: 'Ghi chú riêng của dòng (dùng cho khu nào, tổ nào…).' },
+        } } },
     } },
   },
 ];
@@ -151,13 +174,73 @@ export const matchLeaveType = (text: string, types: Array<Record<string, unknown
   return hits.length === 1 ? hits[0] : null;
 };
 
+const PROJECT_GENERIC = new Set(['du', 'an', 'cong', 'trinh', 'ct', 'da']);
+/** Dự án theo lời người dùng: trùng mã / tên thì lấy luôn; không thì mọi từ (bỏ "dự án", "công trình") phải có trong mã + tên. */
+export const matchProjects = <T extends Record<string, unknown>>(text: string, projects: T[]): T[] => {
+  const q = fold(text);
+  if (!q) return [];
+  const exact = projects.filter(p => fold(p.code) === q || fold(p.name) === q);
+  if (exact.length) return exact;
+  const wanted = words(q).filter(w => !PROJECT_GENERIC.has(w));
+  if (!wanted.length) return [];
+  return projects.filter(p => {
+    const code = fold(p.code);
+    const have = new Set(words(`${code} ${fold(p.name)}`));
+    return wanted.every(w => have.has(w) || code.includes(w));
+  });
+};
+const projectLabel = (p: Record<string, unknown>) => [str(p.code, 40), str(p.name, 80)].filter(Boolean).join(' · ');
+/** Ngày hôm nay giờ Việt Nam (YYYY-MM-DD). */
+const vnToday = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+
+async function prepareMaterialRequest(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
+  const lines = asArray(args.dong).map(asObject).map(l => {
+    const qty = num(l.so_luong);
+    return compact({ name: str(l.ten, 160), spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), note: str(l.ghi_chu, 160) });
+  }).filter(l => l.name).slice(0, 30);
+  if (!lines.length) return JSON.stringify({ loi: 'Chưa có vật tư nào. Hỏi lại người dùng cần vật tư gì, bao nhiêu.' });
+  const neededDate = str(args.ngay_can, 10);
+  if (neededDate && (!ISO_DAY.test(neededDate) || neededDate < vnToday())) return JSON.stringify({ loi: 'Ngày cần chưa đúng (YYYY-MM-DD, không trước hôm nay). Hỏi lại người dùng.' });
+
+  const list = await ctx.rpc('assistant_mr_projects_v1', {});
+  if (list.error) return toolError(list.error, 'dự án');
+  const projects = asArray(list.data).map(asObject).filter(p => str(p.id));
+  if (!projects.length) return JSON.stringify({ loi: 'Người hỏi chưa được lập đề xuất vật tư ở dự án nào — nói rõ và gợi ý nhờ quản lý dự án cấp quyền.' });
+  const asked = str(args.du_an, 80);
+  const hits = asked ? matchProjects(asked, projects) : projects.filter(p => p.id === ctx.projectId);
+  const project = hits.length === 1 ? hits[0] : !asked && projects.length === 1 ? projects[0] : null;
+  if (!project) {
+    const options = (hits.length > 1 ? hits : projects).slice(0, 6);
+    return JSON.stringify({ loi: asked && !hits.length ? `Không thấy dự án "${asked}" trong các dự án người hỏi được lập đề xuất.` : 'Chưa rõ dự án nào.',
+      can_hoi: 'Hỏi lại người dùng chọn dự án; mỗi dự án dưới đây là một gợi ý bấm (ghi mã dự án).', cac_du_an: options.map(projectLabel) });
+  }
+  const purpose = str(args.muc_dich, 200);
+  const first = String(lines[0].name);
+  const raw = (str(args.ten_de_xuat, 120) || purpose || `Vật tư ${first}${lines.length > 1 ? ` và ${lines.length - 1} vật tư khác` : ''}`).slice(0, 120);
+  const title = raw.charAt(0).toUpperCase() + raw.slice(1);
+  const code = str(project.code, 40) || str(project.name, 40) || 'dự án';
+  const payload = compact({ projectId: str(project.id, 80), projectCode: str(project.code, 40), projectName: str(project.name, 160), siteId: str(project.siteId, 80),
+    title, purpose, neededDate, lines });
+  const missingQty = lines.filter(l => l.qty == null).length;
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'material_request', p_title: `Đề xuất vật tư ${code}`,
+    p_payload: payload, p_preview: compact({ lineCount: lines.length, missingQty: missingQty || null }) });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được lệnh, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  return JSON.stringify(compact({
+    da_hien_the: true, du_an: projectLabel(project), ten_de_xuat: title, so_dong: lines.length, dong_chua_co_so_luong: missingQty || null, ngay_can: neededDate,
+    ghi_chu: 'Thẻ đề xuất nháp đã hiện. Người dùng bấm "Mở form đề xuất" để khớp mã vật tư, kiểm số lượng rồi tự gửi. Không nói là đã gửi hay đã tạo phiếu.',
+  }));
+}
+
 async function prepareLeave(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được lệnh ở đây.' });
   const typesRes = await ctx.rpc('assistant_leave_types_v1', {});
   if (typesRes.error) return toolError(typesRes.error, 'loại nghỉ phép');
   const types = asArray(typesRes.data).map(asObject);
   const type = matchLeaveType(str(args.loai, 80) || '', types);
-  if (!type) return JSON.stringify({ loi: 'Chưa rõ loại nghỉ. Hỏi lại người dùng chọn một loại.', cac_loai: types.map(t => str(t.name)).filter(Boolean) });
+  if (!type) return JSON.stringify({ loi: 'Chưa rõ loại nghỉ.', can_hoi: 'Hỏi lại người dùng chọn một loại; mỗi loại dưới đây là một gợi ý bấm.',
+    cac_loai: types.filter(t => t.unit !== 'minute').map(t => str(t.name)).filter(Boolean) });
   if (type.unit === 'minute') return JSON.stringify({ loi: `${str(type.name)} tính theo phút — người dùng mở màn Nghỉ phép để điền.` });
   const start = str(args.tu_ngay, 10);
   const end = str(args.den_ngay, 10) || start;
@@ -278,6 +361,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   }
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
+  if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
 
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }

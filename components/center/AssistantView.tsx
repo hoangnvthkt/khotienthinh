@@ -10,7 +10,7 @@ import {
 } from '../../lib/center/assistantBrief';
 import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult } from '../../lib/aiGateway';
 import {
-  assistantChat, boldParts, displayText, isTodayThread, textBlocks, threadDayLabel, threadTimeLabel,
+  assistantChat, boldParts, displayText, isTodayThread, suggestionsOf, textBlocks, threadDayLabel, threadTimeLabel,
   type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
 } from '../../lib/assistantChat';
 import { recordTarget } from '../../lib/search/recordPresentation';
@@ -478,6 +478,15 @@ const AssistantView: React.FC<{
                         {message.commands.map(command => <AssistantCommandCard key={command.id} command={command} now={now} you={you} actions={commandActions} />)}
                       </div>
                     )}
+                    {message.state === 'done' && message.id === messages[messages.length - 1]?.id && (() => {
+                      // Gợi ý bấm chỉ ở câu trả lời cuối: bấm là gửi đúng câu đó (chủ SP 18/10 — không bắt gõ lại).
+                      const options = suggestionsOf(message.content);
+                      return options.length > 0 && (
+                        <div className="vcc-suggest" role="group" aria-label="Gợi ý trả lời">
+                          {options.map(option => <button key={option} type="button" disabled={sending || !configured} onClick={() => void send(option)}>{option}</button>)}
+                        </div>
+                      );
+                    })()}
                     {message.state === 'error' && (
                       <p className="vcc-msg-err" role="alert">
                         {message.error}

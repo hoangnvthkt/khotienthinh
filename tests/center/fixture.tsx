@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
-import type { AssistantCommand } from '../../lib/assistantCommands';
+import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
@@ -247,6 +247,21 @@ const leaveCommand = (): AssistantCommand => ({
     problems: AI === 'leave-short' ? ['Phép năm còn 0,5 ngày, không đủ 1 ngày.'] : [] },
   result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
 });
+// T2b: câu đề xuất vật tư → Trợ lý tách dòng, chọn dự án đang xem, hiện thẻ mở form Đề xuất (không lập phiếu).
+const mrCommand = (): AssistantCommand => ({
+  id: `cmd-mr-${Date.now()}`, kind: 'material_request', status: 'prepared', title: 'Đề xuất vật tư SMB-2026',
+  payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', title: 'Vật tư đổ bê tông sàn tầng 4', purpose: 'Đổ bê tông sàn tầng 4',
+    neededDate: '2026-10-23', lines: [{ name: 'Xi măng PCB40', qty: 2, unit: 'tấn' }, { name: 'Thép', spec: 'D16', qty: 50, unit: 'cây' }, { name: 'Dây thép buộc', unit: 'kg' }] },
+  preview: { lineCount: 3, missingQty: 1 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+// Form Đề xuất (bản thử) lưu xong: báo thẻ cùng trang đổi thành biên nhận như form thật.
+(window as unknown as { __fxSaveMr: (submitted: boolean) => void }).__fxSaveMr = submitted => {
+  const command = loadThreads().flatMap(t => t.messages.flatMap(m => m.commands || [])).filter(c => c.kind === 'material_request' && c.status === 'prepared').at(-1);
+  if (!command) return;
+  const done: AssistantCommand = { ...command, status: 'done', result: { code: 'MR-2026-0042', id: 'mr-42', submitted }, confirmedAt: new Date(NOW).toISOString() };
+  saveCommand(done);
+  notifyCommandChanged(done);
+};
 const assistantHooks: AssistantHooks = {
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
@@ -296,10 +311,21 @@ const assistantHooks: AssistantHooks = {
       : { tool: { name: 'chi_tiet_don_mua', label: 'Chi tiết đơn mua', query: 'PO-646' }, text: 'PO-646 còn phải giao **8 tấn** thép D16, còn nợ NCC 280.000.000đ [[h1]].',
         record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
-    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup;
-    const command = wantsLeave ? leaveCommand() : null;
-    if (command) { await sleep(120); handlers.onTool?.({ name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' }); await sleep(150); handlers.onCommand?.(command); }
-    const answer = refused ?? lookup?.text ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
+    // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
+    const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
+    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup;
+    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup && !asksType && !wantsMr;
+    const command = wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
+    if (command) {
+      await sleep(120);
+      handlers.onTool?.(wantsMr ? { name: 'chuan_bi_de_xuat_vat_tu', label: 'Chuẩn bị đề xuất vật tư', query: '' } : { name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' });
+      await sleep(150);
+      handlers.onCommand?.(command);
+    }
+    const answer = refused ?? lookup?.text
+      ?? (asksType ? 'Anh nghỉ loại nào? [[goi_y:Phép năm]] [[goi_y:Ốm đau (BHXH)]] [[goi_y:Việc riêng không lương]]' : null)
+      ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 3 dòng; dây thép buộc chưa có số lượng. Anh bấm Mở form đề xuất để khớp mã rồi gửi.' : null)
+      ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
       ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
       : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);
     let sent = '';
@@ -317,10 +343,10 @@ const assistantHooks: AssistantHooks = {
     if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
     const messageId = `msg-${aiCalls.length}`;
     thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
-      { id: messageId, role: 'assistant', content: answer, sources: lookup || command ? [] : keys, runId, accepted: null, createdAt: at, commands: command ? [command] : [] });
+      { id: messageId, role: 'assistant', content: answer, sources: lookup || command || asksType ? [] : keys, runId, accepted: null, createdAt: at, commands: command ? [command] : [] });
     thread.lastMessageAt = at;
     saveThreads(all);
-    const sources = refused || command ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
+    const sources = refused || command || asksType ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
     return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources, model: 'gemini-2.5-pro', saved: true };
   },
 };
