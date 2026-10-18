@@ -22,11 +22,11 @@ export interface ConverseDeps {
   budgetMs?: number;
 }
 
-export async function converse(d: ConverseDeps): Promise<{ text: string; usage: { tokensIn: number | null; tokensOut: number | null } }> {
+export async function converse(d: ConverseDeps): Promise<{ text: string; usage: { tokensIn: number | null; tokensOut: number | null; calls: number } }> {
   const now = d.now || Date.now;
   const messages: AgentMsg[] = d.turns.map(t => ({ role: t.role, content: t.content }));
   const refBook = new Map<string, Record<string, unknown>>();
-  let text = ''; let tokensIn: number | null = null; let tokensOut: number | null = null; let calls = 0;
+  let text = ''; let tokensIn: number | null = null; let tokensOut: number | null = null; let calls = 0; let steps = 0;
   const add = (a: number | null, b: number | null) => (a == null && b == null ? null : (a || 0) + (b || 0));
   for (let step = 0; step <= MAX_AGENT_STEPS; step++) {
     const last = step === MAX_AGENT_STEPS || calls >= MAX_TOOL_CALLS || now() - d.started > (d.budgetMs ?? 80_000);
@@ -39,7 +39,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
       const chunk = fresh && text && !text.endsWith('\n') ? `\n\n${delta}` : delta;
       fresh = false; text += chunk; d.emit({ type: 'delta', text: chunk });
     });
-    tokensIn = add(tokensIn, out.usage.tokensIn); tokensOut = add(tokensOut, out.usage.tokensOut);
+    tokensIn = add(tokensIn, out.usage.tokensIn); tokensOut = add(tokensOut, out.usage.tokensOut); steps++;
     if (!out.toolCalls.length || last) break;
     messages.push({ role: 'assistant', content: out.text, toolCalls: out.toolCalls });
     const results: Array<{ id: string; name: string; content: string }> = [];
@@ -57,5 +57,6 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
     }
     messages.push({ role: 'tool', results });
   }
-  return { text, usage: { tokensIn, tokensOut } };
+  // calls = số lượt gọi model (tính chi phí theo lượt).
+  return { text, usage: { tokensIn, tokensOut, calls: steps } };
 }

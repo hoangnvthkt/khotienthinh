@@ -5,11 +5,12 @@
 //   AI_PRICE_IN_PER_M / AI_PRICE_OUT_PER_M = USD mỗi triệu token (không đặt → chi phí ghi "chưa rõ")
 //   Kết nối Admin thêm ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên; chưa gán thì dùng các biến trên (index.ts chọn đích).
 import Anthropic from '@anthropic-ai/sdk';
-import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
+import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, runCostUsd, type AiPrice, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
 export type { ModelClass };
-export interface Usage { tokensIn: number | null; tokensOut: number | null }
+/** calls = số lượt gọi model trong lượt AI (vòng gọi công cụ nhiều bước); không ghi = 1. */
+export interface Usage { tokensIn: number | null; tokensOut: number | null; calls?: number }
 export interface Completion { text: string; usage: Usage }
 import type { ImagePart } from './images.ts';
 import { readSse } from './chat.ts';
@@ -58,9 +59,7 @@ export const readConfig = (env: (name: string) => string | undefined): GatewayCo
   };
 };
 
-export const costUsd = (usage: Usage, price: GatewayConfig['price']) =>
-  usage.tokensIn == null || usage.tokensOut == null || price.inPerM == null || price.outPerM == null
-    ? null : Math.round(((usage.tokensIn * price.inPerM + usage.tokensOut * price.outPerM) / 1e6) * 1e5) / 1e5;
+export const costUsd = (usage: Usage, price: AiPrice | null | undefined) => runCostUsd(usage, price, usage.calls ?? 1);
 
 /** Đích từ Secrets (chưa gán kết nối). */
 export const envTarget = (config: GatewayConfig, modelClass: ModelClass): AiTarget | null => config.key

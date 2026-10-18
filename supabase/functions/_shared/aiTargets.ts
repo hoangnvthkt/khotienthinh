@@ -14,8 +14,8 @@ export interface AiTarget {
   source: 'connection' | 'secrets';
   name: string;
   connectionId?: string;
-  /** Giá USD mỗi 1 triệu token khai ở Cài đặt → Kết nối (để tính chi phí và trần tháng); thiếu thì dùng AI_PRICE_* trong Secrets. */
-  price?: { inPerM: number; outPerM: number } | null;
+  /** Giá khai ở Cài đặt → Kết nối (để tính chi phí và trần tháng); thiếu thì dùng AI_PRICE_* trong Secrets. */
+  price?: AiPrice | null;
 }
 
 export const DEFAULT_BASE_URL: Record<AiKind, string> = {
@@ -38,10 +38,26 @@ export const KIND_LABEL: Record<AiKind, string> = {
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
 const priceNum = (v: unknown) => (v == null || v === '' ? NaN : Number(v));
-/** Giá của kết nối: cần đủ cả vào và ra mới dùng được. */
-export const priceOf = (inPerM: unknown, outPerM: unknown): { inPerM: number; outPerM: number } | null => {
-  const i = priceNum(inPerM); const o = priceNum(outPerM);
-  return Number.isFinite(i) && Number.isFinite(o) && i >= 0 && o >= 0 ? { inPerM: i, outPerM: o } : null;
+/** Giá USD: mỗi 1 triệu token vào / ra, và (18/10) mỗi lượt gọi model cho cổng báo token vào không ổn định (RevidAPI). */
+export interface AiPrice { inPerM: number | null; outPerM: number | null; perCall?: number | null }
+const priceVal = (v: unknown) => { const n = priceNum(v); return Number.isFinite(n) && n >= 0 ? n : null; };
+/** Giá của kết nối: có giá mỗi lượt, hoặc đủ cả giá vào và ra, mới dùng được; không thì null (dùng giá trong Secrets). */
+export const priceOf = (inPerM: unknown, outPerM: unknown, perCall?: unknown): AiPrice | null => {
+  const i = priceVal(inPerM); const o = priceVal(outPerM); const c = priceVal(perCall);
+  if (c != null) return { inPerM: i, outPerM: o, perCall: c };
+  return i != null && o != null ? { inPerM: i, outPerM: o, perCall: null } : null;
+};
+
+/**
+ * Chi phí một lượt AI (USD, 5 số lẻ). Có giá mỗi lượt: số lượt gọi model × giá lượt + token ra × giá ra (câu dài như soạn văn bản
+ * tự tính thêm); bỏ token vào vì cổng trung gian báo không ổn định. Không có: token vào × giá vào + token ra × giá ra. Thiếu số → null.
+ */
+export const runCostUsd = (usage: { tokensIn: number | null; tokensOut: number | null }, price: AiPrice | null | undefined, calls = 1): number | null => {
+  if (!price) return null;
+  const round = (v: number) => Math.round(v * 1e5) / 1e5;
+  if (price.perCall != null) return round(Math.max(calls, 1) * price.perCall + (usage.tokensOut ?? 0) * (price.outPerM ?? 0) / 1e6);
+  if (usage.tokensIn == null || usage.tokensOut == null || price.inPerM == null || price.outPerM == null) return null;
+  return round((usage.tokensIn * price.inPerM + usage.tokensOut * price.outPerM) / 1e6);
 };
 
 /** Hàng từ integration_secret_v1 (service_role) → đích; thiếu khóa thì null. */
@@ -52,7 +68,7 @@ export const targetFromConnection = (row: unknown, modelClass: ModelClass): AiTa
   return {
     kind, baseUrl: trimUrl(String(r.baseUrl || DEFAULT_BASE_URL[kind])), apiKey: String(r.apiKey),
     model: String(r.model || DEFAULT_MODELS[kind][modelClass] || ''), source: 'connection', name: String(r.name || KIND_LABEL[kind]), connectionId: String(r.id || ''),
-    price: priceOf(r.priceInPerM, r.priceOutPerM),
+    price: priceOf(r.priceInPerM, r.priceOutPerM, r.pricePerCall),
   };
 };
 
