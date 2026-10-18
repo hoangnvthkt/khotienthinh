@@ -36,7 +36,7 @@ Hướng dẫn người dùng: `docs/command-center/huong-dan-trung-tam-dieu-han
 | E2E | `npx playwright test -c tests/center/playwright.config.ts tests/e2e/center-assistant.spec.ts tests/e2e/center-ai-admin.spec.ts` (desktop + mobile-safari). Chạy cả bộ có vài ca chập chờn khi tải nặng (T2a, T2b, 3D) — chạy riêng là đạt |
 | Kiểm tra trước PR | `npm run check:supabase-migrations && npm run lint && npm run check:supabase-queries && TZ=UTC npx vitest run && npm run build` (dùng `set -o pipefail`, đừng `\| tail` che lỗi) |
 | Type-check cổng AI | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json` |
-| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **15 ca, phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
+| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **19 ca (có 6 ca theo vai Admin / nhân viên thường), phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
 | SQL trên Cloud | `CLOUD_SQL_ENV=/Users/admin/khotienthinh/.env node scripts/cloud-sql.mjs "select …"` (chỉ đọc); `--file x.sql --rollback` (chạy thử); `--file x.sql --write` (ghi thật) |
 | Smoke migration (giao dịch rollback) | `SUPABASE_ACCESS_TOKEN=… node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/<m>.sql --smoke supabase/tests/<s>.sql` |
 | Áp migration | thêm tên tệp vào `supabase/baseline/current.json` (sửa bằng parse JSON) → `export SUPABASE_ACCESS_TOKEN=$(grep '^SUPABASE_ACCESS_TOKEN=' /Users/admin/khotienthinh/.env \| cut -d= -f2- \| tr -d '"')` → `npx --no-install supabase db push --linked --dry-run` → `echo Y \| npx --no-install supabase db push --linked` |
@@ -131,6 +131,7 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 - CSS điện thoại toàn cục: `button` cảm ứng min 44px (công tắc phải bọc rãnh bên trong); `.text-xs` trong `.grid > div` bị ép một dòng ≤768px.
 - `vitest --root /` quét cả máy → treo; chạy test thăm dò bên trong repo.
 - Lời nhắc tự giới hạn phạm vi ("nhân sự của chính người hỏi") làm Admin bị từ chối xem phép người khác dù có quyền HR (18/10 tối) → phạm vi ghi "trong quyền xem", công cụ gọi RPC và để RPC chặn.
+  Rà soát đủ 9 RPC × 3 vai 18/10: `docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md` — không RPC nào lộ / chặn quá tay; mọi 42501 ở `tools.ts` thành `outOfScope()`; tệp thử lại `supabase/tests/ai_tool_permissions_smoke.sql` (rollback, chỉ đọc).
 - Quy chuẩn "không dùng pdf.js để **xem** PDF": Trợ lý dùng `pdfjs-dist` 4.10.38 **legacy** chỉ để **đọc chữ**, tải lười khi ghim PDF, lỗi thì báo người dùng (không sập).
 
 ## 8. Việc còn mở / sẽ làm

@@ -6,8 +6,9 @@
 //   chi_tiet_don_mua   get_procurement_order_v1 + get_procurement_po_payment_status_v1
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
-//   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm; RPC tự chặn: chính mình hoặc HR / Admin có
-//                      hrm.employee.view_sensitive) · list_hrm_leave_balances (toàn công ty, chỉ HR). Quyền do RPC quyết, không phải lời nhắc (chủ SP 18/10 tối).
+//   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm) · list_hrm_leave_balances (toàn công ty). RPC tự chặn 42501.
+// Quyền do RPC / RLS quyết, không phải lời nhắc (chủ SP 18/10 tối): mọi 42501 thành {loi: "Ngoài phạm vi người hỏi được xem: …"} để model nói
+// đúng vậy thay vì bịa hay nói "không tồn tại". Rà soát 9 RPC × 3 vai: docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md.
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
 //   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
@@ -79,11 +80,11 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     name: 'phep_nhan_vien',
-    description: 'Số ngày phép năm của một nhân viên (được hưởng, đã nghỉ, còn lại, đang chờ duyệt, phép chuyển từ năm trước) và các lần ghi sổ phép gần nhất. Dùng khi hỏi "còn bao nhiêu ngày phép", "số phép của ai". Luôn gọi công cụ này rồi mới trả lời: máy chủ tự kiểm quyền — ai cũng xem được phép của chính mình; phép của người khác chỉ HR / Admin xem được, không tự kết luận là không có quyền. Trùng tên thì công cụ trả danh sách để hỏi lại bằng gợi ý bấm.',
+    description: 'Số ngày phép năm của một nhân viên (được hưởng, đã nghỉ, còn lại, đang chờ duyệt, phép chuyển từ năm trước) và các lần ghi sổ phép gần nhất. Dùng khi hỏi "còn bao nhiêu ngày phép", "số phép của ai". Luôn gọi công cụ này rồi mới trả lời: máy chủ tự kiểm quyền theo người hỏi và báo nếu ngoài quyền — không tự kết luận trước là có hay không có quyền. Trùng tên thì công cụ trả danh sách để hỏi lại bằng gợi ý bấm.',
     parameters: { type: 'object', additionalProperties: false, properties: {
       ten: { type: 'string', description: 'Tên (có thể chỉ tên gọi, VD "Hương") hoặc mã nhân viên cần xem. Bỏ trống = chính người hỏi.' },
       nam: { type: 'integer', description: 'Năm phép (mặc định năm hiện tại).' },
-      toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); chỉ HR xem được.' },
+      toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); máy chủ kiểm quyền.' },
     } },
   },
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
@@ -177,17 +178,26 @@ export const searchTerms = (text: string): string[][] =>
   String(text ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase()
     .replace(/[^a-z0-9./-]+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 6).map(t => [t.slice(0, 60)]);
 
-const denied = (error: { message?: string; code?: string } | null) => Boolean(error && (error.code === '42501' || /DENIED|NOT_FOUND|42501/i.test(error.message || '')));
-const toolError = (error: { message?: string; code?: string } | null, what: string) =>
-  JSON.stringify(denied(error) ? { loi: `Không thấy ${what} trong phạm vi người hỏi được xem.` } : { loi: `Chưa đọc được ${what}, thử lại sau.` });
+type RpcError = { message?: string; code?: string } | null;
+/** Máy chủ từ chối theo quyền người hỏi (42501 / *_DENIED). */
+const denied = (error: RpcError) => Boolean(error && (error.code === '42501' || /DENIED|42501/i.test(error.message || '')));
+/** Hồ sơ không có (PT404 / *_NOT_FOUND) — chỉ gặp khi người hỏi đã có quyền xem loại đó. */
+const notFound = (error: RpcError) => Boolean(error && (error.code === 'PT404' || /NOT_FOUND/i.test(error.message || '')));
+/** Lời báo thống nhất khi RPC chặn 42501: model nói rõ là ngoài quyền xem — không bịa, không nói "không tồn tại" (rà soát 18/10). */
+export const outOfScope = (what: string) => ({ loi: `Ngoài phạm vi người hỏi được xem: ${what} (máy chủ từ chối theo quyền). Nói rõ là ngoài quyền xem, không đoán số, không nói là không tồn tại.` });
+const toolError = (error: RpcError, what: string) =>
+  JSON.stringify(denied(error) ? outOfScope(what) : notFound(error) ? { loi: `Không thấy ${what} trong phạm vi người hỏi được xem.` } : { loi: `Chưa đọc được ${what}, thử lại sau.` });
 
 const searchRecords = async (ctx: ToolContext, text: string, kinds: string[] | null, limit: number) => {
   const terms = searchTerms(text);
-  if (!terms.length) return { records: [] as Record<string, unknown>[], error: null, empty: true };
+  const none = { records: [] as Record<string, unknown>[], denied: [] as string[] };
+  if (!terms.length) return { ...none, error: null, empty: true };
   const r = await ctx.rpc('search_global_v1', { p_terms: terms, p_kinds: kinds, p_limit: limit });
-  if (r.error) return { records: [], error: r.error, empty: false };
+  if (r.error) return { ...none, error: r.error, empty: false };
   const records = asArray(asObject(r.data).records).map(asObject).filter(x => typeof x.id === 'string' && typeof x.kind === 'string');
-  return { records, error: null, empty: false };
+  // Nguồn chặn 42501 (SECURITY DEFINER như danh bạ) nằm ở `denied`; nguồn theo RLS (vật tư, kho…) chỉ trả rỗng — không phân biệt được "không có" và "không quyền".
+  const deniedKinds = asArray(asObject(r.data).denied).filter((k): k is string => typeof k === 'string');
+  return { records, denied: deniedKinds, error: null, empty: false };
 };
 
 /** Hồ sơ gửi màn hình (mở được): bỏ thông tin liên hệ cá nhân trong extra. */
@@ -529,7 +539,7 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
   // Toàn công ty: list_hrm_leave_balances tự chặn người không phải HR (42501).
   if (args.toan_cong_ty === true) {
     const all = await ctx.rpc('list_hrm_leave_balances', { p_year: year });
-    if (all.error) return JSON.stringify({ loi: denied(all.error) ? 'Anh/chị không có quyền xem số phép toàn công ty (chỉ HR). Có thể hỏi số phép của chính mình.' : 'Chưa đọc được số phép toàn công ty, thử lại sau.' });
+    if (all.error) return JSON.stringify(denied(all.error) ? { ...outOfScope('số phép toàn công ty'), goi_y: 'Có thể hỏi số phép của chính mình.' } : { loi: 'Chưa đọc được số phép toàn công ty, thử lại sau.' });
     const rows = asArray(all.data).map(asObject).filter(r => str(r.employeeId));
     const ranked = rows.map(r => ({ r, balance: leaveBalanceOf(r.balance) })).sort((a, b) => (num(b.balance?.con_lai) ?? -1) - (num(a.balance?.con_lai) ?? -1));
     const shown = ranked.slice(0, 30);
@@ -551,7 +561,9 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
     const me = await ctx.rpc('current_app_user_id', {});
     const userId = str(me.data, 80);
     const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
-    const mine = dir && !dir.error ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
+    // Danh bạ bị chặn (42501) thì nói rõ là ngoài quyền danh bạ, không nói "không thấy hồ sơ".
+    if (dir?.error) return toolError(dir.error, 'danh bạ nhân viên (để tìm hồ sơ của chính người hỏi)');
+    const mine = dir ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
     const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
     if (!own) return JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' });
     record = { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: {} };
@@ -568,9 +580,7 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
   }
 
   const ledger = await ctx.rpc('get_hrm_leave_ledger', { p_employee_id: record.id, p_year: year });
-  if (ledger.error) return JSON.stringify({ loi: denied(ledger.error)
-    ? `Anh/chị không có quyền xem số phép của ${str(record.title, 120) || 'người này'} (chỉ chính người đó hoặc HR / Admin). Nói rõ là ngoài phạm vi được xem, không đoán số.`
-    : 'Chưa đọc được sổ phép, thử lại sau.' });
+  if (ledger.error) return JSON.stringify(denied(ledger.error) ? outOfScope(`số phép của ${str(record.title, 120) || 'người này'}`) : { loi: 'Chưa đọc được sổ phép, thử lại sau.' });
   const d = asObject(ledger.data);
   const balance = leaveBalanceOf(d.balance);
   const entries = asArray(d.entries).map(asObject);
@@ -597,7 +607,11 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
     if (found.error) return toolError(found.error, 'hồ sơ');
     const rows = found.records.slice(0, 8).map(rec => compact({ ref: remember(rec), loai: KIND_LABEL[String(rec.kind)] || rec.kind, ma: str(rec.code),
       ten: str(rec.title, 160), mo_ta: str(rec.subtitle, 160), trang_thai: str(rec.status, 40), ngay: day(rec.date) }));
-    return JSON.stringify(rows.length ? { ket_qua: rows } : { ket_qua: [], ghi_chu: 'Không thấy hồ sơ nào khớp trong phạm vi người hỏi được xem.' });
+    if (rows.length) return JSON.stringify({ ket_qua: rows });
+    const deniedLabels = found.denied.map(k => KIND_LABEL[k] || k);
+    return JSON.stringify({ ket_qua: [], ghi_chu: deniedLabels.length
+      ? `Không thấy hồ sơ nào khớp. Nguồn ngoài quyền xem của người hỏi: ${deniedLabels.join(', ')}. Nói rõ là ngoài phạm vi được xem, không khẳng định là không tồn tại.`
+      : 'Không thấy hồ sơ nào khớp trong phạm vi người hỏi được xem (không có quyền xem loại hồ sơ đó thì cũng không thấy). Không khẳng định là không tồn tại.' });
   }
 
   if (name === 'ton_kho') {
@@ -605,7 +619,8 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
     if (!text) return JSON.stringify({ loi: 'Thiếu tên vật tư.' });
     const found = await searchRecords(ctx, text, ['item'], 6);
     if (found.error) return toolError(found.error, 'danh mục vật tư');
-    if (!found.records.length) return JSON.stringify({ ket_qua: [], ghi_chu: 'Không thấy vật tư khớp trong danh mục người hỏi được xem.' });
+    if (found.denied.includes('item')) return JSON.stringify(outOfScope('danh mục vật tư'));
+    if (!found.records.length) return JSON.stringify({ ket_qua: [], ghi_chu: 'Không thấy vật tư khớp trong danh mục người hỏi được xem — người không có quyền xem kho / danh mục cũng không thấy gì. Nói rõ là không thấy trong phạm vi được xem, không khẳng định là không tồn tại.' });
     const items = found.records.slice(0, 6);
     const stock = await ctx.rpc('ai_stock_by_items_v1', { p_item_ids: items.map(i => i.id) });
     if (stock.error) return toolError(stock.error, 'tồn kho');
@@ -640,7 +655,9 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
       con_dong: lines.length > 30 ? lines.length - 30 : null,
       thanh_toan: payment && Object.keys(payment).length ? compact({ tinh_trang: str(payment.status, 20), da_ghi_nhan: num(payment.recognized), da_tra: num(payment.paid),
         con_no: num(payment.outstanding), dang_de_nghi_chi: num(payment.inRequest), han_tiep: day(payment.nextDue), qua_han: payment.overdue === true ? true : null,
-        tam_ung: num(payment.advance) }) : null,
+        tam_ung: num(payment.advance) })
+        // Người công trường xem được PO của dự án nhưng tình hình thanh toán thuộc Tài chính / Mua hàng → nói rõ, không im lặng bỏ qua.
+        : denied(pay.error) ? { loi: 'Ngoài phạm vi người hỏi được xem: tình hình thanh toán (quyền Tài chính / Mua hàng).' } : null,
     }));
   }
 

@@ -54,7 +54,9 @@ describe('Trợ lý · số phép nhân viên — tham số', () => {
     expect(TOOL_LABEL.phep_nhan_vien).toBe('Số phép nhân viên');
     const system = chatSystem('Anh', [], true, 'Chủ nhật 18/10/2026');
     expect(system).not.toContain('nhân sự của chính người hỏi');
-    expect(system).toContain('của người khác khi có quyền HR');
+    expect(system).not.toContain('khi có quyền HR');
+    expect(system).toContain('công cụ sẽ báo nếu ngoài quyền');
+    expect(system).toContain('không tự đoán trước anh có quyền hay không');
     expect(system).toMatch(/phep_nhan_vien.*không tự kết luận là không có quyền/);
   });
 });
@@ -78,7 +80,7 @@ describe('Trợ lý · số phép nhân viên — tra bằng lệnh máy chủ g
     const rpc = rpcOf({ search_global_v1: { records: [HUONG] } });
     const out = JSON.parse(await runTool('phep_nhan_vien', { ten: 'Nguyễn Thị Hương' }, ctx(rpc), new Map()));
     expect(rpc.calls.map(x => x[0])).toEqual(['search_global_v1', 'get_hrm_leave_ledger']);
-    expect(out).toEqual({ loi: expect.stringContaining('không có quyền xem số phép của Nguyễn Thị Hương') });
+    expect(out).toEqual({ loi: expect.stringContaining('Ngoài phạm vi người hỏi được xem: số phép của Nguyễn Thị Hương') });
     expect(out.loi).toContain('không đoán số');
   });
 
@@ -97,7 +99,7 @@ describe('Trợ lý · số phép nhân viên — tra bằng lệnh máy chủ g
     const none = JSON.parse(await runTool('phep_nhan_vien', { ten: 'Xyz' }, ctx(rpcOf({ search_global_v1: { records: [] } })), new Map()));
     expect(none.loi).toContain('Không thấy nhân viên "Xyz"');
     const denied = JSON.parse(await runTool('phep_nhan_vien', { ten: 'Hương' }, ctx(rpcOf({})), new Map()));
-    expect(denied.loi).toBe('Không thấy danh bạ nhân viên trong phạm vi người hỏi được xem.');
+    expect(denied.loi).toContain('Ngoài phạm vi người hỏi được xem: danh bạ nhân viên');
   });
 
   it('bỏ trống tên = chính mình: current_app_user_id → danh bạ (hồ sơ gắn tài khoản, ưu tiên đang làm việc) → sổ phép; chưa có sổ thì nói chưa có, không ghi 0', async () => {
@@ -128,6 +130,7 @@ describe('Trợ lý · số phép nhân viên — tra bằng lệnh máy chủ g
     expect(out.nhan_vien.map((r: Record<string, unknown>) => [r.ref, r.ten, (r.phep_nam as Record<string, unknown> | undefined)?.con_lai ?? r.ghi_chu]))
       .toEqual([['h1', 'Cường', 11], ['h2', 'An', 3], ['h3', 'Bình', 'chưa có sổ phép năm này']]);
     const denied = JSON.parse(await runTool('phep_nhan_vien', { toan_cong_ty: true }, ctx(rpcOf({})), new Map()));
-    expect(denied.loi).toContain('chỉ HR');
+    expect(denied.loi).toContain('Ngoài phạm vi người hỏi được xem: số phép toàn công ty');
+    expect(denied.goi_y).toContain('chính mình');
   });
 });
