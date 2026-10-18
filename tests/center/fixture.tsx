@@ -458,7 +458,8 @@ const assistantHooks: AssistantHooks = {
   chat: async (input, handlers, signal) => {
     const runId = `run-${aiCalls.length + 1}`;
     const prior = input.threadId ? loadThreads().find(t => t.id === input.threadId)?.messages.length || 0 : 0;
-    aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context });
+    aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context,
+      ...(input.images?.length || input.files?.length ? { images: input.images?.length || 0, files: (input.files || []).map(f => ({ name: f.name, head: f.text.split('\n').slice(0, 5).join('\n') })) } : {}) });
     await sleep(60);
     if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };
     if (AI === 'busy') return { code: 'AI_QUOTA', reason: 'busy' };
@@ -475,6 +476,12 @@ const assistantHooks: AssistantHooks = {
         record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
     if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
     // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
+    // T3: chỉ gửi tệp (không gõ gì) → Trợ lý tóm tắt tệp, hỏi lại cần làm gì bằng gợi ý bấm.
+    if (input.question === 'Xem tệp đính kèm.' && (input.images?.length || input.files?.length)) {
+      const text = `Tệp có **3 dòng thép** (D16, D20, D8) kèm đơn giá — giống một báo giá. Anh muốn làm gì? [[goi_y:Lập đơn mua theo báo giá này]] [[goi_y:Đề xuất vật tư theo danh sách này]]`;
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      return { code: 'OK', runId, threadId: input.threadId || '0d4c2f1e-8a5b-4c3d-9e2f-0000000000f1', messageId: `msg-${aiCalls.length}`, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
     // T4b: "nhớ giúp …" → thẻ ghi nhớ (người dùng tự bấm Lưu).
     const wantsNote = /nhớ giúp|ghi nhớ/i.test(input.question) && !refused && !lookup;
     if (wantsNote) {

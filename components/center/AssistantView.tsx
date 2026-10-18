@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp, ArrowUpRight, Brain, ChevronRight, History, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
+  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, History, Loader2, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
@@ -22,6 +22,7 @@ import { defaultDailyLogFormActions, type DailyLogFormActions } from '../../lib/
 import { displayCode } from '../../lib/center/workItemsService';
 import { defaultMemoryActions, type MemoryActions } from '../../lib/aiMemory';
 import AssistantMemoryPanel from './AssistantMemoryPanel';
+import { ACCEPT, addAttachments, attachmentLabel, type ChatAttachment } from '../../lib/assistantFiles';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
 // hôm nay; hỏi tiếp được (máy chủ đọc lại các lượt trước), trả lời chạy dần, mở lại từ Lịch sử (chỉ chủ xem, giữ 90 ngày).
@@ -89,6 +90,8 @@ interface UiMessage {
   lines?: BriefLine[];
   /** Câu hỏi gốc để Thử lại. */
   question?: string;
+  /** T3: tệp gửi kèm câu này (để Thử lại gửi lại đúng tệp). */
+  attachments?: ChatAttachment[];
 }
 
 const Feedback: React.FC<{ value: boolean | null | undefined; onPick: (accepted: boolean) => void; label: string }> = ({ value, onPick, label }) => (
@@ -247,6 +250,10 @@ const AssistantView: React.FC<{
   const [history, setHistory] = useState<{ open: boolean; list: ChatThreadSummary[] | 'loading' | 'error' | null }>({ open: false, list: null });
   const [question, setQuestion] = useState('');
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [reading, setReading] = useState(false);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
+  const filePicker = useRef<HTMLInputElement | null>(null);
   const [sending, setSending] = useState(false);
   const started = useRef(false);
   const seq = useRef(0);
@@ -382,22 +389,40 @@ const AssistantView: React.FC<{
       { id: `a-${++seq.current}`, role: 'assistant', content: '', sources: [], runId: null, accepted: null, state: 'done', lines: answerQuick(brief, id) }]);
   };
 
-  const send = async (text: string, retryOf?: string) => {
-    const q = text.trim();
+  const attach = async (files: File[]) => {
+    if (!files.length) return;
+    setReading(true); setFileErrors([]);
+    const out = await addAttachments(attachments, files);
+    setAttachments(out.list); setFileErrors(out.errors); setReading(false);
+    input.current?.focus();
+  };
+  const unattach = (id: string) => setAttachments(list => {
+    const gone = list.find(a => a.id === id);
+    if (gone?.kind === 'image') URL.revokeObjectURL(gone.previewUrl);
+    return list.filter(a => a.id !== id);
+  });
+
+  const send = async (text: string, retryOf?: string, files: ChatAttachment[] = []) => {
+    const typed = text.trim();
+    // Chỉ gửi tệp, không gõ gì: câu mặc định (cổng cũng làm vậy) để Trợ lý tóm tắt tệp rồi hỏi cần làm gì.
+    const q = typed.length >= 2 ? typed : files.length ? 'Xem tệp đính kèm.' : typed;
     if (!configured || sending || q.length < 2) return;
+    const label = attachmentLabel(files);
     const replyId = `a-${++seq.current}`;
     pinned.current = true;
     setSending(true);
     setMessages(current => [
       ...current.filter(m => m.id !== retryOf),
-      ...(retryOf ? [] : [{ id: `q-${++seq.current}`, role: 'user' as const, content: q, sources: [], runId: null, accepted: null, state: 'done' as const }]),
-      { id: replyId, role: 'assistant', content: '', sources: [], runId: null, accepted: null, state: 'pending', question: q },
+      ...(retryOf ? [] : [{ id: `q-${++seq.current}`, role: 'user' as const, content: label ? `${q}\n${label}` : q, sources: [], runId: null, accepted: null, state: 'done' as const }]),
+      { id: replyId, role: 'assistant', content: '', sources: [], runId: null, accepted: null, state: 'pending', question: q, attachments: files.length ? files : undefined },
     ]);
     const patch = (fn: (m: UiMessage) => UiMessage) => setMessages(current => current.map(m => (m.id === replyId ? fn(m) : m)));
     const controller = new AbortController();
     abort.current = controller;
     const result = await hooks.chat(
-      { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender), context },
+      { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender), context,
+        ...(files.length ? { images: files.flatMap(f => (f.kind === 'image' ? [{ mime: f.mime, b64: f.b64 }] : [])),
+          files: files.flatMap(f => (f.kind === 'table' ? [{ name: f.name, text: f.text }] : [])) } : {}) },
       {
         onStart: ({ runId }) => patch(m => ({ ...m, runId })),
         onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
@@ -424,9 +449,10 @@ const AssistantView: React.FC<{
 
   const submit = () => {
     const text = question;
-    if (text.trim().length < 2) return;
-    setQuestion('');
-    void send(text);
+    if ((text.trim().length < 2 && !attachments.length) || reading) return;
+    const files = attachments;
+    setQuestion(''); setAttachments([]); setFileErrors([]);
+    void send(text, undefined, files);
   };
 
   // Ô nhập tự cao theo chữ (tối đa ~6 dòng); ô trống về một dòng (chữ gợi ý không đẩy cao ô).
@@ -533,17 +559,18 @@ const AssistantView: React.FC<{
                     )}
                     {message.state === 'done' && message.id === messages[messages.length - 1]?.id && (() => {
                       // Gợi ý bấm chỉ ở câu trả lời cuối: bấm là gửi đúng câu đó (chủ SP 18/10 — không bắt gõ lại).
+                      // T3: câu trả lời cho lượt có tệp → gửi kèm lại đúng tệp đó (tệp chỉ đi theo từng lượt).
                       const options = suggestionsOf(message.content);
                       return options.length > 0 && (
                         <div className="vcc-suggest" role="group" aria-label="Gợi ý trả lời">
-                          {options.map(option => <button key={option} type="button" disabled={sending || !configured} onClick={() => void send(option)}>{option}</button>)}
+                          {options.map(option => <button key={option} type="button" disabled={sending || !configured} onClick={() => void send(option, undefined, message.attachments)}>{option}</button>)}
                         </div>
                       );
                     })()}
                     {message.state === 'error' && (
                       <p className="vcc-msg-err" role="alert">
                         {message.error}
-                        {message.question && <button type="button" className="vcc-link" onClick={() => void send(message.question!, message.id)} disabled={sending}><RotateCcw size={12} /> Thử lại</button>}
+                        {message.question && <button type="button" className="vcc-link" onClick={() => void send(message.question!, message.id, message.attachments)} disabled={sending}><RotateCcw size={12} /> Thử lại</button>}
                       </p>
                     )}
                     {message.state === 'done' && !message.lines && (() => {
@@ -595,7 +622,26 @@ const AssistantView: React.FC<{
             </div>
           )}
           {configured && (
-            <form className="vcc-composer" onSubmit={event => { event.preventDefault(); if (sending) abort.current?.abort(); else submit(); }}>
+            <>
+            {(attachments.length > 0 || reading || fileErrors.length > 0) && (
+              <div className="vcc-attach-tray" role="group" aria-label="Tệp đính kèm">
+                {attachments.map(a => (
+                  <span key={a.id} className="vcc-attach" data-kind={a.kind} title={a.kind === 'table' ? `${a.rows} hàng${a.truncated ? ' · tệp dài, chỉ gửi phần đầu' : ''}` : a.name}>
+                    {a.kind === 'image' ? <img src={a.previewUrl} alt="" /> : <FileSpreadsheet size={16} aria-hidden="true" />}
+                    <span className="vcc-attach-name">{a.kind === 'image' ? a.name : `${a.name} · ${a.rows} hàng`}</span>
+                    <button type="button" onClick={() => unattach(a.id)} aria-label={`Bỏ tệp ${a.name}`} disabled={sending}>×</button>
+                  </span>
+                ))}
+                {reading && <span className="vcc-attach" data-kind="reading" role="status"><Loader2 size={14} className="animate-spin" /> Đang đọc tệp…</span>}
+                {fileErrors.map(e => <span key={e} className="vcc-attach-err" role="alert">{e}</span>)}
+              </div>
+            )}
+            <form className="vcc-composer" onSubmit={event => { event.preventDefault(); if (sending) abort.current?.abort(); else submit(); }}
+              onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
+              onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(Array.from(event.dataTransfer.files)); } }}>
+              <input ref={filePicker} type="file" accept={ACCEPT} multiple hidden onChange={event => { void attach(Array.from(event.target.files || [])); event.target.value = ''; }} />
+              <button type="button" className="vcc-composer-attach" onClick={() => filePicker.current?.click()} disabled={sending || reading}
+                aria-label="Đính kèm ảnh hoặc Excel" title="Đính kèm ảnh (báo giá, phiếu, báo cáo) hoặc Excel / CSV — đọc ngay trên máy"><Paperclip size={17} /></button>
               <textarea
                 ref={input}
                 className="vcc-composer-input"
@@ -605,6 +651,11 @@ const AssistantView: React.FC<{
                 aria-label="Câu hỏi"
                 placeholder="Hỏi về việc, vật tư, tiền…"
                 onChange={event => setQuestion(event.target.value)}
+                onPaste={event => {
+                  // Dán ảnh chụp màn hình (Zalo, báo giá) thẳng vào ô hỏi.
+                  const files = Array.from(event.clipboardData.files || []);
+                  if (files.length) { event.preventDefault(); void attach(files); }
+                }}
                 onKeyDown={event => {
                   // Enter gửi, Shift+Enter xuống dòng; đang gõ dấu tiếng Việt (bộ gõ đang ghép chữ) thì Enter không gửi.
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!sending) submit(); }
@@ -614,9 +665,10 @@ const AssistantView: React.FC<{
               {sending ? (
                 <button type="submit" className="vcc-composer-send" aria-label="Dừng" title="Dừng"><Square size={13} fill="currentColor" /></button>
               ) : (
-                <button type="submit" className="vcc-composer-send" aria-label="Gửi" title="Gửi (Enter)" disabled={question.trim().length < 2}><ArrowUp size={16} /></button>
+                <button type="submit" className="vcc-composer-send" aria-label="Gửi" title="Gửi (Enter)" disabled={reading || (question.trim().length < 2 && !attachments.length)}><ArrowUp size={16} /></button>
               )}
             </form>
+            </>
           )}
         </div>
       </div>

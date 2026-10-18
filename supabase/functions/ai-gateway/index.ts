@@ -12,7 +12,7 @@ import { SourceBook, type SourceRef } from './agent.ts';
 import { converse } from './loop.ts';
 import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
-import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, buildChatPrompt, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
 import { SKILLS } from './skills.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -92,7 +92,7 @@ Deno.serve(async request => {
           const used: string[] = [];
           const out = withTools
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
-              system: prompt.system, turns: prompt.messages, book, used, started, runId,
+              system: prompt.system, turns: prompt.messages, images: input.images, book, used, started, runId,
               projectId: typeof context.projectId === 'string' ? context.projectId : null, question: reportTextOf(input.question, history),
               forceTool: isDailyReportTurn(input.question, history) ? 'chuan_bi_nhat_ky' : undefined })
             : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
@@ -105,11 +105,11 @@ Deno.serve(async request => {
           const sources: Array<string | SourceRef> = [...sourceKeysOf(answer, input.facts), ...book.cited(answer)];
           const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
           const saved = await user.rpc('ai_thread_save_turn_v1', { p_thread_id: input.threadId, p: {
-            question: input.question, answer, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
+            question: [input.question, attachmentNote(input)].filter(Boolean).join('\n').slice(0, 8000), answer, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
           if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
           const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
           await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
-            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${input.files?.length ? `, ${input.files.length} bảng tính` : ''}${input.images?.length ? `, ${input.images.length} ảnh` : ''}${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
           send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'AI_FAILED';
