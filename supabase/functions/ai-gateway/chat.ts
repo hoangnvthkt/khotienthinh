@@ -85,6 +85,16 @@ export const looksLikeDailyReport = (text: string) => {
   return lines >= 3 && /\b(bc|bao cao)\b/.test(f) && /\b(to|nguoi|cong nhat|cn|ng)\b/.test(f);
 };
 
+/** Lượt phải gọi chuan_bi_nhat_ky ngay: tin là báo cáo, hoặc tin ngắn trả lời câu hỏi lại (bấm gợi ý dự án) ngay sau một báo cáo
+ *  (bộ kiểm hồi quy 18/10: bấm "DA29" thì model nói "đã chuẩn bị" mà không gọi công cụ). */
+export const isDailyReportTurn = (question: string, history: ChatTurn[]) => {
+  if (looksLikeDailyReport(question)) return true;
+  if (question.trim().length >= 80) return false;
+  const last = history[history.length - 1];
+  const before = history[history.length - 2];
+  return last?.role === 'assistant' && /\[\[goi_y:/.test(last.content) && before?.role === 'user' && looksLikeDailyReport(before.content);
+};
+
 /** Nguyên văn báo cáo cho công cụ nhật ký: tin hiện tại nếu đủ dài; tin ngắn (bấm chọn dự án) thì lấy tin dài gần nhất của người dùng. */
 export const reportTextOf = (question: string, history: ChatTurn[], min = 80) => {
   if (question.trim().length >= min) return question;

@@ -86,6 +86,16 @@ const invoke = async <T>(body: Record<string, unknown>): Promise<{ ok: true; dat
 const num = (value: unknown) => Number(value) || 0;
 const numOrNull = (value: unknown) => (value == null || value === '' ? null : Number(value));
 
+export type AiFeedbackReason = 'wrong_data' | 'misunderstood' | 'incomplete' | 'slow' | 'other';
+export const AI_FEEDBACK_REASONS: Array<{ code: AiFeedbackReason; label: string }> = [
+  { code: 'wrong_data', label: 'Sai số liệu' }, { code: 'misunderstood', label: 'Hiểu sai ý' }, { code: 'incomplete', label: 'Thiếu thông tin' },
+  { code: 'slow', label: 'Chậm' }, { code: 'other', label: 'Khác' },
+];
+export interface AiFeedbackStats {
+  skills: Array<{ skill: string; runs: number; likes: number; dislikes: number; reasons: Record<string, number> }>;
+  notes: Array<{ at: string; skill: string; reason: AiFeedbackReason | null; note: string | null }>;
+}
+
 export const aiGateway = {
   /** Tình trạng cấu hình (không lộ khóa). Hàm chưa triển khai → deployed=false. */
   async status(): Promise<AiGatewayStatus> {
@@ -114,9 +124,22 @@ export const aiGateway = {
     return d;
   },
 
-  /** Người dùng cho biết dùng nguyên / bỏ kết quả — tỷ lệ chấp nhận theo skill. Không chặn luồng chính. */
-  feedback(runId: string, accepted: boolean) {
-    void supabase.rpc('ai_gateway_feedback_v1', { p_run_id: runId, p_accepted: accepted }).then(r => { if (r.error) console.warn('ai feedback failed', r.error.message); });
+  /** Người dùng cho biết dùng nguyên / bỏ kết quả — tỷ lệ chấp nhận theo skill. Chưa đúng thì kèm lý do (T4a). Không chặn luồng chính. */
+  feedback(runId: string, accepted: boolean, detail?: { reason?: AiFeedbackReason | null; note?: string | null }) {
+    void supabase.rpc('ai_gateway_feedback_v2', { p_run_id: runId, p_accepted: accepted, p_reason: detail?.reason ?? null, p_note: detail?.note ?? null })
+      .then(r => { if (r.error) console.warn('ai feedback failed', r.error.message); });
+  },
+
+  /** Admin: phản hồi N ngày theo skill × lý do + ghi chú gần đây (Cài đặt → Cổng AI). */
+  async feedbackStats(days = 30): Promise<AiFeedbackStats> {
+    const { data, error } = await supabase.rpc('get_ai_feedback_v1', { p_days: days });
+    if (error) throw error;
+    const raw = (data || {}) as { skills?: Array<Record<string, unknown>>; notes?: Array<Record<string, unknown>> };
+    return {
+      skills: (raw.skills || []).map(s => ({ skill: String(s.skill || ''), runs: Number(s.runs) || 0, likes: Number(s.likes) || 0, dislikes: Number(s.dislikes) || 0,
+        reasons: Object.fromEntries(Object.entries((s.reasons || {}) as Record<string, unknown>).map(([k, v]) => [k, Number(v) || 0])) })),
+      notes: (raw.notes || []).map(n => ({ at: String(n.at || ''), skill: String(n.skill || ''), reason: (n.reason as AiFeedbackReason | null) || null, note: n.note ? String(n.note) : null })),
+    };
   },
 
   async overview(days: number): Promise<AiGatewayOverview> {

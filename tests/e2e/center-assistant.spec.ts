@@ -390,6 +390,59 @@ test("T2b form trong chat: mã tự khớp, chọn mã bằng gợi ý, bỏ dò
   await expect(chat(page).getByTestId("command")).toContainText("Đã gửi đề xuất MR-2026-0042 · chờ Hà Đức Chuẩn duyệt");
 });
 
+test("T4a học từ thẻ: cách gọi đã xác nhận lần trước chọn sẵn mã (Đã nhớ), không bắt chọn lại; gửi xong dạy lại đúng chữ người dùng", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini&memory=1`);
+  await openAssistant(page, false);
+  await ask(page, MR_ASK);
+  const card = chat(page).getByTestId("command");
+  const form = card.getByTestId("mr-form");
+  const rows = form.getByRole("list", { name: "Dòng vật tư" }).locator(":scope > li");
+  await expect(rows.nth(2)).toContainText("Đã nhớ");
+  await expect(form.getByLabel("Mã vật tư cho Ống PVC")).toHaveValue("it-1a7f772d34ab4306be08e57a597b0641");
+  await expect(form.getByRole("group", { name: "Gợi ý mã cho Ống PVC" })).toHaveCount(0);
+  await expect(rows.nth(0)).toContainText("Đã khớp");
+  await form.getByRole("button", { name: "Bỏ dòng Dây thép buộc" }).click();
+  await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" }).click();
+  await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  const submit = (await aiCalls(page)).find(call => call.mrForm === "submit") as Record<string, unknown> & { lines: Array<Record<string, unknown>> };
+  expect(submit.lines.map(line => line.said)).toEqual(["Xi măng PCB40", "Thép D16", "Ống PVC"]);
+  expect(submit.lines[2]).toMatchObject({ item: "Ống PVC 42", qty: 20 });
+});
+
+test("T4a chưa đúng có lý do: bấm Chưa đúng → chọn lý do một chạm; Khác cho ghi chú; gửi về Quản trị AI", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, "Hôm nay việc gì gấp nhất?");
+  const turn = chat(page).getByTestId("turn").first();
+  await expect(turn).toHaveAttribute("data-state", "done");
+  await turn.getByRole("button", { name: "Trả lời chưa đúng" }).click();
+  const reasons = turn.getByRole("group", { name: "Vì sao chưa đúng" });
+  await expect(reasons.getByRole("button")).toHaveText(["Sai số liệu", "Hiểu sai ý", "Thiếu thông tin", "Chậm", "Khác"]);
+  await reasons.getByRole("button", { name: "Hiểu sai ý" }).click();
+  await expect(turn.getByRole("status").filter({ hasText: "Cảm ơn" })).toBeVisible();
+  await expect(reasons).toHaveCount(0);
+
+  await ask(page, "Còn PO-116 thì sao?");
+  const second = chat(page).getByTestId("turn").nth(1);
+  await expect(second).toHaveAttribute("data-state", "done");
+  await second.getByRole("button", { name: "Trả lời chưa đúng" }).click();
+  await second.getByRole("group", { name: "Vì sao chưa đúng" }).getByRole("button", { name: "Khác" }).click();
+  await second.getByLabel("Ghi chú lý do").fill("Thiếu ngày giao của PO");
+  await second.getByRole("button", { name: "Gửi", exact: true }).click();
+  await expect(second.getByRole("status").filter({ hasText: "Cảm ơn" })).toBeVisible();
+  const feedback = (await aiCalls(page)).filter(call => call.feedback).map(call => call.feedback as Record<string, unknown>);
+  expect(feedback.map(({ runId: _id, ...rest }) => rest)).toEqual([
+    { accepted: false }, { accepted: false, reason: "misunderstood", note: null },
+    { accepted: false }, { accepted: false, reason: "other", note: "Thiếu ngày giao của PO" },
+  ]);
+  expect(feedback[1].runId).toBe(feedback[0].runId);
+  expect(feedback[3].runId).toBe(feedback[2].runId);
+  expect(feedback[2].runId).not.toBe(feedback[0].runId);
+});
+
 test("T2b form: gửi lỗi giữa chừng báo lý do rồi gửi lại được; dự án chưa có quy trình thì khóa Gửi duyệt, vẫn Lưu nháp", async ({ page, isMobile }) => {
   test.skip(isMobile, "đo trên máy tính");
   await page.goto(`${base}?ai=mr-fail`);

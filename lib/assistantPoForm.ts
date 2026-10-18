@@ -8,6 +8,7 @@ import { pickCatalogMatch, searchQueriesFor, toImportedLine, type PoImportRow } 
 import { finishCommand, poView, type AssistantCommand, type PoReasonCode } from './assistantCommands';
 import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 import { duplicateItemSpecProblems } from './materialLineDescription';
+import { aiLearning, recall, type LearnedAlias } from './aiLearning';
 
 export const PO_REASONS: Array<{ code: PoReasonCode; label: string }> = [
   { code: 'price_lock', label: 'Chốt giá tốt' }, { code: 'long_lead', label: 'Hàng đặt dài ngày' },
@@ -21,7 +22,7 @@ export interface PoFormRow {
   options: ProcurementCatalogItem[];
   item: ProcurementCatalogItem | null;
   /** 'suggested' = chỉ gần giống tên (≥ 50% từ trùng) — thẻ ghi "Gần giống · kiểm"; 'picked' = người dùng tự chọn. */
-  confidence: 'sku' | 'name' | 'suggested' | 'picked' | null;
+  confidence: 'sku' | 'name' | 'suggested' | 'picked' | 'memory' | null;
   altUnit: boolean;
   stockQty: string;
   purchaseQty: string;
@@ -33,6 +34,8 @@ export interface PoFormContext {
   warehouses: Array<{ id: string; name: string }>;
   approvers: Array<{ id: string; name: string }>;
   rows: PoFormRow[];
+  /** T4a: NCC đã nhớ cho tên NCC trên báo giá (người mua đã chọn trước đây). */
+  rememberedVendor?: { id: string; name: string } | null;
 }
 export interface PoFormSubmit {
   mode: 'draft' | 'send';
@@ -85,9 +88,19 @@ export const findCandidates = async (search: (q: string) => Promise<ProcurementC
   return pool;
 };
 
-export const buildRows = async (lines: Parameters<typeof toSourceRow>[0][], search: (q: string) => Promise<ProcurementCatalogItem[]>): Promise<PoFormRow[]> =>
+export const buildRows = async (lines: Parameters<typeof toSourceRow>[0][], search: (q: string) => Promise<ProcurementCatalogItem[]>, memory: readonly LearnedAlias[] = []): Promise<PoFormRow[]> =>
   Promise.all(lines.map(async (line, i) => {
     const source = toSourceRow(line, i);
+    // Trí nhớ trước: tên hàng trên báo giá người mua đã gắn mã lần trước → lấy lại mã đó (kèm BOQ của dự án qua ô tìm).
+    const known = recall(memory, 'item', [line.name, line.spec].filter(Boolean).join(' '), line.name);
+    if (known) {
+      const found = (await search(known.targetLabel).catch(() => [] as ProcurementCatalogItem[])).find(item => item.id === known.targetId);
+      if (found) {
+        const base: PoFormRow = { key: `${i}:${line.name}`, source, options: [found], item: null, confidence: null, altUnit: false,
+          stockQty: qtyText(line.qty), purchaseQty: '', price: qtyText(line.price), spec: source.spec, warnings: [] };
+        return { ...applyItem(base, found), confidence: 'memory' as const };
+      }
+    }
     const candidates = await findCandidates(search, source);
     const match = pickCatalogMatch(source, candidates);
     const base: PoFormRow = { key: `${i}:${line.name}`, source, options: match.options, item: null, confidence: null, altUnit: false,
@@ -150,13 +163,15 @@ export const createPoFormActions = (): PoFormActions => {
   return {
     async load(command) {
       const v = poView(command);
+      const memory = await aiLearning.get('purchase_order', null).catch(() => [] as LearnedAlias[]);
       const [options, approvers, rows] = await Promise.all([
         procurementInboxService.proactiveOptions(),
         supabase.rpc('assistant_po_approvers_v1').then(({ data, error }) => { if (error) throw error; return (Array.isArray(data) ? data : []) as Array<{ id: string; name: string }>; }),
-        buildRows(v.lines, q => procurementInboxService.searchItems(v.projectId, q)),
+        buildRows(v.lines, q => procurementInboxService.searchItems(v.projectId, q), memory),
       ]);
       const project = options.projects.find(p => p.id === v.projectId);
-      return { warehouses: project?.warehouses || [], approvers, rows };
+      const vendor = !v.vendorId && v.vendorQuery ? recall(memory, 'vendor', v.vendorQuery) : null;
+      return { warehouses: project?.warehouses || [], approvers, rows, rememberedVendor: vendor ? { id: vendor.targetId, name: vendor.targetLabel } : null };
     },
     searchItems: (projectId, query) => procurementInboxService.searchItems(projectId, query),
     searchVendors: query => procurementInboxService.vendors(query),
@@ -201,6 +216,11 @@ export const createPoFormActions = (): PoFormActions => {
         }
       }
       saved.delete(command.id);
+      // Người mua đã xác nhận bằng hành động → dạy AI: tên hàng trên báo giá → mã, tên NCC trên báo giá → NCC (không chặn biên nhận).
+      void aiLearning.learn('purchase_order', null, [
+        ...kept.map(r => ({ kind: 'item' as const, alias: [r.source.name, r.source.spec].filter(Boolean).join(' '), targetId: r.item!.id, targetLabel: r.item!.name })),
+        ...(v.vendorQuery ? [{ kind: 'vendor' as const, alias: v.vendorQuery, targetId: input.vendor.id, targetLabel: input.vendor.name }] : []),
+      ]);
       const receipt = { code: result.poNumber, id: result.purchaseOrderId, submitted: input.mode === 'send', approvers: input.approverName ? [input.approverName] : [],
         total: Math.round(totals.total), budgetPending: budget.pending || undefined, budgetApprovers: budget.names.length ? budget.names : undefined };
       return (await finishCommand(command.id, 'done', receipt).catch(() => null)) || { ...command, status: 'done', result: receipt };

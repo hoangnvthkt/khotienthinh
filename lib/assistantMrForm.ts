@@ -12,6 +12,7 @@ import { getMaterialRequestWorkflowPatch, materialRequestService } from './mater
 import { projectWorkflowService } from './projectWorkflowService';
 import { projectPermissionRoomService } from './projectPermissionRoomService';
 import { duplicateItemSpecProblems } from './materialLineDescription';
+import { aiLearning, recall, type LearnedAlias } from './aiLearning';
 
 export type MrCatalogItem = Pick<InventoryItem, 'id' | 'name' | 'unit'> & { sku?: string; status?: string; mergedIntoId?: string | null };
 export interface MrFormContext {
@@ -21,8 +22,11 @@ export interface MrFormContext {
   approvers: Array<{ id: string; name: string }>;
   /** Chưa gửi duyệt được (dự án chưa cấu hình workflow / chưa có người duyệt) — vẫn Lưu nháp được. */
   sendBlocked: string | null;
+  /** T4a: cách gọi đã được người dùng xác nhận ở dự án này ("xi măng PCB40" → mã). */
+  memory: LearnedAlias[];
 }
-export interface MrFormSubmitLine { item: MrCatalogItem; qty: number; spec: string; reason: string }
+/** said: chữ Trợ lý tách từ lời người dùng — dạy AI cặp "chữ → mã" sau khi lưu / gửi thành công. */
+export interface MrFormSubmitLine { item: MrCatalogItem; qty: number; spec: string; reason: string; said?: string }
 export interface MrFormSubmit {
   mode: 'draft' | 'send';
   title: string;
@@ -47,12 +51,23 @@ export interface MrFormRow {
   qty: string;
   spec: string;
   reason: string;
+  /** Mã chọn theo trí nhớ (người dùng đã xác nhận cách gọi này trước đây). */
+  remembered?: boolean;
 }
 const qtyText = (q: number | null) => (q == null ? '' : String(q).replace('.', ','));
-export const toFormRows = (lines: MrDraftLine[], catalog: MrCatalogItem[]): MrFormRow[] => {
+export const toFormRows = (lines: MrDraftLine[], catalog: MrCatalogItem[], memory: readonly LearnedAlias[] = []): MrFormRow[] => {
   const live = catalog.filter(i => i.status !== 'retired' && !i.mergedIntoId);
+  const byId = new Map(live.map(i => [i.id, i]));
   const matched = matchLines(lines.map(l => ({ ...l, raw: [l.name, l.spec].filter(Boolean).join(' ') })), live);
   return matched.map((m, i) => {
+    // Trí nhớ trước (cách gọi người dùng đã xác nhận), rồi mới tới khớp chữ.
+    const known = recall(memory, 'item', [lines[i].name, lines[i].spec].filter(Boolean).join(' '), lines[i].name);
+    const knownItem = known ? byId.get(known.targetId) : undefined;
+    if (knownItem) {
+      const base: MrFormRow = { key: `${i}:${m.raw}`, line: lines[i], candidates: m.candidates, itemId: null, qty: qtyText(m.qty), spec: m.specGuess || '',
+        reason: lines[i].note && !isMeasureNote(lines[i].note) ? lines[i].note! : '' };
+      return { ...chooseItem(base, knownItem), remembered: true };
+    }
     const item = m.pick;
     return {
       key: `${i}:${m.raw}`, line: lines[i], candidates: m.candidates, itemId: item?.id ?? null,
@@ -101,7 +116,7 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
   return {
     async load(command) {
       const v = mrView(command);
-      const [catalog, warehouses, approvers] = await Promise.all([
+      const [catalog, warehouses, approvers, memory] = await Promise.all([
         materialRequestService.getProjectCatalog(v.projectId, v.siteId),
         supabase.from('warehouses').select('id, name, type, project_id, is_default_for_site').eq('is_archived', false).limit(500)
           .then(({ data, error }) => { if (error) throw error; return (data || []) as Array<{ id: string; name: string; type: string; project_id: string | null; is_default_for_site: boolean | null }>; }),
@@ -119,6 +134,7 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
             return { list: [], blocked: e instanceof Error ? e.message : 'Chưa tải được workflow đề xuất vật tư.' };
           }
         })(),
+        aiLearning.get('material_request', v.projectId).catch(() => [] as LearnedAlias[]),
       ]);
       // Kho của dự án lên đầu; kho mặc định của công trường chọn sẵn.
       const own = warehouses.filter(w => w.project_id === v.projectId).sort((a, b) => Number(Boolean(b.is_default_for_site)) - Number(Boolean(a.is_default_for_site)));
@@ -129,6 +145,7 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
         defaultWarehouseId: own[0]?.id ?? null,
         approvers: approvers.list,
         sendBlocked: approvers.blocked,
+        memory,
       };
     },
 
@@ -163,6 +180,8 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
         throw e instanceof Error ? e : new Error(message);
       }
       issued.delete(command.id);
+      // Người dùng đã xác nhận bằng hành động → dạy AI cách gọi của dự án này (không chặn biên nhận).
+      void aiLearning.learn('material_request', v.projectId, input.lines.filter(l => l.said).map(l => ({ kind: 'item' as const, alias: l.said!, targetId: l.item.id, targetLabel: l.item.name })));
       const result = { code, id: draft.id, submitted: input.mode === 'send', approvers: input.approverNames };
       return (await finishCommand(command.id, 'done', result).catch(() => null)) || { ...command, status: 'done', result, confirmedAt: now };
     },

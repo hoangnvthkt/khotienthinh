@@ -8,7 +8,7 @@ import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workIte
 import {
   answerQuick, availableQuickQuestions, briefDateLabel, briefFacts, buildBrief, linesByKeys, pronounOf, type Brief, type BriefLine,
 } from '../../lib/center/assistantBrief';
-import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult } from '../../lib/aiGateway';
+import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult, AI_FEEDBACK_REASONS, type AiFeedbackReason } from '../../lib/aiGateway';
 import {
   assistantChat, boldParts, displayText, isTodayThread, suggestionsOf, textBlocks, threadDayLabel, threadTimeLabel,
   type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
@@ -28,7 +28,7 @@ import { displayCode } from '../../lib/center/workItemsService';
 export interface AssistantHooks {
   status: () => Promise<AiGatewayStatus>;
   narrate: (facts: string, context: Record<string, unknown>) => Promise<AiRunResult<{ brief: string }>>;
-  feedback: (runId: string, accepted: boolean) => void;
+  feedback: (runId: string, accepted: boolean, detail?: { reason?: AiFeedbackReason | null; note?: string | null }) => void;
   chat: (input: ChatSendInput, handlers: ChatHandlers, signal?: AbortSignal) => Promise<ChatSendResult>;
   listThreads: () => Promise<ChatThreadSummary[]>;
   getThread: (id: string) => Promise<ChatThread>;
@@ -47,7 +47,7 @@ export const defaultAssistantHooks: AssistantHooks = {
   dailyLog: defaultDailyLogFormActions,
   status: () => aiGateway.status(),
   narrate: (facts, context) => aiGateway.run<{ brief: string }>('morning_brief', { facts }, context),
-  feedback: (runId, accepted) => aiGateway.feedback(runId, accepted),
+  feedback: (runId, accepted, detail) => aiGateway.feedback(runId, accepted, detail),
   chat: (input, handlers, signal) => assistantChat.send(input, handlers, signal),
   listThreads: () => assistantChat.listThreads(),
   getThread: id => assistantChat.getThread(id),
@@ -75,6 +75,8 @@ interface UiMessage {
   commands?: AssistantCommand[];
   runId: string | null;
   accepted: boolean | null;
+  /** T4a: đã chọn lý do "chưa đúng" (hiện lời cảm ơn thay hàng lý do). */
+  feedbackReason?: AiFeedbackReason;
   /** pending: chờ chữ đầu · streaming: đang chạy · done · error */
   state: 'pending' | 'streaming' | 'done' | 'error';
   error?: string;
@@ -90,6 +92,23 @@ const Feedback: React.FC<{ value: boolean | null | undefined; onPick: (accepted:
     <button type="button" className="vcc-iconbtn" aria-pressed={value === false} onClick={() => onPick(false)} aria-label={`${label} chưa đúng`} title="Chưa đúng"><ThumbsDown size={13} /></button>
   </span>
 );
+
+/** T4a: bấm "chưa đúng" → hỏi lý do một chạm (+ ghi chú tùy chọn cho "Khác"); Quản trị AI xem theo skill ở Cài đặt → Cổng AI. */
+const DislikeReasons: React.FC<{ picked?: AiFeedbackReason; onPick: (reason: AiFeedbackReason, note?: string) => void }> = ({ picked, onPick }) => {
+  const [other, setOther] = useState(false);
+  const [note, setNote] = useState('');
+  if (picked) return <span className="vcc-fb-thanks" role="status">Cảm ơn — Quản trị AI sẽ xem để sửa.</span>;
+  return (
+    <div className="vcc-fb-reasons" role="group" aria-label="Vì sao chưa đúng">
+      <span>Vì sao chưa đúng?</span>
+      {AI_FEEDBACK_REASONS.map(r => <button key={r.code} type="button" onClick={() => (r.code === 'other' ? setOther(true) : onPick(r.code))} aria-pressed={r.code === 'other' && other}>{r.label}</button>)}
+      {other && <form onSubmit={e => { e.preventDefault(); onPick('other', note); }}>
+        <input value={note} onChange={e => setNote(e.target.value)} maxLength={300} aria-label="Ghi chú lý do" placeholder="Điều chưa đúng (tùy chọn)" autoFocus />
+        <button type="submit">Gửi</button>
+      </form>}
+    </div>
+  );
+};
 
 const RichText: React.FC<{ text: string }> = ({ text }) => {
   const inline = (value: string) => boldParts(value).map((part, i) => (part.bold ? <strong key={i}>{part.text}</strong> : <React.Fragment key={i}>{part.text}</React.Fragment>));
@@ -532,7 +551,13 @@ const AssistantView: React.FC<{
                           {message.runId && (
                             <Feedback label="Trả lời" value={message.accepted} onPick={accepted => {
                               sendFeedback(message.runId, accepted);
-                              setMessages(c => c.map(m => (m.id === message.id ? { ...m, accepted } : m)));
+                              setMessages(c => c.map(m => (m.id === message.id ? { ...m, accepted, feedbackReason: undefined } : m)));
+                            }} />
+                          )}
+                          {message.runId && message.accepted === false && (
+                            <DislikeReasons picked={message.feedbackReason} onPick={(reason, note) => {
+                              if (message.runId) hooks.feedback(message.runId, false, { reason, note: note || null });
+                              setMessages(c => c.map(m => (m.id === message.id ? { ...m, feedbackReason: reason } : m)));
                             }} />
                           )}
                         </div>

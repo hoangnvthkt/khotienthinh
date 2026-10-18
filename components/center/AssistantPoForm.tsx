@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Save, Search, Send, X } from 'lucide-react';
+import { AlertTriangle, Brain, CheckCircle2, Loader2, Save, Search, Send, X } from 'lucide-react';
 import { poView, type AssistantCommand, type PoReasonCode } from '../../lib/assistantCommands';
 import { PO_REASONS, applyItem, parseNum, poProblems, poTotals, purchaseQtyOf, type PoFormActions, type PoFormContext, type PoFormRow } from '../../lib/assistantPoForm';
 import { boqStatusOf, type ProcurementCatalogItem, type ProcurementVendor } from '../../lib/procurementInboxService';
@@ -28,6 +28,7 @@ const AssistantPoForm: React.FC<{
   const [vendorQuery, setVendorQuery] = useState<string | null>(v.vendorId ? null : v.vendorQuery || '');
   const [vendorFound, setVendorFound] = useState<ProcurementVendor[]>(v.vendorOptions.map(o => ({ ...o, recentOrders: 0 })));
   const [deliveryDate, setDeliveryDate] = useState(v.deliveryDate || '');
+  const [vendorRemembered, setVendorRemembered] = useState(false);
   const [vat, setVat] = useState(String(v.vat ?? 10));
   const [reasonCode, setReasonCode] = useState<PoReasonCode | null>(v.reasonCode);
   const [reason, setReason] = useState(v.reason);
@@ -43,6 +44,7 @@ const AssistantPoForm: React.FC<{
     actions.load(command).then(c => {
       if (!alive) return;
       setCtx(c); setRows(c.rows);
+      if (c.rememberedVendor) { setVendor(cur => cur || c.rememberedVendor!); setVendorQuery(null); setVendorRemembered(true); }
       setWarehouseId(w => w || c.warehouses[0]?.id || '');
       setApproverId(c.approvers.length === 1 ? c.approvers[0].id : null);
     }).catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : 'Chưa tải được danh mục / dự án để lập đơn.'); });
@@ -109,7 +111,8 @@ const AssistantPoForm: React.FC<{
         {vendor ? (
           <div className="vcc-mr-chips" role="group" aria-label="Nhà cung cấp đã chọn">
             <span className="vcc-mr-picked"><CheckCircle2 size={12} aria-hidden="true" />{vendor.name}</span>
-            <span className="vcc-mr-links"><button type="button" disabled={locked} onClick={() => { setVendor(null); setVendorQuery(v.vendorQuery || ''); }}>Đổi NCC</button></span>
+            {vendorRemembered && <span className="vcc-mr-pill" data-tone="ok" title={`Lần trước bạn chọn NCC này cho "${v.vendorQuery}"`}><Brain size={11} aria-hidden="true" />Đã nhớ</span>}
+            <span className="vcc-mr-links"><button type="button" disabled={locked} onClick={() => { setVendor(null); setVendorRemembered(false); setVendorQuery(v.vendorQuery || ''); }}>Đổi NCC</button></span>
           </div>
         ) : (
           <div className="vcc-mr-search">
@@ -147,9 +150,11 @@ const AssistantPoForm: React.FC<{
           return (
             <li key={row.key} className="vcc-mr-row" data-state={item ? 'ok' : 'todo'}>
               <div className="vcc-mr-row-head">
-                <span className="vcc-mr-pill" data-tone={item && row.confidence !== 'suggested' ? 'ok' : item || row.options.length ? 'warn' : 'muted'}>
-                  {item && row.confidence !== 'suggested' && <CheckCircle2 size={11} aria-hidden="true" />}
-                  {item ? (row.confidence === 'suggested' ? 'Gần giống · kiểm' : 'Đã khớp') : row.options.length ? 'Chọn mã' : 'Chưa có mã'}</span>
+                <span className="vcc-mr-pill" data-tone={item && row.confidence !== 'suggested' ? 'ok' : item || row.options.length ? 'warn' : 'muted'}
+                  title={row.confidence === 'memory' ? 'Lần trước bạn gắn tên hàng này với mã này' : undefined}>
+                  {item && row.confidence === 'memory' && <Brain size={11} aria-hidden="true" />}
+                  {item && row.confidence !== 'suggested' && row.confidence !== 'memory' && <CheckCircle2 size={11} aria-hidden="true" />}
+                  {item ? (row.confidence === 'suggested' ? 'Gần giống · kiểm' : row.confidence === 'memory' ? 'Đã nhớ' : 'Đã khớp') : row.options.length ? 'Chọn mã' : 'Chưa có mã'}</span>
                 <span className="vcc-mr-said">“{[row.source.name, row.source.spec].filter(Boolean).join(' ')}{row.source.qty != null ? ` · ${num(row.source.qty)} ${row.source.unit}` : ''}{row.source.price != null ? ` · ${vnd(row.source.price)}` : ''}”</span>
                 {boq && boq !== 'within' && <span className="vcc-mr-pill" data-tone="warn">{boq === 'outside' ? 'Ngoài BOQ' : 'Vượt BOQ'}</span>}
                 <button type="button" className="vcc-mr-x" aria-label={`Bỏ dòng ${row.source.name}`} disabled={locked} onClick={() => setRows(rs => rs.filter(r => r.key !== row.key))}><X size={13} /></button>
