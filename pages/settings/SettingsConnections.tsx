@@ -21,7 +21,7 @@ const probeLine = (r: ProbeResult) => r.ok
   ? `${r.code === 'MODEL_NOT_FOUND' ? r.message : 'Kết nối được'} · ${r.ms} ms${r.models != null ? ` · ${r.models} model` : ''}${r.balance ? ` · còn ${r.balance.amount.toLocaleString('vi-VN')} ${r.balance.unit}` : ''}`
   : `${r.httpStatus ? `Lỗi ${r.httpStatus} — ` : ''}${r.message}`;
 
-const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: '', model: 'gemini-2.5-flash', enabled: true, priceIn: '', priceOut: '' });
+const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: '', model: 'gemini-2.5-flash', enabled: true, priceIn: '', priceOut: '', pricePerCall: '' });
 const priceInput = (v: number | null) => (v == null ? '' : String(v).replace('.', ','));
 
 const ConnectionEditor: React.FC<{
@@ -34,7 +34,7 @@ const ConnectionEditor: React.FC<{
   const confirm = useConfirm();
   const [draft, setDraft] = useState<ConnectionDraft>(() => initial
     ? { id: initial.id, kind: initial.kind, name: initial.name, baseUrl: initial.baseUrl, apiKey: '', model: initial.model || '', enabled: initial.enabled,
-      priceIn: priceInput(initial.priceInPerM), priceOut: priceInput(initial.priceOutPerM) }
+      priceIn: priceInput(initial.priceInPerM), priceOut: priceInput(initial.priceOutPerM), pricePerCall: priceInput(initial.pricePerCall) }
     : emptyDraft());
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ProbeResult | null>(null);
@@ -123,6 +123,10 @@ const ConnectionEditor: React.FC<{
         <label className={label} title="Để tính chi phí từng lượt AI và trần tháng.">Giá ra · USD / 1 triệu token
           <input value={draft.priceOut} onChange={e => set({ priceOut: e.target.value })} inputMode="decimal" placeholder="VD 1,64" spellCheck={false}
             className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Giá ra (USD / 1 triệu token)" />
+        </label>
+        <label className={label} title="Cổng báo số token vào không ổn định (VD RevidAPI) thì khai giá mỗi lượt gọi model: chi phí = số lượt × giá lượt + token ra × giá ra, bỏ giá vào.">Giá mỗi lượt gọi · USD
+          <input value={draft.pricePerCall} onChange={e => set({ pricePerCall: e.target.value })} inputMode="decimal" placeholder="VD 0,008 (để trống nếu tính theo token)" spellCheck={false}
+            className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Giá mỗi lượt gọi (USD)" />
         </label>
         {initial && (
           <label className="flex items-center gap-2 self-end pb-1.5 text-sm font-semibold">

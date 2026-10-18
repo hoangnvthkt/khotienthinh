@@ -56,6 +56,8 @@ export interface Connection {
   /** Giá USD mỗi 1 triệu token (vào · ra) — để tính chi phí từng lượt AI và trần tháng; null = chưa khai. */
   priceInPerM: number | null;
   priceOutPerM: number | null;
+  /** USD mỗi lượt gọi model — cho cổng báo token vào không ổn định (RevidAPI); có thì bỏ giá token vào. */
+  pricePerCall: number | null;
 }
 
 /** Khóa đang có trong Secrets của edge function — chỉ đọc. */
@@ -63,7 +65,7 @@ export interface EnvConnection { id: string; kind: ConnectionKind; name: string;
 
 export interface ProbeResult { ok: boolean; ms: number; httpStatus: number | null; models: number | null; modelIds: string[]; code: string | null; message: string; balance?: { amount: number; unit: string } | null }
 
-export interface ConnectionDraft { id?: string; kind: ConnectionKind; name: string; baseUrl: string; apiKey: string; model: string; enabled: boolean; priceIn: string; priceOut: string }
+export interface ConnectionDraft { id?: string; kind: ConnectionKind; name: string; baseUrl: string; apiKey: string; model: string; enabled: boolean; priceIn: string; priceOut: string; pricePerCall: string }
 
 const ERRORS: Record<string, string> = {
   INTEGRATIONS_ADMIN_REQUIRED: 'Chỉ Admin quản lý kết nối.',
@@ -86,9 +88,12 @@ export const integrationError = (e: unknown, fallback = 'Chưa lưu được.') 
 const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
 /** Ô giá: "0,33" hoặc "0.33" → "0.33"; trống → "" (xóa giá). */
 export const priceText = (v: string) => v.trim().replace(',', '.');
-/** "0,33 / 1,64 $" — giá USD mỗi 1 triệu token (vào / ra). */
-export const priceLabel = (c: Pick<Connection, 'priceInPerM' | 'priceOutPerM'>) => (c.priceInPerM == null || c.priceOutPerM == null ? null
-  : `${c.priceInPerM.toLocaleString('vi-VN', { maximumFractionDigits: 4 })} / ${c.priceOutPerM.toLocaleString('vi-VN', { maximumFractionDigits: 4 })} $`);
+const usd = (v: number) => v.toLocaleString('vi-VN', { maximumFractionDigits: 6 });
+/** "0,008 $/lượt + ra 1,6378" hoặc "0,33 / 1,64 $" — giá USD (mỗi lượt gọi; mỗi 1 triệu token vào / ra). */
+export const priceLabel = (c: Pick<Connection, 'priceInPerM' | 'priceOutPerM' | 'pricePerCall'>) => {
+  if (c.pricePerCall != null) return `${usd(c.pricePerCall)} $/lượt${c.priceOutPerM != null ? ` + ra ${usd(c.priceOutPerM)}` : ''}`;
+  return c.priceInPerM == null || c.priceOutPerM == null ? null : `${usd(c.priceInPerM)} / ${usd(c.priceOutPerM)} $`;
+};
 const parseConnection = (raw: Record<string, unknown>): Connection => {
   const t = (raw.lastTest || {}) as Record<string, unknown>;
   return {
@@ -97,7 +102,7 @@ const parseConnection = (raw: Record<string, unknown>): Connection => {
     status: raw.status === 'ok' || raw.status === 'error' ? raw.status : 'untested', lastTestedAt: (raw.lastTestedAt as string) || null,
     lastTest: { ms: num(t.ms), httpStatus: num(t.httpStatus), models: num(t.models), code: (t.code as string) || null, message: (t.message as string) || null },
     updatedAt: (raw.updatedAt as string) || null, updatedByName: (raw.updatedByName as string) || null,
-    priceInPerM: num(raw.priceInPerM), priceOutPerM: num(raw.priceOutPerM),
+    priceInPerM: num(raw.priceInPerM), priceOutPerM: num(raw.priceOutPerM), pricePerCall: num(raw.pricePerCall),
   };
 };
 
@@ -132,7 +137,7 @@ export const integrationsService = {
     const { data, error } = await supabase.rpc('save_integration_connection_v1', { p: {
       id: draft.id || null, kind: draft.kind, name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), model: draft.model.trim() || null,
       enabled: draft.enabled, apiKey: draft.apiKey.trim() || null,
-      priceInPerM: priceText(draft.priceIn), priceOutPerM: priceText(draft.priceOut),
+      priceInPerM: priceText(draft.priceIn), priceOutPerM: priceText(draft.priceOut), pricePerCall: priceText(draft.pricePerCall),
     } });
     if (error) throw error;
     return parseConnection(data as Record<string, unknown>);
@@ -146,7 +151,7 @@ export const integrationsService = {
     if (error) throw error;
   },
   /** Thử kết nối đã lưu (ghi kết quả), khóa trong Secrets, hoặc bản nháp trước khi lưu. */
-  async test(target: { connectionId: string } | { envId: string } | { draft: Omit<ConnectionDraft, 'name' | 'enabled' | 'id' | 'priceIn' | 'priceOut'>; connectionId?: string }) {
+  async test(target: { connectionId: string } | { envId: string } | { draft: Omit<ConnectionDraft, 'name' | 'enabled' | 'id' | 'priceIn' | 'priceOut' | 'pricePerCall'>; connectionId?: string }) {
     return invoke<{ result: ProbeResult; connection?: Record<string, unknown> | null }>({ action: 'test', ...target })
       .then(r => ({ result: r.result, connection: r.connection ? parseConnection(r.connection) : null }));
   },

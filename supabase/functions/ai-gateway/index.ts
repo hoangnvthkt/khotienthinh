@@ -101,7 +101,7 @@ Deno.serve(async request => {
           if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
           const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
           await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
-            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${used.length ? `, tra ${used.join(' ')}` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
           send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
         } catch (e) {
           const message = e instanceof Error ? e.message : 'AI_FAILED';

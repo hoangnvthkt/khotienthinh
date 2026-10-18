@@ -127,7 +127,7 @@ describe('Trợ lý T1 · vòng gọi công cụ (model giả)', () => {
     const { run, events, used, book } = base(step);
     const out = await run;
     expect(out.text).toBe('Để em tra.\n\nCòn 12,4 tấn [[h1]].');
-    expect(out.usage).toEqual({ tokensIn: 400, tokensOut: 25 });
+    expect(out.usage).toEqual({ tokensIn: 400, tokensOut: 25, calls: 2 });
     expect(used).toEqual(['ton_kho', 'tim_ho_so']);
     expect(events.filter(e => e.type === 'tool')).toEqual([{ type: 'tool', name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }, { type: 'tool', name: 'tim_ho_so', label: 'Tìm hồ sơ', query: 'A' }]);
     const toolMsg = seen[1].messages.at(-1) as Extract<AgentMsg, { role: 'tool' }>;
