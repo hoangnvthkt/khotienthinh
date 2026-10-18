@@ -91,7 +91,7 @@ describe('Trợ lý T1 · công cụ đọc (lệnh máy chủ giả)', () => {
     expect(rpc.calls.map(c => c[0])).toEqual(['search_global_v1', 'get_procurement_order_v1', 'get_procurement_po_payment_status_v1']);
     expect(out).toMatchObject({ ref: 'h1', so_po: 'PO-646', ncc: 'Hòa Phát', so_dot_giao: 1, dong: [{ dat: 40, da_nhan: 32, con_phai_giao: 8 }], thanh_toan: { da_tra: 400000000, con_no: 280000000 } });
     const denied = JSON.parse(await runTool('chi_tiet_don_mua', { ma: 'PO-646' }, { rpc: rpcOf({ search_global_v1: { records: [PO] } }), book: new SourceBook() }, new Map()));
-    expect(denied.loi).toBe('Không thấy đơn hàng trong phạm vi người hỏi được xem.');
+    expect(denied.loi).toMatch(/^Ngoài phạm vi người hỏi được xem: đơn hàng .*không đoán số, không nói là không tồn tại/);
   });
 
   it('viec_cua_toi: nhóm tôi gửi → tab sent; lọc theo chữ; việc có mã nguồn', async () => {
