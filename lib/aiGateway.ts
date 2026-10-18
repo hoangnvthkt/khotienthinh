@@ -190,12 +190,18 @@ export const aiGateway = {
 
 /** Câu báo cho người dùng theo mã; hết lượt thì kèm số. */
 /** Trung tâm AI: quyền AI của chính tôi (được cấp Trợ lý chưa, trần câu / ngày, đã dùng). */
-export interface MyAiAccess { assistant: boolean; dailyQuestionCap: number | null; monthlyCostCapUsd: number | null; usedToday: number; monthCostUsd: number; admin: string | null }
+/** Model được cấp để chọn ở ô hỏi (mặc định đứng đầu). vision = đọc được ảnh / PDF scan. */
+export interface MyAiModel { id: string; name: string; model: string; blurb: string; icon: string; vision: boolean; isDefault: boolean }
+export interface MyAiAccess { assistant: boolean; dailyQuestionCap: number | null; monthlyCostCapUsd: number | null; usedToday: number; monthCostUsd: number; admin: string | null; models: MyAiModel[] }
 export const parseMyAccess = (raw: unknown): MyAiAccess => {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const n = (v: unknown) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
   return { assistant: o.assistant !== false, dailyQuestionCap: n(o.dailyQuestionCap), monthlyCostCapUsd: n(o.monthlyCostCapUsd),
-    usedToday: n(o.usedToday) ?? 0, monthCostUsd: n(o.monthCostUsd) ?? 0, admin: typeof o.admin === 'string' && o.admin ? o.admin : null };
+    usedToday: n(o.usedToday) ?? 0, monthCostUsd: n(o.monthCostUsd) ?? 0, admin: typeof o.admin === 'string' && o.admin ? o.admin : null,
+    models: (Array.isArray(o.models) ? o.models : []).map(m => (m && typeof m === 'object' ? m : {}) as Record<string, unknown>)
+      .filter(m => typeof m.id === 'string' && m.id)
+      .map(m => ({ id: String(m.id), name: String(m.name || m.model || 'Model'), model: String(m.model || ''), blurb: String(m.blurb || ''), icon: String(m.icon || ''),
+        vision: m.vision !== false, isDefault: m.default === true })) };
 };
 
 export const aiErrorMessage = (outcome: { code: AiGatewayErrorCode; reason?: AiQuotaReason; usedToday?: number; dailyLimit?: number; error?: string }) => {

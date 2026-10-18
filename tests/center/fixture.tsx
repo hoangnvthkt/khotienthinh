@@ -421,15 +421,20 @@ const dailyLog: DailyLogFormActions = {
     return done;
   },
 };
+// Model được cấp (?models=1: chỉ một model → không có menu chọn).
+const MODELS = [
+  { id: 'c-claude', name: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5', blurb: 'Hiểu sâu, đọc ảnh / PDF scan — hợp báo giá, phân tích', icon: '🧠', vision: true, isDefault: true },
+  { id: 'c-deepseek', name: 'DeepSeek Flash', model: 'deepseek-v4.1-flash', blurb: 'Nhanh, rẻ — câu hỏi thường, tra cứu nhanh', icon: '⚡', vision: false, isDefault: false },
+];
 const assistantHooks: AssistantHooks = {
   poForm,
   memory,
   // Trung tâm AI: ?access=none → chưa được cấp Trợ lý; ?access=cap → trần 30 câu/ngày, đã dùng 27.
-  access: async () => (params.get('access') === 'none'
+  access: async () => ({ models: params.get('models') === '1' ? [MODELS[0]] : MODELS, ...(params.get('access') === 'none'
     ? { assistant: false, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }
     : params.get('access') === 'cap'
       ? { assistant: true, dailyQuestionCap: 30, monthlyCostCapUsd: 3, usedToday: 27, monthCostUsd: 0.4, admin: 'Admin Hoàng' }
-      : { assistant: true, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }),
+      : { assistant: true, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }) }),
   dailyLog,
   ...(params.get('mrform') === '0' ? {} : { mrForm }),
   status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),

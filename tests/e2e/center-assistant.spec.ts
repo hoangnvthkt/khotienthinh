@@ -810,3 +810,37 @@ test("PDF trong chat: PDF có chữ đọc trên máy thành chữ từng trang 
   expect(call.files[0].head).toContain("STT | Tên hàng | ĐVT | Số lượng | Đơn giá | Thành tiền");
   await expect(chat(page).locator('.vcc-msg[data-role="user"]').last()).toContainText("📎 bao-gia-hanaka.pdf · 1 ảnh");
 });
+
+test("chọn model ở ô hỏi: chỉ model được cấp, nhớ lựa chọn; câu có ảnh tự dùng model đọc ảnh; một model thì chỉ hiện tên", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  const picker = chat(page).getByRole("button", { name: /^Model: Claude Sonnet 5.5/ });
+  await picker.click();
+  const menu = page.getByRole("listbox", { name: "Chọn model AI" });
+  await expect(menu.getByRole("option")).toHaveCount(2);
+  await expect(menu.getByRole("option", { name: /Claude Sonnet 5.5/ })).toHaveAttribute("aria-selected", "true");
+  await expect(menu.getByRole("option", { name: /DeepSeek Flash/ })).toContainText("Không đọc ảnh");
+  await menu.getByRole("option", { name: /DeepSeek Flash/ }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(chat(page).getByRole("button", { name: /^Model: DeepSeek Flash/ })).toBeVisible();
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  await box.fill("Hôm nay việc gì gấp nhất?");
+  await page.getByRole("button", { name: "Gửi", exact: true }).click();
+  await expect(chat(page).getByTestId("turn").last()).toHaveAttribute("data-state", "done");
+  const chats = () => aiCalls(page).then(calls => calls.filter(c => c.skill === "assistant_chat") as Array<{ context: Record<string, unknown> }>);
+  expect((await chats()).at(-1)!.context).toMatchObject({ connectionId: "c-deepseek" });
+  // Có ảnh mà DeepSeek không đọc ảnh → câu này gửi bằng Claude, báo rõ.
+  await page.locator('input[type="file"]').setInputFiles({ name: "bao-gia.jpg", mimeType: "image/jpeg", buffer: readFileSync("tests/center/files/bao-gia-hanaka.jpg") });
+  await expect(chat(page).getByRole("status").filter({ hasText: "câu này dùng Claude Sonnet 5.5" })).toBeVisible();
+  await page.getByRole("button", { name: "Gửi", exact: true }).click();
+  await expect(chat(page).getByTestId("turn").last()).toHaveAttribute("data-state", "done");
+  expect((await chats()).at(-1)!.context).toMatchObject({ connectionId: "c-claude" });
+  // Tải lại: vẫn nhớ DeepSeek.
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByRole("button", { name: /^Model: DeepSeek Flash/ })).toBeVisible();
+  await page.goto(`${base}?ai=gemini&models=1`);
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByText("Claude Sonnet 5.5", { exact: true })).toBeVisible();
+  await expect(chat(page).getByRole("button", { name: /^Model:/ })).toHaveCount(0);
+});

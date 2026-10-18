@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowUp, ArrowUpRight, Brain, ChevronRight, FileSpreadsheet, FileText, History, Loader2, Lock, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
+  ArrowUp, ArrowUpRight, Brain, Building2, CalendarCheck, ChevronRight, Package, Wallet, FileSpreadsheet, FileText, History, Loader2, Lock, Paperclip, Plus, RefreshCcw, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
@@ -22,6 +22,7 @@ import { defaultDailyLogFormActions, type DailyLogFormActions } from '../../lib/
 import { displayCode } from '../../lib/center/workItemsService';
 import { defaultMemoryActions, type MemoryActions } from '../../lib/aiMemory';
 import AssistantMemoryPanel from './AssistantMemoryPanel';
+import AssistantModelPicker, { modelForTurn, readStoredModel, storeModel } from './AssistantModelPicker';
 import { ACCEPT, addAttachments, attachmentLabel, type ChatAttachment } from '../../lib/assistantFiles';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -72,6 +73,9 @@ export const defaultAssistantHooks: AssistantHooks = {
   },
   cancelCommand: async command => (await finishCommand(command.id, 'cancelled')) ?? { ...command, status: 'cancelled' },
 };
+
+/** Câu hỏi nhanh dạng thẻ có biểu tượng (học từ màn /ai cũ). */
+const QUICK_ICON: Record<string, React.ElementType> = { project: Building2, supply: Package, finance: Wallet, hrm: CalendarCheck };
 
 interface UiMessage {
   id: string;
@@ -255,6 +259,7 @@ const AssistantView: React.FC<{
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [access, setAccess] = useState<MyAiAccess | null>(null);
   const [asked, setAsked] = useState(0);
+  const [modelId, setModelId] = useState<string | null>(() => readStoredModel());
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [reading, setReading] = useState(false);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
@@ -312,6 +317,9 @@ const AssistantView: React.FC<{
   const aiReady = !!ai?.configured;
   const notGranted = aiReady && access?.assistant === false;
   const configured = aiReady && !notGranted;
+  const models = access?.models || [];
+  const hasImages = attachments.some(a => a.kind === 'image');
+  const turnModel = modelForTurn(models, modelId, hasImages);
   const leftToday = access?.dailyQuestionCap != null ? Math.max(0, access.dailyQuestionCap - access.usedToday - asked) : null;
   const quick = availableQuickQuestions(brief);
   const context = { projectId: todayData?.project?.id || null, tab: 'assistant' };
@@ -418,6 +426,8 @@ const AssistantView: React.FC<{
     const q = typed.length >= 2 ? typed : files.length ? 'Xem tệp đính kèm.' : typed;
     if (!configured || sending || q.length < 2) return;
     const label = attachmentLabel(files);
+    // Model của câu này (Trung tâm AI): model đang chọn ở ô hỏi; có ảnh mà model không đọc ảnh → model đọc ảnh được cấp.
+    const useModel = modelForTurn(models, modelId, files.some(f => f.kind === 'image')).model?.id ?? null;
     const replyId = `a-${++seq.current}`;
     pinned.current = true;
     setSending(true);
@@ -430,7 +440,8 @@ const AssistantView: React.FC<{
     const controller = new AbortController();
     abort.current = controller;
     const result = await hooks.chat(
-      { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender), context,
+      { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender),
+        context: { ...context, ...(useModel ? { connectionId: useModel } : {}) },
         ...(files.length ? { images: files.flatMap(f => (f.kind === 'image' ? [{ mime: f.mime, b64: f.b64 }] : [])),
           files: files.flatMap(f => (f.kind === 'image' ? [] : [{ name: f.name, text: f.text }])) } : {}) },
       {
@@ -628,8 +639,12 @@ const AssistantView: React.FC<{
       <div className="vcc-chat-foot" style={memoryOpen ? { display: 'none' } : undefined}>
         <div className="vcc-chat-col">
           {showChips && (
-            <div className="vcc-chips" role="group" aria-label="Hỏi nhanh">
-              {quick.map(q => <button key={q.id} type="button" className="vcc-chip" onClick={() => askQuick(q.id, q.text)}>{q.text}</button>)}
+            <div className="vcc-quick" role="group" aria-label="Hỏi nhanh">
+              {quick.map(q => {
+                const Icon = QUICK_ICON[q.id] || Sparkles;
+                return <button key={q.id} type="button" className="vcc-quick-card" data-kind={q.id} onClick={() => askQuick(q.id, q.text)}>
+                  <span className="vcc-quick-icon" aria-hidden="true"><Icon size={16} /></span><span>{q.text}</span></button>;
+              })}
             </div>
           )}
           {notGranted && (
@@ -648,14 +663,13 @@ const AssistantView: React.FC<{
                 ))}
                 {reading && <span className="vcc-attach" data-kind="reading" role="status"><Loader2 size={14} className="animate-spin" /> Đang đọc tệp…</span>}
                 {fileErrors.map(e => <span key={e} className="vcc-attach-err" role="alert">{e}</span>)}
+                {turnModel.switched && turnModel.model && <span className="vcc-attach-note" role="status">Có ảnh — câu này dùng {turnModel.model.name} (model đang chọn không đọc ảnh).</span>}
               </div>
             )}
-            <form className="vcc-composer" onSubmit={event => { event.preventDefault(); if (sending) abort.current?.abort(); else submit(); }}
+            <form className="vcc-composer" data-layout="stack" onSubmit={event => { event.preventDefault(); if (sending) abort.current?.abort(); else submit(); }}
               onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
               onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(Array.from(event.dataTransfer.files)); } }}>
               <input ref={filePicker} type="file" accept={ACCEPT} multiple hidden onChange={event => { void attach(Array.from(event.target.files || [])); event.target.value = ''; }} />
-              <button type="button" className="vcc-composer-attach" onClick={() => filePicker.current?.click()} disabled={sending || reading}
-                aria-label="Đính kèm ảnh, PDF hoặc Excel" title="Đính kèm ảnh (báo giá, phiếu, báo cáo), PDF (≤ 50 MB) hoặc Excel / CSV — đọc ngay trên máy"><Paperclip size={17} /></button>
               <textarea
                 ref={input}
                 className="vcc-composer-input"
@@ -675,12 +689,18 @@ const AssistantView: React.FC<{
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!sending) submit(); }
                 }}
               />
+              <div className="vcc-composer-bar">
+              <button type="button" className="vcc-composer-attach" onClick={() => filePicker.current?.click()} disabled={sending || reading}
+                aria-label="Đính kèm ảnh, PDF hoặc Excel" title="Đính kèm ảnh (báo giá, phiếu, báo cáo), PDF (≤ 50 MB) hoặc Excel / CSV — đọc ngay trên máy"><Paperclip size={17} /></button>
+              <span className="vcc-composer-gap" />
               {question.length > QUESTION_MAX - 1000 && <span className="vcc-composer-count" aria-live="polite">{question.length.toLocaleString('vi-VN')}/{QUESTION_MAX.toLocaleString('vi-VN')}</span>}
+              {models.length > 0 && <AssistantModelPicker models={models} value={modelId} disabled={sending} onChange={id => { setModelId(id); storeModel(id); }} />}
               {sending ? (
                 <button type="submit" className="vcc-composer-send" aria-label="Dừng" title="Dừng"><Square size={13} fill="currentColor" /></button>
               ) : (
                 <button type="submit" className="vcc-composer-send" aria-label="Gửi" title="Gửi (Enter)" disabled={reading || (question.trim().length < 2 && !attachments.length)}><ArrowUp size={16} /></button>
               )}
+              </div>
             </form>
             {leftToday != null && <p className="vcc-chat-left" data-low={leftToday <= 3 || undefined}>Còn {leftToday} câu hôm nay</p>}
             </>

@@ -21,8 +21,8 @@ const PEOPLE: AiPerson[] = [
 ];
 const state: AiAdminOverview = {
   templates: [
-    { id: 't-std', name: 'Tiêu chuẩn', connectionId: CLAUDE, monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: 'Cán bộ dùng Trợ lý hằng ngày', users: 1 },
-    { id: 't-pro', name: 'Nâng cao', connectionId: CLAUDE, monthlyCostCapUsd: 10, dailyQuestionCap: 80, skills: ['assistant_chat'], note: 'Quản lý, mua hàng', users: 1 },
+    { id: 't-std', name: 'Tiêu chuẩn', connectionId: CLAUDE, extraConnectionIds: [], monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: 'Cán bộ dùng Trợ lý hằng ngày', users: 1 },
+    { id: 't-pro', name: 'Nâng cao', connectionId: CLAUDE, extraConnectionIds: [DEEPSEEK], monthlyCostCapUsd: 10, dailyQuestionCap: 80, skills: ['assistant_chat'], note: 'Quản lý, mua hàng', users: 1 },
   ],
   grants: [],
   skills: [
@@ -32,20 +32,22 @@ const state: AiAdminOverview = {
     { code: 'po_review_brief', name: 'Tóm tắt đơn trước khi duyệt', access: 'everyone', enabled: true, dailyLimit: 60 },
   ],
   connections: [
-    { id: CLAUDE, name: 'RevidAPI', model: 'claude-sonnet-5-5', enabled: true, pricePerCall: 0.008 },
-    { id: DEEPSEEK, name: 'RevidAPI-deepseek', model: 'deepseek-v4.1-flash', enabled: true, pricePerCall: null },
+    { id: CLAUDE, name: 'RevidAPI', model: 'claude-sonnet-5-5', enabled: true, pricePerCall: 0.008, displayName: 'Claude Sonnet 5.5', blurb: 'Hiểu sâu, đọc ảnh / PDF scan — hợp báo giá, phân tích', icon: '🧠', vision: true },
+    { id: DEEPSEEK, name: 'RevidAPI-deepseek', model: 'deepseek-v4.1-flash', enabled: true, pricePerCall: null, displayName: 'DeepSeek Flash', blurb: 'Nhanh, rẻ — câu hỏi thường, tra cứu nhanh', icon: '⚡', vision: false },
   ],
   settings: { monthlyCostCapUsd: 20, monthlyRunCap: 3000 },
   month: { runs: 214, costUsd: 3.42 },
 };
 const effective = (g: Omit<AiGrant, 'effective' | 'usage'>) => {
   const t = state.templates.find(x => x.id === g.templateId);
-  return { enabled: g.enabled, templateName: t?.name ?? null, connectionId: g.connectionId ?? t?.connectionId ?? null,
+  const def = g.connectionId ?? t?.connectionId ?? null;
+  return { enabled: g.enabled, templateName: t?.name ?? null, connectionId: def,
+    models: [def, ...(g.extraConnectionIds ?? t?.extraConnectionIds ?? [])].filter((id, i, all): id is string => Boolean(id) && all.indexOf(id) === i),
     monthlyCostCapUsd: g.monthlyCostCapUsd ?? t?.monthlyCostCapUsd ?? null, dailyQuestionCap: g.dailyQuestionCap ?? t?.dailyQuestionCap ?? null, skills: g.skills ?? t?.skills ?? [] };
 };
 const grant = (person: AiPerson, values: Partial<AiGrant>, usage: AiGrant['usage']): AiGrant => {
   const base = { userId: person.id, name: person.name, email: person.email, role: person.role, active: true, updatedAt: '2026-10-18T03:00:00Z',
-    enabled: true, templateId: null, connectionId: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '', ...values };
+    enabled: true, templateId: null, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '', ...values };
   return { ...base, effective: effective(base), usage };
 };
 if (!params.get('empty')) {
@@ -79,6 +81,7 @@ const service: AiAdminService = {
     state.grants = state.grants.map(g => ({ ...g, effective: effective(g) }));
   },
   deleteTemplate: async id => { calls.push({ deleteTemplate: id }); state.templates = state.templates.filter(t => t.id !== id); },
+  saveModel: async m => { calls.push({ saveModel: m }); state.connections = state.connections.map(c => (c.id === m.id ? { ...c, ...m } : c)); },
   setSkillAccess: async (code, access) => { calls.push({ setSkillAccess: code, access }); state.skills = state.skills.map(s => (s.code === code ? { ...s, access } : s)); },
 };
 

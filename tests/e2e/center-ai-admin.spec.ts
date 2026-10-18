@@ -30,17 +30,17 @@ test("Cấp AI: chọn nhiều người, chọn mẫu, chỉnh riêng model + tr
   await drawer.getByRole("button", { name: /Hà Đức Chuẩn/ }).click();
   await expect(drawer.getByRole("button", { name: /Cấp cho 2 người/ })).toBeEnabled();
   await drawer.getByRole("radio", { name: /Nâng cao/ }).click();
-  await expect(drawer.locator("p", { hasText: "Hiệu lực:" })).toContainText("claude-sonnet-5-5 · $10/tháng · 80 câu/ngày · Trợ lý · hội thoại");
+  await expect(drawer.locator("p", { hasText: "Hiệu lực:" })).toContainText("Claude Sonnet 5.5 (+ DeepSeek Flash) · $10/tháng · 80 câu/ngày · Trợ lý · hội thoại");
   await drawer.getByText("Chỉnh riêng (đè lên mẫu)").click();
   await drawer.getByLabel("Model riêng").selectOption("c-deepseek");
   await drawer.getByLabel("Số câu một ngày riêng").fill("20");
-  await expect(drawer.locator("p", { hasText: "Hiệu lực:" })).toContainText("deepseek-v4.1-flash · $10/tháng · 20 câu/ngày");
+  await expect(drawer.locator("p", { hasText: "Hiệu lực:" })).toContainText("DeepSeek Flash · $10/tháng · 20 câu/ngày");
   await drawer.getByRole("button", { name: /Cấp cho 2 người/ }).click();
   await expect(drawer).toHaveCount(0);
   await expect(list(page).getByRole("listitem")).toHaveCount(4);
   expect((await calls(page)).at(-1)).toEqual({ saveGrants: ["u-tam", "u-chuan"],
-    values: { enabled: true, templateId: "t-pro", connectionId: "c-deepseek", monthlyCostCapUsd: null, dailyQuestionCap: 20, skills: null, note: "" } });
-  await expect(list(page).getByRole("listitem", { name: "Bùi Thị Tâm" })).toContainText("deepseek-v4.1-flash");
+    values: { enabled: true, templateId: "t-pro", connectionId: "c-deepseek", extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: 20, skills: null, note: "" } });
+  await expect(list(page).getByRole("listitem", { name: "Bùi Thị Tâm" })).toContainText("DeepSeek Flash");
 });
 
 test("Mẫu cấp phát: thêm mẫu mới; mẫu đang dùng không xóa được; Skill: đổi sang chỉ người được cấp phải xác nhận", async ({ page, isMobile }) => {
@@ -71,4 +71,26 @@ test("người không phải Quản trị AI: báo rõ và mời mở Trợ lý"
   await expect(page.getByText("Trung tâm AI dành cho Quản trị AI")).toBeVisible();
   await page.getByRole("button", { name: "Mở Trợ lý" }).click();
   await expect(page.getByTestId("route")).toHaveText("/center");
+});
+
+test("Model: đặt tên dễ hiểu, mô tả, đọc ảnh; mẫu có model mặc định + model thêm cho người dùng chọn ở ô hỏi", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(base);
+  await page.getByRole("tab", { name: /Model/ }).click();
+  const deep = page.getByRole("article", { name: "Model DeepSeek Flash" });
+  await expect(deep.getByRole("button", { name: "Không đọc ảnh" })).toHaveAttribute("aria-pressed", "false");
+  await deep.getByLabel("Tên hiển thị deepseek-v4.1-flash").fill("DeepSeek nhanh");
+  await deep.getByLabel("Mô tả deepseek-v4.1-flash").fill("Hỏi nhanh, tra cứu");
+  await deep.getByRole("button", { name: "Lưu" }).click();
+  expect((await calls(page)).at(-1)).toEqual({ saveModel: { id: "c-deepseek", displayName: "DeepSeek nhanh", blurb: "Hỏi nhanh, tra cứu", icon: "⚡", vision: false } });
+  await expect(page.getByRole("article", { name: "Model DeepSeek nhanh" })).toBeVisible();
+
+  await page.getByRole("tab", { name: /Mẫu cấp phát/ }).click();
+  await expect(page.getByRole("article", { name: "Mẫu Nâng cao" })).toContainText("Claude Sonnet 5.5 +1");
+  await page.getByRole("button", { name: "Mẫu mới" }).click();
+  const drawer = page.getByRole("dialog", { name: "Mẫu cấp phát mới" });
+  await drawer.getByLabel("Tên mẫu").fill("Hai model");
+  await drawer.getByRole("group", { name: /Model thêm/ }).getByRole("button", { name: /DeepSeek nhanh/ }).click();
+  await drawer.getByRole("button", { name: "Lưu mẫu" }).click();
+  expect((await calls(page)).at(-1)).toMatchObject({ saveTemplate: { name: "Hai model", connectionId: "c-claude", extraConnectionIds: ["c-deepseek"] } });
 });

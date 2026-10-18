@@ -776,3 +776,44 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-chat-denied svg { flex: none; margin-top: 2px; color: var(--vcc-muted); }
 .vcc-chat-left { margin: 6px 4px 0; text-align: right; font-size: 11.5px; color: var(--vcc-muted); }
 .vcc-chat-left[data-low] { color: var(--vcc-warn); }
+
+/* Ô hỏi hai tầng (học từ màn /ai cũ, 18/10): chữ ở trên; ghim tệp · chọn model · gửi ở dưới. */
+.vcc-composer[data-layout="stack"] { flex-direction: column; align-items: stretch; gap: 4px; padding: 10px 10px 8px 14px; border-radius: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 4px 16px rgba(15, 23, 42, .05); }
+.vcc-composer[data-layout="stack"] .vcc-composer-input { height: 40px; padding: 6px 0 2px; }
+.vcc-composer-bar { display: flex; align-items: center; gap: 6px; }
+.vcc-composer-gap { flex: 1; }
+.vcc-composer[data-layout="stack"] .vcc-composer-attach { margin-left: -8px; }
+.vcc-model-wrap { position: relative; }
+.vcc-model { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 32px; padding: 0 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; color: var(--vcc-fg2); background: transparent; }
+button.vcc-model:hover:not(:disabled) { background: var(--vcc-hover); color: var(--vcc-fg); }
+.vcc-model[data-static="true"] { color: var(--vcc-muted); font-weight: 500; }
+.vcc-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcc-model-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 40; width: min(340px, calc(100vw - 32px)); padding: 6px; border: 1px solid var(--vcc-border); border-radius: 14px; background: var(--vcc-card); box-shadow: 0 12px 32px rgba(15, 23, 42, .16); }
+.vcc-model-head { margin: 4px 8px 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--vcc-muted); }
+.vcc-model-opt { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px; border-radius: 10px; text-align: left; }
+.vcc-model-opt:hover, .vcc-model-opt:focus-visible { background: var(--vcc-hover); outline: none; }
+.vcc-model-opt[aria-selected="true"] { background: var(--vcc-accent-soft); }
+.vcc-model-icon { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: var(--vcc-card2); font-size: 17px; }
+.vcc-model-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vcc-model-title { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 650; color: var(--vcc-fg); }
+.vcc-model-tag { padding: 1px 6px; border-radius: 999px; background: var(--vcc-steel-s); color: var(--vcc-steel); font-size: 10.5px; font-weight: 600; }
+.vcc-model-blurb { font-size: 12px; line-height: 1.4; color: var(--vcc-muted); }
+.vcc-model-novision { display: inline-flex; align-items: center; gap: 4px; }
+.vcc-model-check { flex: none; margin-top: 6px; color: var(--vcc-accent); }
+.vcc-attach-note { flex-basis: 100%; font-size: 12px; color: var(--vcc-steel); }
+@media (max-width: 640px) { .vcc-model { max-width: 150px; } }
+
+/* Câu hỏi nhanh dạng thẻ có biểu tượng (học từ màn /ai cũ). */
+.vcc-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.vcc-quick-card { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border: 1px solid var(--vcc-border); border-radius: 14px; background: var(--vcc-card); font-size: 13px; font-weight: 500; color: var(--vcc-fg2); text-align: left; transition: border-color .15s, box-shadow .15s; }
+.vcc-quick-card:hover { border-color: var(--vcc-accent); box-shadow: 0 4px 14px rgba(15, 23, 42, .07); color: var(--vcc-fg); }
+.vcc-quick-icon { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: var(--vcc-accent-soft); color: var(--vcc-accent); }
+.vcc-quick-card[data-kind="supply"] .vcc-quick-icon { background: var(--vcc-steel-s); color: var(--vcc-steel); }
+@media (max-width: 900px) { .vcc-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Điện thoại: một hàng cuộn ngang, thẻ gọn — không đẩy bản tin ra khỏi màn. */
+@media (max-width: 640px) {
+  .vcc-quick { display: flex; overflow-x: auto; gap: 6px; margin: 0 -4px 8px; padding: 0 4px 2px; scrollbar-width: none; }
+  .vcc-quick::-webkit-scrollbar { display: none; }
+  .vcc-quick-card { flex: none; min-height: 40px; padding: 6px 12px 6px 8px; white-space: nowrap; }
+  .vcc-quick-icon { width: 26px; height: 26px; }
+}

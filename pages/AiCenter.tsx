@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Check, ChevronDown, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { Bot, Check, ChevronDown, Cpu, Eye, EyeOff, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import { Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../components/procurement/hub/hubUi';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import {
-  aiAdminService, usd, usedPct, type AiAdminOverview, type AiAdminService, type AiGrant, type AiGrantValues, type AiPerson, type AiTemplate, type SkillAccess,
+  aiAdminService, modelLabel, usd, usedPct, type AiAdminOverview, type AiConnectionRow, type AiAdminService, type AiGrant, type AiGrantValues, type AiPerson, type AiTemplate, type SkillAccess,
 } from '../lib/aiAdmin';
 
 // Trung tâm AI (chủ SP chốt 18/10/2026, thay màn /ai cũ): Quản trị AI cấp AI tới từng người — mẫu cấp phát rồi chỉnh riêng:
@@ -13,9 +13,9 @@ import {
 // Người không phải Admin vào đây thấy lời mời dùng Trợ lý trong Trung tâm điều hành.
 
 type Load<T> = T | 'loading' | 'error' | 'denied';
-type Tab = 'people' | 'templates' | 'skills';
+type Tab = 'people' | 'templates' | 'models' | 'skills';
 const nf = new Intl.NumberFormat('vi-VN');
-const EMPTY_GRANT: AiGrantValues = { enabled: true, templateId: null, connectionId: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '' };
+const EMPTY_GRANT: AiGrantValues = { enabled: true, templateId: null, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '' };
 const numOrNull = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? null : Number(v.replace(',', '.')));
 
 const Meter: React.FC<{ pct: number | null; label: string }> = ({ pct, label }) => (
@@ -43,21 +43,39 @@ const Switch: React.FC<{ on: boolean; label: string; busy?: boolean; onChange: (
 );
 
 /** Dòng tóm tắt cấp phát hiệu lực: "Claude · $3/tháng · 30 câu/ngày · Trợ lý". */
-const effectiveLine = (data: AiAdminOverview, v: { connectionId: string | null; monthlyCostCapUsd: number | null; dailyQuestionCap: number | null; skills: string[] }) => {
-  const model = data.connections.find(c => c.id === v.connectionId);
+const effectiveLine = (data: AiAdminOverview, v: { connectionId: string | null; extraConnectionIds?: string[]; monthlyCostCapUsd: number | null; dailyQuestionCap: number | null; skills: string[] }) => {
+  const extra = (v.extraConnectionIds || []).filter(id => id !== v.connectionId).map(id => modelLabel(data.connections.find(c => c.id === id)));
   const skills = v.skills.map(code => data.skills.find(s => s.code === code)?.name || code);
-  return [model ? model.model || model.name : 'Model mặc định', v.monthlyCostCapUsd != null ? `${usd(v.monthlyCostCapUsd)}/tháng` : 'không trần tháng',
+  return [`${v.connectionId ? modelLabel(data.connections.find(c => c.id === v.connectionId)) : 'Model mặc định'}${extra.length ? ` (+ ${extra.join(', ')})` : ''}`, v.monthlyCostCapUsd != null ? `${usd(v.monthlyCostCapUsd)}/tháng` : 'không trần tháng',
     v.dailyQuestionCap != null ? `${v.dailyQuestionCap} câu/ngày` : 'không trần ngày', skills.length ? skills.join(', ') : 'chưa có skill'].join(' · ');
 };
+
+/** Chọn model THÊM (ngoài model mặc định) — người dùng được chọn ở ô hỏi. locked = theo mẫu (không sửa). */
+const ModelChips: React.FC<{ label: string; data: AiAdminOverview; exclude: string | null; picked: string[]; locked?: boolean; onLock?: (lock: boolean) => void; onChange: (ids: string[]) => void }> =
+  ({ label, data, exclude, picked, locked = false, onLock, onChange }) => (
+  <fieldset className="sm:col-span-3">
+    <legend className="text-xs font-semibold text-muted-foreground">{label}
+      {onLock && <label className="ml-3 inline-flex items-center gap-1.5 font-normal"><input type="checkbox" checked={!locked} onChange={e => onLock(!e.target.checked)} /> Chọn riêng</label>}</legend>
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {data.connections.filter(c => c.enabled && c.id !== exclude).map(c => {
+        const on = picked.includes(c.id);
+        return <button key={c.id} type="button" aria-pressed={on} disabled={locked} onClick={() => onChange(on ? picked.filter(x => x !== c.id) : [...picked, c.id])}
+          className={`rounded-full border px-2.5 py-1 text-xs font-semibold disabled:cursor-default ${on ? 'border-leaf-300 bg-leaf-50 text-leaf-800' : 'border-border text-muted-foreground'}`}>
+          {c.icon ? `${c.icon} ` : ''}{modelLabel(c)}</button>;
+      })}
+      {data.connections.filter(c => c.enabled && c.id !== exclude).length === 0 && <span className="text-xs text-muted-foreground">Chưa có model khác — thêm ở Cài đặt → Kết nối.</span>}
+    </div>
+  </fieldset>
+);
 
 // ── Ngăn cấp / sửa AI cho người ─────────────────────────────────────────────────────────────────────────────────────────
 const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; editing: AiGrant | null; onClose: () => void; onSaved: () => void }> = ({ data, service, editing, onClose, onSaved }) => {
   const toast = useToast();
   const [values, setValues] = useState<AiGrantValues>(() => editing
-    ? { enabled: editing.enabled, templateId: editing.templateId, connectionId: editing.connectionId, monthlyCostCapUsd: editing.monthlyCostCapUsd,
+    ? { enabled: editing.enabled, templateId: editing.templateId, connectionId: editing.connectionId, extraConnectionIds: editing.extraConnectionIds, monthlyCostCapUsd: editing.monthlyCostCapUsd,
       dailyQuestionCap: editing.dailyQuestionCap, skills: editing.skills, note: editing.note }
     : { ...EMPTY_GRANT, templateId: data.templates[0]?.id ?? null });
-  const [custom, setCustom] = useState(() => Boolean(editing && (editing.connectionId || editing.monthlyCostCapUsd != null || editing.dailyQuestionCap != null || editing.skills)));
+  const [custom, setCustom] = useState(() => Boolean(editing && (editing.connectionId || editing.extraConnectionIds || editing.monthlyCostCapUsd != null || editing.dailyQuestionCap != null || editing.skills)));
   const [query, setQuery] = useState('');
   const [people, setPeople] = useState<AiPerson[] | 'loading' | 'error'>('loading');
   const [picked, setPicked] = useState<AiPerson[]>([]);
@@ -76,6 +94,7 @@ const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; ed
 
   const effective = {
     connectionId: values.connectionId ?? template?.connectionId ?? null,
+    extraConnectionIds: values.extraConnectionIds ?? template?.extraConnectionIds ?? [],
     monthlyCostCapUsd: values.monthlyCostCapUsd ?? template?.monthlyCostCapUsd ?? null,
     dailyQuestionCap: values.dailyQuestionCap ?? template?.dailyQuestionCap ?? null,
     skills: values.skills ?? template?.skills ?? [],
@@ -86,7 +105,7 @@ const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; ed
     if (!values.templateId && !effective.skills.length) { setError('Chọn mẫu, hoặc chỉnh riêng và chọn skill.'); return; }
     setSaving(true); setError(null);
     try {
-      await service.saveGrants(userIds, custom ? values : { ...values, connectionId: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null });
+      await service.saveGrants(userIds, custom ? values : { ...values, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null });
       toast.success(editing ? `Đã lưu cấp phát của ${editing.name}` : `Đã cấp AI cho ${userIds.length} người`);
       onSaved();
     } catch (e) { setError(e instanceof Error ? e.message : 'Chưa lưu được.'); } finally { setSaving(false); }
@@ -152,11 +171,14 @@ const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; ed
           <span className="flex items-center gap-2"><Settings2 size={15} className="text-teal-600" /> Chỉnh riêng (đè lên mẫu)</span><ChevronDown size={16} className="text-muted-foreground" />
         </summary>
         <div className="grid gap-3 border-t border-border px-3 py-3 sm:grid-cols-3">
-          <label className="text-xs font-semibold text-muted-foreground sm:col-span-3">Model
+          <label className="text-xs font-semibold text-muted-foreground sm:col-span-3">Model mặc định
             <select className={`${inputCls} mt-1 block w-full`} value={values.connectionId || ''} onChange={e => set({ connectionId: e.target.value || null })} aria-label="Model riêng">
-              <option value="">Theo mẫu{template ? ` (${data.connections.find(c => c.id === template.connectionId)?.model || 'mặc định'})` : ''}</option>
-              {data.connections.filter(c => c.enabled).map(c => <option key={c.id} value={c.id}>{c.name} · {c.model}{c.pricePerCall != null ? ` · ${usd(c.pricePerCall)}/lượt` : ''}</option>)}
+              <option value="">Theo mẫu{template ? ` (${template.connectionId ? modelLabel(data.connections.find(c => c.id === template.connectionId)) : 'mặc định'})` : ''}</option>
+              {data.connections.filter(c => c.enabled).map(c => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{modelLabel(c)} · {c.model}{c.pricePerCall != null ? ` · ${usd(c.pricePerCall)}/lượt` : ''}</option>)}
             </select></label>
+          <ModelChips label="Model thêm (người dùng chọn ở ô hỏi)" data={data} exclude={effective.connectionId} picked={effective.extraConnectionIds}
+            locked={values.extraConnectionIds == null} onLock={on => set({ extraConnectionIds: on ? null : [...(template?.extraConnectionIds || [])] })}
+            onChange={ids => set({ extraConnectionIds: ids })} />
           <label className="text-xs font-semibold text-muted-foreground">Trần tiền / tháng (USD)
             <input className={`${inputCls} mt-1 block w-full`} inputMode="decimal" value={values.monthlyCostCapUsd ?? ''} onChange={e => set({ monthlyCostCapUsd: numOrNull(e.target.value) })}
               placeholder={template?.monthlyCostCapUsd != null ? `Theo mẫu: ${template.monthlyCostCapUsd}` : 'Không trần'} aria-label="Trần tiền tháng riêng" /></label>
@@ -184,7 +206,7 @@ const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; ed
         <input className={`${inputCls} mt-1 block w-full`} value={values.note} maxLength={300} onChange={e => set({ note: e.target.value })} placeholder="VD: Mua hàng SMB, thử 2 tuần" aria-label="Ghi chú" /></label>
 
       <p className="rounded-xl bg-muted px-3 py-2 text-sm text-foreground" aria-live="polite"><b>Hiệu lực:</b> {effectiveLine(data, custom ? effective : { ...effective,
-        connectionId: template?.connectionId ?? null, monthlyCostCapUsd: template?.monthlyCostCapUsd ?? null, dailyQuestionCap: template?.dailyQuestionCap ?? null, skills: template?.skills ?? [] })}</p>
+        connectionId: template?.connectionId ?? null, extraConnectionIds: template?.extraConnectionIds ?? [], monthlyCostCapUsd: template?.monthlyCostCapUsd ?? null, dailyQuestionCap: template?.dailyQuestionCap ?? null, skills: template?.skills ?? [] })}</p>
     </Drawer>
   );
 };
@@ -193,7 +215,7 @@ const GrantDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; ed
 const TemplateDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService; editing: AiTemplate | null; onClose: () => void; onSaved: () => void }> = ({ data, service, editing, onClose, onSaved }) => {
   const toast = useToast();
   const confirm = useConfirm();
-  const [t, setT] = useState(() => editing ? { ...editing } : { name: '', connectionId: data.connections.find(c => c.enabled)?.id ?? null, monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: '' });
+  const [t, setT] = useState(() => editing ? { ...editing } : { name: '', connectionId: data.connections.find(c => c.enabled)?.id ?? null, extraConnectionIds: [] as string[], monthlyCostCapUsd: 3, dailyQuestionCap: 30, skills: ['assistant_chat'], note: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
@@ -222,11 +244,13 @@ const TemplateDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService;
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-semibold text-muted-foreground sm:col-span-2">Tên mẫu
           <input className={`${inputCls} mt-1 block w-full`} value={t.name} maxLength={80} onChange={e => setT({ ...t, name: e.target.value })} placeholder="VD: Mua hàng, Chỉ huy trưởng" aria-label="Tên mẫu" /></label>
-        <label className="text-xs font-semibold text-muted-foreground sm:col-span-2">Model
+        <label className="text-xs font-semibold text-muted-foreground sm:col-span-2">Model mặc định
           <select className={`${inputCls} mt-1 block w-full`} value={t.connectionId || ''} onChange={e => setT({ ...t, connectionId: e.target.value || null })} aria-label="Model của mẫu">
             <option value="">Mặc định (Cài đặt → Kết nối · Trợ lý)</option>
-            {data.connections.filter(c => c.enabled || c.id === t.connectionId).map(c => <option key={c.id} value={c.id}>{c.name} · {c.model}{c.pricePerCall != null ? ` · ${usd(c.pricePerCall)}/lượt` : ''}</option>)}
+            {data.connections.filter(c => c.enabled || c.id === t.connectionId).map(c => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{modelLabel(c)} · {c.model}{c.pricePerCall != null ? ` · ${usd(c.pricePerCall)}/lượt` : ''}</option>)}
           </select></label>
+        <div className="sm:col-span-2"><ModelChips label="Model thêm (người dùng chọn ở ô hỏi)" data={data} exclude={t.connectionId} picked={t.extraConnectionIds}
+          onChange={ids => setT({ ...t, extraConnectionIds: ids })} /></div>
         <label className="text-xs font-semibold text-muted-foreground">Trần tiền / tháng (USD)
           <input className={`${inputCls} mt-1 block w-full`} inputMode="decimal" value={t.monthlyCostCapUsd ?? ''} onChange={e => setT({ ...t, monthlyCostCapUsd: numOrNull(e.target.value) })} placeholder="Không trần" aria-label="Trần tiền tháng" /></label>
         <label className="text-xs font-semibold text-muted-foreground">Số câu / ngày
@@ -247,6 +271,37 @@ const TemplateDrawer: React.FC<{ data: AiAdminOverview; service: AiAdminService;
           <input className={`${inputCls} mt-1 block w-full`} value={t.note} maxLength={300} onChange={e => setT({ ...t, note: e.target.value })} aria-label="Ghi chú mẫu" /></label>
       </div>
     </Drawer>
+  );
+};
+
+/** Một model: tên người dùng thấy ở ô hỏi, biểu tượng, mô tả ngắn, đọc ảnh. Khóa / giá ở Cài đặt → Kết nối. */
+const ModelCard: React.FC<{ model: AiConnectionRow; service: AiAdminService; onSaved: () => void }> = ({ model, service, onSaved }) => {
+  const toast = useToast();
+  const [m, setM] = useState({ displayName: model.displayName, blurb: model.blurb, icon: model.icon, vision: model.vision });
+  const [busy, setBusy] = useState(false);
+  const dirty = m.displayName !== model.displayName || m.blurb !== model.blurb || m.icon !== model.icon || m.vision !== model.vision;
+  const save = async () => {
+    setBusy(true);
+    try { await service.saveModel({ id: model.id, ...m }); toast.success(`Đã lưu ${m.displayName || model.model}`); onSaved(); }
+    catch (e) { toast.error('Chưa lưu được', e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <article className={`rounded-2xl border border-border bg-card p-4 shadow-sm ${model.enabled ? '' : 'opacity-60'}`} aria-label={`Model ${model.displayName || model.model}`}>
+      <div className="flex items-start gap-3">
+        <input className={`${inputCls} h-11 w-12 text-center text-xl`} value={m.icon} maxLength={4} onChange={e => setM({ ...m, icon: e.target.value })} aria-label={`Biểu tượng ${model.model}`} placeholder="🤖" />
+        <div className="min-w-0 flex-1">
+          <input className={`${inputCls} w-full font-semibold`} value={m.displayName} maxLength={60} onChange={e => setM({ ...m, displayName: e.target.value })} aria-label={`Tên hiển thị ${model.model}`} placeholder={model.model} />
+          <p className="mt-1 truncate text-xs text-muted-foreground">{model.name} · {model.model}{model.pricePerCall != null ? ` · ${usd(model.pricePerCall)}/lượt` : ''}{model.enabled ? '' : ' · đang tắt'}</p>
+        </div>
+      </div>
+      <input className={`${inputCls} mt-2 w-full`} value={m.blurb} maxLength={140} onChange={e => setM({ ...m, blurb: e.target.value })} aria-label={`Mô tả ${model.model}`} placeholder="Mô tả ngắn người dùng thấy khi chọn model" />
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button type="button" aria-pressed={m.vision} onClick={() => setM({ ...m, vision: !m.vision })}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${m.vision ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-border text-muted-foreground'}`}>
+          {m.vision ? <Eye size={13} /> : <EyeOff size={13} />} {m.vision ? 'Đọc được ảnh / PDF scan' : 'Không đọc ảnh'}</button>
+        <button type="button" className={primaryBtn} onClick={() => void save()} disabled={!dirty || busy}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Lưu</button>
+      </div>
+    </article>
   );
 };
 
@@ -291,7 +346,7 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
   const toggle = async (g: AiGrant) => {
     setBusy(g.userId);
     try {
-      await service.saveGrants([g.userId], { enabled: !g.enabled, templateId: g.templateId, connectionId: g.connectionId, monthlyCostCapUsd: g.monthlyCostCapUsd,
+      await service.saveGrants([g.userId], { enabled: !g.enabled, templateId: g.templateId, connectionId: g.connectionId, extraConnectionIds: g.extraConnectionIds, monthlyCostCapUsd: g.monthlyCostCapUsd,
         dailyQuestionCap: g.dailyQuestionCap, skills: g.skills, note: g.note });
       toast.success(g.enabled ? `Đã tắt AI của ${g.name}` : `Đã bật AI cho ${g.name}`);
       load();
@@ -306,7 +361,8 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
     try { await service.setSkillAccess(code, access); toast.success(`Đã đổi: ${name}`); load(); }
     catch (e) { toast.error('Chưa đổi được', e instanceof Error ? e.message : String(e)); } finally { setBusy(null); }
   };
-  const connName = (id: string | null) => { const c = data.connections.find(x => x.id === id); return c ? c.model || c.name : 'Mặc định'; };
+  const connName = (id: string | null) => modelLabel(data.connections.find(x => x.id === id));
+  const modelsText = (ids: string[], fallback: string | null) => (ids.length ? ids : fallback ? [fallback] : []).map(connName).join(' · ') || 'Mặc định';
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
@@ -326,7 +382,7 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
       </div>
 
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Trung tâm AI">
-        {([['people', 'Người dùng', Users, data.grants.length], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
+        {([['people', 'Người dùng', Users, data.grants.length], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
             className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === key ? 'border-leaf-600 text-leaf-700 dark:text-leaf-400' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             <Icon size={15} /> {label} <span className="text-xs font-medium text-muted-foreground">{n}</span></button>
@@ -352,8 +408,8 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
                     </div>
                     <div className="min-w-0 text-sm">
                       <span className="inline-flex items-center rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200">{e.templateName || 'Riêng'}</span>
-                      {(g.connectionId || g.monthlyCostCapUsd != null || g.dailyQuestionCap != null || g.skills) && <span className="ml-1.5 text-[11px] font-semibold text-amber-700" title="Có chỉnh riêng đè lên mẫu">chỉnh riêng</span>}
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{connName(e.connectionId)}</p>
+                      {(g.connectionId || g.extraConnectionIds || g.monthlyCostCapUsd != null || g.dailyQuestionCap != null || g.skills) && <span className="ml-1.5 text-[11px] font-semibold text-amber-700" title="Có chỉnh riêng đè lên mẫu">chỉnh riêng</span>}
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground" title="Model được chọn ở ô hỏi (mặc định đứng đầu)">{modelsText(e.models, e.connectionId)}</p>
                     </div>
                     <div className="text-xs">
                       <p className="flex justify-between gap-2 text-muted-foreground"><span>Hôm nay</span><b className="tabular-nums text-foreground">{g.usage.today}{e.dailyQuestionCap != null ? `/${e.dailyQuestionCap}` : ''} câu</b></p>
@@ -385,7 +441,8 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{t.users} người</span>
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
-                <dt className="text-muted-foreground">Model</dt><dd className="truncate text-right font-semibold text-foreground">{connName(t.connectionId)}</dd>
+                <dt className="text-muted-foreground">Model</dt><dd className="truncate text-right font-semibold text-foreground" title={[t.connectionId, ...t.extraConnectionIds].filter(Boolean).map(id => connName(id as string)).join(' · ')}>
+                  {connName(t.connectionId)}{t.extraConnectionIds.filter(id => id !== t.connectionId).length ? ` +${t.extraConnectionIds.filter(id => id !== t.connectionId).length}` : ''}</dd>
                 <dt className="text-muted-foreground">Trần tháng</dt><dd className="text-right font-semibold tabular-nums text-foreground">{t.monthlyCostCapUsd != null ? usd(t.monthlyCostCapUsd) : 'Không'}</dd>
                 <dt className="text-muted-foreground">Câu / ngày</dt><dd className="text-right font-semibold tabular-nums text-foreground">{t.dailyQuestionCap ?? 'Không'}</dd>
               </dl>
@@ -397,6 +454,14 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
           <button type="button" onClick={() => setTemplateDrawer({ editing: null })}
             className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border text-sm font-semibold text-muted-foreground hover:border-leaf-400 hover:text-leaf-700">
             <Plus size={20} /> Mẫu mới</button>
+        </section>
+      )}
+
+      {tab === 'models' && (
+        <section role="tabpanel" aria-label="Model" className="grid gap-3 md:grid-cols-2">
+          {data.connections.map(c => <ModelCard key={c.id} model={c} service={service} onSaved={load} />)}
+          <a href="#/settings?tab=connections" className="flex min-h-[120px] flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-border px-4 text-center text-sm font-semibold text-muted-foreground hover:border-leaf-400 hover:text-leaf-700">
+            <Plus size={20} /> Thêm model mới<span className="text-xs font-normal">Khóa API, giá ở Cài đặt → Kết nối</span></a>
         </section>
       )}
 
