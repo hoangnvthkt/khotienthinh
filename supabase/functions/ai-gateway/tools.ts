@@ -6,6 +6,8 @@
 //   chi_tiet_don_mua   get_procurement_order_v1 + get_procurement_po_payment_status_v1
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
+//   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm; RPC tự chặn: chính mình hoặc HR / Admin có
+//                      hrm.employee.view_sensitive) · list_hrm_leave_balances (toàn công ty, chỉ HR). Quyền do RPC quyết, không phải lời nhắc (chủ SP 18/10 tối).
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
 //   chuan_bi_de_xuat_vat_tu  assistant_mr_projects_v1 → lệnh nháp material_request (thẻ mở form Đề xuất, Gõ nhanh điền sẵn)
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
@@ -33,7 +35,7 @@ export const KIND_LABEL: Record<string, string> = {
 const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
-  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi',
+  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
@@ -73,6 +75,15 @@ export const TOOLS: ToolSpec[] = [
     parameters: { type: 'object', additionalProperties: false, required: ['nhom'], properties: {
       nhom: { type: 'string', enum: ['cho_toi', 'toi_gui', 'theo_doi'] },
       tu_khoa: { type: 'string', description: 'Lọc theo chữ trong mã / tiêu đề (không bắt buộc).' },
+    } },
+  },
+  {
+    name: 'phep_nhan_vien',
+    description: 'Số ngày phép năm của một nhân viên (được hưởng, đã nghỉ, còn lại, đang chờ duyệt, phép chuyển từ năm trước) và các lần ghi sổ phép gần nhất. Dùng khi hỏi "còn bao nhiêu ngày phép", "số phép của ai". Luôn gọi công cụ này rồi mới trả lời: máy chủ tự kiểm quyền — ai cũng xem được phép của chính mình; phép của người khác chỉ HR / Admin xem được, không tự kết luận là không có quyền. Trùng tên thì công cụ trả danh sách để hỏi lại bằng gợi ý bấm.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      ten: { type: 'string', description: 'Tên (có thể chỉ tên gọi, VD "Hương") hoặc mã nhân viên cần xem. Bỏ trống = chính người hỏi.' },
+      nam: { type: 'integer', description: 'Năm phép (mặc định năm hiện tại).' },
+      toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); chỉ HR xem được.' },
     } },
   },
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
@@ -473,6 +484,106 @@ async function prepareLeave(args: Record<string, unknown>, ctx: ToolContext): Pr
   }));
 }
 
+// ── số phép nhân viên (chủ SP 18/10 tối: Admin hỏi phép của nhân viên khác bị Trợ lý tự từ chối) ────────────────────────────
+const YEAR_MIN = 2000;
+const YEAR_MAX = 2100;
+/** Năm phép theo lời model: số / chuỗi 4 số trong 2000–2100; thiếu hoặc hỏng → năm hiện tại (giờ Việt Nam). */
+export const leaveYearOf = (raw: unknown, today = vnToday()) => {
+  const n = num(raw);
+  return n != null && Number.isInteger(n) && n >= YEAR_MIN && n <= YEAR_MAX ? n : Number(today.slice(0, 4));
+};
+/** Số dư phép (hrm_leave_balance_json) → khóa tiếng Việt cho model; null = chưa có sổ phép năm đó (không ghi 0). */
+export const leaveBalanceOf = (raw: unknown) => {
+  const b = asObject(raw);
+  if (!Object.keys(b).length) return null;
+  return compact({
+    duoc_huong: round(b.accruedDays), chuyen_tu_nam_truoc: round(b.carriedDays), phep_chuyen_het_han: round(b.carryExpiredDays),
+    phep_chuyen_con_dung_duoc: round(b.carryLeft), han_dung_phep_chuyen: day(b.carryExpiresOn),
+    da_nghi_co_luong: round(b.usedPaidDays), da_nghi_khong_luong: round(b.usedUnpaidDays),
+    con_lai: round(b.availableDays), dang_cho_duyet: round(b.pendingDays),
+  });
+};
+const LEDGER_KIND: Record<string, string> = { opening: 'mở sổ', accrual: 'cấp phép', leave: 'nghỉ phép', leave_cancel: 'hủy đơn, hoàn phép', carry_in: 'chuyển phép tồn sang', carry_expire: 'phép tồn hết hạn', adjust: 'HR điều chỉnh' };
+const EMPLOYEE_GENERIC = new Set(['nhan', 'vien', 'anh', 'chi', 'em', 'ban', 'co', 'chu', 'bac', 'ong', 'ba', 'nv', 'ma']);
+/**
+ * Chọn nhân viên theo lời người dùng trong các hồ sơ tìm được: trùng mã → một người; trùng cả tên → những người đó;
+ * còn lại giữ mọi hồ sơ có đủ các chữ hỏi (bỏ "nhân viên", "anh", "chị") trong mã + tên. Nhiều người → Trợ lý hỏi lại.
+ */
+export const matchEmployees = <T extends Record<string, unknown>>(text: string, records: T[]): T[] => {
+  const q = fold(text);
+  if (!q) return [];
+  const byCode = records.filter(r => fold(r.code) === q);
+  if (byCode.length === 1) return byCode;
+  const byName = records.filter(r => fold(r.title) === q);
+  if (byName.length) return byName;
+  const wanted = words(q).filter(w => !EMPLOYEE_GENERIC.has(w));
+  if (!wanted.length) return records;
+  const hits = records.filter(r => { const have = new Set(words(`${r.code} ${r.title}`)); return wanted.every(w => have.has(w)); });
+  return hits.length ? hits : records;
+};
+const employeeRow = (rec: Record<string, unknown>, ref: string) =>
+  compact({ ref, ma_nv: str(rec.code, 40), ten: str(rec.title, 120), chuc_danh: str(String(rec.subtitle || '').split(' · ')[0], 80), trang_thai: str(rec.status, 40) });
+
+async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, remember: (rec: Record<string, unknown>) => string): Promise<string> {
+  const year = leaveYearOf(args.nam);
+  // Toàn công ty: list_hrm_leave_balances tự chặn người không phải HR (42501).
+  if (args.toan_cong_ty === true) {
+    const all = await ctx.rpc('list_hrm_leave_balances', { p_year: year });
+    if (all.error) return JSON.stringify({ loi: denied(all.error) ? 'Anh/chị không có quyền xem số phép toàn công ty (chỉ HR). Có thể hỏi số phép của chính mình.' : 'Chưa đọc được số phép toàn công ty, thử lại sau.' });
+    const rows = asArray(all.data).map(asObject).filter(r => str(r.employeeId));
+    const ranked = rows.map(r => ({ r, balance: leaveBalanceOf(r.balance) })).sort((a, b) => (num(b.balance?.con_lai) ?? -1) - (num(a.balance?.con_lai) ?? -1));
+    const shown = ranked.slice(0, 30);
+    return JSON.stringify(compact({
+      nam: year, tong_nhan_vien: rows.length, chua_co_so_phep: ranked.filter(x => !x.balance).length || null,
+      nhan_vien: shown.map(({ r, balance }) => compact({
+        ref: remember({ kind: 'employee', id: r.employeeId, code: r.employeeCode, title: r.fullName, subtitle: r.orgUnitName, extra: {} }),
+        ma_nv: str(r.employeeCode, 40), ten: str(r.fullName, 120), phong_ban: str(r.orgUnitName, 80), phep_nam: balance, ghi_chu: balance ? undefined : 'chưa có sổ phép năm này',
+      })),
+      con: rows.length > shown.length ? rows.length - shown.length : null,
+      ghi_chu: 'Xếp theo số phép còn lại giảm dần. Chỉ nêu người được hỏi hoặc vài người đầu; đừng liệt kê cả danh sách khi không được hỏi.',
+    }));
+  }
+
+  // Một người: chính mình (bỏ trống tên) hoặc theo tên / mã trong danh bạ (quyền danh bạ của người hỏi).
+  const asked = str(args.ten, 100);
+  let record: Record<string, unknown> | null = null;
+  if (!asked) {
+    const me = await ctx.rpc('current_app_user_id', {});
+    const userId = str(me.data, 80);
+    const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
+    const mine = dir && !dir.error ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
+    const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
+    if (!own) return JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' });
+    record = { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: {} };
+  } else {
+    const found = await searchRecords(ctx, asked, ['employee'], 8);
+    if (found.error) return toolError(found.error, 'danh bạ nhân viên');
+    const hits = matchEmployees(asked, found.records);
+    if (!hits.length) return JSON.stringify({ loi: `Không thấy nhân viên "${asked}" trong danh bạ người hỏi được xem. Hỏi lại tên đầy đủ hoặc mã nhân viên.` });
+    if (hits.length > 1) return JSON.stringify({
+      loi: `Có ${hits.length} nhân viên khớp "${asked}".`, can_hoi: 'Hỏi lại một câu: là ai; mỗi người dưới đây là một gợi ý bấm ghi "Tên · mã NV". Chưa tra số phép.',
+      cac_nhan_vien: hits.slice(0, 6).map(rec => employeeRow(rec, remember(rec))),
+    });
+    record = hits[0];
+  }
+
+  const ledger = await ctx.rpc('get_hrm_leave_ledger', { p_employee_id: record.id, p_year: year });
+  if (ledger.error) return JSON.stringify({ loi: denied(ledger.error)
+    ? `Anh/chị không có quyền xem số phép của ${str(record.title, 120) || 'người này'} (chỉ chính người đó hoặc HR / Admin). Nói rõ là ngoài phạm vi được xem, không đoán số.`
+    : 'Chưa đọc được sổ phép, thử lại sau.' });
+  const d = asObject(ledger.data);
+  const balance = leaveBalanceOf(d.balance);
+  const entries = asArray(d.entries).map(asObject);
+  return JSON.stringify(compact({
+    ref: remember(record), ten: str(record.title, 120), ma_nv: str(record.code, 40), chuc_danh: str(record.subtitle, 80), nam: year,
+    phep_nam: balance,
+    ghi_chu: balance ? undefined : `Chưa có sổ phép năm ${year} của người này (HR chưa cấp phép năm) — nói rõ là chưa có số, không ghi 0.`,
+    so_lan_ghi_so: entries.length || null,
+    ghi_so_gan_nhat: entries.slice(0, 5).map(e => compact({ ngay: day(e.createdAt), loai: LEDGER_KIND[String(e.kind)] || str(e.kind, 30), so_ngay: round(e.days),
+      don: str(e.leaveCode, 40), nghi_tu: day(e.leaveStart), nghi_den: day(e.leaveEnd), con_sau_do: round(e.balanceAfter), ghi_chu: str(e.note, 120) })),
+  }));
+}
+
 // ── các công cụ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function runTool(name: string, rawArgs: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>): Promise<string> {
   const args = asObject(rawArgs);
@@ -563,6 +674,8 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
       loai_viec: str(i.kind, 20), nguoi: str(i.who), ghi_chu: str(i.meta, 120), han: str(i.dueAt, 40), trang_thai: str(i.status, 40) })),
       con: items.length > 15 ? items.length - 15 : null }));
   }
+
+  if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, remember);
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
