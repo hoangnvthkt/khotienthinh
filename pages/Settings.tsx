@@ -7,8 +7,8 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, FolderKanban,
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -19,12 +19,10 @@ import SettingsUsers from './settings/SettingsUsers';
 import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
-import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
-import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
@@ -1139,8 +1137,6 @@ const Settings: React.FC = () => {
     { id: 'role-templates', label: 'Vai trò đặc biệt', icon: ShieldCheck, rolesOnly: true },
     { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
-    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
-    { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'connections', label: 'Kết nối', icon: Link2, adminOnly: true },
     { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
     { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
@@ -2429,14 +2425,6 @@ const Settings: React.FC = () => {
           </div>
         </div>
       )}
-
-          {activeSettingsTab === 'chibi-bot' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsChibiBot /></fieldset>
-          )}
-
-          {activeSettingsTab === 'ai-learning' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
-          )}
 
           {activeSettingsTab === 'suggestion-stats' && (
             <SettingsSuggestionStats />
