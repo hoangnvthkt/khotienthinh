@@ -218,7 +218,8 @@ export const CASES: EvalCase[] = [
       fail(/doanh thu[^.\n[]{0,60}\d+([,.]\d+)? ?(tỷ|triệu|đ\b)/i.test(o.text), 'bịa số doanh thu')) },
 ];
 
-const loadTarget = async (envPath: string) => {
+/** model: chạy bộ với một kết nối khác (Cài đặt → Kết nối) — khớp theo model hoặc tên kết nối; bỏ trống = kết nối "Trợ lý · hội thoại". */
+const loadTarget = async (envPath: string, model?: string) => {
   const env = Object.fromEntries(readFileSync(envPath, 'utf8').split('\n').filter(l => l.includes('=')).map(l => {
     const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^"|"$/g, '')];
   }));
@@ -226,16 +227,24 @@ const loadTarget = async (envPath: string) => {
   const keys = await (await fetch(`https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true`, { headers: { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}` } })).json() as Array<Record<string, string>>;
   const service = (keys.find(k => k.name === 'service_role') || keys.find(k => /secret/i.test(k.type || '')))?.api_key;
   if (!service) throw new Error('Không lấy được khóa máy chủ (kiểm SUPABASE_ACCESS_TOKEN trong .env).');
-  const row = await (await fetch(`${base}/rest/v1/rpc/integration_secret_v1`, { method: 'POST', headers: { apikey: service, Authorization: `Bearer ${service}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_id: null, p_feature: 'ai.assistant' }) })).json();
+  const headers = { apikey: service, Authorization: `Bearer ${service}`, 'Content-Type': 'application/json' };
+  let id: string | null = null;
+  if (model) {
+    const q = `"${model.replace(/"/g, '')}"`;
+    const rows = await (await fetch(`${base}/rest/v1/integration_connections?select=id,name,model&enabled=is.true&or=(model.eq.${encodeURIComponent(q)},name.eq.${encodeURIComponent(q)})`, { headers })).json();
+    const hit = Array.isArray(rows) ? rows.find(r => r.model === model) || rows[0] : null;
+    if (!hit) throw new Error(`Không có kết nối nào đang bật có model / tên "${model}" (Cài đặt → Kết nối).`);
+    id = String(hit.id);
+  }
+  const row = await (await fetch(`${base}/rest/v1/rpc/integration_secret_v1`, { method: 'POST', headers, body: JSON.stringify({ p_id: id, p_feature: id ? null : 'ai.assistant' }) })).json();
   const target = targetFromConnection(row, 'reasoning');
-  if (!target) throw new Error('Chưa có kết nối AI cho tính năng Trợ lý (Cài đặt → Kết nối).');
+  if (!target) throw new Error(model ? `Kết nối "${model}" chưa có khóa.` : 'Chưa có kết nối AI cho tính năng Trợ lý (Cài đặt → Kết nối).');
   return target;
 };
 
-export async function runEvals(envPath: string, only: string[] = [], root = process.cwd()) {
-  const target = await loadTarget(envPath);
-  console.log(`Trợ lý · bộ kiểm hồi quy · model ${target.model}`);
+export async function runEvals(envPath: string, only: string[] = [], root = process.cwd(), model?: string) {
+  const target = await loadTarget(envPath, model);
+  console.log(`Trợ lý · bộ kiểm hồi quy · model ${target.model}${model ? ` (kết nối ${target.name})` : ''}`);
   let failed = 0;
   for (const c of CASES.filter(x => !only.length || only.includes(x.id))) {
     const created: Created[] = []; const tools: string[] = []; const history = c.history || [];

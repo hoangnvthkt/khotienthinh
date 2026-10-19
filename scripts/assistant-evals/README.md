@@ -14,6 +14,25 @@ node scripts/assistant-evals/run.mjs
 
 Chạy vài ca: `node scripts/assistant-evals/run.mjs po-tool-totals dl-pick-project`. Trong worktree không có `.env`: đặt `ASSISTANT_EVAL_ENV=/đường/dẫn/.env`.
 
+## Chạy với kết nối khác (DeepSeek…)
+
+`--model <model hoặc tên kết nối>` (hoặc biến `ASSISTANT_EVAL_MODEL`) lấy khóa của kết nối **đang bật** ở Cài đặt → Kết nối có `model` / tên đúng như vậy,
+thay cho kết nối "Trợ lý · hội thoại". Lời nhắc, công cụ, vòng lặp y hệt cổng AI — chỉ đổi model.
+
+```bash
+ASSISTANT_EVAL_ENV=/đường/dẫn/.env node scripts/assistant-evals/run.mjs --model deepseek-v4.1-flash
+```
+
+Kết quả 19/10/2026 (26 ca):
+
+| Model | Kết quả | Tổng thời gian | Ca hỏng |
+| --- | --- | --- | --- |
+| `claude-sonnet-5-5` (RevidAPI, mặc định) | 26/26 | ~4 phút 10 giây (≈ 9,6 s/ca; chậm nhất `po-from-image` 17,6 s) | — |
+| `deepseek-v4.1-flash` (RevidAPI, model suy nghĩ) | 26/26 | ~5 phút 06 giây (≈ 11,8 s/ca; chậm nhất `refuse-delete`, `leave-real-types` 18,8 s) | — |
+
+Quy ước: **không sửa lời nhắc chỉ để chiều một model** nếu làm Claude kém đi — DeepSeek hỏng ca nào thì ghi vào bảng này, chủ SP quyết.
+Khi thêm ca mới, chạy cả hai model rồi cập nhật bảng.
+
 Gặp lỗi mới khi thử thật → thêm một ca vào `CASES` (ghi rõ lỗi gốc ở `bug`) rồi mới sửa lời nhắc / công cụ.
 
 Type-check mã cổng AI + bộ kiểm (Node, không cần Deno): sau khi cài SDK như trên, `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json`.
