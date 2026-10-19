@@ -111,7 +111,7 @@ Mọi thay đổi cấp phát / mẫu / skill / model ghi `audit_trail` (module 
 | #248 | Tab **Hoạt động**, tin chào + "Thử ngay", hướng dẫn 1 trang, mở nhóm 15 người | `20261020090000_ai_activity` |
 | J1 | **Jev (TypeSafe) chạy bóng**: kết nối `typesafe`, tính năng `ai.decisions`, `ai_decisions`; bộ đo J0 `scripts/jev-evals` | `20261020110000_jev_shadow_route` |
 | #253–#254 | Giữ nháp form; "Hỏi Trợ lý AI" từ ô Tìm; **ô hỏi hai tầng** (tìm ngay / hỏi AI kèm hồ sơ hN) | — |
-| PR_CHI_TIET_HO_SO | Công cụ **`chi_tiet_ho_so`** (hồ sơ công việc nhân viên theo mức xem RPC); SourceBook.find cho mã hN tìm sẵn; smoke 3 RPC × 3 vai; 3 ca hồi quy | — |
+| #255 | Công cụ **`chi_tiet_ho_so`** (hồ sơ công việc nhân viên theo mức xem RPC); SourceBook.find cho mã hN tìm sẵn; smoke 3 RPC × 3 vai; 3 ca hồi quy | — |
 
 Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_pilot_extend_2026_12_31.sql`, `supabase/operations/ai_pilot_group_2026_10_18.sql`.
 
