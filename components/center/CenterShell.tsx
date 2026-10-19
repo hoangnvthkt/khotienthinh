@@ -673,6 +673,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
               onRetry={() => setTodayAttempt(value => value + 1)}
               onOpenRoute={openRoute}
               initialQuestion={initialAsk}
+              canOpenRoute={canOpenRoute}
               hooks={assistant}
             />
           </div>}

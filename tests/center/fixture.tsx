@@ -426,7 +426,23 @@ const MODELS = [
   { id: 'c-claude', name: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5', blurb: 'Hiểu sâu, đọc ảnh / PDF scan — hợp báo giá, phân tích', icon: '🧠', vision: true, isDefault: true },
   { id: 'c-deepseek', name: 'DeepSeek Flash', model: 'deepseek-v4.1-flash', blurb: 'Nhanh, rẻ — câu hỏi thường, tra cứu nhanh', icon: '⚡', vision: false, isDefault: false },
 ];
+// 19/10: tìm ngay trong ô hỏi — hồ sơ giả theo cụm từ (như search_global_v1), ghi lại lời gọi để kiểm.
+const INSTANT_RECORDS = [
+  { kind: 'employee' as const, id: 'emp-thanh', code: 'TT006974', title: 'Nguyễn Văn Thanh', subtitle: 'Trưởng nhóm TLĐ', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: { jobTitle: 'Trưởng nhóm TLĐ', phone: '0912000000' } },
+  { kind: 'employee' as const, id: 'emp-huong', code: 'TT004431', title: 'Nguyễn Thị Hương', subtitle: 'Trưởng phòng TCKT', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: {} },
+  { kind: 'purchase_order' as const, id: 'po-272', code: 'PO-272', title: 'Thép D8 CB240 · Hòa Phát', subtitle: 'SMB-2026 · đang giao', status: 'in_transit', date: '2026-10-14', projectId: 'p-smb', siteId: null, rank: 100, extra: {} },
+];
+const instantSearch: NonNullable<AssistantHooks['search']> = async (terms, kinds, limit) => {
+  aiCalls.push({ search: terms.map(g => g[0]).join(' '), kinds: kinds.length, limit });
+  await sleep(40);
+  const fold = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const records = INSTANT_RECORDS.filter(r => kinds.includes(r.kind) && terms.every(group => group.some(alt => fold(`${r.code} ${r.title}`).includes(alt))))
+    .map(r => ({ ...r, rank: terms.some(g => g.some(alt => alt === fold(r.code))) ? 100 : r.rank }));
+  return { records: records.slice(0, limit), failed: [] };
+};
+
 const assistantHooks: AssistantHooks = {
+  search: instantSearch,
   poForm,
   memory,
   // Trung tâm AI: ?access=none → chưa được cấp Trợ lý; ?access=cap → trần 30 câu/ngày, đã dùng 27.
@@ -470,6 +486,7 @@ const assistantHooks: AssistantHooks = {
     const runId = `run-${aiCalls.length + 1}`;
     const prior = input.threadId ? loadThreads().find(t => t.id === input.threadId)?.messages.length || 0 : 0;
     aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context,
+      ...(input.hits?.length ? { hits: input.hits.map(h => h.code || h.id) } : {}),
       ...(input.images?.length || input.files?.length ? { images: input.images?.length || 0, files: (input.files || []).map(f => ({ name: f.name, head: f.text.split('\n').slice(0, 5).join('\n') })) } : {}) });
     await sleep(60);
     if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };

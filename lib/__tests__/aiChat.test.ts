@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildChatPrompt, chatSystem, parseChatInput, readSse, sourceKeysOf, splitRefusal, sseEvent, threadTurns, trimHistory, type ChatTurn,
+  buildChatPrompt, chatSystem, foundLines, parseChatHits, parseChatInput, readSse, sourceKeysOf, splitRefusal, sseEvent, threadTurns, trimHistory, type ChatTurn,
 } from '../../supabase/functions/ai-gateway/chat';
 
 const turns = (n: number, size = 40): ChatTurn[] => Array.from({ length: n }, (_, i) => ({
@@ -108,5 +108,30 @@ describe('Trợ lý v2 · hội thoại — nguồn và luồng chữ', () => {
 
   it('sự kiện gửi màn hình đúng định dạng SSE', () => {
     expect(sseEvent({ type: 'delta', text: 'Chào' })).toBe('data: {"type":"delta","text":"Chào"}\n\n');
+  });
+});
+
+describe('hồ sơ tìm sẵn gửi kèm câu hỏi (19/10)', () => {
+  it('parseChatHits: tối đa 5, bỏ dòng thiếu loại / id, cắt chữ, bỏ SĐT / email trong extra', () => {
+    const hits = parseChatHits([
+      { kind: 'employee', id: 'e1', code: 'TT006974', title: 'Nguyễn Văn Thanh', subtitle: 'Trưởng nhóm TLĐ', status: 'đang làm việc', rank: 100, extra: { phone: '0912', jobTitle: 'TN' } },
+      { kind: 'bad kind', id: 'x' }, { kind: 'project', title: 'thiếu id' },
+      ...Array.from({ length: 6 }, (_, i) => ({ kind: 'project', id: `p${i}`, title: 'x'.repeat(300) })),
+    ]);
+    expect(hits).toHaveLength(5);
+    expect(hits[0]).toMatchObject({ kind: 'employee', id: 'e1', code: 'TT006974', rank: 100, extra: { jobTitle: 'TN' } });
+    expect(hits[1].title).toHaveLength(200);
+    expect(parseChatInput({ question: 'Thanh còn bao nhiêu phép', hits: [{ kind: 'employee', id: 'e1', title: 'Thanh' }] }).hits).toHaveLength(1);
+    expect(parseChatInput({ question: 'xin chào' }).hits).toBeUndefined();
+  });
+
+  it('foundLines + buildChatPrompt: khối <du_lieu loai="tim_thay"> với mã hN; lời nhắc dặn dùng trước, chỉ gọi tim_ho_so khi chưa đủ', () => {
+    const hits = parseChatHits([{ kind: 'employee', id: 'e1', code: 'TT006974', title: 'Nguyễn Văn Thanh', subtitle: 'Trưởng nhóm', status: 'đang làm việc' }]);
+    const found = foundLines([{ ref: 'h1', hit: hits[0] }], k => (k === 'employee' ? 'Nhân viên' : k));
+    expect(found).toBe('h1 | Nhân viên · TT006974 · Nguyễn Văn Thanh · Trưởng nhóm · đang làm việc');
+    const prompt = buildChatPrompt({ threadId: null, question: 'Thanh còn bao nhiêu phép', facts: '', pronoun: 'Anh', hits }, [], true, '', [], [], found);
+    expect(prompt.messages.at(-1)?.content).toContain('<du_lieu loai="tim_thay">\nh1 | Nhân viên · TT006974');
+    expect(prompt.system).toMatch(/tim_thay.*dùng trước.*chỉ gọi tim_ho_so khi chưa đủ/);
+    expect(buildChatPrompt({ threadId: null, question: 'xin chào', facts: '', pronoun: 'Anh' }, []).messages.at(-1)?.content).not.toContain('tim_thay');
   });
 });

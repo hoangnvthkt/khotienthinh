@@ -23,6 +23,8 @@ import { displayCode } from '../../lib/center/workItemsService';
 import { defaultMemoryActions, type MemoryActions } from '../../lib/aiMemory';
 import AssistantMemoryPanel from './AssistantMemoryPanel';
 import AssistantModelPicker, { modelForTurn, readStoredModel, storeModel } from './AssistantModelPicker';
+import { useInstantSearch, type InstantSearchFn } from './useInstantSearch';
+import { hitsForGateway, isLookupQuery, strongTopHit, type RankedHit } from '../../lib/search/instantSearch';
 import { ACCEPT, addAttachments, attachmentLabel, type ChatAttachment } from '../../lib/assistantFiles';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -43,6 +45,8 @@ export interface AssistantHooks {
   mrForm?: MrFormActions;
   /** Form đơn mua trong chat (T2c) — chỉ gọi lệnh máy chủ nên có sẵn trong bản mặc định. */
   poForm?: PoFormActions;
+  /** 19/10: tìm ngay khi gõ (RPC search_global_v1 như ô Tìm kiếm); bản thử truyền hàm giả. */
+  search?: InstantSearchFn;
   /** Nhật ký từ báo cáo Zalo trong chat (T2d) — đọc bằng bộ của màn Nhật ký, tạo phiếu nháp. */
   dailyLog?: DailyLogFormActions;
   /** T4b: bảng "Trí nhớ" (xem / quên) + thẻ "nhớ giúp". */
@@ -259,8 +263,10 @@ const AssistantView: React.FC<{
   onOpenRoute?: (route: string, title?: string, state?: unknown) => void;
   /** Câu hỏi từ ô Tìm kiếm ("Hỏi Trợ lý AI"): gửi ngay một lần khi sẵn sàng; chưa được cấp Trợ lý thì chỉ điền vào ô. */
   initialQuestion?: string | null;
+  /** Mở được màn này không (quyền người dùng) — quyết định loại hồ sơ tìm ngay. Không có → không tìm ngay. */
+  canOpenRoute?: (route: string) => boolean;
   hooks?: AssistantHooks;
-}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, initialQuestion = null, hooks = defaultAssistantHooks }) => {
+}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, initialQuestion = null, canOpenRoute, hooks = defaultAssistantHooks }) => {
   const [items, setItems] = useState<WorkItem[] | 'loading' | 'error'>('loading');
   const [itemsAttempt, setItemsAttempt] = useState(0);
   const [ai, setAi] = useState<AiGatewayStatus | null>(null);
@@ -270,6 +276,7 @@ const AssistantView: React.FC<{
   const [threadState, setThreadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [history, setHistory] = useState<{ open: boolean; list: ChatThreadSummary[] | 'loading' | 'error' | null }>({ open: false, list: null });
   const [question, setQuestion] = useState('');
+
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [access, setAccess] = useState<MyAiAccess | null>(null);
   const [asked, setAsked] = useState(0);
@@ -278,6 +285,20 @@ const AssistantView: React.FC<{
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [reading, setReading] = useState(false);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
+  // 19/10 — tầng 1 "tìm ngay": gõ ≥ 2 ký tự là tìm hồ sơ bằng bộ máy ô Tìm kiếm; hiện ≤ 5 dòng trên ô nhập. Bấm / ↑↓ Enter = mở, không tốn AI.
+  // Esc hoặc gửi câu thì ẩn. Không tìm khi đang đính kèm tệp (câu về tệp) hoặc chưa biết quyền mở màn.
+  const [hitsHidden, setHitsHidden] = useState(false);
+  const [hitIndex, setHitIndex] = useState(-1);
+  const noCanOpen = useCallback(() => false, []);
+  const instant = useInstantSearch(question, { enabled: Boolean(canOpenRoute) && attachments.length === 0 && question.trim().length >= 2 && question.trim().length <= 120, canOpen: canOpenRoute || noCanOpen, search: hooks.search });
+  const hits = hitsHidden ? [] : instant.hits;
+  useEffect(() => { setHitsHidden(false); setHitIndex(-1); }, [question]);
+  const openHit = (hit: RankedHit) => {
+    const { entry } = hit;
+    if (!entry.route) return;
+    if (onOpenRoute) onOpenRoute(entry.route, entry.code || entry.title, entry.routeState); else onDrill({ kind: 'route', path: entry.route, title: entry.code || entry.title });
+    setQuestion(''); setHitIndex(-1);
+  };
   const filePicker = useRef<HTMLInputElement | null>(null);
   const [sending, setSending] = useState(false);
   const started = useRef(false);
@@ -435,7 +456,7 @@ const AssistantView: React.FC<{
     return list.filter(a => a.id !== id);
   });
 
-  const send = async (text: string, retryOf?: string, files: ChatAttachment[] = []) => {
+  const send = async (text: string, retryOf?: string, files: ChatAttachment[] = [], sendHits: RankedHit[] = []) => {
     const typed = text.trim();
     // Chỉ gửi tệp, không gõ gì: câu mặc định (cổng cũng làm vậy) để Trợ lý tóm tắt tệp rồi hỏi cần làm gì.
     const q = typed.length >= 2 ? typed : files.length ? 'Xem tệp đính kèm.' : typed;
@@ -457,6 +478,7 @@ const AssistantView: React.FC<{
     const result = await hooks.chat(
       { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender),
         context: { ...context, ...(useModel ? { connectionId: useModel } : {}) },
+        ...(sendHits.length ? { hits: hitsForGateway(sendHits) } : {}),
         ...(files.length ? { images: files.flatMap(f => (f.kind === 'image' ? [{ mime: f.mime, b64: f.b64 }] : [])),
           files: files.flatMap(f => (f.kind === 'image' ? [] : [{ name: f.name, text: f.text }])) } : {}) },
       {
@@ -497,9 +519,14 @@ const AssistantView: React.FC<{
   const submit = () => {
     const text = question;
     if ((text.trim().length < 2 && !attachments.length) || reading) return;
+    // Đang chọn một dòng hồ sơ (↑↓), hoặc câu chỉ là mã / tên và khớp chắc một hồ sơ → mở luôn, không hỏi AI.
+    if (hitIndex >= 0 && hits[hitIndex]) { openHit(hits[hitIndex]); return; }
+    const strong = !attachments.length && isLookupQuery(text) ? strongTopHit(hits) : null;
+    if (strong) { openHit(strong); return; }
     const files = attachments;
-    setQuestion(''); setAttachments([]); setFileErrors([]);
-    void send(text, undefined, files);
+    const carry = hits;
+    setQuestion(''); setAttachments([]); setFileErrors([]); setHitsHidden(true);
+    void send(text, undefined, files, carry);
   };
 
   // Ô nhập tự cao theo chữ (tối đa ~6 dòng); ô trống về một dòng (chữ gợi ý không đẩy cao ô).
@@ -713,6 +740,26 @@ const AssistantView: React.FC<{
                 {turnModel.switched && turnModel.model && <span className="vcc-attach-note" role="status">Có ảnh — câu này dùng {turnModel.model.name} (model đang chọn không đọc ảnh).</span>}
               </div>
             )}
+            {hits.length > 0 && !sending && (
+              <ul className="vcc-hits" role="listbox" aria-label="Hồ sơ khớp" data-testid="instant-hits">
+                {hits.map((hit, i) => (
+                  <li key={hit.entry.key} role="option" aria-selected={hitIndex === i}>
+                    <button type="button" className="vcc-hit" aria-selected={hitIndex === i} onMouseEnter={() => setHitIndex(i)} onClick={() => openHit(hit)}
+                      title={`Mở ${hit.entry.context || 'hồ sơ'} — không hỏi AI`}>
+                      <span className="vcc-hit-main">{hit.entry.code && <span className="vcc-hit-code">{hit.entry.code}</span>}<span className="vcc-hit-title">{hit.entry.title}</span></span>
+                      <span className="vcc-hit-kind">{hit.entry.context}{hit.entry.status ? ` · ${hit.entry.status}` : ''}</span>
+                      {hit.entry.subtitle && <span className="vcc-hit-sub">{hit.entry.subtitle}</span>}
+                    </button>
+                  </li>
+                ))}
+                <li role="option" aria-selected={hitIndex === -1}>
+                  <button type="button" className="vcc-hit" data-ask aria-selected={hitIndex === -1} onMouseEnter={() => setHitIndex(-1)} onClick={() => submit()} disabled={question.trim().length < 2}>
+                    <span className="vcc-hit-main"><Sparkles size={14} aria-hidden="true" /><span className="vcc-hit-title">Hỏi Trợ lý: “{question.trim().slice(0, 80)}”</span></span>
+                    <span className="vcc-hit-kind">Enter</span>
+                  </button>
+                </li>
+              </ul>
+            )}
             <form className="vcc-composer" data-layout="stack" onSubmit={event => { event.preventDefault(); if (sending) abort.current?.abort(); else submit(); }}
               onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
               onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(Array.from(event.dataTransfer.files)); } }}>
@@ -732,6 +779,13 @@ const AssistantView: React.FC<{
                   if (files.length) { event.preventDefault(); void attach(files); }
                 }}
                 onKeyDown={event => {
+                  // ↑↓ chọn hồ sơ tìm ngay (−1 = Hỏi Trợ lý), Esc ẩn danh sách.
+                  if (hits.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    event.preventDefault();
+                    setHitIndex(i => (event.key === 'ArrowDown' ? Math.min(i + 1, hits.length - 1) : Math.max(i - 1, -1)));
+                    return;
+                  }
+                  if (event.key === 'Escape' && hits.length) { event.preventDefault(); setHitsHidden(true); setHitIndex(-1); return; }
                   // Enter gửi, Shift+Enter xuống dòng; đang gõ dấu tiếng Việt (bộ gõ đang ghép chữ) thì Enter không gửi.
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!sending) submit(); }
                 }}

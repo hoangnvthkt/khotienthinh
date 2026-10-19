@@ -62,10 +62,13 @@ ai-gateway (supabase/functions/ai-gateway)
              đối chiếu thanh_tien: lệch đúng 1.000 lần thì sửa SL), chuan_bi_nhat_ky (nguyên văn tin / noi_dung chép từ ảnh), chuan_bi_ghi_nho
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
   agent.ts / providers.ts   định dạng OpenAI / Anthropic, ảnh base64, ToolChoice
+  chat.ts    (19/10) parseChatHits / foundLines: hồ sơ ô tìm ngay gửi kèm → <du_lieu loai="tim_thay"> với mã hN (SourceBook) — AI dùng trước, không gọi tim_ho_so
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
 ```
+
+Ô hỏi hai tầng (19/10, chủ SP: "cái gì search ra thì không cần AI"): `lib/search/instantSearch.ts` (isLookupQuery, entityTerms, rankRecordHits, strongTopHit) + `components/center/useInstantSearch.ts` (RPC search_global_v1 như ô Tìm kiếm, 150 ms) → danh sách `vcc-hits` trên ô nhập: bấm / ↑↓ Enter mở hồ sơ (0 token), câu hỏi thật gửi kèm `hits` cho cổng. Ô Tìm kiếm "Hỏi Trợ lý AI" → `/center?view=assistant&ask=…` (CenterPage/CenterShell/AssistantView.initialQuestion). Nháp form đơn mua / đề xuất giữ ở localStorage (`lib/assistantFormDraft.ts`), kết quả tải thẻ nhớ 5 phút (`memoLoad`).
 
 Tệp client chính: `lib/aiGateway.ts` (status, feedback v2, myAccess, thông báo lỗi), `lib/assistantCommands.ts`, `lib/assistantMrForm.ts`, `lib/assistantPoForm.ts`, `lib/assistantDailyLogForm.ts`, `lib/aiLearning.ts` (cách gọi chung), `lib/aiMemory.ts` (ghi nhớ + thói quen), `lib/assistantFiles.ts` (ảnh / Excel / PDF), `lib/assistantPdf.ts` (pdf.js legacy, `PDF_MAX_MB = 50`), `components/center/AssistantModelPicker.tsx`, `components/center/AssistantMemoryPanel.tsx`, `lib/aiAdmin.ts` + `pages/AiCenter.tsx` + `components/aiCenter/AiActivityPanel.tsx` (Trung tâm AI tại route `/ai`).
 
@@ -138,10 +141,11 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 
 1. **Chờ chủ SP**: đã gửi hướng dẫn vào nhóm Zalo chưa / có sửa không (`docs/command-center/huong-dan-tro-ly/tro-ly-ai-1-trang.html` → render lại PNG/PDF bằng Playwright, khung 1080px).
 2. **Sau 1–2 tuần**: đọc tab Hoạt động (ai chưa dùng, thẻ gửi thật / bỏ, 👎 lý do, chạm trần, chi phí theo model) → đề xuất **T5 báo cáo theo lịch** (bản tin 7h push / Zalo; báo cáo tuần dự án cho BLĐ). Gợi ý chỉnh mẫu / trần theo số thật.
-3. Việc nhỏ có thể chen: hiện cảnh báo "SL × đơn giá khác thành tiền" ngay trên thẻ đơn mua (hiện chỉ trong câu trả lời); thêm ca DeepSeek vào bộ kiểm hồi quy; dọn mã cũ không dùng (`supabase/functions/ai-assistant`, `components/ChibiBot.tsx`, quyền `ai.assistant.*` cũ) — hỏi chủ SP trước khi xóa.
-4. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
-5. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
-6. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
+3. Việc tiếp cho ô hỏi hai tầng: công cụ `chi_tiet_ho_so` (hồ sơ nhân sự chi tiết theo quyền HR — chủ SP hỏi 19/10); mở rộng tầng tìm ngay sang trang / thao tác như ô Tìm kiếm.
+4. Việc nhỏ có thể chen: hiện cảnh báo "SL × đơn giá khác thành tiền" ngay trên thẻ đơn mua (hiện chỉ trong câu trả lời); thêm ca DeepSeek vào bộ kiểm hồi quy; dọn mã cũ không dùng (`supabase/functions/ai-assistant`, `components/ChibiBot.tsx`, quyền `ai.assistant.*` cũ) — hỏi chủ SP trước khi xóa.
+5. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
+6. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
+7. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
 
 ## 9. Memory liên quan
 
