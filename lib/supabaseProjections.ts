@@ -27,7 +27,6 @@ const SUPABASE_PROJECTIONS: Readonly<Record<string, string>> = Object.freeze({
   "chat_pins": "id,conversation_id,message_id,pinned_by,pinned_at",
   "chat_v2_attachments": "id,conversation_id,message_id,uploaded_by,storage_bucket,storage_path,file_name,mime_type,size_bytes,width,height,thumbnail_path,created_at",
   "chat_v2_messages": "id,conversation_id,sender_id,body,kind,reply_to_message_id,legacy_message_id,metadata,edited_at,deleted_at,deleted_by,created_at,updated_at",
-  "chatbot_messages": "id,message,type,emoji,time_range,is_active,created_at,updated_at",
   "contract_appendices": "id,contract_id,contract_type,project_id,construction_site_id,appendix_number,name,signed_date,value,status,variation_ids,attachments,note,created_at,updated_at",
   "contract_cost_items": "id,parent_id,symbol,name,cost_type,description,status,sort_order,created_at,updated_at,category",
   "contract_form_templates": "id,contract_type_id,name,description,is_default,is_active,created_at,updated_at",
