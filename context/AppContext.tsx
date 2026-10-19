@@ -58,6 +58,7 @@ import {
 } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
+import type { WorkStatusInput } from '../lib/hrmWorkStatus';
 import { hrmSensitiveProjectionService } from '../lib/hrmSensitiveProjectionService';
 import { mapEmployeeFromDb } from '../lib/employeeSelfService';
 import { upsertRowsById } from '../lib/collectionState';
@@ -208,9 +209,8 @@ interface AppContextType {
   updateSupplier: (supplier: Supplier) => void;
   removeSupplier: (id: string) => void;
   addEmployee: (employee: Employee) => Promise<void>;
-  updateEmployee: (employee: Employee) => Promise<void>;
+  updateEmployee: (employee: Employee, statusChange?: WorkStatusInput) => Promise<void>;
   replaceEmployeeLocal: (employee: Employee) => void;
-  removeEmployee: (id: string) => Promise<void>;
   updateAppSettings: (settings: AppSettings) => void;
   approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => Promise<void>;
   clearAllData: () => Promise<void>;
@@ -2897,7 +2897,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auditService.log({ tableName: 'employees', recordId: persistedEmployee.id, action: 'INSERT', newData: persistedEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const updateEmployee = async (e: Employee) => {
+  const updateEmployee = async (e: Employee, statusChange?: WorkStatusInput) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
     const nextEmployee: Employee = oldEmp ? {
       ...e,
@@ -2909,7 +2909,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       factoryId: oldEmp.factoryId,
     } : e;
     if (isSupabaseConfigured) {
-      await hrmEmployeeProfileService.update(nextEmployee);
+      await hrmEmployeeProfileService.update(nextEmployee, statusChange);
+    }
+    if (statusChange && oldEmp && oldEmp.status !== nextEmployee.status) {
+      nextEmployee.exitDate = nextEmployee.status === 'Đã nghỉ việc' ? statusChange.date : '';
     }
     setEmployees(prev => prev.map(item => item.id === e.id ? nextEmployee : item));
     logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${nextEmployee.fullName}`, 'INFO');
@@ -2919,23 +2922,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const replaceEmployeeLocal = useCallback((e: Employee) => {
     setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
   }, []);
-
-  const removeEmployee = async (id: string) => {
-    const e = employees.find(emp => emp.id === id);
-    try {
-      if (isSupabaseConfigured) {
-        await hrmSensitiveProjectionService.archiveEmployee(
-          id,
-          'Lưu hồ sơ nhân sự đã nghỉ việc',
-        );
-      }
-      setEmployees(prev => prev.map(emp => emp.id === id ? { ...emp, status: 'Đã nghỉ việc' } : emp));
-      if (e) logActivity('SYSTEM', 'Lưu hồ sơ nhân sự', `Đã chuyển nghỉ việc: ${e.fullName}`, 'INFO');
-    } catch (error: any) {
-      logApiError('removeEmployee', error);
-      throw error;
-    }
-  };
 
   const updateAppSettings = (s: AppSettings) => {
     setAppSettings(s);
@@ -3614,7 +3600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, updateTransactionVoucher, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addWarehouseType, updateWarehouseType, removeWarehouseType,
       addRequest, updateRequestStatus, removeRequest, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
-      addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
+      addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, replaceEmployeeLocal, updateAppSettings, approvePartialTransaction, clearAllData,
       lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
       auditSessions, addAuditSession,
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
