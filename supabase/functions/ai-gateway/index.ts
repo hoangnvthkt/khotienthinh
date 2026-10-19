@@ -4,7 +4,8 @@
 //   * Dữ liệu người dùng được che thông tin nhạy cảm và bọc <du_lieu> (guard.ts) trước khi gửi model.
 //   * Cổng không ghi sổ: chỉ trả kết quả để màn hình hiện cho người quyết định.
 //   Chưa có khóa AI → { code: 'AI_NOT_CONFIGURED' } và lượt ghi 'no_provider' (xem nhu cầu); form thường vẫn chạy.
-// Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
+// Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { action: 'catalog' } → lời dặn / công cụ (chỉ Quản trị AI).
+// { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
 import { agentStep, complete, costUsd, envTarget, readConfig, streamChat, supportsTools, type ImagePart } from './providers.ts';
@@ -15,6 +16,7 @@ import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type M
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, foundLines, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
 import { KIND_LABEL as RECORD_KIND_LABEL } from './tools.ts';
 import { SKILLS } from './skills.ts';
+import { skillCatalog } from './catalog.ts';
 import { actualIntentOf, askJev, buildIntentRequest, decisionLog } from './jev.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
@@ -163,6 +165,13 @@ Deno.serve(async request => {
       keysPresent: config.keysPresent, priceKnown: config.price.inPerM != null && config.price.outPerM != null,
       skills: [...Object.keys(SKILLS), CHAT_SKILL],
     });
+  }
+
+  // Trung tâm AI · "Xem bên trong" skill (19/10): lời dặn + công cụ từ chính mã đang chạy; chỉ Quản trị AI (is_admin bằng JWT người hỏi).
+  if (body?.action === 'catalog') {
+    const admin = await user.rpc('is_admin');
+    if (admin.error || admin.data !== true) return json({ code: 'AI_DENIED', error: 'AI_ADMIN_REQUIRED' }, 403);
+    return json({ code: 'OK', catalog: skillCatalog(vnTodayLabel(new Date())) });
   }
 
   if (typeof body?.skill !== 'string' || !SKILL_CODE.test(body.skill)) return json({ error: 'Invalid request' }, 400);

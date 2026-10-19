@@ -361,7 +361,8 @@
     "20261019230000_ai_model_choice.sql",
     "20261020090000_ai_activity.sql",
     "20261020110000_jev_shadow_route.sql",
-    "20261020130000_hrm_headcount_trend.sql"
+    "20261020130000_hrm_headcount_trend.sql",
+    "20261020150000_ai_skill_usage.sql"
   ],
   "forbidIncludeAll": true
 }
