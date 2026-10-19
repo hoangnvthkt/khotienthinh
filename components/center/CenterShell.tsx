@@ -128,7 +128,9 @@ export interface CenterShellProps {
   /** Kiểm có phạm vi xem không trước khi hiện tab (nhẹ, không tính số); không truyền = có loadFlow là hiện tab. */
   loadFlowAccess?: () => Promise<{ access: boolean; scope: FlowScope | null }>;
   /** Mở thẳng tab Dòng chảy công việc (/center?view=flow) hoặc Công trường 3D (/center?view=site3d). */
-  initialTab?: 'flow' | 'site3d' | null;
+  initialTab?: 'flow' | 'site3d' | 'assistant' | null;
+  /** Câu hỏi gửi ngay khi mở tab Trợ lý (từ ô Tìm kiếm "Hỏi Trợ lý AI"). */
+  initialAsk?: string | null;
   /** Công trường 3D: quyền + số liệu + mô hình; không truyền = chưa có tab. */
   site3d?: Site3dHooks;
   /** Bản thử nghiệm: gắn window.__site3d (điều khiển cảnh 3D) để kiểm bằng Playwright. */
@@ -150,7 +152,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
-  loadFlow, loadFlowAccess, initialTab = null, loadFlowItems, remindFlow,
+  loadFlow, loadFlowAccess, initialTab = null, initialAsk = null, loadFlowItems, remindFlow,
   assistant, site3d, exposeSite3dDebug = false,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
@@ -329,6 +331,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [flowNote, setFlowNote] = useState<string | null>(null);
   useEffect(() => {
     if (initialTab === 'flow' && loadFlow) { setActiveTab(FLOW_TAB.id); setMobilePane('today'); }
+    if (initialTab === 'assistant') { setActiveTab(ASSISTANT_TAB.id); setMobilePane('today'); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab]);
   const flowWanted = activeTab === FLOW_TAB.id || flow !== null;
@@ -669,6 +672,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
               onOpenItem={openItem}
               onRetry={() => setTodayAttempt(value => value + 1)}
               onOpenRoute={openRoute}
+              initialQuestion={initialAsk}
               hooks={assistant}
             />
           </div>}

@@ -64,10 +64,15 @@ const CenterPage: React.FC = () => {
     if (board !== 'portfolio' && board !== 'cashflow' && board !== 'materials' && board !== 'debt') return null;
     return { board, projectId: params.get('project'), nonce: Date.now() } as const;
   }, [location.search]);
-  // /center?view=flow | site3d: mở thẳng tab Dòng chảy công việc / Công trường 3D.
+  // /center?view=flow | site3d | assistant: mở thẳng tab Dòng chảy công việc / Công trường 3D / Trợ lý.
   const initialTab = useMemo(() => {
     const view = new URLSearchParams(location.search).get('view');
-    return view === 'flow' || view === 'site3d' ? view : null;
+    return view === 'flow' || view === 'site3d' || view === 'assistant' ? view : null;
+  }, [location.search]);
+  // /center?view=assistant&ask=<câu>: từ ô Tìm kiếm "Hỏi Trợ lý AI" — gửi câu ngay khi tab Trợ lý sẵn sàng.
+  const initialAsk = useMemo(() => {
+    const ask = new URLSearchParams(location.search).get('ask');
+    return ask && ask.trim().length >= 2 ? ask.trim().slice(0, 8000) : null;
   }, [location.search]);
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
@@ -131,6 +136,7 @@ const CenterPage: React.FC = () => {
         loadFlowItems={loadFlowItems}
         remindFlow={remindFlowHolders}
         initialTab={initialTab}
+        initialAsk={initialAsk}
         site3d={site3dHooks}
         assistant={assistantHooks}
       />

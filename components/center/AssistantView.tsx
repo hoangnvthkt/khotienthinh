@@ -257,8 +257,10 @@ const AssistantView: React.FC<{
   onRetry: () => void;
   /** Mở một màn (hồ sơ Trợ lý tìm được) thành tab trong Trung tâm. */
   onOpenRoute?: (route: string, title?: string, state?: unknown) => void;
+  /** Câu hỏi từ ô Tìm kiếm ("Hỏi Trợ lý AI"): gửi ngay một lần khi sẵn sàng; chưa được cấp Trợ lý thì chỉ điền vào ô. */
+  initialQuestion?: string | null;
   hooks?: AssistantHooks;
-}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, hooks = defaultAssistantHooks }) => {
+}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, initialQuestion = null, hooks = defaultAssistantHooks }) => {
   const [items, setItems] = useState<WorkItem[] | 'loading' | 'error'>('loading');
   const [itemsAttempt, setItemsAttempt] = useState(0);
   const [ai, setAi] = useState<AiGatewayStatus | null>(null);
@@ -481,6 +483,16 @@ const AssistantView: React.FC<{
       patch(m => ({ ...m, state: 'error', content: '', error: aiErrorMessage(result) }));
     }
   };
+
+  // Câu từ ô Tìm kiếm: chờ tab hiện, biết tình trạng AI và hội thoại hôm nay mở xong (để nối vào đúng hội thoại) rồi gửi đúng một lần.
+  const initialSent = useRef(false);
+  useEffect(() => {
+    if (!initialQuestion || initialSent.current || !active || ai === null || threadState === 'loading') return;
+    if (access === null && ai.configured) return;
+    initialSent.current = true;
+    if (configured) void send(initialQuestion); else setQuestion(initialQuestion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion, active, ai, access, threadState, configured]);
 
   const submit = () => {
     const text = question;

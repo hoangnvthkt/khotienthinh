@@ -630,6 +630,36 @@ test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý 
   await expect(workTabs(page).getByRole("tab", { name: /PO-2026-0712/ })).toHaveAttribute("aria-selected", "true");
 });
 
+test("19/10 nháp đơn mua: sửa VAT, chọn NCC, lý do rồi rời đi (tải lại trang) → quay lại form vẫn giữ nguyên, không tốn lượt AI", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  await ask(page, PO_ASK);
+  const form = chat(page).getByTestId("command").getByTestId("po-form");
+  await expect(form.getByLabel("Thuế VAT %")).toHaveValue("8");
+  await form.getByLabel("Thuế VAT %").fill("10");
+  await form.getByRole("group", { name: "Chọn nhà cung cấp" }).getByRole("button", { name: /Công ty CP Thép Hòa Phát/ }).click();
+  await form.getByRole("group", { name: "Lý do mua chủ động" }).getByRole("button", { name: "Chốt giá tốt" }).click();
+  await form.getByLabel("Lý do mua vượt BOQ").fill("Giữ giá tháng 11");
+  await form.getByLabel("Số lượng Xi măng PCB40").fill("12");
+  // Ghi nháp trễ 400 ms → chờ rồi mới rời.
+  await page.waitForTimeout(600);
+  const before = (await aiCalls(page)).length;
+  await page.reload();
+  await openAssistant(page, false);
+  const again = chat(page).getByTestId("command").getByTestId("po-form");
+  await expect(again.getByLabel("Thuế VAT %")).toHaveValue("10");
+  await expect(again.getByLabel("Số lượng Xi măng PCB40")).toHaveValue("12");
+  await expect(again.getByRole("group", { name: "Nhà cung cấp đã chọn" })).toContainText("Công ty CP Thép Hòa Phát");
+  await expect(again.getByLabel("Lý do mua vượt BOQ")).toHaveValue("Giữ giá tháng 11");
+  // Mở lại không gọi AI thêm lần nào (hội thoại chỉ đọc lại từ máy chủ).
+  expect((await aiCalls(page)).filter(call => call.skill === "assistant_chat").length).toBeLessThanOrEqual(before);
+  // Bỏ thẻ → nháp xóa.
+  await again.getByRole("button", { name: "Bỏ", exact: true }).click();
+  await expect(chat(page).getByTestId("command")).toHaveAttribute("data-state", "cancelled");
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("vioo.assistant.formDraft.")).length)).toBe(0);
+});
+
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(`${base}?ai=po-noapprover`);

@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowUpRight, Brain, CheckCircle2, Loader2, Package, Sea
 import { mrView, type AssistantCommand } from '../../lib/assistantCommands';
 import { chooseItem, formProblems, parseQty, searchCatalog, toFormRows, type MrCatalogItem, type MrFormActions, type MrFormContext, type MrFormRow } from '../../lib/assistantMrForm';
 import { qtyInUnit, sameUnit } from '../../lib/materialRequestText';
+import { clearFormDraft, readFormDraft, scheduleFormDraft } from '../../lib/assistantFormDraft';
 
 // Form đề xuất vật tư ngay trong khung chat (chủ SP duyệt 18/10/2026): Trợ lý đã tách dòng + chọn dự án → người dùng chọn mã
 // (gợi ý bấm), sửa số lượng, kho nhận, ngày cần, chọn người duyệt rồi bấm Gửi duyệt / Lưu nháp tại chỗ. Lưu đi đúng đường của form
@@ -14,6 +15,9 @@ const pill = (row: MrFormRow) => (row.itemId ? (row.remembered ? 'Đã nhớ' : 
 /** T4b: nhãn nhỏ cạnh ô đã chọn sẵn theo lần gửi trước. */
 export const Remembered: React.FC = () => <span className="vcc-mr-pill vcc-mem-pill" data-tone="ok" title="Lần trước bạn chọn — đổi được"><Brain size={11} aria-hidden="true" />Đã nhớ</span>;
 const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x));
+
+/** Phần người dùng sửa trên form (khôi phục khi quay lại). */
+interface MrDraft { title: string; purpose: string; warehouseId: string; neededDate: string; rows: MrFormRow[]; approverIds: string[] }
 
 const AssistantMrForm: React.FC<{
   command: AssistantCommand;
@@ -39,18 +43,30 @@ const AssistantMrForm: React.FC<{
   const [busy, setBusy] = useState<null | 'send' | 'draft'>(null);
   const [problems, setProblems] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(command.status === 'failed' ? command.error : null);
+  const [hydrated, setHydrated] = useState(false);
+  // Nháp đang sửa (rời tab / tải lại trang rồi quay lại vẫn giữ): ghi trễ 400 ms, chỉ khi thẻ còn chờ gửi.
+  useEffect(() => {
+    if (!hydrated || command.status !== 'prepared') return;
+    return scheduleFormDraft<MrDraft>(command.id, { title, purpose, warehouseId, neededDate, rows, approverIds });
+  }, [hydrated, command.id, command.status, title, purpose, warehouseId, neededDate, rows, approverIds]);
+  const cancel = () => { clearFormDraft(command.id); onCancel(); };
 
   useEffect(() => {
     let alive = true;
     actions.load(command).then(c => {
       if (!alive) return;
       setCtx(c);
-      setWarehouseId(c.rememberedWarehouseId || c.defaultWarehouseId || '');
-      setApproverIds(c.rememberedApproverIds?.length ? c.rememberedApproverIds : c.approvers.length === 1 ? [c.approvers[0].id] : []);
-      const next = toFormRows(v.lines, c.catalog, c.memory);
+      const draft = command.status === 'prepared' ? readFormDraft<MrDraft>(command.id) : null;
+      const next = draft ? draft.rows : toFormRows(v.lines, c.catalog, c.memory);
+      if (draft) { setTitle(draft.title); setPurpose(draft.purpose); setWarehouseId(draft.warehouseId); setNeededDate(draft.neededDate); setApproverIds(draft.approverIds); }
+      else {
+        setWarehouseId(c.rememberedWarehouseId || c.defaultWarehouseId || '');
+        setApproverIds(c.rememberedApproverIds?.length ? c.rememberedApproverIds : c.approvers.length === 1 ? [c.approvers[0].id] : []);
+      }
       setRows(next);
       setShowSpec(new Set(next.filter(r => r.spec).map(r => r.key)));
       setShowReason(new Set(next.filter(r => r.reason).map(r => r.key)));
+      setHydrated(true);
     }).catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : 'Chưa tải được danh mục vật tư của dự án.'); });
     return () => { alive = false; };
     // Tải một lần cho mỗi thẻ.
@@ -76,6 +92,7 @@ const AssistantMrForm: React.FC<{
         approverIds, approverNames: ctx.approvers.filter(a => approverIds.includes(a.id)).map(a => a.name),
         warehouseName: ctx.warehouses.find(w => w.id === warehouseId)?.name,
       });
+      clearFormDraft(command.id);
       onDone(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Chưa gửi được đề xuất.');
@@ -88,7 +105,7 @@ const AssistantMrForm: React.FC<{
         <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {loadError}</p>
         <div className="vcc-cmd-actions">
           <button type="button" className="vcc-btn" data-pri="true" onClick={onOpenFull}><ArrowUpRight size={14} /> Mở form đầy đủ</button>
-          <button type="button" className="vcc-btn" onClick={onCancel} disabled={busyCancel}><X size={14} /> Bỏ</button>
+          <button type="button" className="vcc-btn" onClick={cancel} disabled={busyCancel}><X size={14} /> Bỏ</button>
         </div>
       </div>
     );
@@ -205,7 +222,7 @@ const AssistantMrForm: React.FC<{
         <button type="button" className="vcc-btn" onClick={() => void submit('draft')} disabled={locked}>
           {busy === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu nháp</button>
         <button type="button" className="vcc-btn" onClick={onOpenFull} disabled={locked}><ArrowUpRight size={14} /> Form đầy đủ</button>
-        <button type="button" className="vcc-btn" onClick={onCancel} disabled={locked || busyCancel}><X size={14} /> Bỏ</button>
+        <button type="button" className="vcc-btn" onClick={cancel} disabled={locked || busyCancel}><X size={14} /> Bỏ</button>
       </div>
       <p className="vcc-cmd-note"><Package size={11} aria-hidden="true" /> {kept.length}/{rows.length} dòng đã có mã · chưa gửi gì tới khi {you} bấm.</p>
     </div>

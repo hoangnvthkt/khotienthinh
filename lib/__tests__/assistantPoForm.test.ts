@@ -11,7 +11,7 @@ vi.mock('../procurementInboxService', async () => {
 });
 
 import type { ProcurementCatalogItem } from '../procurementInboxService';
-import { applyItem, buildRows, createPoFormActions, poProblems, poTotals, toSourceRow } from '../assistantPoForm';
+import { applyItem, buildRows, createPoFormActions, memoLoad, poProblems, poTotals, toSourceRow } from '../assistantPoForm';
 import { parseCommand } from '../assistantCommands';
 import { SourceBook } from '../../supabase/functions/ai-gateway/agent';
 import { runTool, type Rpc } from '../../supabase/functions/ai-gateway/tools';
@@ -86,6 +86,20 @@ describe('Form đơn mua trong chat — dùng đúng cách khớp / quy đổi c
     expect(mocks.saveProactiveOrder.mock.calls[1][0]).toMatchObject({ purchaseOrderId: 'po-1', expectedRowVersion: 1 });
     expect(mocks.transitionOrder).toHaveBeenLastCalledWith({ purchaseOrderId: 'po-1', expectedRowVersion: 2, action: 'submit', approverUserId: 'u-chuan' });
     expect(done).toMatchObject({ status: 'done', result: { code: 'PO-2026-0712', id: 'po-1', submitted: true, approvers: ['Hà Đức Chuẩn'] } });
+  });
+});
+
+describe('memoLoad — nhớ kết quả tải theo thẻ (19/10: mở lại thẻ không gọi lại RPC, không tốn lượt AI)', () => {
+  it('cùng id → cùng promise trong hạn; lỗi không bị nhớ; forget → tải lại', async () => {
+    let n = 0;
+    const memo = memoLoad(async (c: { id: string }) => { n++; if (c.id === 'bad') throw new Error('x'); return { n, id: c.id }; });
+    const a = await memo.load({ id: 'c1' } as never); const b = await memo.load({ id: 'c1' } as never);
+    expect(a).toBe(b); expect(n).toBe(1);
+    await expect(memo.load({ id: 'bad' } as never)).rejects.toThrow('x');
+    await expect(memo.load({ id: 'bad' } as never)).rejects.toThrow('x');
+    expect(n).toBe(3);
+    memo.forget('c1');
+    expect((await memo.load({ id: 'c1' } as never)).n).toBe(4);
   });
 });
 
