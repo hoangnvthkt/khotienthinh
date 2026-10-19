@@ -142,7 +142,11 @@ Ký hiệu: Đ = công cụ đọc · C = công cụ chuẩn bị nháp (thẻ) 
 
 Mỗi đợt: một PR nhóm (công cụ + lời nhắc + test + ca hồi quy + fixture Playwright), deploy `ai-gateway`, cập nhật HANDOFF mục 4, chủ SP thử rồi mới sang đợt sau. RPC tổng hợp mới (báo cáo) đi kèm migration + smoke rollback như doc 10.
 
-## 6. Cần anh chốt
+## 6. Quyết định của chủ SP (20/10)
+
+**Ưu tiên báo cáo và biểu đồ trước**; phần "tạo phiếu bằng câu nói" **không làm** — tạo nhanh đã có ở ô Tìm kiếm (thao tác nhanh). Đợt báo cáo A1 (PR cùng ngày): công cụ `bao_cao` với 3 loại — phiếu quy trình (cột 3 chuỗi theo kỳ + tròn theo mẫu), nhập xuất kho (giá trị theo kỳ + tròn vật tư xuất nhiều; theo vật tư thì số lượng + tồn hiện tại; lọc kho), đơn mua (giá trị theo kỳ + tròn NCC + tròn dự án). RPC `security invoker` chạy dưới RLS → mỗi người thấy đúng số mình được xem. Thẻ biểu đồ có thêm dạng cột chồng và tròn (chú giải có số và %). Đợt A2 dự kiến: tiến độ dự án theo tuần, nhật ký / lý do chậm, tài chính (dòng tiền, công nợ, đề nghị chi), nhân sự (chấm công, phép theo phòng), yêu cầu theo mẫu / phòng ban, đặt xe, văn bản đến / đi.
+
+## 6b. Câu cũ (giữ để tham chiếu)
 
 1. Thứ tự đợt như mục 5 có đúng ý không (em đề xuất bắt đầu **Quy trình**).
 2. "Tạo phiếu quy trình / yêu cầu bằng câu nói" dừng ở **phiếu nháp** (người mở phiếu, bổ sung rồi bấm Gửi) — đúng nguyên tắc không tự gửi?

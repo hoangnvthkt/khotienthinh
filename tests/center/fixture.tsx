@@ -26,6 +26,8 @@ import { MemoryRouter } from 'react-router-dom';
 import CenterEntrance from '../../components/center/CenterIntro';
 import UiModeSwitch from '../../components/center/UiModeSwitch';
 import { headcountChart } from '../../supabase/functions/ai-gateway/tools';
+import { parseChart } from '../../lib/assistantChart';
+import { workflowReport } from '../../supabase/functions/ai-gateway/reports';
 import { parseSources, type ChatSource } from '../../lib/assistantChat';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday } from '../../lib/center/centerTodayService';
@@ -542,6 +544,29 @@ const assistantHooks: AssistantHooks = {
       thread.lastMessageAt = at;
       saveThreads(all);
       return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Báo cáo A1 (20/10): "thống kê phiếu quy trình…" → bao_cao → thẻ biểu đồ có cột 3 chuỗi + tròn theo mẫu.
+    if (/phiếu quy trình/i.test(input.question) && /thống kê|báo cáo|biểu đồ/i.test(input.question) && !refused) {
+      await sleep(120);
+      handlers.onTool?.({ name: 'bao_cao', label: 'Báo cáo', query: '' });
+      await sleep(150);
+      const built = workflowReport({ buckets: [{ start: '2026-08-01', created: 30, completed: 25, returned: 3 }, { start: '2026-09-01', created: 40, completed: 35, returned: 2 }, { start: '2026-10-01', created: 49, completed: 20, returned: 1 }],
+        byTemplate: [{ name: 'Đề nghị tạm ứng', count: 60 }, { name: 'Đề nghị thanh toán', count: 40 }, { name: 'Xin nghỉ phép', count: 19 }], byStatus: { RUNNING: 63, COMPLETED: 50 }, total: 119, runningNow: 63, runningStale: 12 },
+        { from: '2026-08-01', to: '2026-10-07', group: 'month' })!;
+      const chart = { ref: 'b1', type: 'chart' as const, chart: parseChart(built.chart)! };
+      const parsed = parseSources([chart]);
+      if (parsed[0]) handlers.onChart?.(parsed[0] as never);
+      const text = 'Từ 01/08 đến 07/10 có **119 phiếu** tạo mới, 80 hoàn thành, 6 trả lại / hủy; tháng 10 tạo nhiều nhất (49). Mẫu nhiều nhất là Đề nghị tạm ứng (60 phiếu). Đang xử lý 63 phiếu, trong đó 12 phiếu quá 7 ngày chưa động — anh xem Quy trình để đôn đốc.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `m-${thread.messages.length + 2}`;
+      thread.messages.push({ id: `m-${thread.messages.length + 1}`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [chart], runId, accepted: null, createdAt: at });
+      thread.lastMessageAt = at; saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [chart], model: 'gemini-2.5-pro', saved: true };
     }
     // Biểu đồ biến động nhân sự (19/10): công cụ bien_dong_nhan_su → thẻ biểu đồ (số giống prod 19/10). ?ai=hc-denied: không có quyền Xem tổ chức.
     if (/biến động nhân sự|biểu đồ nhân sự/i.test(input.question) && !refused) {

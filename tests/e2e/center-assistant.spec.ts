@@ -734,6 +734,30 @@ test("19/10 tầng tìm ngay có cả màn hình + thao tác: 'mua hàng' mở m
   expect((await aiCalls(page)).filter(c => c.modal)).toHaveLength(1);
 });
 
+test("20/10 báo cáo A1: 'thống kê phiếu quy trình' → thẻ biểu đồ có ô số, cột theo tháng và vòng tròn theo mẫu kèm %; Bảng xem số; mở lại Lịch sử vẫn thấy", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  if (isMobile) { await page.getByLabel("Câu hỏi", { exact: true }).fill("Thống kê phiếu quy trình 3 tháng gần đây"); await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap(); }
+  else await ask(page, "Thống kê phiếu quy trình 3 tháng gần đây");
+  const card = chat(page).getByTestId("chart-card");
+  await expect(card).toBeVisible();
+  await expect(card.locator(".vcc-cmd-title")).toHaveText("Phiếu quy trình 01/08/2026 – 07/10/2026");
+  await expect(card.locator(".vcc-chart-stats dd")).toHaveText(["119", "80", "6", "63"]);
+  await expect(card.locator(".vcc-chart-panel").first().locator("figcaption")).toContainText("Phiếu theo tháng");
+  const donut = card.locator(".vcc-chart-panel[data-kind=donut]");
+  await expect(donut.locator("figcaption")).toContainText("Theo mẫu quy trình");
+  await expect(donut.locator(".vcc-chart-donut-legend li").first()).toContainText("Đề nghị tạm ứng");
+  await expect(donut.locator(".vcc-chart-donut-legend li").first()).toContainText("60 phiếu · 50%");
+  await card.getByRole("button", { name: "Bảng" }).click();
+  await expect(card.locator("table").nth(1).locator("th").first()).toHaveText("Mục");
+  await expect(card.locator("table").nth(1).locator("tbody tr").first()).toContainText("Đề nghị tạm ứng");
+  // Không tràn ngang trên điện thoại.
+  if (isMobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByTestId("chart-card").locator(".vcc-chart-donut-legend li").first()).toContainText("Đề nghị tạm ứng");
+});
+
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(`${base}?ai=po-noapprover`);

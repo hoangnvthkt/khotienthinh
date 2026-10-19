@@ -66,6 +66,7 @@ ai-gateway (supabase/functions/ai-gateway)
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
   agent.ts / providers.ts   định dạng OpenAI / Anthropic, ảnh base64, ToolChoice
   chat.ts    (19/10) parseChatHits / foundLines: hồ sơ ô tìm ngay gửi kèm → <du_lieu loai="tim_thay"> với mã hN (SourceBook) — AI dùng trước, không gọi tim_ho_so
+  reports.ts (20/10) bao_cao: 3 RPC assistant_report_{workflow,inventory,procurement}_v1 (security invoker → theo quyền xem RLS) → thẻ biểu đồ cột / cột chồng / tròn (lib/assistantChart.ts kinds line|bar|stacked|donut, nhãn riêng từng khung)
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
