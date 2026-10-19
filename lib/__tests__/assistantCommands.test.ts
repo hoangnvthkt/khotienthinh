@@ -111,7 +111,7 @@ describe('Trợ lý T2a · công cụ chuẩn bị đơn nghỉ phép (lệnh m�
   });
 
   it('danh sách công cụ: chỉ đọc + chuẩn bị; không có công cụ gửi / xóa / duyệt / trả lại', () => {
-    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi', 'phep_nhan_vien', 'bien_dong_nhan_su', 'chuan_bi_don_nghi_phep', 'chuan_bi_de_xuat_vat_tu', 'chuan_bi_don_mua', 'chuan_bi_nhat_ky', 'chuan_bi_ghi_nho']);
+    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi', 'phep_nhan_vien', 'chi_tiet_ho_so', 'bien_dong_nhan_su', 'chuan_bi_don_nghi_phep', 'chuan_bi_de_xuat_vat_tu', 'chuan_bi_don_mua', 'chuan_bi_nhat_ky', 'chuan_bi_ghi_nho']);
     for (const t of TOOLS) expect(t.name).not.toMatch(/gui|xoa|duyet|tra_lai|huy|ghi_so|submit|delete|approve/);
   });
 
