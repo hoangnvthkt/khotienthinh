@@ -42,6 +42,14 @@ const HUONG_CONTRACTS = { employeeId: 'e-huong', contracts: [{ id: 'c2', contrac
   employmentEvents: [{ recordCode: 'EV-3', eventTypeCode: 'BO_NHIEM', eventDate: '2023-01-01', titleSnapshot: 'Trưởng phòng TCKT', orgUnitName: 'Phòng Tài chính kế toán' }] };
 
 // Biến động nhân sự: số giống prod 19/10 (61 → 68 người; 3 người đã nghỉ chưa có ngày nghỉ, 8 người chưa có ngày vào).
+const REPORT_WF = { buckets: [{ start: '2026-07-01', created: 30, completed: 25, returned: 3 }, { start: '2026-08-01', created: 40, completed: 35, returned: 2 }, { start: '2026-09-01', created: 49, completed: 44, returned: 1 }],
+  byTemplate: [{ name: 'Đề nghị tạm ứng', count: 60 }, { name: 'Đề nghị thanh toán', count: 40 }, { name: 'Xin nghỉ phép', count: 19 }], byStatus: { RUNNING: 15, COMPLETED: 104 }, total: 119, runningNow: 15, runningStale: 4 };
+const REPORT_INV = { buckets: [{ start: '2026-08-01', inAmount: 1_200_000_000, outAmount: 800_000_000, docsIn: 12, docsOut: 20 }, { start: '2026-09-01', inAmount: 900_000_000, outAmount: 700_000_000, docsIn: 9, docsOut: 15 }, { start: '2026-10-01', inAmount: 400_000_000, outAmount: 300_000_000, docsIn: 4, docsOut: 6 }],
+  warehouses: ['Kho SMB'], item: null, topOut: [{ name: 'Thép XD D16', unit: 'kg', qty: 6300, amount: 100_000_000 }], totalInAmount: 2_500_000_000, totalOutAmount: 1_800_000_000 };
+const REPORT_INV_ITEM = { buckets: [{ start: '2026-10-05', inQty: 6300, outQty: 2100 }, { start: '2026-10-12', inQty: 0, outQty: 1500 }, { start: '2026-10-19', inQty: 0, outQty: 500 }], warehouses: ['Kho SMB'],
+  item: { id: 'i-d16', sku: 'VT0000828', name: 'Thép XD D16', unit: 'Cây' }, stockNow: [{ warehouse: 'Kho SMB', qty: 2200 }], totalIn: 6300, totalOut: 4100 };
+const REPORT_PO = { buckets: [{ start: '2026-08-01', count: 20, amount: 2_500_000_000 }, { start: '2026-09-01', count: 30, amount: 4_000_000_000 }, { start: '2026-10-01', count: 10, amount: 1_000_000_000 }], byStatus: { confirmed: 40, sent: 20 },
+  byVendor: [{ name: 'Hợp Thành', count: 22, amount: 3_000_000_000 }, { name: 'Tôn Đoàn Minh', count: 8, amount: 2_500_000_000 }, { name: 'Hòa Phát', count: 30, amount: 2_000_000_000 }], byProject: [{ name: 'SMB-2026', count: 40, amount: 6_000_000_000 }, { name: 'DA29', count: 20, amount: 1_500_000_000 }], total: 60, totalAmount: 7_500_000_000 };
 const HEADCOUNT = { from: '2026-01-01', to: '2026-06-30', today: '2026-10-19', opening: 61, activeNow: 91, activeNoStartDate: 8, resignedNoExitDate: 3, resignedWithExitDate: 0,
   months: [61, 61, 61, 63, 65, 68].map((headcount, i) => ({ month: `2026-0${i + 1}`, endDate: `2026-0${i + 1}-28`, hired: [0, 0, 0, 2, 2, 3][i], left: 0, headcount })) };
 
@@ -55,6 +63,10 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   if (fn === 'ai_stock_by_items_v1') return { data: STOCK_D16.filter(r => (args.p_item_ids as string[]).includes(r.itemId)), error: null };
   // Ghi lại khoảng tháng model chọn (p_kind riêng, không phải lệnh nháp) để ca kiểm "6 tháng đầu năm" → 01–06.
   if (fn === 'get_hrm_headcount_trend_v1') { created.push({ p_kind: 'rpc:headcount', p_title: '', p_payload: args }); return { data: HEADCOUNT, error: null }; }
+  // Báo cáo A1 (20/10): 3 RPC tổng hợp theo RLS — số giả cố định, ghi lại tham số để kiểm ngày / nhóm / lọc.
+  if (fn === 'assistant_report_workflow_v1') { created.push({ p_kind: 'rpc:report', p_title: 'workflow', p_payload: args }); return { data: REPORT_WF, error: null }; }
+  if (fn === 'assistant_report_inventory_v1') { created.push({ p_kind: 'rpc:report', p_title: 'inventory', p_payload: args }); return { data: args.p_item_id ? REPORT_INV_ITEM : REPORT_INV, error: null }; }
+  if (fn === 'assistant_report_procurement_v1') { created.push({ p_kind: 'rpc:report', p_title: 'procurement', p_payload: args }); return { data: REPORT_PO, error: null }; }
   if (fn === 'get_hrm_leave_ledger') return { data: args.p_employee_id === 'e-huong' ? HUONG_LEDGER : { balance: null, entries: [] }, error: null };
   if (fn === 'assistant_leave_types_v1') return { data: LEAVE_TYPES, error: null };
   if (fn === 'preview_my_leave_request') return { data: { days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] }, error: null };
@@ -201,6 +213,20 @@ export const CASES: EvalCase[] = [
       fail(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i.test(o.text), `bịa dữ liệu hồ sơ: "${o.text.match(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i)?.[0]}"`),
       fail(/không tồn tại|không có (nhân viên|hồ sơ) (này|đó|nào)/i.test(o.text), 'nói như không tồn tại'), fail(!/quyền|phạm vi/i.test(o.text), 'không nói rõ là ngoài quyền xem')) },
   // Biểu đồ (chủ SP 19/10): câu hỏi tự nhiên → model tự chọn công cụ từ mô tả, đúng khoảng tháng; thẻ vẽ số, model chỉ nhận xét.
+  // Báo cáo A1 (chủ SP 20/10: ưu tiên báo cáo / biểu đồ): bao_cao phải chọn đúng loai, đổi "quý 3" / "tháng này" thành ngày, nhận xét từ số công cụ.
+  { id: 'report-wf-q3', bug: 'Báo cáo A1: "thống kê phiếu quy trình quý 3" → bao_cao loai phieu_quy_trinh với 01/07–30/09, nêu tổng 119 phiếu và mẫu nhiều nhất', q: 'Thống kê phiếu quy trình quý 3 năm nay cho anh',
+    check: o => { const call = o.created.find(c => c.p_kind === 'rpc:report' && c.p_title === 'workflow'); const a = (call?.p_payload || {}) as Record<string, string>;
+      return firstFail(fail(!o.tools.includes('Báo cáo'), `không gọi bao_cao (gọi: ${o.tools.join(', ') || 'không gì'})`), fail(!call, 'không gọi RPC phiếu quy trình'),
+        fail(a.p_from !== '2026-07-01' || a.p_to !== '2026-09-30', `khoảng sai: ${a.p_from} → ${a.p_to}`), fail(!/119/.test(o.text), 'không nêu tổng 119 phiếu'), fail(!/tạm ứng/i.test(o.text), 'không nêu mẫu nhiều nhất (Đề nghị tạm ứng)')); } },
+  { id: 'report-inv-item', bug: 'Báo cáo A1: "nhập xuất thép D16 kho SMB tháng này" → bao_cao kho_nhap_xuat có vat_tu + kho, theo tuần, nêu nhập 6.300 / xuất 4.100 / tồn 2.200 cây', q: 'Biểu đồ nhập xuất thép D16 kho SMB tháng này',
+    check: o => { const call = o.created.find(c => c.p_kind === 'rpc:report' && c.p_title === 'inventory'); const a = (call?.p_payload || {}) as Record<string, string>;
+      return firstFail(fail(!o.tools.includes('Báo cáo'), `không gọi bao_cao (gọi: ${o.tools.join(', ') || 'không gì'})`), fail(!call, 'không gọi RPC sổ kho'),
+        fail(!a.p_item_id, 'không lọc theo vật tư (vat_tu)'), fail(!/smb/i.test(a.p_warehouse || ''), `không lọc kho SMB (kho=${a.p_warehouse})`), fail(a.p_from !== '2026-10-01', `ngày bắt đầu phải 2026-10-01 (được ${a.p_from})`),
+        fail(!/6[.,]300/.test(o.text) || !/2[.,]200/.test(o.text), 'không nêu nhập 6.300 / tồn 2.200')); } },
+  { id: 'report-po-vendor', bug: 'Báo cáo A1: "giá trị đơn mua 3 tháng gần đây theo NCC" → bao_cao don_mua mặc định 3 tháng, nêu tổng 7,5 tỷ và NCC lớn nhất Hợp Thành', q: 'Giá trị đơn mua 3 tháng gần đây theo nhà cung cấp thế nào?',
+    check: o => { const call = o.created.find(c => c.p_kind === 'rpc:report' && c.p_title === 'procurement');
+      return firstFail(fail(!o.tools.includes('Báo cáo'), `không gọi bao_cao (gọi: ${o.tools.join(', ') || 'không gì'})`), fail(!call, 'không gọi RPC đơn mua'),
+        fail(!/7[.,]5|7\.500|7 500|7500/.test(o.text), 'không nêu tổng 7,5 tỷ / 7.500 triệu'), fail(!/Hợp Thành/.test(o.text), 'không nêu NCC lớn nhất Hợp Thành')); } },
   { id: 'hr-chart-6m', bug: 'Chủ SP 19/10: "biểu đồ biến động nhân sự 6 tháng đầu năm" → gọi bien_dong_nhan_su đúng T1–T6, nêu tăng 7 người, nói rõ chưa có số nghỉ việc',
     q: 'Hãy thống kê giúp tôi biểu đồ biến động nhân sự 6 tháng đầu năm',
     check: o => { const call = o.created.find(x => x.p_kind === 'rpc:headcount')?.p_payload;
