@@ -37,6 +37,8 @@ export interface ChatSendInput {
   /** T3: ảnh (base64 đã thu nhỏ) + bảng tính đã đọc trên máy — chỉ gửi ở lượt này. */
   images?: Array<{ mime: string; b64: string }>;
   files?: Array<{ name: string; text: string }>;
+  /** 19/10: hồ sơ ô tìm ngay vừa thấy khớp câu (≤ 5) — cổng đưa vào ngữ cảnh để AI khỏi gọi công cụ tìm. */
+  hits?: ServerRecord[];
 }
 export interface ChatHandlers {
   onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;

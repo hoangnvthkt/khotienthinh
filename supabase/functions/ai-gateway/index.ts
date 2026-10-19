@@ -12,7 +12,8 @@ import { SourceBook, type SourceRef } from './agent.ts';
 import { converse } from './loop.ts';
 import type { Rpc } from './tools.ts';
 import { KIND_LABEL, targetFromConnection, type AiFeature, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
-import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
+import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, foundLines, isDailyReportTurn, leaveTypesLine, userNotesOf, mentionsLeave, reportTextOf, parseChatInput, sourceKeysOf, splitRefusal, sseEvent, threadTurns, vnTodayLabel, type ChatTurn } from './chat.ts';
+import { KIND_LABEL as RECORD_KIND_LABEL } from './tools.ts';
 import { SKILLS } from './skills.ts';
 import { actualIntentOf, askJev, buildIntentRequest, decisionLog } from './jev.ts';
 
@@ -95,7 +96,10 @@ Deno.serve(async request => {
         if (r.error) console.error('ai-gateway decision log failed', r.error.message);
       } catch (e) { console.error('ai-gateway decision log failed', e instanceof Error ? e.message : e); }
     };
-    const prompt = buildChatPrompt(input, history, withTools, vnTodayLabel(new Date()), known, notes);
+    // 19/10: hồ sơ ô tìm ngay gửi kèm → cấp mã hN trong cùng sổ nguồn với công cụ (màn hình hiện nút mở hồ sơ như nhau).
+    const book = new SourceBook();
+    const foundHits = (input.hits || []).map(hit => ({ ref: book.record(hit as unknown as Record<string, unknown>), hit }));
+    const prompt = buildChatPrompt(input, history, withTools, vnTodayLabel(new Date()), known, notes, foundHits.length ? foundLines(foundHits, kind => RECORD_KIND_LABEL[kind] || kind) : '');
     const model = target.model;
     const provider = target.source === 'connection' ? `${target.kind}:${target.name}`.slice(0, 40) : target.kind;
     const redactNote = Object.keys(prompt.hits).length ? ` · đã che ${Object.entries(prompt.hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
@@ -112,7 +116,6 @@ Deno.serve(async request => {
         const used: string[] = [];
         let refusalKind: string | null = null;
         try {
-          const book = new SourceBook();
           const out = withTools
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
               system: prompt.system, turns: prompt.messages, images: input.images, book, used, started, runId,
@@ -133,7 +136,7 @@ Deno.serve(async request => {
           if (saved.error) console.error('ai-gateway chat save failed', saved.error.message);
           const ids = (saved.data || {}) as { threadId?: string; messageId?: string };
           await finish({ status: 'ok', provider, model, inputChars: prompt.inputChars, outputChars: answer.length, ...usage,
-            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${input.files?.length ? `, ${input.files.length} bảng tính` : ''}${input.images?.length ? `, ${input.images.length} ảnh` : ''}${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
+            summary: `hội thoại: ${prompt.historyUsed} tin trước, ${factLines} dòng số liệu${foundHits.length ? `, ${foundHits.length} hồ sơ tìm sẵn` : ''}${input.files?.length ? `, ${input.files.length} bảng tính` : ''}${input.images?.length ? `, ${input.images.length} ảnh` : ''}${used.length ? `, tra ${used.join(' ')}` : ''}${(out.usage.calls ?? 1) > 1 ? `, ${out.usage.calls} lượt gọi` : ''} → ${refusal ? `từ chối (${refusal})` : `${answer.length} ký tự, ${sources.length} nguồn`}${redactNote}` });
           send(sseEvent({ type: 'done', threadId: ids.threadId ?? input.threadId, messageId: ids.messageId ?? null, answer, sources, model, usage, saved: !saved.error, refusal }));
           await logShadow(used, refusalKind);
         } catch (e) {

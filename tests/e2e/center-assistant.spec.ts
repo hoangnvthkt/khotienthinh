@@ -660,6 +660,40 @@ test("19/10 nháp đơn mua: sửa VAT, chọn NCC, lý do rồi rời đi (tả
   expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("vioo.assistant.formDraft.")).length)).toBe(0);
 });
 
+test("19/10 ô hỏi hai tầng: gõ mã / tên → hồ sơ hiện ngay, Enter / bấm mở không hỏi AI; câu hỏi thật → gửi AI kèm hồ sơ vừa thấy; Esc ẩn", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  // Tầng 1: mã nhân viên → một dòng khớp chắc (đúng mã) + dòng "Hỏi Trợ lý"; Enter mở hồ sơ, không gọi AI.
+  await box.fill("TT006974");
+  const hits = chat(page).getByTestId("instant-hits");
+  await expect(hits.getByRole("option")).toHaveCount(2);
+  await expect(hits.getByRole("option").first()).toContainText("TT006974");
+  await expect(hits.getByRole("option").first()).toContainText("Nguyễn Văn Thanh");
+  await expect(hits.getByRole("option").last()).toContainText("Hỏi Trợ lý: “TT006974”");
+  await box.press("Enter");
+  await expect(workTabs(page).getByRole("tab", { name: /TT006974/ })).toHaveAttribute("aria-selected", "true");
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(0);
+  // Tên người: khớp nhưng chưa chắc → Enter không tự mở; ↓ rồi Enter mới mở.
+  await openAssistant(page, false);
+  await box.fill("Thanh");
+  await expect(hits.getByRole("option").first()).toContainText("Nguyễn Văn Thanh");
+  await box.press("ArrowDown");
+  await expect(hits.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await box.press("Escape");
+  await expect(hits).toHaveCount(0);
+  // Tầng 2: câu hỏi thật → gửi AI kèm hồ sơ vừa thấy (AI khỏi gọi công cụ tìm).
+  await box.fill("nhân viên Hương còn bao nhiêu ngày phép năm");
+  await expect(hits.getByRole("option").first()).toContainText("Nguyễn Thị Hương");
+  await box.press("Enter");
+  await expect(hits).toHaveCount(0);
+  await expect(chat(page).getByTestId("turn").last()).toBeVisible();
+  const call = (await aiCalls(page)).filter(c => c.skill === "assistant_chat").pop() as { question: string; hits?: string[] };
+  expect(call.question).toBe("nhân viên Hương còn bao nhiêu ngày phép năm");
+  expect(call.hits).toEqual(["TT004431"]);
+});
+
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(`${base}?ai=po-noapprover`);

@@ -3,8 +3,9 @@
 import { readFileSync } from 'node:fs';
 import { agentStep } from '../../supabase/functions/ai-gateway/providers.ts';
 import { converse } from '../../supabase/functions/ai-gateway/loop.ts';
+import { KIND_LABEL as RECORD_KIND_LABEL } from '../../supabase/functions/ai-gateway/tools';
 import { SourceBook } from '../../supabase/functions/ai-gateway/agent.ts';
-import { buildChatPrompt, isDailyReportTurn, leaveTypesLine, mentionsLeave, reportTextOf, splitRefusal, type ChatTurn } from '../../supabase/functions/ai-gateway/chat.ts';
+import { buildChatPrompt, isDailyReportTurn, leaveTypesLine, mentionsLeave, reportTextOf, splitRefusal, type ChatTurn, foundLines, parseChatHits, type ChatHit} from '../../supabase/functions/ai-gateway/chat.ts';
 import { redact } from '../../supabase/functions/ai-gateway/guard.ts';
 import { targetFromConnection } from '../../supabase/functions/_shared/aiTargets.ts';
 
@@ -13,7 +14,7 @@ interface Created { p_kind: string; p_title: string; p_payload: Record<string, u
 interface Outcome { text: string; refusal: string | null; chips: string[]; created: Created[]; tools: string[] }
 /** deny: lệnh máy chủ giả trả 42501 trong ca này (người hỏi không có quyền — RPC SECURITY DEFINER tự chặn).
  *  hidden: loại hồ sơ mà search_global_v1 trả rỗng trong ca này (nguồn theo RLS như vật tư / kho: người không quyền chỉ thấy rỗng, không có 42501). */
-interface EvalCase { id: string; bug: string; q: string; history?: ChatTurn[]; projectId?: string | null; notes?: string[]; images?: string[]; files?: Array<{ name: string; text: string }>; deny?: string[]; hidden?: string[]; check: (o: Outcome) => string | null }
+interface EvalCase { id: string; bug: string; q: string; history?: ChatTurn[]; projectId?: string | null; notes?: string[]; images?: string[]; files?: Array<{ name: string; text: string }>; deny?: string[]; hidden?: string[]; /** 19/10: hồ sơ ô tìm ngay gửi kèm câu (như ChatInput.hits). */ hits?: ChatHit[]; check: (o: Outcome) => string | null }
 
 const LEAVE_TYPES = [{ code: 'annual', name: 'Phép năm', unit: 'day' }, { code: 'personal_unpaid', name: 'Việc riêng không lương', unit: 'day' },
   { code: 'sick', name: 'Ốm đau (BHXH)', unit: 'day' }, { code: 'business_trip', name: 'Công tác', unit: 'day' }, { code: 'late_early', name: 'Đi muộn / về sớm có lý do', unit: 'minute' }];
@@ -151,6 +152,11 @@ export const CASES: EvalCase[] = [
       fail(!/9[,.]5/.test(o.text), 'không nêu số phép còn lại 9,5'), fail(!/\[\[h\d+\]\]/.test(o.text), 'không gắn mã nguồn')) },
   { id: 'leave-balance-denied', bug: 'Nhân viên thường hỏi phép người khác: máy chủ chặn 42501 → từ chối theo quyền, không bịa số', deny: ['get_hrm_leave_ledger'],
     q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?', check: deniedAnswerCheck('Số phép nhân viên', /\b\d+([,.]\d+)? ngày/) },
+  { id: 'hits-prefound', bug: '19/10 ô hỏi hai tầng: hồ sơ ô tìm ngay gửi kèm → không gọi tim_ho_so nữa, đi thẳng công cụ chi tiết, dẫn nguồn hN',
+    q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?',
+    hits: [{ kind: 'employee', id: 'emp-huong', code: 'TT004431', title: 'Nguyễn Thị Hương', subtitle: 'Trưởng phòng TCKT', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: {} }],
+    check: o => firstFail(fail(o.tools.includes('Tìm hồ sơ'), 'vẫn gọi tim_ho_so dù hồ sơ đã có sẵn'), fail(!o.tools.includes('Số phép nhân viên'), `không gọi phep_nhan_vien (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(!/9[,.]5/.test(o.text), 'không nêu số phép còn lại 9,5'), fail(!/\[\[h\d+\]\]/.test(o.text), 'không gắn mã nguồn')) },
   // Rà soát quyền 18/10: cùng câu hỏi, Admin nhận số liệu kèm nguồn; nhân viên thường nhận "ngoài phạm vi được xem" từ RPC — không bịa, không nói "không tồn tại".
   { id: 'po-detail-admin', bug: 'Rà soát quyền 18/10: người có quyền Mua hàng hỏi một PO → số liệu đúng công cụ, có mã nguồn', q: 'PO-646 còn phải giao bao nhiêu, đã trả NCC bao nhiêu rồi?',
     check: o => firstFail(fail(!o.tools.includes('Chi tiết đơn mua'), `không gọi chi_tiet_don_mua (gọi: ${o.tools.join(', ') || 'không gì'})`),
@@ -188,15 +194,18 @@ export async function runEvals(envPath: string, only: string[] = [], root = proc
     const created: Created[] = []; const tools: string[] = []; const history = c.history || [];
     const known = mentionsLeave(c.q, history) ? leaveTypesLine(LEAVE_TYPES) : [];
     const images = (c.images || []).map(path => ({ mime: 'image/jpeg' as const, b64: readFileSync(`${root}/${path}`).toString('base64') }));
+    const book = new SourceBook();
+    const hits = parseChatHits(c.hits || []);
+    const found = hits.length ? foundLines(hits.map(hit => ({ ref: book.record(hit as unknown as Record<string, unknown>), hit })), kind => RECORD_KIND_LABEL[kind] || kind) : '';
     const prompt = buildChatPrompt({ threadId: null, question: c.q, facts: 'project.progress | Dự án · Tiến độ SMB-2026: 7 việc trễ', pronoun: 'Anh',
-      ...(images.length ? { images } : {}), ...(c.files ? { files: c.files } : {}) }, history, true,
-      'Chủ nhật 18/10/2026 (2026-10-18)', known, c.notes || []);
+      ...(images.length ? { images } : {}), ...(c.files ? { files: c.files } : {}), ...(hits.length ? { hits } : {}) }, history, true,
+      'Chủ nhật 18/10/2026 (2026-10-18)', known, c.notes || [], found);
     const started = Date.now();
     let why: string | null;
     try {
       const out = await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc: fakeRpc(created, c.deny, c.hidden),
         emit: e => { if (e.type === 'tool') tools.push(String((e as { label?: unknown }).label)); }, redact: t => redact(t).text,
-        system: prompt.system, turns: prompt.messages, images: images.length ? images : undefined, book: new SourceBook(), used: [], started, runId: 'eval-run', projectId: c.projectId ?? null,
+        system: prompt.system, turns: prompt.messages, images: images.length ? images : undefined, book, used: [], started, runId: 'eval-run', projectId: c.projectId ?? null,
         question: reportTextOf(c.q, history), forceTool: isDailyReportTurn(c.q, history) ? 'chuan_bi_nhat_ky' : undefined });
       const { text, refusal } = splitRefusal(out.text);
       const chips = [...text.matchAll(/\[\[goi_y:([^\]]+)\]\]/g)].map(m => m[1].trim());
