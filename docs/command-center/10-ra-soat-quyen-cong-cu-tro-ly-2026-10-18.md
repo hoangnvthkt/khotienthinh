@@ -123,4 +123,4 @@ Thử thật 3 vai trên Cloud 19/10 (`ai_tool_permissions_smoke.sql`, rollback)
 | `get_hrm_employee_work_organization` | OK (phòng TCKT; quản lý trực tiếp null — chưa gán trong sơ đồ) | OK | OK |
 | `get_hrm_employee_contract_employment` | OK (0 HĐ, 1 sự kiện) | OK | **42501** |
 
-Bộ kiểm hồi quy thêm 3 ca: `profile-admin` (chức danh + quản lý trực tiếp + nguồn), `profile-manager` ("ai quản lý trực tiếp chị Hương"), `profile-denied` (42501 → ngoài quyền, không bịa). Test đơn vị: `lib/__tests__/assistantEmployeeProfile.test.ts`.
+Bộ kiểm hồi quy thêm 3 ca: `profile-admin` (chức danh + quản lý trực tiếp + nguồn), `profile-manager` ("ai quản lý trực tiếp chị Hương"), `profile-denied` (42501 → ngoài quyền, không bịa) — 23/23 đạt với claude-sonnet-5-5 (6–16 s / ca). Test đơn vị: `lib/__tests__/assistantEmployeeProfile.test.ts`.
