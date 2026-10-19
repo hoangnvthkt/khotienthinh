@@ -107,6 +107,9 @@ export class SourceBook {
 
   get size() { return this.items.length; }
 
+  /** Hồ sơ đã cấp mã hN — kể cả hồ sơ ô tìm ngay gửi kèm câu hỏi (19/10) — để công cụ chi tiết nhận "ma: h2". */
+  find(ref: string): SourceRef | undefined { const key = ref.trim().toLowerCase(); return this.items.find(s => s.ref === key); }
+
   /** Nguồn AI đã dẫn [[hN]] trong câu trả lời, đúng thứ tự xuất hiện, tối đa 8. */
   cited(answer: string): SourceRef[] {
     const out: SourceRef[] = [];

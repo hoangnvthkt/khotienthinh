@@ -102,3 +102,25 @@ Test đơn vị (vitest) cập nhật theo lời báo mới: `lib/__tests__/aiAg
 
 - Nguồn INVOKER (vật tư, kho, PO trong tìm kiếm) không phân biệt "không có" / "không quyền" vì RLS trả rỗng. Muốn Trợ lý nói chính xác hơn ("anh chưa có quyền xem kho") cần một RPC nhỏ `ai_my_scopes_v1` trả quyền kho / Mua hàng / HR của người hỏi — không bắt buộc, chủ SP quyết.
 - `vcc_my_work_items_v1` đòi đang trong thí điểm Trung tâm; Trợ lý chỉ mở từ Trung tâm nên hiện không gặp. Khi mở Trợ lý ra ngoài Trung tâm cần xem lại.
+
+## 6. Bổ sung 19/10 — công cụ `chi_tiet_ho_so` (hồ sơ công việc nhân viên)
+
+Chủ SP hỏi "hồ sơ nhân sự chi tiết" của một người (19/10) → Trợ lý chưa có công cụ. Thêm `chi_tiet_ho_so` dùng đúng 3 RPC màn Nhân sự mở hồ sơ, không viết RPC mới.
+
+| RPC | Security | Kiểm quyền bằng | Khi bị từ chối |
+|---|---|---|---|
+| `get_hrm_employee_overview` | DEFINER | `assert_hrm_profile_section_access` ∈ {DIRECTORY, SELF, MANAGER, HR, HR_MANAGE} (`hrm_employee_profile_access_level`: `view_sensitive` → HR / HR_MANAGE; chính mình; `resolve_strict_direct_manager`; `view_directory`) | `42501 HRM_PROFILE_SECTION_ACCESS_DENIED` (không có cả quyền danh bạ) |
+| `get_hrm_employee_work_organization` | DEFINER | như trên | như trên |
+| `get_hrm_employee_contract_employment` | DEFINER | ∈ {SELF, HR, HR_MANAGE} — cổng **chỉ gọi khi `visibleSections` có `contracts_employment`** | `42501` |
+
+Không gọi `get_hrm_employee_personal_contact` (ngày sinh, SĐT / email cá nhân, địa chỉ), `_legal_insurance` (CCCD, BHXH), `_compensation_tax_bank` (lương, thuế, STK) — các phần này không bao giờ qua Trợ lý; lời nhắc chỉ sang màn Nhân sự.
+
+Thử thật 3 vai trên Cloud 19/10 (`ai_tool_permissions_smoke.sql`, rollback):
+
+| RPC (Hương) | Admin Hoàng | HR Đặng Thị Hương | NV thường Nguyễn Chấp Việt |
+|---|---|---|---|
+| `get_hrm_employee_overview` | HR_MANAGE, 8 phần | HR, 8 phần | **DIRECTORY, 2 phần** (tổng quan + công việc) |
+| `get_hrm_employee_work_organization` | OK (phòng TCKT; quản lý trực tiếp null — chưa gán trong sơ đồ) | OK | OK |
+| `get_hrm_employee_contract_employment` | OK (0 HĐ, 1 sự kiện) | OK | **42501** |
+
+Bộ kiểm hồi quy thêm 3 ca: `profile-admin` (chức danh + quản lý trực tiếp + nguồn), `profile-manager` ("ai quản lý trực tiếp chị Hương"), `profile-denied` (42501 → ngoài quyền, không bịa). Test đơn vị: `lib/__tests__/assistantEmployeeProfile.test.ts`.

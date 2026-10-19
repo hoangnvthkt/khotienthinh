@@ -1,4 +1,5 @@
--- Rà soát quyền 9 lệnh máy chủ mà 6 công cụ đọc của Trợ lý gọi (18/10/2026, docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md).
+-- Rà soát quyền 9 lệnh máy chủ mà 6 công cụ đọc của Trợ lý gọi (18/10/2026, docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md)
+-- + 3 RPC hồ sơ nhân viên của chi_tiet_ho_so (19/10: get_hrm_employee_overview / _work_organization / _contract_employment).
 -- Giả lập JWT của 3 người THẬT (Admin Hoàng · một người HR có hrm.employee.view_sensitive · một nhân viên thường không thuộc dự án
 -- của PO thử) rồi gọi từng RPC, ghi kết quả / mã lỗi vào bảng tạm. CHỈ ĐỌC, toàn bộ trong giao dịch rollback:
 --   CLOUD_SQL_ENV=/Users/admin/khotienthinh/.env node scripts/cloud-sql.mjs --file supabase/tests/ai_tool_permissions_smoke.sql --rollback
@@ -85,6 +86,10 @@ begin
     insert into ap_out values (p_name, 'get_hrm_leave_ledger(chính mình)', 'bỏ qua: không có hồ sơ nhân sự');
   end if;
   perform pg_temp.ap_try(p_name, 'list_hrm_leave_balances', format($q$select jsonb_build_object('nv', jsonb_array_length(public.list_hrm_leave_balances(%s)))$q$, f.yr));
+  -- chi_tiet_ho_so (19/10): mức xem + phần thấy được; hợp đồng chỉ gọi khi visibleSections cho phép (ở đây gọi thẳng để thấy RPC chặn ai).
+  perform pg_temp.ap_try(p_name, 'get_hrm_employee_overview(Hương)', format($q$select jsonb_build_object('level', r->>'accessLevel', 'sections', jsonb_array_length(r->'visibleSections'), 'title', r->>'title', 'contract', r->'summary'->>'currentContractNumber') from public.get_hrm_employee_overview(%L::uuid) r$q$, f.huong));
+  perform pg_temp.ap_try(p_name, 'get_hrm_employee_work_organization(Hương)', format($q$select jsonb_build_object('orgUnit', r->'orgUnit'->>'name', 'manager', r->'directManager'->>'fullName') from public.get_hrm_employee_work_organization(%L::uuid) r$q$, f.huong));
+  perform pg_temp.ap_try(p_name, 'get_hrm_employee_contract_employment(Hương)', format($q$select jsonb_build_object('contracts', jsonb_array_length(r->'contracts'), 'events', jsonb_array_length(r->'employmentEvents')) from public.get_hrm_employee_contract_employment(%L::uuid) r$q$, f.huong));
 end $$;
 grant execute on function pg_temp.ap_try(text, text, text) to authenticated;
 grant execute on function pg_temp.ap_run(text) to authenticated;

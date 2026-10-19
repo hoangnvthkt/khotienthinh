@@ -1,4 +1,4 @@
-# HANDOFF — Trợ lý AI v2 + Trung tâm AI (cập nhật 18/10/2026, đêm — thêm J1 Jev)
+# HANDOFF — Trợ lý AI v2 + Trung tâm AI (cập nhật 19/10/2026 — thêm công cụ chi_tiet_ho_so)
 
 Đọc tệp này **trước khi làm bất cứ gì** về Trợ lý AI, Trung tâm AI, cổng `ai-gateway`. Đủ để làm tiếp ngay.
 Tài liệu sống kèm theo: Claude Docs "Audit AI" → tab **"Trợ lý v2 · 17/10"** (doc `Wo95Mv3mZw3wxBpZLNY9NG`, thân tab `08e095b7-9f8a`, khối cuối `mfjt2rsnpg4.22529` — mỗi đợt xong thêm một gạch đầu dòng sau khối cuối).
@@ -36,7 +36,7 @@ Hướng dẫn người dùng: `docs/command-center/huong-dan-trung-tam-dieu-han
 | E2E | `npx playwright test -c tests/center/playwright.config.ts tests/e2e/center-assistant.spec.ts tests/e2e/center-ai-admin.spec.ts` (desktop + mobile-safari). Chạy cả bộ có vài ca chập chờn khi tải nặng (T2a, T2b, 3D) — chạy riêng là đạt |
 | Kiểm tra trước PR | `npm run check:supabase-migrations && npm run lint && npm run check:supabase-queries && TZ=UTC npx vitest run && npm run build` (dùng `set -o pipefail`, đừng `\| tail` che lỗi) |
 | Type-check cổng AI | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json` |
-| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **19 ca (có 6 ca theo vai Admin / nhân viên thường), phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
+| **Bộ kiểm hồi quy (model thật)** | `npm i --no-save @anthropic-ai/sdk@0.131.0` rồi `ASSISTANT_EVAL_ENV=/Users/admin/khotienthinh/.env node scripts/assistant-evals/run.mjs [ca…]`. **22 ca (có 9 ca theo vai Admin / nhân viên thường), phải đạt hết trước mỗi lần deploy `ai-gateway`.** Gặp lỗi mới khi thử thật → thêm ca vào `CASES` trước rồi mới sửa |
 | SQL trên Cloud | `CLOUD_SQL_ENV=/Users/admin/khotienthinh/.env node scripts/cloud-sql.mjs "select …"` (chỉ đọc); `--file x.sql --rollback` (chạy thử); `--file x.sql --write` (ghi thật) |
 | Smoke migration (giao dịch rollback) | `SUPABASE_ACCESS_TOKEN=… node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/<m>.sql --smoke supabase/tests/<s>.sql` |
 | Áp migration | thêm tên tệp vào `supabase/baseline/current.json` (sửa bằng parse JSON) → `export SUPABASE_ACCESS_TOKEN=$(grep '^SUPABASE_ACCESS_TOKEN=' /Users/admin/khotienthinh/.env \| cut -d= -f2- \| tr -d '"')` → `npx --no-install supabase db push --linked --dry-run` → `echo Y \| npx --no-install supabase db push --linked` |
@@ -57,7 +57,10 @@ ai-gateway (supabase/functions/ai-gateway)
              parseChatInput (≤4 ảnh, ≤3 tệp chữ ≤30.000), isDailyReportTurn / looksLikeDailyReport (buộc gọi công cụ nhật ký)
   loop.ts    vòng gọi công cụ ≤5 bước / 8 lần tra / 80 s; ảnh gắn lượt hỏi cuối; forceTool
   tools.ts   đọc: tim_ho_so, ton_kho, chi_tiet_don_mua, chi_tiet_de_xuat, viec_cua_toi, phep_nhan_vien (số phép của mình / người khác / toàn công ty —
-             get_hrm_leave_ledger · list_hrm_leave_balances tự chặn 42501; quyền do RPC quyết, lời nhắc không tự giới hạn)
+             get_hrm_leave_ledger · list_hrm_leave_balances tự chặn 42501; quyền do RPC quyết, lời nhắc không tự giới hạn),
+             chi_tiet_ho_so (19/10: hồ sơ CÔNG VIỆC một nhân viên — get_hrm_employee_overview + _work_organization + _contract_employment khi RPC cho xem;
+             mức xem danh bạ / chính mình / quản lý / HR do hrm_employee_profile_access_level quyết; không CCCD / STK / lương / SĐT cá nhân;
+             quản lý trực tiếp có mã hN riêng; mã hN của hồ sơ ô tìm ngay dùng được nhờ SourceBook.find)
              chuẩn bị (chỉ ghi assistant_commands + emit thẻ): chuan_bi_don_nghi_phep, chuan_bi_de_xuat_vat_tu, chuan_bi_don_mua (tự tính tiền,
              đối chiếu thanh_tien: lệch đúng 1.000 lần thì sửa SL), chuan_bi_nhat_ky (nguyên văn tin / noi_dung chép từ ảnh), chuan_bi_ghi_nho
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
@@ -107,6 +110,8 @@ Mọi thay đổi cấp phát / mẫu / skill / model ghi `audit_trail` (module 
 | #247 | **Chọn model ở ô hỏi** (ô hỏi hai tầng), tab Model, câu hỏi nhanh dạng thẻ, xóa `pages/AiAssistant.tsx` | `20261019230000_ai_model_choice` |
 | #248 | Tab **Hoạt động**, tin chào + "Thử ngay", hướng dẫn 1 trang, mở nhóm 15 người | `20261020090000_ai_activity` |
 | J1 | **Jev (TypeSafe) chạy bóng**: kết nối `typesafe`, tính năng `ai.decisions`, `ai_decisions`; bộ đo J0 `scripts/jev-evals` | `20261020110000_jev_shadow_route` |
+| #253–#254 | Giữ nháp form; "Hỏi Trợ lý AI" từ ô Tìm; **ô hỏi hai tầng** (tìm ngay / hỏi AI kèm hồ sơ hN) | — |
+| PR_CHI_TIET_HO_SO | Công cụ **`chi_tiet_ho_so`** (hồ sơ công việc nhân viên theo mức xem RPC); SourceBook.find cho mã hN tìm sẵn; smoke 3 RPC × 3 vai; 3 ca hồi quy | — |
 
 Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_pilot_extend_2026_12_31.sql`, `supabase/operations/ai_pilot_group_2026_10_18.sql`.
 
@@ -135,13 +140,15 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 - `vitest --root /` quét cả máy → treo; chạy test thăm dò bên trong repo.
 - Lời nhắc tự giới hạn phạm vi ("nhân sự của chính người hỏi") làm Admin bị từ chối xem phép người khác dù có quyền HR (18/10 tối) → phạm vi ghi "trong quyền xem", công cụ gọi RPC và để RPC chặn.
   Rà soát đủ 9 RPC × 3 vai 18/10: `docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md` — không RPC nào lộ / chặn quá tay; mọi 42501 ở `tools.ts` thành `outOfScope()`; tệp thử lại `supabase/tests/ai_tool_permissions_smoke.sql` (rollback, chỉ đọc).
+- Mã hN của hồ sơ ô tìm ngay (SourceBook ở `index.ts`) **không** nằm trong `refBook` của vòng công cụ (`loop.ts`) → công cụ chi tiết nhận `ma: "h1"` tìm lại theo chữ "h1" và trượt. 19/10 thêm `SourceBook.find` làm nguồn dự phòng (`byRef` trong tools.ts) cho mọi công cụ chi tiết.
+- Mức xem hồ sơ nhân viên thật trên Cloud (19/10, `ai_tool_permissions_smoke.sql`): Admin = HR_MANAGE (8 phần), HR = HR, nhân viên thường có Office = **DIRECTORY** (2 phần: tổng quan + công việc; hợp đồng 42501). Nghĩa là nhân viên thường vẫn thấy chức danh / phòng ban / quản lý của người khác — đó là quyền danh bạ hiện hành, không phải lỗi Trợ lý.
 - Quy chuẩn "không dùng pdf.js để **xem** PDF": Trợ lý dùng `pdfjs-dist` 4.10.38 **legacy** chỉ để **đọc chữ**, tải lười khi ghim PDF, lỗi thì báo người dùng (không sập).
 
 ## 8. Việc còn mở / sẽ làm
 
 1. **Chờ chủ SP**: đã gửi hướng dẫn vào nhóm Zalo chưa / có sửa không (`docs/command-center/huong-dan-tro-ly/tro-ly-ai-1-trang.html` → render lại PNG/PDF bằng Playwright, khung 1080px).
 2. **Sau 1–2 tuần**: đọc tab Hoạt động (ai chưa dùng, thẻ gửi thật / bỏ, 👎 lý do, chạm trần, chi phí theo model) → đề xuất **T5 báo cáo theo lịch** (bản tin 7h push / Zalo; báo cáo tuần dự án cho BLĐ). Gợi ý chỉnh mẫu / trần theo số thật.
-3. Việc tiếp cho ô hỏi hai tầng: công cụ `chi_tiet_ho_so` (hồ sơ nhân sự chi tiết theo quyền HR — chủ SP hỏi 19/10); mở rộng tầng tìm ngay sang trang / thao tác như ô Tìm kiếm.
+3. Việc tiếp cho ô hỏi hai tầng: mở rộng tầng tìm ngay sang trang / thao tác như ô Tìm kiếm. (`chi_tiet_ho_so` đã xong 19/10.)
 4. Việc nhỏ có thể chen: hiện cảnh báo "SL × đơn giá khác thành tiền" ngay trên thẻ đơn mua (hiện chỉ trong câu trả lời); thêm ca DeepSeek vào bộ kiểm hồi quy; dọn mã cũ không dùng (`supabase/functions/ai-assistant`, `components/ChibiBot.tsx`, quyền `ai.assistant.*` cũ) — hỏi chủ SP trước khi xóa.
 5. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
 6. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
