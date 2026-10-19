@@ -883,3 +883,4 @@ button.vcc-model:hover:not(:disabled) { background: var(--vcc-hover); color: var
 .vcc-hit[data-ask] { color: var(--vcc-fg); font-weight: 500; }
 .vcc-hit[data-ask] .vcc-hit-title { white-space: normal; }
 .vcc-hits-note { padding: 4px 10px 6px; font-size: 11.5px; color: var(--vcc-muted); }
+.vcc-hit[data-kind="action"] .vcc-hit-kind, .vcc-hit[data-kind="page"] .vcc-hit-kind { color: var(--vcc-accent); font-weight: 500; }

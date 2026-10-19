@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
+import { buildLocalIndex } from '../../lib/search/instantSearch';
+import { OPEN_MODAL_EVENT } from '../../lib/search/openGlobalSearch';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type SharedGroup } from '../../lib/aiMemory';
@@ -443,6 +445,13 @@ const instantSearch: NonNullable<AssistantHooks['search']> = async (terms, kinds
   return { records: records.slice(0, limit), failed: [] };
 };
 
+// Trang + thao tác cho tầng tìm ngay (như ô Tìm kiếm): vài màn người này mở được.
+const LOCAL_INDEX = buildLocalIndex(
+  [{ key: 'procurement', label: 'Mua hàng', route: '/procurement' }, { key: 'hrm', label: 'Nhân sự', route: '/hrm' }],
+  key => (key === 'procurement' ? [{ to: '/procurement', label: 'Mua hàng' }, { to: '/procurement?mode=orders', label: 'Đơn hàng' }] : [{ to: '/hrm/leave', label: 'Nghỉ phép' }]),
+  route => !DENIED_ROUTES.has(route.split('?')[0]) && !route.startsWith('/finance'));
+window.addEventListener(OPEN_MODAL_EVENT, event => { aiCalls.push({ modal: (event as CustomEvent<{ modal?: string }>).detail?.modal }); });
+
 const assistantHooks: AssistantHooks = {
   search: instantSearch,
   poForm,
@@ -722,6 +731,7 @@ const Fixture: React.FC = () => {
             onLogout={() => setLastRoute('logout')}
             mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
+            searchLocal={LOCAL_INDEX}
             onNavigate={setLastRoute}
             now={params.get('defaults') === '1' ? undefined : NOW}
             // ?loader=app: như app thật — không truyền loadWorkItems (dùng nguồn mặc định).

@@ -2,7 +2,8 @@
 // câu hỏi thật thì gửi AI kèm sẵn các hồ sơ vừa thấy (AI khỏi phải gọi công cụ tìm). Tệp này thuần logic để vitest kiểm được.
 import { HEAVY_KINDS } from './globalSearchService';
 import { KIND_META, recordToEntry } from './recordPresentation';
-import { prepareEntry, scoreEntry, serverTerms, type ParsedQuery } from './searchEngine';
+import { prepareEntry, rankLocal, scoreEntry, serverTerms, type ParsedQuery, type PreparedEntry } from './searchEngine';
+import { buildActionEntries, buildPageEntries, quickActionDefs, type NavItemInput, type NavModuleInput } from './searchCatalog';
 import { RECORD_KINDS, type RecordKind, type SearchEntry, type ServerRecord } from './searchTypes';
 import { foldVi } from './viText';
 
@@ -26,7 +27,7 @@ export const isLookupQuery = (text: string): boolean => {
   return folded.trim().split(' ').length <= 6;
 };
 
-export interface RankedHit { entry: SearchEntry; record: ServerRecord; score: number; /** Khớp mọi cụm từ (hiện ngay cả khi máy chủ chưa trả câu mới). */ matchedAll: boolean }
+export interface RankedHit { entry: SearchEntry; /** Hồ sơ máy chủ; trang / thao tác thì không có. */ record?: ServerRecord; score: number; /** Khớp mọi cụm từ (hiện ngay cả khi máy chủ chưa trả câu mới). */ matchedAll: boolean }
 
 /** Xếp hồ sơ máy chủ theo cùng thước đo của ô Tìm kiếm; giữ tối đa `limit`. */
 export const rankRecordHits = (records: readonly ServerRecord[], parsed: ParsedQuery, limit = HIT_LIMIT): RankedHit[] => {
@@ -42,20 +43,47 @@ export const rankRecordHits = (records: readonly ServerRecord[], parsed: ParsedQ
   return out.sort((a, b) => b.score - a.score).slice(0, limit);
 };
 
-/** Khớp đủ mạnh để Enter mở luôn: đúng mã (hạng máy chủ ≥ 80) hoặc khớp mọi cụm và bỏ xa hồ sơ thứ hai. */
-export const strongTopHit = (hits: readonly RankedHit[]): RankedHit | null => {
+/**
+ * Khớp đủ mạnh để Enter mở luôn. Hồ sơ: đúng mã (hạng máy chủ ≥ 80) hoặc khớp mọi cụm và bỏ xa dòng thứ hai.
+ * Trang / thao tác: câu ngắn (≤ 4 từ, không phải câu hỏi) khớp mọi cụm — "mở mua hàng", "xin nghỉ phép"; câu dài kèm chi tiết
+ * ("xin nghỉ phép ngày mai lý do việc riêng") thì để AI chuẩn bị đơn.
+ */
+export const strongTopHit = (hits: readonly RankedHit[], text = ''): RankedHit | null => {
   const [top, second] = hits;
   if (!top) return null;
-  if (top.record.rank >= 80) return top;
-  if (top.matchedAll && (!second || top.score >= second.score + 6)) return top;
+  if (top.record) {
+    if (top.record.rank >= 80) return top;
+    if (top.matchedAll && (!second || top.score >= second.score + 6)) return top;
+    return null;
+  }
+  // Việc Trợ lý tự làm trong chat (hỏi lại bằng nút, form tại chỗ) thì không mở hộp thoại cũ thay AI — vẫn hiện để bấm nếu muốn.
+  if (ASSISTANT_HANDLED.has(top.entry.key)) return null;
+  const words = foldVi(text).trim().split(/\s+/).filter(Boolean).length;
+  if (words > 0 && words <= 4 && top.matchedAll && !/\?/.test(text) && (!second || top.score >= second.score + 2)) return top;
   return null;
 };
 
+/** Thao tác Trợ lý đã lo trong chat (T2a–T2d): Enter đi AI, không mở hộp thoại / màn cũ. */
+export const ASSISTANT_HANDLED = new Set(['action:leave', 'action:material-request', 'action:po', 'action:daily-log']);
+
+/** Chỉ mục cục bộ cho ô hỏi: trang người này mở được + thao tác nhanh (bỏ lệnh đổi giao diện / hỏi AI). Tính một lần theo quyền. */
+export const buildLocalIndex = (modules: readonly NavModuleInput[], itemsOf: (key: string) => readonly NavItemInput[], canOpen: (route: string) => boolean, now = new Date()): PreparedEntry[] =>
+  [...buildActionEntries(quickActionDefs(now), canOpen).filter(e => !e.command), ...buildPageEntries(modules, itemsOf, canOpen)].map(prepareEntry);
+
+/** Trang / thao tác khớp câu (cùng rankLocal của ô Tìm kiếm). */
+export const rankLocalHits = (local: readonly PreparedEntry[], parsed: ParsedQuery, limit = HIT_LIMIT): RankedHit[] =>
+  rankLocal(local, parsed, limit).map(({ entry, score }) => ({ entry, score, matchedAll: scoreEntry(prepareEntry(entry), parsed).matchedAll }));
+
+/** Ghép hồ sơ + trang / thao tác theo điểm; hồ sơ đúng mã luôn trên cùng. */
+export const mergeHits = (records: readonly RankedHit[], local: readonly RankedHit[], limit = HIT_LIMIT): RankedHit[] =>
+  [...records, ...local].sort((a, b) => Number(Boolean(b.record && b.record.rank >= 80)) - Number(Boolean(a.record && a.record.rank >= 80)) || b.score - a.score).slice(0, limit);
+
 /** Hồ sơ gửi kèm câu hỏi cho cổng (chỉ các trường cần, không SĐT / email). */
-export const hitsForGateway = (hits: readonly RankedHit[]): ServerRecord[] => hits.slice(0, HIT_LIMIT).map(({ record }) => {
+export const hitsForGateway = (hits: readonly RankedHit[]): ServerRecord[] => hits.flatMap(({ record }) => {
+  if (!record) return [];
   const { phone: _p, email: _e, ...extra } = (record.extra || {}) as Record<string, unknown>;
-  return { ...record, extra };
-});
+  return [{ ...record, extra }];
+}).slice(0, HIT_LIMIT);
 
 /**
  * Câu hỏi dài ("nhân viên Hương còn bao nhiêu ngày phép năm"): máy chủ AND mọi từ nên tìm cả câu không ra gì. Lấy riêng "từ khóa thực thể":

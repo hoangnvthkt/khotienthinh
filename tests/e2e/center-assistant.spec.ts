@@ -694,6 +694,32 @@ test("19/10 ô hỏi hai tầng: gõ mã / tên → hồ sơ hiện ngay, Enter 
   expect(call.hits).toEqual(["TT004431"]);
 });
 
+test("19/10 tầng tìm ngay có cả màn hình + thao tác: 'mua hàng' mở màn, 'tạo đề xuất' mở hộp thoại ngay; nghỉ phép là việc Trợ lý tự lo nên Enter đi AI", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  const hits = chat(page).getByTestId("instant-hits");
+  await box.fill("mua hàng");
+  await expect(hits.getByRole("option").filter({ hasText: "Màn hình" }).first()).toContainText("Mua hàng");
+  await box.press("Enter");
+  await expect(workTabs(page).getByRole("tab", { name: /Mua hàng/ })).toHaveAttribute("aria-selected", "true");
+  await openAssistant(page, false);
+  await box.fill("tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Thao tác");
+  await box.press("Enter");
+  await expect.poll(async () => (await aiCalls(page)).some(c => c.modal === "request")).toBe(true);
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(0);
+  // Nghỉ phép là việc Trợ lý tự lo trong chat (hỏi lại bằng nút): thao tác vẫn hiện để bấm, nhưng Enter đi AI.
+  await box.fill("Xin nghỉ");
+  await expect(hits.getByRole("option").first()).toContainText("Xin nghỉ phép");
+  await box.press("Enter");
+  await expect(chat(page).getByTestId("turn").last().locator(".vcc-msg-a")).toHaveText("Anh nghỉ loại nào?");
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(1);
+  expect((await aiCalls(page)).filter(c => c.modal)).toHaveLength(1);
+});
+
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
   test.skip(!isMobile, "chỉ đo trên điện thoại");
   await page.goto(`${base}?ai=po-noapprover`);
