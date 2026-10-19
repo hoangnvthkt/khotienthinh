@@ -360,7 +360,8 @@
     "20261019210000_ai_admin_center.sql",
     "20261019230000_ai_model_choice.sql",
     "20261020090000_ai_activity.sql",
-    "20261020110000_jev_shadow_route.sql"
+    "20261020110000_jev_shadow_route.sql",
+    "20261020130000_hrm_headcount_trend.sql"
   ],
   "forbidIncludeAll": true
 }

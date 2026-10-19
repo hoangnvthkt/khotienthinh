@@ -16,7 +16,9 @@ export interface ToolSpec { name: string; description: string; parameters: Recor
 /** Nguồn mở được: hồ sơ của Tìm kiếm toàn cục (màn hình tự biết mở màn nào) hoặc một việc của Việc của tôi. */
 export type SourceRef =
   | { ref: string; type: 'record'; record: Record<string, unknown> }
-  | { ref: string; type: 'work'; item: Record<string, unknown> };
+  | { ref: string; type: 'work'; item: Record<string, unknown> }
+  /** Thẻ biểu đồ công cụ dựng từ số máy chủ (lib/assistantChart.ts đọc lại) — luôn đi kèm câu trả lời, không cần AI dẫn. */
+  | { ref: string; type: 'chart'; chart: Record<string, unknown> };
 
 export const MAX_AGENT_STEPS = 5;
 export const MAX_TOOL_CALLS = 8;
@@ -84,6 +86,7 @@ export const toAnthropicMessages = (msgs: AgentMsg[]) => msgs.map(m => {
 export class SourceBook {
   private items: SourceRef[] = [];
   private byKey = new Map<string, string>();
+  private charts: SourceRef[] = [];
 
   record(record: Record<string, unknown>): string {
     const key = `r:${record.kind}:${record.id}`;
@@ -104,6 +107,16 @@ export class SourceBook {
     this.byKey.set(key, ref);
     return ref;
   }
+
+  /** Biểu đồ: mã b1, b2… (tối đa 2 mỗi lượt để vừa chỗ lưu hội thoại). */
+  chart(chart: Record<string, unknown>): string | null {
+    if (this.charts.length >= 2) return null;
+    const ref = `b${this.charts.length + 1}`;
+    this.charts.push({ ref, type: 'chart', chart });
+    return ref;
+  }
+
+  get chartSources(): SourceRef[] { return [...this.charts]; }
 
   get size() { return this.items.length; }
 

@@ -10,12 +10,13 @@ import {
 } from '../../lib/center/assistantBrief';
 import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult, AI_FEEDBACK_REASONS, type AiFeedbackReason, type MyAiAccess } from '../../lib/aiGateway';
 import {
-  assistantChat, boldParts, displayText, isTodayThread, suggestionsOf, textBlocks, threadDayLabel, threadTimeLabel,
+  assistantChat, boldParts, displayText, isChartSource, isTodayThread, suggestionsOf, textBlocks, threadDayLabel, threadTimeLabel,
   type ChatHandlers, type ChatSendInput, type ChatSendResult, type ChatSource, type ChatThread, type ChatThreadSummary, type ChatToolUse,
 } from '../../lib/assistantChat';
 import { recordTarget } from '../../lib/search/recordPresentation';
 import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
+import AssistantChartCard from './AssistantChartCard';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { createPoFormActions, type PoFormActions } from '../../lib/assistantPoForm';
 import { defaultDailyLogFormActions, type DailyLogFormActions } from '../../lib/assistantDailyLogForm';
@@ -390,6 +391,7 @@ const AssistantView: React.FC<{
       const line = linesByKeys(brief, [source])[0];
       return line ? [{ key: line.key, label: line.item ? line.item.code : line.label, title: line.locked || line.text, disabled: Boolean(line.locked) || !(line.item || line.target), open: () => open(line) }] : [];
     }
+    if (source.type === 'chart') return [];
     if (source.type === 'work') {
       const item = source.item;
       return [{ key: `w:${item.source}:${item.id}`, label: displayCode(item), title: item.title, disabled: false, open: () => onOpenItem(item) }];
@@ -464,6 +466,7 @@ const AssistantView: React.FC<{
         onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
         onTool: tool => patch(m => ({ ...m, tools: [...(m.tools || []), tool] })),
         onCommand: command => patch(m => ({ ...m, commands: [...(m.commands || []), command] })),
+        onChart: chart => patch(m => ({ ...m, sources: [...m.sources.filter(x => !isChartSource(x) || x.ref !== chart.ref), chart] })),
       },
       controller.signal,
     ).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
@@ -620,6 +623,14 @@ const AssistantView: React.FC<{
                           </li>
                         ))}
                       </ul>
+                    )}
+                    {message.sources.some(isChartSource) && (
+                      <div className="vcc-cmds">
+                        {message.sources.filter(isChartSource).map(source => (
+                          <AssistantChartCard key={source.ref} spec={source.chart}
+                            onOpenRoute={(route, title) => (onOpenRoute ? onOpenRoute(route, title) : onDrill({ kind: 'route', path: route, title }))} />
+                        ))}
+                      </div>
                     )}
                     {message.commands && message.commands.length > 0 && (
                       <div className="vcc-cmds">

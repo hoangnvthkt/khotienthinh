@@ -23,6 +23,8 @@ import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
 import CenterEntrance from '../../components/center/CenterIntro';
 import UiModeSwitch from '../../components/center/UiModeSwitch';
+import { headcountChart } from '../../supabase/functions/ai-gateway/tools';
+import { parseSources, type ChatSource } from '../../lib/assistantChat';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
@@ -233,7 +235,7 @@ const aiStatus = (configured: boolean) => ({
   keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['assistant_chat', 'morning_brief'],
   targets: { fast: null, reasoning: null },
 });
-type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: string[]; runId: string | null; accepted: boolean | null; createdAt: string; commands?: AssistantCommand[] }> };
+type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: ChatSource[]; runId: string | null; accepted: boolean | null; createdAt: string; commands?: AssistantCommand[] }> };
 const THREADS_KEY = 'center-fixture-ai-threads';
 const loadThreads = (): FxThread[] => { try { return JSON.parse(sessionStorage.getItem(THREADS_KEY) || '[]'); } catch { return []; } };
 const saveThreads = (list: FxThread[]) => sessionStorage.setItem(THREADS_KEY, JSON.stringify(list));
@@ -513,6 +515,30 @@ const assistantHooks: AssistantHooks = {
       thread.lastMessageAt = at;
       saveThreads(all);
       return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Biểu đồ biến động nhân sự (19/10): công cụ bien_dong_nhan_su → thẻ biểu đồ (số giống prod 19/10). ?ai=hc-denied: không có quyền Xem tổ chức.
+    if (/biến động nhân sự|biểu đồ nhân sự/i.test(input.question) && !refused) {
+      await sleep(120);
+      handlers.onTool?.({ name: 'bien_dong_nhan_su', label: 'Biến động nhân sự', query: '' });
+      await sleep(200);
+      const months = [61, 61, 61, 63, 65, 68].map((headcount, i) => ({ month: `2026-0${i + 1}`, endDate: `2026-0${i + 1}-28`, hired: [0, 0, 0, 2, 2, 3][i], left: 0, headcount }));
+      const chart = AI === 'hc-denied' ? null : { ref: 'b1', type: 'chart' as const, chart: headcountChart({ opening: 61, months, activeNow: 91, activeNoStartDate: 8, resignedNoExitDate: 3, resignedWithExitDate: 0 })!.chart };
+      const parsed = chart ? parseSources([chart]) : [];
+      if (parsed[0]) handlers.onChart?.(parsed[0] as never);
+      const text = chart
+        ? 'Nửa đầu năm 2026 quân số tăng **7 người**, từ 61 lên 68; người mới vào dồn vào tháng 4–6, tháng 6 nhiều nhất (3 người). Số nghỉ việc chưa có vì 3 người đã nghỉ chưa được ghi ngày nghỉ — anh nhờ HR bổ sung để biểu đồ đủ.'
+        : 'Số liệu nhân sự toàn công ty nằm ngoài phạm vi anh được xem (cần quyền Xem tổ chức). Anh nhờ Quản trị hệ thống cấp nếu cần.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: parsed, runId, accepted: null, createdAt: at });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: parsed, model: 'gemini-2.5-pro', saved: true };
     }
     const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
     const wantsDl = /^(BC|báo cáo) ngày/i.test(input.question.trim()) && !refused && !lookup;

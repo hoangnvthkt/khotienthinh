@@ -6,11 +6,16 @@ import { parseSearchResponse } from './search/globalSearchService';
 import type { ServerRecord } from './search/searchTypes';
 import { parseWorkItem, type WorkItem } from './center/workItemsService';
 import { parseCommand, parseCommands, type AssistantCommand } from './assistantCommands';
+import { parseChart, type ChartSpec } from './assistantChart';
 
 export const CHAT_SKILL = 'assistant_chat';
 
 /** Nguồn của câu trả lời: khóa dòng số liệu bản tin, hồ sơ công cụ tìm được (màn hình tự biết mở màn nào) hoặc một việc. */
-export type ChatSource = string | { ref: string; type: 'record'; record: ServerRecord } | { ref: string; type: 'work'; item: WorkItem };
+/** Thẻ biểu đồ (19/10) công cụ dựng từ số máy chủ — đi kèm câu trả lời, không phải nút mở. */
+export type ChatSource = string | { ref: string; type: 'record'; record: ServerRecord } | { ref: string; type: 'work'; item: WorkItem }
+  | { ref: string; type: 'chart'; chart: ChartSpec };
+export type ChartSource = Extract<ChatSource, { type: 'chart' }>;
+export const isChartSource = (s: ChatSource): s is ChartSource => typeof s !== 'string' && s.type === 'chart';
 export interface ChatToolUse { name: string; label: string; query: string }
 
 export interface ChatMessage {
@@ -41,6 +46,7 @@ export interface ChatSendInput {
 export interface ChatHandlers {
   onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;
   onCommand?: (command: AssistantCommand) => void;
+  onChart?: (chart: ChartSource) => void;
 }
 export type ChatSendResult =
   | { code: 'OK'; runId: string; threadId: string | null; messageId: string | null; answer: string; sources: ChatSource[]; model: string; saved: boolean }
@@ -60,6 +66,10 @@ export const parseSources = (raw: unknown): ChatSource[] => (Array.isArray(raw) 
   if (o.type === 'work') {
     const item = parseWorkItem(o.item);
     return item ? [{ ref, type: 'work', item }] : [];
+  }
+  if (o.type === 'chart') {
+    const chart = parseChart(o.chart);
+    return chart ? [{ ref, type: 'chart', chart }] : [];
   }
   return [];
 });
@@ -187,6 +197,7 @@ export const assistantChat = {
           else if (event.type === 'delta') { const d = str(event.text); partial += d; handlers.onDelta(d); }
           else if (event.type === 'tool') handlers.onTool?.({ name: str(event.name), label: str(event.label) || str(event.name), query: str(event.query) });
           else if (event.type === 'command') { const command = parseCommand(event.command); if (command) handlers.onCommand?.(command); }
+          else if (event.type === 'chart') { const chart = parseSources([event.chart]).find(isChartSource); if (chart) handlers.onChart?.(chart); }
           else if (event.type === 'done') {
             result = { code: 'OK', runId, threadId: str(event.threadId) || null, messageId: str(event.messageId) || null, answer: str(event.answer) || partial,
               sources: parseSources(event.sources), model: str(event.model), saved: event.saved !== false };

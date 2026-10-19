@@ -7,6 +7,7 @@
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
 //   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm) · list_hrm_leave_balances (toàn công ty). RPC tự chặn 42501.
+//   bien_dong_nhan_su  get_hrm_headcount_trend_v1 (số người cuối tháng, vào làm, nghỉ việc; quyền Xem tổ chức) → thẻ biểu đồ (sự kiện chart).
 // Quyền do RPC / RLS quyết, không phải lời nhắc (chủ SP 18/10 tối): mọi 42501 thành {loi: "Ngoài phạm vi người hỏi được xem: …"} để model nói
 // đúng vậy thay vì bịa hay nói "không tồn tại". Rà soát 9 RPC × 3 vai: docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md.
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
@@ -37,6 +38,7 @@ const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên',
+  bien_dong_nhan_su: 'Biến động nhân sự',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
@@ -85,6 +87,15 @@ export const TOOLS: ToolSpec[] = [
       ten: { type: 'string', description: 'Tên (có thể chỉ tên gọi, VD "Hương") hoặc mã nhân viên cần xem. Bỏ trống = chính người hỏi.' },
       nam: { type: 'integer', description: 'Năm phép (mặc định năm hiện tại).' },
       toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); máy chủ kiểm quyền.' },
+    } },
+  },
+  // Biểu đồ (chủ SP 19/10): công cụ lấy số từ máy chủ rồi hiện thẻ biểu đồ; AI chỉ nhận xét, không tự vẽ, không tự cộng.
+  {
+    name: 'bien_dong_nhan_su',
+    description: 'Biến động nhân sự toàn công ty theo tháng: số người cuối mỗi tháng, số vào làm, số nghỉ việc, đầu kỳ / cuối kỳ — và HIỆN THẺ BIỂU ĐỒ trong chat. Dùng khi hỏi biến động / tăng giảm / thống kê / biểu đồ nhân sự, số lao động, quân số, tuyển mới, nghỉ việc theo tháng, quý, năm, "6 tháng đầu năm". Máy chủ kiểm quyền (Xem tổ chức) và báo nếu ngoài quyền. Tối đa 24 tháng.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      tu_thang: { type: 'string', description: 'Tháng bắt đầu YYYY-MM, VD "6 tháng đầu năm 2026" → 2026-01; "quý 3" → 2026-07. Bỏ trống = 6 tháng gần nhất.' },
+      den_thang: { type: 'string', description: 'Tháng kết thúc YYYY-MM, VD "6 tháng đầu năm 2026" → 2026-06. Bỏ trống = tháng này.' },
     } },
   },
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
@@ -594,6 +605,86 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
   }));
 }
 
+// ── biến động nhân sự → thẻ biểu đồ (chủ SP 19/10) ───────────────────────────────────────────────────────────────────────
+const MONTH = /^(\d{4})-(\d{2})$/;
+const monthIndex = (v: unknown) => { const m = MONTH.exec(String(v ?? '').trim()); return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? Number(m[1]) * 12 + Number(m[2]) - 1 : null; };
+const monthText = (i: number) => `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`;
+const lastDay = (i: number) => new Date(Date.UTC(Math.floor(i / 12), i % 12 + 1, 0)).toISOString().slice(0, 10);
+const viDay = (iso: unknown) => { const t = day(iso); return t ? `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(0, 4)}` : null; };
+
+/** Khoảng tháng theo lời model: thiếu thì 6 tháng gần nhất; hỏng / đảo / quá 24 tháng → lỗi để model hỏi lại. */
+export const headcountRange = (args: Record<string, unknown>, today = vnToday()) => {
+  const now = monthIndex(today.slice(0, 7))!;
+  const to = args.den_thang ? monthIndex(args.den_thang) : now;
+  const from = args.tu_thang ? monthIndex(args.tu_thang) : to != null ? to - 5 : null;
+  if (from == null || to == null) return { loi: 'Tháng chưa đúng (YYYY-MM). Hỏi lại người dùng khoảng thời gian.' };
+  if (from > to) return { loi: 'Tháng bắt đầu sau tháng kết thúc. Hỏi lại người dùng.' };
+  if (from > now) return { loi: 'Khoảng thời gian ở tương lai — chưa có số. Nói rõ với người dùng.' };
+  if (to - from >= 24) return { loi: 'Tối đa 24 tháng mỗi lần. Hỏi lại người dùng khoảng ngắn hơn.' };
+  return { from: `${monthText(from)}-01`, to: lastDay(to) };
+};
+
+/** Số máy chủ (get_hrm_headcount_trend_v1) → thẻ biểu đồ dùng chung (lib/assistantChart.ts) + số gọn cho model.
+ *  Không biết ngày thì không ghi 0: chưa ai đã nghỉ có ngày nghỉ → cột nghỉ việc "chưa có số". */
+export const headcountChart = (raw: unknown) => {
+  const d = asObject(raw);
+  const months = asArray(d.months).map(asObject).filter(m => MONTH.test(String(m.month)));
+  if (!months.length) return null;
+  const years = new Set(months.map(m => String(m.month).slice(0, 4)));
+  const label = (m: string) => (years.size > 1 ? `T${Number(m.slice(5))}/${m.slice(2, 4)}` : `T${Number(m.slice(5))}`);
+  const first = String(months[0].month); const last = String(months[months.length - 1].month);
+  const span = first === last ? label(first) : `${label(first)}–${label(last)}`;
+  const title = `Biến động nhân sự ${years.size > 1 ? span : `${span}/${first.slice(0, 4)}`}`;
+  const noExit = num(d.resignedNoExitDate) ?? 0; const withExit = num(d.resignedWithExitDate) ?? 0; const noStart = num(d.activeNoStartDate) ?? 0;
+  const leftKnown = !(noExit > 0 && withExit === 0);
+  const hired = months.map(m => num(m.hired) ?? 0);
+  const left = months.map(m => (leftKnown ? num(m.left) ?? 0 : null));
+  const heads = months.map(m => num(m.headcount));
+  const sum = (xs: Array<number | null>) => xs.reduce<number>((s, x) => s + (x ?? 0), 0);
+  const notes = [
+    ...(noStart > 0 ? [`${noStart} người đang làm chưa có ngày vào làm — chưa tính vào tháng nào.`] : []),
+    ...(noExit > 0 ? [leftKnown ? `${noExit} người đã nghỉ chưa có ngày nghỉ việc — số nghỉ việc có thể thiếu.` : `${noExit} người đã nghỉ chưa có ngày nghỉ việc — chưa có số nghỉ việc theo tháng.`] : []),
+  ];
+  const opening = num(d.opening); const closing = heads[heads.length - 1] ?? null;
+  const chart = {
+    v: 1, title,
+    stats: [
+      { label: 'Đầu kỳ', value: opening, hint: viDay(`${first}-01`) ? `trước ${viDay(`${first}-01`)}` : null },
+      { label: 'Cuối kỳ', value: closing, hint: viDay(months[months.length - 1].endDate) },
+      { label: 'Vào làm', value: sum(hired), hint: null },
+      { label: 'Nghỉ việc', value: leftKnown ? sum(left) : null, hint: leftKnown ? null : 'chưa có ngày nghỉ' },
+    ],
+    labels: months.map(m => label(String(m.month))),
+    panels: [
+      { title: 'Số người cuối tháng', kind: 'line', unit: 'người', series: [{ label: 'Số người', values: heads }] },
+      { title: 'Vào làm và nghỉ việc', kind: 'bar', unit: 'người', series: [{ label: 'Vào làm', values: hired }, { label: 'Nghỉ việc', values: left }] },
+    ],
+    notes,
+    source: `Hồ sơ nhân sự · ngày vào làm, ngày nghỉ việc · đang làm việc hôm nay: ${num(d.activeNow) ?? '—'} người`,
+    link: { route: '/hrm/employees', label: 'Hồ sơ nhân sự' },
+  };
+  const forModel = compact({
+    khoang: `${first} → ${last}`, dau_ky: opening, cuoi_ky: closing, chenh_lech: opening != null && closing != null ? closing - opening : null,
+    tong_vao_lam: sum(hired), tong_nghi_viec: leftKnown ? sum(left) : 'chưa có số (chưa ghi ngày nghỉ việc)',
+    theo_thang: months.map((m, i) => compact({ thang: chart.labels[i], vao: hired[i], nghi: left[i] ?? undefined, cuoi_thang: heads[i] })),
+    dang_lam_viec_hom_nay: num(d.activeNow), thieu_du_lieu: notes,
+  });
+  return { chart, forModel };
+};
+
+async function headcountTrend(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  const range = headcountRange(args);
+  if ('loi' in range) return JSON.stringify(range);
+  const r = await ctx.rpc('get_hrm_headcount_trend_v1', { p_from: range.from, p_to: range.to });
+  if (r.error) return toolError(r.error, 'số liệu nhân sự toàn công ty (cần quyền Xem tổ chức)');
+  const built = headcountChart(r.data);
+  if (!built) return JSON.stringify({ loi: 'Chưa có số tháng nào trong khoảng này.' });
+  const ref = ctx.book.chart(built.chart);
+  if (ref) ctx.emit?.({ type: 'chart', chart: { ref, type: 'chart', chart: built.chart } });
+  return JSON.stringify({ ...built.forModel, da_hien_bieu_do: Boolean(ref),
+    ghi_chu: 'Thẻ biểu đồ (số người cuối tháng; vào làm và nghỉ việc) đã hiện ngay trong chat. Trả lời 2–3 câu: tăng / giảm bao nhiêu người từ đầu kỳ đến cuối kỳ, tháng nổi bật, rồi nói rõ phần thiếu dữ liệu (thieu_du_lieu) nếu có. Dùng đúng số công cụ trả, không tự cộng, không liệt kê lại từng tháng, không vẽ bảng.' });
+}
+
 // ── các công cụ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function runTool(name: string, rawArgs: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>): Promise<string> {
   const args = asObject(rawArgs);
@@ -693,6 +784,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   }
 
   if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, remember);
+  if (name === 'bien_dong_nhan_su') return headcountTrend(args, ctx);
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
