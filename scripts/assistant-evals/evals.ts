@@ -214,7 +214,8 @@ export const CASES: EvalCase[] = [
   { id: 'chart-unsupported', bug: 'Biểu đồ loại chưa có công cụ (doanh thu) → nói chưa vẽ được, không gọi nhầm công cụ nhân sự, không bịa số',
     q: 'Vẽ giúp anh biểu đồ doanh thu 6 tháng đầu năm',
     check: o => firstFail(fail(o.tools.includes('Biến động nhân sự'), 'gọi nhầm công cụ nhân sự'),
-      fail(!/chưa (vẽ|hỗ trợ|có|làm|tra)|không (vẽ|tra|có)/i.test(o.text), 'không nói rõ chưa vẽ được'), fail(/\d+([,.]\d+)? ?(tỷ|triệu|đ\b)/i.test(o.text), 'bịa số doanh thu')) },
+      fail(!/chưa (vẽ|hỗ trợ|có|làm|tra)|không (vẽ|tra|có)/i.test(o.text), 'không nói rõ chưa vẽ được'), // Số tiền có mã nguồn từ bản tin (việc gợi ý thêm) là hợp lệ; chỉ hỏng khi đưa số ngay cạnh "doanh thu".
+      fail(/doanh thu[^.\n[]{0,60}\d+([,.]\d+)? ?(tỷ|triệu|đ\b)/i.test(o.text), 'bịa số doanh thu')) },
 ];
 
 const loadTarget = async (envPath: string) => {
