@@ -7,6 +7,10 @@
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
 //   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm) · list_hrm_leave_balances (toàn công ty). RPC tự chặn 42501.
+//   chi_tiet_ho_so     (19/10) search_global_v1 (nhân viên) → get_hrm_employee_overview + get_hrm_employee_work_organization (+ get_hrm_employee_contract_employment
+//                      khi RPC cho xem). Mức xem do app_private.hrm_employee_profile_access_level quyết (danh bạ / chính mình / quản lý trực tiếp / HR; không có → 42501).
+//                      Chỉ trả thông tin công việc; không gọi RPC liên hệ cá nhân / lương / thuế / ngân hàng — CCCD, STK, lương, SĐT cá nhân không bao giờ qua Trợ lý.
+//   bien_dong_nhan_su  get_hrm_headcount_trend_v1 (số người cuối tháng, vào làm, nghỉ việc; quyền Xem tổ chức) → thẻ biểu đồ (sự kiện chart).
 // Quyền do RPC / RLS quyết, không phải lời nhắc (chủ SP 18/10 tối): mọi 42501 thành {loi: "Ngoài phạm vi người hỏi được xem: …"} để model nói
 // đúng vậy thay vì bịa hay nói "không tồn tại". Rà soát 9 RPC × 3 vai: docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md.
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
@@ -36,7 +40,8 @@ export const KIND_LABEL: Record<string, string> = {
 const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
-  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên',
+  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
+  bien_dong_nhan_su: 'Biến động nhân sự',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
@@ -85,6 +90,22 @@ export const TOOLS: ToolSpec[] = [
       ten: { type: 'string', description: 'Tên (có thể chỉ tên gọi, VD "Hương") hoặc mã nhân viên cần xem. Bỏ trống = chính người hỏi.' },
       nam: { type: 'integer', description: 'Năm phép (mặc định năm hiện tại).' },
       toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); máy chủ kiểm quyền.' },
+    } },
+  },
+  {
+    name: 'chi_tiet_ho_so',
+    description: 'Hồ sơ công việc của một nhân viên: họ tên, mã, chức danh, vị trí, phòng ban, quản lý trực tiếp, ngày vào, ngày chính thức, trạng thái, email công việc, hợp đồng hiện tại (loại, hạn) và quá trình công tác gần nhất. Dùng khi hỏi hồ sơ / thông tin / chức danh / phòng ban / ngày vào / hợp đồng / ai quản lý trực tiếp một người. Luôn gọi rồi mới trả lời: máy chủ tự quyết mức xem theo quyền người hỏi (danh bạ, chính mình, quản lý trực tiếp, HR) và báo nếu ngoài quyền. Không tra lương, CCCD, số tài khoản, SĐT cá nhân.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      ma: { type: 'string', description: 'Mã nguồn hN của nhân viên đã thấy, mã nhân viên (VD TT006974) hoặc tên (có thể chỉ tên gọi, VD "Thanh"). Bỏ trống = chính người hỏi.' },
+    } },
+  },
+  // Biểu đồ (chủ SP 19/10): công cụ lấy số từ máy chủ rồi hiện thẻ biểu đồ; AI chỉ nhận xét, không tự vẽ, không tự cộng.
+  {
+    name: 'bien_dong_nhan_su',
+    description: 'Biến động nhân sự toàn công ty theo tháng: số người cuối mỗi tháng, số vào làm, số nghỉ việc, đầu kỳ / cuối kỳ — và HIỆN THẺ BIỂU ĐỒ trong chat. Dùng khi hỏi biến động / tăng giảm / thống kê / biểu đồ nhân sự, số lao động, quân số, tuyển mới, nghỉ việc theo tháng, quý, năm, "6 tháng đầu năm". Máy chủ kiểm quyền (Xem tổ chức) và báo nếu ngoài quyền. Tối đa 24 tháng.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      tu_thang: { type: 'string', description: 'Tháng bắt đầu YYYY-MM, VD "6 tháng đầu năm 2026" → 2026-01; "quý 3" → 2026-07. Bỏ trống = 6 tháng gần nhất.' },
+      den_thang: { type: 'string', description: 'Tháng kết thúc YYYY-MM, VD "6 tháng đầu năm 2026" → 2026-06. Bỏ trống = tháng này.' },
     } },
   },
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
@@ -208,10 +229,19 @@ const recordForScreen = (rec: Record<string, unknown>) => {
     date: str(rec.date, 40), projectId: str(rec.projectId), siteId: str(rec.siteId), extra: safeExtra, rank: num(rec.rank) ?? 0 });
 };
 
+/** Hồ sơ theo mã hN: công cụ đã trả trong lượt này (refBook, đủ extra) hoặc hồ sơ ô tìm ngay gửi kèm câu hỏi (SourceBook, 19/10). */
+const byRef = (ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, ma: string, kind: string) => {
+  if (!/^h\d{1,3}$/i.test(ma)) return undefined;
+  const hit = refBook.get(ma.toLowerCase());
+  if (hit && hit.kind === kind) return hit;
+  const src = ctx.book.find(ma);
+  return src?.type === 'record' && src.record.kind === kind ? src.record : undefined;
+};
+
 /** Tìm đúng một hồ sơ theo mã hN đã cấp hoặc theo mã chứng từ. */
 const resolveOne = async (ctx: ToolContext, ma: string, kind: string, refBook: Map<string, Record<string, unknown>>) => {
-  const fromRef = /^h\d{1,3}$/i.test(ma) ? refBook.get(ma.toLowerCase()) : undefined;
-  if (fromRef && fromRef.kind === kind) return { record: fromRef, error: null };
+  const fromRef = byRef(ctx, refBook, ma, kind);
+  if (fromRef) return { record: fromRef, error: null };
   const found = await searchRecords(ctx, ma, [kind], 5);
   if (found.error) return { record: null, error: found.error };
   const folded = ma.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -534,7 +564,91 @@ export const matchEmployees = <T extends Record<string, unknown>>(text: string, 
 const employeeRow = (rec: Record<string, unknown>, ref: string) =>
   compact({ ref, ma_nv: str(rec.code, 40), ten: str(rec.title, 120), chuc_danh: str(String(rec.subtitle || '').split(' · ')[0], 80), trang_thai: str(rec.status, 40) });
 
-async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, remember: (rec: Record<string, unknown>) => string): Promise<string> {
+type Picked = { record: Record<string, unknown> } | { reply: string };
+/** Hồ sơ nhân viên của chính người hỏi: tài khoản → danh bạ (ưu tiên hồ sơ đang làm việc). Danh bạ bị chặn (42501) → nói rõ là ngoài quyền danh bạ. */
+const ownEmployee = async (ctx: ToolContext): Promise<Picked> => {
+  const me = await ctx.rpc('current_app_user_id', {});
+  const userId = str(me.data, 80);
+  const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
+  if (dir?.error) return { reply: toolError(dir.error, 'danh bạ nhân viên (để tìm hồ sơ của chính người hỏi)') };
+  const mine = dir ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
+  const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
+  if (!own) return { reply: JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' }) };
+  return { record: { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: compact({ email: str(own.email, 120) }) } };
+};
+/** Một nhân viên theo lời người dùng: mã hN đã cấp, mã NV hoặc tên trong danh bạ người hỏi được xem; trùng tên → danh sách để hỏi lại bằng gợi ý bấm. */
+const pickEmployee = async (ctx: ToolContext, asked: string, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string, pending: string): Promise<Picked> => {
+  const fromRef = byRef(ctx, refBook, asked, 'employee');
+  if (fromRef) return { record: fromRef };
+  const found = await searchRecords(ctx, asked, ['employee'], 8);
+  if (found.error) return { reply: toolError(found.error, 'danh bạ nhân viên') };
+  const hits = matchEmployees(asked, found.records);
+  if (!hits.length) return { reply: JSON.stringify({ loi: `Không thấy nhân viên "${asked}" trong danh bạ người hỏi được xem. Hỏi lại tên đầy đủ hoặc mã nhân viên.` }) };
+  if (hits.length > 1) return { reply: JSON.stringify({
+    loi: `Có ${hits.length} nhân viên khớp "${asked}".`, can_hoi: `Hỏi lại một câu: là ai; mỗi người dưới đây là một gợi ý bấm ghi "Tên · mã NV". ${pending}`,
+    cac_nhan_vien: hits.slice(0, 6).map(rec => employeeRow(rec, remember(rec))),
+  }) };
+  return { record: hits[0] };
+};
+
+const CONTRACT_TYPE: Record<string, string> = { probation: 'thử việc', fixed_term: 'có thời hạn', definite: 'có thời hạn', indefinite: 'không xác định thời hạn', seasonal: 'thời vụ' };
+const EVENT_TYPE: Record<string, string> = { TIEP_NHAN: 'tiếp nhận', THU_VIEC: 'thử việc', CHINH_THUC: 'lên chính thức', DIEU_CHUYEN: 'điều chuyển', BO_NHIEM: 'bổ nhiệm', MIEN_NHIEM: 'miễn nhiệm',
+  DIEU_CHINH_LUONG: 'điều chỉnh lương', KHEN_THUONG: 'khen thưởng', KY_LUAT: 'kỷ luật', TAM_HOAN: 'tạm hoãn hợp đồng', NGHI_VIEC: 'nghỉ việc' };
+/** Mức xem máy chủ trả (hrm_employee_profile_access_level) → chữ cho model biết vì sao thiếu phần. */
+const ACCESS_LABEL: Record<string, string> = { DIRECTORY: 'danh bạ', SELF: 'chính mình', MANAGER: 'quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR' };
+
+/**
+ * chi_tiet_ho_so (19/10): hồ sơ CÔNG VIỆC của một nhân viên theo đúng mức xem máy chủ cấp cho người hỏi.
+ * get_hrm_employee_overview chặn 42501 khi không có cả quyền danh bạ; hợp đồng chỉ gọi khi visibleSections cho phép (HR / chính mình).
+ * Không gọi RPC liên hệ cá nhân, lương, thuế, ngân hàng: CCCD / STK / lương / SĐT cá nhân không bao giờ qua Trợ lý.
+ */
+async function employeeProfile(args: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string): Promise<string> {
+  const asked = str(args.ma, 100);
+  const picked = asked ? await pickEmployee(ctx, asked, refBook, remember, 'Chưa tra hồ sơ.') : await ownEmployee(ctx);
+  if ('reply' in picked) return picked.reply;
+  const record = picked.record;
+  const who = str(record.title, 120) || 'người này';
+  const ov = await ctx.rpc('get_hrm_employee_overview', { p_employee_id: record.id });
+  if (ov.error) return JSON.stringify(denied(ov.error) ? outOfScope(`hồ sơ nhân sự của ${who}`) : notFound(ov.error) ? { loi: `Không thấy hồ sơ nhân sự của ${who} trong phạm vi người hỏi được xem.` } : { loi: 'Chưa đọc được hồ sơ nhân sự, thử lại sau.' });
+  const o = asObject(ov.data);
+  const sum = asObject(o.summary);
+  const level = str(o.accessLevel, 20) || '';
+  const sections = asArray(o.visibleSections).filter((s): s is string => typeof s === 'string');
+
+  const work = await ctx.rpc('get_hrm_employee_work_organization', { p_employee_id: record.id });
+  const w = work.error ? {} : asObject(work.data);
+  const mgr = asObject(w.directManager);
+  const contractsVisible = sections.includes('contracts_employment');
+  const ce = contractsVisible ? await ctx.rpc('get_hrm_employee_contract_employment', { p_employee_id: record.id }) : null;
+  const c = ce && !ce.error ? asObject(ce.data) : {};
+  const contracts = asArray(c.contracts).map(asObject);
+  const today = vnToday();
+  const current = contracts.find(x => x.status === 'active' && String(x.effectiveFrom || '') <= today && (!x.effectiveTo || String(x.effectiveTo) >= today)) || contracts.find(x => x.status === 'active') || null;
+  const events = asArray(c.employmentEvents).map(asObject);
+  const notes = [
+    !contractsVisible ? 'Hợp đồng và quá trình công tác chỉ hiện với HR hoặc chính người đó — được hỏi thì nói là ngoài phạm vi người hỏi được xem.' : null,
+    'Lương, CCCD, số tài khoản, SĐT cá nhân không tra ở Trợ lý — chỉ sang màn Nhân sự nếu có quyền.',
+  ].filter(Boolean);
+  return JSON.stringify(compact({
+    ref: remember(record), ho_ten: str(o.fullName, 120) || who, ma_nv: str(o.employeeCode, 40) || str(record.code, 40), chuc_danh: str(o.title, 100) || str(w.title, 100),
+    vi_tri: str(asObject(w.position).name, 100) || str(sum.positionName, 100), phong_ban: str(asObject(w.orgUnit).name, 120) || str(sum.orgUnitName, 120),
+    quan_ly_truc_tiep: str(mgr.employeeId, 80)
+      ? compact({ ref: remember({ kind: 'employee', id: mgr.employeeId, code: mgr.employeeCode, title: mgr.fullName, subtitle: str(mgr.title, 80), extra: {} }),
+        ten: str(mgr.fullName, 120), ma_nv: str(mgr.employeeCode, 40), chuc_danh: str(mgr.title, 100) })
+      : work.error ? null : 'chưa gán trong sơ đồ tổ chức',
+    ngay_vao: day(w.startDate ?? sum.startDate), ngay_chinh_thuc: day(w.officialDate ?? sum.officialDate), trang_thai: str(o.status, 40) || str(record.status, 40),
+    email_cong_viec: str(asObject(record.extra).email, 120),
+    hop_dong_hien_tai: current
+      ? compact({ so: str(current.contractNumber, 60), loai: CONTRACT_TYPE[String(current.type)] || str(current.type, 30), hieu_luc_tu: day(current.effectiveFrom), han: day(current.effectiveTo) || 'không xác định thời hạn' })
+      : ce && !ce.error ? 'chưa có hợp đồng đang hiệu lực' : null,
+    so_hop_dong: contracts.length || null,
+    qua_trinh_gan_nhat: events.slice(0, 5).map(e => compact({ ngay: day(e.eventDate), loai: EVENT_TYPE[String(e.eventTypeCode)] || str(e.eventTypeCode, 30), chuc_danh: str(e.titleSnapshot, 80), don_vi: str(e.orgUnitName, 80) })),
+    muc_xem: ACCESS_LABEL[level] || str(level, 20),
+    ghi_chu: notes.join(' '),
+  }));
+}
+
+async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string): Promise<string> {
   const year = leaveYearOf(args.nam);
   // Toàn công ty: list_hrm_leave_balances tự chặn người không phải HR (42501).
   if (args.toan_cong_ty === true) {
@@ -554,30 +668,11 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
     }));
   }
 
-  // Một người: chính mình (bỏ trống tên) hoặc theo tên / mã trong danh bạ (quyền danh bạ của người hỏi).
+  // Một người: chính mình (bỏ trống tên) hoặc theo mã hN / tên / mã NV trong danh bạ (quyền danh bạ của người hỏi).
   const asked = str(args.ten, 100);
-  let record: Record<string, unknown> | null = null;
-  if (!asked) {
-    const me = await ctx.rpc('current_app_user_id', {});
-    const userId = str(me.data, 80);
-    const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
-    // Danh bạ bị chặn (42501) thì nói rõ là ngoài quyền danh bạ, không nói "không thấy hồ sơ".
-    if (dir?.error) return toolError(dir.error, 'danh bạ nhân viên (để tìm hồ sơ của chính người hỏi)');
-    const mine = dir ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
-    const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
-    if (!own) return JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' });
-    record = { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: {} };
-  } else {
-    const found = await searchRecords(ctx, asked, ['employee'], 8);
-    if (found.error) return toolError(found.error, 'danh bạ nhân viên');
-    const hits = matchEmployees(asked, found.records);
-    if (!hits.length) return JSON.stringify({ loi: `Không thấy nhân viên "${asked}" trong danh bạ người hỏi được xem. Hỏi lại tên đầy đủ hoặc mã nhân viên.` });
-    if (hits.length > 1) return JSON.stringify({
-      loi: `Có ${hits.length} nhân viên khớp "${asked}".`, can_hoi: 'Hỏi lại một câu: là ai; mỗi người dưới đây là một gợi ý bấm ghi "Tên · mã NV". Chưa tra số phép.',
-      cac_nhan_vien: hits.slice(0, 6).map(rec => employeeRow(rec, remember(rec))),
-    });
-    record = hits[0];
-  }
+  const picked = asked ? await pickEmployee(ctx, asked, refBook, remember, 'Chưa tra số phép.') : await ownEmployee(ctx);
+  if ('reply' in picked) return picked.reply;
+  const record = picked.record;
 
   const ledger = await ctx.rpc('get_hrm_leave_ledger', { p_employee_id: record.id, p_year: year });
   if (ledger.error) return JSON.stringify(denied(ledger.error) ? outOfScope(`số phép của ${str(record.title, 120) || 'người này'}`) : { loi: 'Chưa đọc được sổ phép, thử lại sau.' });
@@ -592,6 +687,86 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
     ghi_so_gan_nhat: entries.slice(0, 5).map(e => compact({ ngay: day(e.createdAt), loai: LEDGER_KIND[String(e.kind)] || str(e.kind, 30), so_ngay: round(e.days),
       don: str(e.leaveCode, 40), nghi_tu: day(e.leaveStart), nghi_den: day(e.leaveEnd), con_sau_do: round(e.balanceAfter), ghi_chu: str(e.note, 120) })),
   }));
+}
+
+// ── biến động nhân sự → thẻ biểu đồ (chủ SP 19/10) ───────────────────────────────────────────────────────────────────────
+const MONTH = /^(\d{4})-(\d{2})$/;
+const monthIndex = (v: unknown) => { const m = MONTH.exec(String(v ?? '').trim()); return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? Number(m[1]) * 12 + Number(m[2]) - 1 : null; };
+const monthText = (i: number) => `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`;
+const lastDay = (i: number) => new Date(Date.UTC(Math.floor(i / 12), i % 12 + 1, 0)).toISOString().slice(0, 10);
+const viDay = (iso: unknown) => { const t = day(iso); return t ? `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(0, 4)}` : null; };
+
+/** Khoảng tháng theo lời model: thiếu thì 6 tháng gần nhất; hỏng / đảo / quá 24 tháng → lỗi để model hỏi lại. */
+export const headcountRange = (args: Record<string, unknown>, today = vnToday()) => {
+  const now = monthIndex(today.slice(0, 7))!;
+  const to = args.den_thang ? monthIndex(args.den_thang) : now;
+  const from = args.tu_thang ? monthIndex(args.tu_thang) : to != null ? to - 5 : null;
+  if (from == null || to == null) return { loi: 'Tháng chưa đúng (YYYY-MM). Hỏi lại người dùng khoảng thời gian.' };
+  if (from > to) return { loi: 'Tháng bắt đầu sau tháng kết thúc. Hỏi lại người dùng.' };
+  if (from > now) return { loi: 'Khoảng thời gian ở tương lai — chưa có số. Nói rõ với người dùng.' };
+  if (to - from >= 24) return { loi: 'Tối đa 24 tháng mỗi lần. Hỏi lại người dùng khoảng ngắn hơn.' };
+  return { from: `${monthText(from)}-01`, to: lastDay(to) };
+};
+
+/** Số máy chủ (get_hrm_headcount_trend_v1) → thẻ biểu đồ dùng chung (lib/assistantChart.ts) + số gọn cho model.
+ *  Không biết ngày thì không ghi 0: chưa ai đã nghỉ có ngày nghỉ → cột nghỉ việc "chưa có số". */
+export const headcountChart = (raw: unknown) => {
+  const d = asObject(raw);
+  const months = asArray(d.months).map(asObject).filter(m => MONTH.test(String(m.month)));
+  if (!months.length) return null;
+  const years = new Set(months.map(m => String(m.month).slice(0, 4)));
+  const label = (m: string) => (years.size > 1 ? `T${Number(m.slice(5))}/${m.slice(2, 4)}` : `T${Number(m.slice(5))}`);
+  const first = String(months[0].month); const last = String(months[months.length - 1].month);
+  const span = first === last ? label(first) : `${label(first)}–${label(last)}`;
+  const title = `Biến động nhân sự ${years.size > 1 ? span : `${span}/${first.slice(0, 4)}`}`;
+  const noExit = num(d.resignedNoExitDate) ?? 0; const withExit = num(d.resignedWithExitDate) ?? 0; const noStart = num(d.activeNoStartDate) ?? 0;
+  const leftKnown = !(noExit > 0 && withExit === 0);
+  const hired = months.map(m => num(m.hired) ?? 0);
+  const left = months.map(m => (leftKnown ? num(m.left) ?? 0 : null));
+  const heads = months.map(m => num(m.headcount));
+  const sum = (xs: Array<number | null>) => xs.reduce<number>((s, x) => s + (x ?? 0), 0);
+  const notes = [
+    ...(noStart > 0 ? [`${noStart} người đang làm chưa có ngày vào làm — chưa tính vào tháng nào.`] : []),
+    ...(noExit > 0 ? [leftKnown ? `${noExit} người đã nghỉ chưa có ngày nghỉ việc — số nghỉ việc có thể thiếu.` : `${noExit} người đã nghỉ chưa có ngày nghỉ việc — chưa có số nghỉ việc theo tháng.`] : []),
+  ];
+  const opening = num(d.opening); const closing = heads[heads.length - 1] ?? null;
+  const chart = {
+    v: 1, title,
+    stats: [
+      { label: 'Đầu kỳ', value: opening, hint: viDay(`${first}-01`) ? `trước ${viDay(`${first}-01`)}` : null },
+      { label: 'Cuối kỳ', value: closing, hint: viDay(months[months.length - 1].endDate) },
+      { label: 'Vào làm', value: sum(hired), hint: null },
+      { label: 'Nghỉ việc', value: leftKnown ? sum(left) : null, hint: leftKnown ? null : 'chưa có ngày nghỉ' },
+    ],
+    labels: months.map(m => label(String(m.month))),
+    panels: [
+      { title: 'Số người cuối tháng', kind: 'line', unit: 'người', series: [{ label: 'Số người', values: heads }] },
+      { title: 'Vào làm và nghỉ việc', kind: 'bar', unit: 'người', series: [{ label: 'Vào làm', values: hired }, { label: 'Nghỉ việc', values: left }] },
+    ],
+    notes,
+    source: `Hồ sơ nhân sự · ngày vào làm, ngày nghỉ việc · đang làm việc hôm nay: ${num(d.activeNow) ?? '—'} người`,
+    link: { route: '/hrm/employees', label: 'Hồ sơ nhân sự' },
+  };
+  const forModel = compact({
+    khoang: `${first} → ${last}`, dau_ky: opening, cuoi_ky: closing, chenh_lech: opening != null && closing != null ? closing - opening : null,
+    tong_vao_lam: sum(hired), tong_nghi_viec: leftKnown ? sum(left) : 'chưa có số (chưa ghi ngày nghỉ việc)',
+    theo_thang: months.map((m, i) => compact({ thang: chart.labels[i], vao: hired[i], nghi: left[i] ?? undefined, cuoi_thang: heads[i] })),
+    dang_lam_viec_hom_nay: num(d.activeNow), thieu_du_lieu: notes,
+  });
+  return { chart, forModel };
+};
+
+async function headcountTrend(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  const range = headcountRange(args);
+  if ('loi' in range) return JSON.stringify(range);
+  const r = await ctx.rpc('get_hrm_headcount_trend_v1', { p_from: range.from, p_to: range.to });
+  if (r.error) return toolError(r.error, 'số liệu nhân sự toàn công ty (cần quyền Xem tổ chức)');
+  const built = headcountChart(r.data);
+  if (!built) return JSON.stringify({ loi: 'Chưa có số tháng nào trong khoảng này.' });
+  const ref = ctx.book.chart(built.chart);
+  if (ref) ctx.emit?.({ type: 'chart', chart: { ref, type: 'chart', chart: built.chart } });
+  return JSON.stringify({ ...built.forModel, da_hien_bieu_do: Boolean(ref),
+    ghi_chu: 'Thẻ biểu đồ (số người cuối tháng; vào làm và nghỉ việc) đã hiện ngay trong chat. Trả lời 2–3 câu: tăng / giảm bao nhiêu người từ đầu kỳ đến cuối kỳ, tháng nổi bật, rồi nói rõ phần thiếu dữ liệu (thieu_du_lieu) nếu có. Dùng đúng số công cụ trả, không tự cộng, không liệt kê lại từng tháng, không vẽ bảng.' });
 }
 
 // ── các công cụ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -692,7 +867,9 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
       con: items.length > 15 ? items.length - 15 : null }));
   }
 
-  if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, remember);
+  if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, refBook, remember);
+  if (name === 'chi_tiet_ho_so') return employeeProfile(args, ctx, refBook, remember);
+  if (name === 'bien_dong_nhan_su') return headcountTrend(args, ctx);
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);

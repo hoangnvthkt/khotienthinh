@@ -932,3 +932,32 @@ test("lần đầu được cấp: tin chào + thẻ Thử ngay (gửi ngay / đ
   await openAssistant(page, isMobile);
   await expect(chat(page).getByRole("region", { name: "Chào mừng đến Trợ lý" })).toHaveCount(0);
 });
+
+test("biểu đồ biến động nhân sự: thẻ ô số + 2 khung, nghỉ việc chưa có số hiện —, Bảng xem số từng tháng; tải lại vẫn thấy; không quyền thì không có thẻ", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  await ask(page, "Hãy thống kê giúp tôi biểu đồ biến động nhân sự 6 tháng đầu năm");
+  const card = chat(page).getByTestId("chart-card");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Biến động nhân sự T1–T6/2026");
+  await expect(card.locator(".vcc-chart-stats dd")).toHaveText(["61", "68", "7", "—"]);
+  await expect(card.locator(".vcc-chart-plot svg")).toHaveCount(2);
+  await expect(card).toContainText("3 người đã nghỉ chưa có ngày nghỉ việc");
+  await expect(chat(page).getByTestId("turn").last()).toContainText("Đã tra: Biến động nhân sự");
+  await card.getByRole("button", { name: "Bảng" }).click();
+  await expect(card.getByRole("table").first().getByRole("row")).toHaveCount(7);
+  await expect(card.getByRole("table").nth(1).getByRole("row").last()).toContainText("T6");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByTestId("chart-card")).toContainText("Biến động nhân sự T1–T6/2026");
+
+  await page.goto(`${base}?ai=hc-denied`);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await ask(page, "Biểu đồ biến động nhân sự 6 tháng đầu năm");
+  await expect(chat(page).getByTestId("turn").last()).toContainText("ngoài phạm vi anh được xem");
+  await expect(chat(page).getByTestId("chart-card")).toHaveCount(0);
+});

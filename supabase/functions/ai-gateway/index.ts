@@ -128,8 +128,8 @@ Deno.serve(async request => {
           const { text: answer, refusal } = splitRefusal(out.text);
           refusalKind = refusal;
           // Từ chối vẫn giữ nút nguồn: câu lẫn (một phần công việc + một phần ngoài lề) và câu gợi ý việc khác đều dẫn chứng từ thật.
-          // Nguồn = dòng số liệu bản tin [[khóa]] + hồ sơ công cụ trả về [[hN]] (màn hình mở đúng màn).
-          const sources: Array<string | SourceRef> = [...sourceKeysOf(answer, input.facts), ...book.cited(answer)];
+          // Nguồn = dòng số liệu bản tin [[khóa]] + hồ sơ công cụ trả về [[hN]] (màn hình mở đúng màn) + thẻ biểu đồ công cụ đã dựng.
+          const sources: Array<string | SourceRef> = [...sourceKeysOf(answer, input.facts), ...book.cited(answer), ...book.chartSources];
           const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
           const saved = await user.rpc('ai_thread_save_turn_v1', { p_thread_id: input.threadId, p: {
             question: [input.question, attachmentNote(input)].filter(Boolean).join('\n').slice(0, 8000), answer, sources, runId, projectId: typeof context.projectId === 'string' ? context.projectId : null } });
