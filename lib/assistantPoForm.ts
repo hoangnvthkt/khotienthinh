@@ -30,6 +30,10 @@ export interface PoFormRow {
   price: string;
   spec: string;
   warnings: string[];
+  /** Thành tiền ghi trên báo giá (19/10): lệch với SL × đơn giá thì cảnh báo ngay trên dòng. */
+  quotedAmount?: number | null;
+  /** Người mua đã xem dòng lệch và giữ SL / đơn giá đang nhập ("Giữ số này") — hết cảnh báo, gửi duyệt được. */
+  amountOk?: boolean;
 }
 export interface PoFormContext {
   warehouses: Array<{ id: string; name: string }>;
@@ -72,13 +76,14 @@ const factorOf = (item: ProcurementCatalogItem) => (item.purchaseFactor && item.
 export const applyItem = (row: PoFormRow, item: ProcurementCatalogItem): PoFormRow => {
   const imported = toImportedLine(row.source, item);
   return {
-    ...row, item, confidence: 'picked', altUnit: imported.altUnit,
+    ...row, item, confidence: 'picked', altUnit: imported.altUnit, amountOk: false,
     stockQty: qtyText(imported.stockQty || null), purchaseQty: imported.altUnit ? qtyText(imported.purchaseQty) : '',
     price: imported.price == null ? '' : qtyText(imported.price), spec: row.spec || imported.spec, warnings: imported.warnings,
   };
 };
 
-export const toSourceRow = (line: { name: string; spec: string | null; qty: number | null; unit: string | null; price: number | null }, index: number): PoImportRow => ({
+export interface PoSourceLine { name: string; spec: string | null; qty: number | null; unit: string | null; price: number | null; amount?: number | null }
+export const toSourceRow = (line: PoSourceLine, index: number): PoImportRow => ({
   index: index + 1, sku: '', name: line.name, spec: line.spec || '', unit: line.unit || '', qty: line.qty, price: line.price, note: null,
 });
 
@@ -93,23 +98,24 @@ export const findCandidates = async (search: (q: string) => Promise<ProcurementC
   return pool;
 };
 
-export const buildRows = async (lines: Parameters<typeof toSourceRow>[0][], search: (q: string) => Promise<ProcurementCatalogItem[]>, memory: readonly LearnedAlias[] = []): Promise<PoFormRow[]> =>
+export const buildRows = async (lines: PoSourceLine[], search: (q: string) => Promise<ProcurementCatalogItem[]>, memory: readonly LearnedAlias[] = []): Promise<PoFormRow[]> =>
   Promise.all(lines.map(async (line, i) => {
     const source = toSourceRow(line, i);
+    const quotedAmount = line.amount != null && line.amount > 0 ? line.amount : null;
     // Trí nhớ trước: tên hàng trên báo giá người mua đã gắn mã lần trước → lấy lại mã đó (kèm BOQ của dự án qua ô tìm).
     const known = recall(memory, 'item', [line.name, line.spec].filter(Boolean).join(' '), line.name);
     if (known) {
       const found = (await search(known.targetLabel).catch(() => [] as ProcurementCatalogItem[])).find(item => item.id === known.targetId);
       if (found) {
         const base: PoFormRow = { key: `${i}:${line.name}`, source, options: [found], item: null, confidence: null, altUnit: false,
-          stockQty: qtyText(line.qty), purchaseQty: '', price: qtyText(line.price), spec: source.spec, warnings: [] };
+          stockQty: qtyText(line.qty), purchaseQty: '', price: qtyText(line.price), spec: source.spec, warnings: [], quotedAmount };
         return { ...applyItem(base, found), confidence: 'memory' as const };
       }
     }
     const candidates = await findCandidates(search, source);
     const match = pickCatalogMatch(source, candidates);
     const base: PoFormRow = { key: `${i}:${line.name}`, source, options: match.options, item: null, confidence: null, altUnit: false,
-      stockQty: qtyText(line.qty), purchaseQty: '', price: qtyText(line.price), spec: source.spec, warnings: [] };
+      stockQty: qtyText(line.qty), purchaseQty: '', price: qtyText(line.price), spec: source.spec, warnings: [], quotedAmount };
     // Trùng tên / gần giống ≥ 50% thì chọn sẵn (như màn Lập đơn); còn lại để người dùng bấm gợi ý.
     return match.item ? { ...applyItem(base, match.item), confidence: match.confidence } : base;
   }));
@@ -119,6 +125,18 @@ export const purchaseQtyOf = (row: PoFormRow, stock: number) => {
   if (!row.altUnit || !row.item) return stock;
   const typed = parseNum(row.purchaseQty);
   return typed == null ? Math.round(stock / factorOf(row.item) * 1000) / 1000 : typed;
+};
+
+/**
+ * Thành tiền báo giá khác SL × đơn giá đang nhập (19/10, chủ SP OK): cùng ngưỡng với công cụ chuan_bi_don_mua — lệch hơn 1.000đ và hơn
+ * nửa đơn giá (sai đọc số lượng / đơn giá, không phải làm tròn). Người mua sửa SL / đơn giá cho khớp, hoặc "Giữ số này" nếu số đang nhập đúng.
+ */
+export const quotedAmountGap = (row: PoFormRow): { quoted: number; computed: number } | null => {
+  if (row.quotedAmount == null || row.amountOk) return null;
+  const stock = parseNum(row.stockQty); const price = parseNum(row.price);
+  if (stock == null || price == null || !(stock > 0) || !(price > 0)) return null;
+  const computed = purchaseQtyOf(row, stock) * price;
+  return Math.abs(row.quotedAmount - computed) > Math.max(1000, price * 0.5) ? { quoted: row.quotedAmount, computed } : null;
 };
 
 export interface PoTotals { subtotal: number; vatAmount: number; total: number; invalid: number; unpriced: number; overBoq: number }
@@ -158,6 +176,9 @@ export const poProblems = (f: { warehouseId: string; vendor: { id: string } | nu
   if (totals.overBoq && !f.overBoqReason.trim()) out.push('Có vật tư vượt hoặc ngoài BOQ — ghi lý do mua vượt.');
   if (vat == null || vat < 0 || vat > 100) out.push('Thuế VAT phải từ 0 đến 100%.');
   if (mode === 'send' && !f.approverId) out.push('Chọn người duyệt.');
+  // Dòng lệch thành tiền chỉ chặn Gửi duyệt (lưu nháp vẫn được): sửa SL / đơn giá, hoặc bấm "Giữ số này" trên dòng.
+  const gaps = mode === 'send' ? kept.filter(r => quotedAmountGap(r)).length : 0;
+  if (gaps) out.push(`${gaps === 1 ? 'Một' : gaps} dòng SL × đơn giá khác thành tiền báo giá — sửa lại, hoặc bấm "Giữ số này" nếu số đang nhập đúng.`);
   return out;
 };
 

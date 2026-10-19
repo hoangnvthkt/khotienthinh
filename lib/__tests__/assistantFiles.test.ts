@@ -81,6 +81,8 @@ describe('Trợ lý T3 · cổng AI nhận tệp', () => {
       { ten: 'Thép D8', so_luong: 2000, don_vi: 'kg', don_gia: 16100, thanh_tien: 30000000 },
     ] }, { rpc, book: new SourceBook(), runId: 'r', emit: () => {} }, new Map()));
     expect((created[0].p_payload as { lines: Array<{ qty: number }> }).lines.map(l => l.qty)).toEqual([6300, 4928, 2000]);
+    // 19/10: thành tiền báo giá đi theo thẻ để thẻ cảnh báo trên dòng lệch (D8).
+    expect((created[0].p_payload as { lines: Array<{ amount?: number }> }).lines.map(l => l.amount)).toEqual([99855000, 77616000, 30000000]);
     expect(out.doi_chieu).toEqual(['Thép D16: sửa SL 6.3 → 6300 theo thành tiền', 'Thép D8: SL × đơn giá khác thành tiền trên báo giá — kiểm lại']);
   });
 

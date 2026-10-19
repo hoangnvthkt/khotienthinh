@@ -373,7 +373,9 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
       if (Math.abs(ratio - 1000) < 10) { checks.push(`${name}: sửa SL ${qty} → ${qty * 1000} theo thành tiền`); qty *= 1000; }
       else if (Math.abs(amount - qty * price) > Math.max(1000, price * 0.5)) checks.push(`${name}: SL × đơn giá khác thành tiền trên báo giá — kiểm lại`);
     }
-    return compact({ name, spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), price: price != null && price >= 0 ? price : null });
+    // Thành tiền báo giá ghi đi theo thẻ (19/10): thẻ đối chiếu lại với SL × đơn giá người mua đang nhập và cảnh báo ngay trên dòng.
+    return compact({ name, spec: str(l.quy_cach, 80), qty: qty != null && qty > 0 ? qty : null, unit: str(l.don_vi, 20), price: price != null && price >= 0 ? price : null,
+      amount: amount != null && amount > 0 ? amount : null });
   }).filter(l => l.name).slice(0, 40);
   if (!lines.length) return JSON.stringify({ loi: 'Chưa có mặt hàng nào. Hỏi lại người dùng mua gì, bao nhiêu, giá bao nhiêu.' });
   const delivery = str(args.ngay_giao, 10);

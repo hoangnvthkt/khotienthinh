@@ -119,7 +119,8 @@ export const mrRequestRoute = (command: AssistantCommand) => {
 };
 
 // ── Đơn mua từ báo giá (T2c) ─────────────────────────────────────────────────────────────────────────────────────────
-export interface PoDraftLine { name: string; spec: string | null; qty: number | null; unit: string | null; price: number | null }
+/** amount: thành tiền ghi trên báo giá (nếu có) — thẻ đối chiếu với SL × đơn giá, lệch thì cảnh báo trên dòng. */
+export interface PoDraftLine { name: string; spec: string | null; qty: number | null; unit: string | null; price: number | null; amount: number | null }
 export type PoReasonCode = 'price_lock' | 'long_lead' | 'min_stock' | 'other';
 export interface PoCommandView {
   projectId: string; projectCode: string; projectName: string; warehouseId: string | null;
@@ -138,6 +139,7 @@ export const poView = (command: AssistantCommand): PoCommandView => {
     vat: numOrNullAny(p.vat), deliveryDate: /^\d{4}-\d{2}-\d{2}$/.test(str(p.deliveryDate)) ? str(p.deliveryDate) : null, note: str(p.note),
     lines: (Array.isArray(p.lines) ? p.lines : []).map(obj).filter(l => str(l.name)).map(l => ({
       name: str(l.name), spec: str(l.spec) || null, qty: numOrNull(l.qty), unit: str(l.unit) || null, price: (() => { const n = numOrNullAny(l.price); return n != null && n >= 0 ? n : null; })(),
+      amount: numOrNull(l.amount),
     })),
   };
 };
