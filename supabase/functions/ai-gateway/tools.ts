@@ -7,6 +7,9 @@
 //   chi_tiet_de_xuat   get_material_request_supply_v1 (đề xuất vật tư: đã đặt / đã nhận / còn thiếu)
 //   viec_cua_toi       vcc_my_work_items_v1 (chờ tôi / tôi gửi / tôi theo dõi)
 //   phep_nhan_vien     search_global_v1 (nhân viên) → get_hrm_leave_ledger (số phép năm) · list_hrm_leave_balances (toàn công ty). RPC tự chặn 42501.
+//   chi_tiet_ho_so     (19/10) search_global_v1 (nhân viên) → get_hrm_employee_overview + get_hrm_employee_work_organization (+ get_hrm_employee_contract_employment
+//                      khi RPC cho xem). Mức xem do app_private.hrm_employee_profile_access_level quyết (danh bạ / chính mình / quản lý trực tiếp / HR; không có → 42501).
+//                      Chỉ trả thông tin công việc; không gọi RPC liên hệ cá nhân / lương / thuế / ngân hàng — CCCD, STK, lương, SĐT cá nhân không bao giờ qua Trợ lý.
 // Quyền do RPC / RLS quyết, không phải lời nhắc (chủ SP 18/10 tối): mọi 42501 thành {loi: "Ngoài phạm vi người hỏi được xem: …"} để model nói
 // đúng vậy thay vì bịa hay nói "không tồn tại". Rà soát 9 RPC × 3 vai: docs/command-center/10-ra-soat-quyen-cong-cu-tro-ly-2026-10-18.md.
 //   chuan_bi_don_nghi_phep   preview_my_leave_request → lệnh nháp leave_request (thẻ Gửi đơn)
@@ -36,7 +39,7 @@ export const KIND_LABEL: Record<string, string> = {
 const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
-  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên',
+  tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
@@ -85,6 +88,13 @@ export const TOOLS: ToolSpec[] = [
       ten: { type: 'string', description: 'Tên (có thể chỉ tên gọi, VD "Hương") hoặc mã nhân viên cần xem. Bỏ trống = chính người hỏi.' },
       nam: { type: 'integer', description: 'Năm phép (mặc định năm hiện tại).' },
       toan_cong_ty: { type: 'boolean', description: 'true khi hỏi số phép của cả công ty / nhiều người (ai còn nhiều phép nhất…); máy chủ kiểm quyền.' },
+    } },
+  },
+  {
+    name: 'chi_tiet_ho_so',
+    description: 'Hồ sơ công việc của một nhân viên: họ tên, mã, chức danh, vị trí, phòng ban, quản lý trực tiếp, ngày vào, ngày chính thức, trạng thái, email công việc, hợp đồng hiện tại (loại, hạn) và quá trình công tác gần nhất. Dùng khi hỏi hồ sơ / thông tin / chức danh / phòng ban / ngày vào / hợp đồng / ai quản lý trực tiếp một người. Luôn gọi rồi mới trả lời: máy chủ tự quyết mức xem theo quyền người hỏi (danh bạ, chính mình, quản lý trực tiếp, HR) và báo nếu ngoài quyền. Không tra lương, CCCD, số tài khoản, SĐT cá nhân.',
+    parameters: { type: 'object', additionalProperties: false, properties: {
+      ma: { type: 'string', description: 'Mã nguồn hN của nhân viên đã thấy, mã nhân viên (VD TT006974) hoặc tên (có thể chỉ tên gọi, VD "Thanh"). Bỏ trống = chính người hỏi.' },
     } },
   },
   // T2a — lệnh nháp: chỉ CHUẨN BỊ và hiện thẻ; người dùng tự bấm Gửi đơn (màn hình gọi lệnh gửi của module).
@@ -208,10 +218,19 @@ const recordForScreen = (rec: Record<string, unknown>) => {
     date: str(rec.date, 40), projectId: str(rec.projectId), siteId: str(rec.siteId), extra: safeExtra, rank: num(rec.rank) ?? 0 });
 };
 
+/** Hồ sơ theo mã hN: công cụ đã trả trong lượt này (refBook, đủ extra) hoặc hồ sơ ô tìm ngay gửi kèm câu hỏi (SourceBook, 19/10). */
+const byRef = (ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, ma: string, kind: string) => {
+  if (!/^h\d{1,3}$/i.test(ma)) return undefined;
+  const hit = refBook.get(ma.toLowerCase());
+  if (hit && hit.kind === kind) return hit;
+  const src = ctx.book.find(ma);
+  return src?.type === 'record' && src.record.kind === kind ? src.record : undefined;
+};
+
 /** Tìm đúng một hồ sơ theo mã hN đã cấp hoặc theo mã chứng từ. */
 const resolveOne = async (ctx: ToolContext, ma: string, kind: string, refBook: Map<string, Record<string, unknown>>) => {
-  const fromRef = /^h\d{1,3}$/i.test(ma) ? refBook.get(ma.toLowerCase()) : undefined;
-  if (fromRef && fromRef.kind === kind) return { record: fromRef, error: null };
+  const fromRef = byRef(ctx, refBook, ma, kind);
+  if (fromRef) return { record: fromRef, error: null };
   const found = await searchRecords(ctx, ma, [kind], 5);
   if (found.error) return { record: null, error: found.error };
   const folded = ma.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -534,7 +553,91 @@ export const matchEmployees = <T extends Record<string, unknown>>(text: string, 
 const employeeRow = (rec: Record<string, unknown>, ref: string) =>
   compact({ ref, ma_nv: str(rec.code, 40), ten: str(rec.title, 120), chuc_danh: str(String(rec.subtitle || '').split(' · ')[0], 80), trang_thai: str(rec.status, 40) });
 
-async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, remember: (rec: Record<string, unknown>) => string): Promise<string> {
+type Picked = { record: Record<string, unknown> } | { reply: string };
+/** Hồ sơ nhân viên của chính người hỏi: tài khoản → danh bạ (ưu tiên hồ sơ đang làm việc). Danh bạ bị chặn (42501) → nói rõ là ngoài quyền danh bạ. */
+const ownEmployee = async (ctx: ToolContext): Promise<Picked> => {
+  const me = await ctx.rpc('current_app_user_id', {});
+  const userId = str(me.data, 80);
+  const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
+  if (dir?.error) return { reply: toolError(dir.error, 'danh bạ nhân viên (để tìm hồ sơ của chính người hỏi)') };
+  const mine = dir ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
+  const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
+  if (!own) return { reply: JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' }) };
+  return { record: { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: compact({ email: str(own.email, 120) }) } };
+};
+/** Một nhân viên theo lời người dùng: mã hN đã cấp, mã NV hoặc tên trong danh bạ người hỏi được xem; trùng tên → danh sách để hỏi lại bằng gợi ý bấm. */
+const pickEmployee = async (ctx: ToolContext, asked: string, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string, pending: string): Promise<Picked> => {
+  const fromRef = byRef(ctx, refBook, asked, 'employee');
+  if (fromRef) return { record: fromRef };
+  const found = await searchRecords(ctx, asked, ['employee'], 8);
+  if (found.error) return { reply: toolError(found.error, 'danh bạ nhân viên') };
+  const hits = matchEmployees(asked, found.records);
+  if (!hits.length) return { reply: JSON.stringify({ loi: `Không thấy nhân viên "${asked}" trong danh bạ người hỏi được xem. Hỏi lại tên đầy đủ hoặc mã nhân viên.` }) };
+  if (hits.length > 1) return { reply: JSON.stringify({
+    loi: `Có ${hits.length} nhân viên khớp "${asked}".`, can_hoi: `Hỏi lại một câu: là ai; mỗi người dưới đây là một gợi ý bấm ghi "Tên · mã NV". ${pending}`,
+    cac_nhan_vien: hits.slice(0, 6).map(rec => employeeRow(rec, remember(rec))),
+  }) };
+  return { record: hits[0] };
+};
+
+const CONTRACT_TYPE: Record<string, string> = { probation: 'thử việc', fixed_term: 'có thời hạn', definite: 'có thời hạn', indefinite: 'không xác định thời hạn', seasonal: 'thời vụ' };
+const EVENT_TYPE: Record<string, string> = { TIEP_NHAN: 'tiếp nhận', THU_VIEC: 'thử việc', CHINH_THUC: 'lên chính thức', DIEU_CHUYEN: 'điều chuyển', BO_NHIEM: 'bổ nhiệm', MIEN_NHIEM: 'miễn nhiệm',
+  DIEU_CHINH_LUONG: 'điều chỉnh lương', KHEN_THUONG: 'khen thưởng', KY_LUAT: 'kỷ luật', TAM_HOAN: 'tạm hoãn hợp đồng', NGHI_VIEC: 'nghỉ việc' };
+/** Mức xem máy chủ trả (hrm_employee_profile_access_level) → chữ cho model biết vì sao thiếu phần. */
+const ACCESS_LABEL: Record<string, string> = { DIRECTORY: 'danh bạ', SELF: 'chính mình', MANAGER: 'quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR' };
+
+/**
+ * chi_tiet_ho_so (19/10): hồ sơ CÔNG VIỆC của một nhân viên theo đúng mức xem máy chủ cấp cho người hỏi.
+ * get_hrm_employee_overview chặn 42501 khi không có cả quyền danh bạ; hợp đồng chỉ gọi khi visibleSections cho phép (HR / chính mình).
+ * Không gọi RPC liên hệ cá nhân, lương, thuế, ngân hàng: CCCD / STK / lương / SĐT cá nhân không bao giờ qua Trợ lý.
+ */
+async function employeeProfile(args: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string): Promise<string> {
+  const asked = str(args.ma, 100);
+  const picked = asked ? await pickEmployee(ctx, asked, refBook, remember, 'Chưa tra hồ sơ.') : await ownEmployee(ctx);
+  if ('reply' in picked) return picked.reply;
+  const record = picked.record;
+  const who = str(record.title, 120) || 'người này';
+  const ov = await ctx.rpc('get_hrm_employee_overview', { p_employee_id: record.id });
+  if (ov.error) return JSON.stringify(denied(ov.error) ? outOfScope(`hồ sơ nhân sự của ${who}`) : notFound(ov.error) ? { loi: `Không thấy hồ sơ nhân sự của ${who} trong phạm vi người hỏi được xem.` } : { loi: 'Chưa đọc được hồ sơ nhân sự, thử lại sau.' });
+  const o = asObject(ov.data);
+  const sum = asObject(o.summary);
+  const level = str(o.accessLevel, 20) || '';
+  const sections = asArray(o.visibleSections).filter((s): s is string => typeof s === 'string');
+
+  const work = await ctx.rpc('get_hrm_employee_work_organization', { p_employee_id: record.id });
+  const w = work.error ? {} : asObject(work.data);
+  const mgr = asObject(w.directManager);
+  const contractsVisible = sections.includes('contracts_employment');
+  const ce = contractsVisible ? await ctx.rpc('get_hrm_employee_contract_employment', { p_employee_id: record.id }) : null;
+  const c = ce && !ce.error ? asObject(ce.data) : {};
+  const contracts = asArray(c.contracts).map(asObject);
+  const today = vnToday();
+  const current = contracts.find(x => x.status === 'active' && String(x.effectiveFrom || '') <= today && (!x.effectiveTo || String(x.effectiveTo) >= today)) || contracts.find(x => x.status === 'active') || null;
+  const events = asArray(c.employmentEvents).map(asObject);
+  const notes = [
+    !contractsVisible ? 'Hợp đồng và quá trình công tác chỉ hiện với HR hoặc chính người đó — được hỏi thì nói là ngoài phạm vi người hỏi được xem.' : null,
+    'Lương, CCCD, số tài khoản, SĐT cá nhân không tra ở Trợ lý — chỉ sang màn Nhân sự nếu có quyền.',
+  ].filter(Boolean);
+  return JSON.stringify(compact({
+    ref: remember(record), ho_ten: str(o.fullName, 120) || who, ma_nv: str(o.employeeCode, 40) || str(record.code, 40), chuc_danh: str(o.title, 100) || str(w.title, 100),
+    vi_tri: str(asObject(w.position).name, 100) || str(sum.positionName, 100), phong_ban: str(asObject(w.orgUnit).name, 120) || str(sum.orgUnitName, 120),
+    quan_ly_truc_tiep: str(mgr.employeeId, 80)
+      ? compact({ ref: remember({ kind: 'employee', id: mgr.employeeId, code: mgr.employeeCode, title: mgr.fullName, subtitle: str(mgr.title, 80), extra: {} }),
+        ten: str(mgr.fullName, 120), ma_nv: str(mgr.employeeCode, 40), chuc_danh: str(mgr.title, 100) })
+      : work.error ? null : 'chưa gán trong sơ đồ tổ chức',
+    ngay_vao: day(w.startDate ?? sum.startDate), ngay_chinh_thuc: day(w.officialDate ?? sum.officialDate), trang_thai: str(o.status, 40) || str(record.status, 40),
+    email_cong_viec: str(asObject(record.extra).email, 120),
+    hop_dong_hien_tai: current
+      ? compact({ so: str(current.contractNumber, 60), loai: CONTRACT_TYPE[String(current.type)] || str(current.type, 30), hieu_luc_tu: day(current.effectiveFrom), han: day(current.effectiveTo) || 'không xác định thời hạn' })
+      : ce && !ce.error ? 'chưa có hợp đồng đang hiệu lực' : null,
+    so_hop_dong: contracts.length || null,
+    qua_trinh_gan_nhat: events.slice(0, 5).map(e => compact({ ngay: day(e.eventDate), loai: EVENT_TYPE[String(e.eventTypeCode)] || str(e.eventTypeCode, 30), chuc_danh: str(e.titleSnapshot, 80), don_vi: str(e.orgUnitName, 80) })),
+    muc_xem: ACCESS_LABEL[level] || str(level, 20),
+    ghi_chu: notes.join(' '),
+  }));
+}
+
+async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, refBook: Map<string, Record<string, unknown>>, remember: (rec: Record<string, unknown>) => string): Promise<string> {
   const year = leaveYearOf(args.nam);
   // Toàn công ty: list_hrm_leave_balances tự chặn người không phải HR (42501).
   if (args.toan_cong_ty === true) {
@@ -554,30 +657,11 @@ async function employeeLeave(args: Record<string, unknown>, ctx: ToolContext, re
     }));
   }
 
-  // Một người: chính mình (bỏ trống tên) hoặc theo tên / mã trong danh bạ (quyền danh bạ của người hỏi).
+  // Một người: chính mình (bỏ trống tên) hoặc theo mã hN / tên / mã NV trong danh bạ (quyền danh bạ của người hỏi).
   const asked = str(args.ten, 100);
-  let record: Record<string, unknown> | null = null;
-  if (!asked) {
-    const me = await ctx.rpc('current_app_user_id', {});
-    const userId = str(me.data, 80);
-    const dir = userId ? await ctx.rpc('list_hrm_employee_directory', {}) : null;
-    // Danh bạ bị chặn (42501) thì nói rõ là ngoài quyền danh bạ, không nói "không thấy hồ sơ".
-    if (dir?.error) return toolError(dir.error, 'danh bạ nhân viên (để tìm hồ sơ của chính người hỏi)');
-    const mine = dir ? asArray(dir.data).map(asObject).filter(e => str(e.user_id) === userId) : [];
-    const own = mine.find(e => e.status === 'Đang làm việc') || mine[0];
-    if (!own) return JSON.stringify({ loi: 'Không thấy hồ sơ nhân viên gắn với tài khoản của người hỏi. Gợi ý: mở màn Nghỉ phép hoặc nhờ HR kiểm tra hồ sơ.' });
-    record = { kind: 'employee', id: own.id, code: own.employee_code, title: own.full_name, subtitle: str(own.title, 80), status: own.status, extra: {} };
-  } else {
-    const found = await searchRecords(ctx, asked, ['employee'], 8);
-    if (found.error) return toolError(found.error, 'danh bạ nhân viên');
-    const hits = matchEmployees(asked, found.records);
-    if (!hits.length) return JSON.stringify({ loi: `Không thấy nhân viên "${asked}" trong danh bạ người hỏi được xem. Hỏi lại tên đầy đủ hoặc mã nhân viên.` });
-    if (hits.length > 1) return JSON.stringify({
-      loi: `Có ${hits.length} nhân viên khớp "${asked}".`, can_hoi: 'Hỏi lại một câu: là ai; mỗi người dưới đây là một gợi ý bấm ghi "Tên · mã NV". Chưa tra số phép.',
-      cac_nhan_vien: hits.slice(0, 6).map(rec => employeeRow(rec, remember(rec))),
-    });
-    record = hits[0];
-  }
+  const picked = asked ? await pickEmployee(ctx, asked, refBook, remember, 'Chưa tra số phép.') : await ownEmployee(ctx);
+  if ('reply' in picked) return picked.reply;
+  const record = picked.record;
 
   const ledger = await ctx.rpc('get_hrm_leave_ledger', { p_employee_id: record.id, p_year: year });
   if (ledger.error) return JSON.stringify(denied(ledger.error) ? outOfScope(`số phép của ${str(record.title, 120) || 'người này'}`) : { loi: 'Chưa đọc được sổ phép, thử lại sau.' });
@@ -692,7 +776,8 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
       con: items.length > 15 ? items.length - 15 : null }));
   }
 
-  if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, remember);
+  if (name === 'phep_nhan_vien') return employeeLeave(args, ctx, refBook, remember);
+  if (name === 'chi_tiet_ho_so') return employeeProfile(args, ctx, refBook, remember);
 
   if (name === 'chuan_bi_don_nghi_phep') return prepareLeave(args, ctx);
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
