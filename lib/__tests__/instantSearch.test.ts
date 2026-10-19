@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entityTerms, hitsForGateway, instantKinds, isLookupQuery, rankRecordHits, strongTopHit } from '../search/instantSearch';
+import { buildLocalIndex, entityTerms, hitsForGateway, instantKinds, isLookupQuery, mergeHits, rankLocalHits, rankRecordHits, strongTopHit } from '../search/instantSearch';
 import { parseQuery } from '../search/searchEngine';
 import type { ServerRecord } from '../search/searchTypes';
 
@@ -59,5 +59,40 @@ describe('ô hỏi hai tầng — tìm ngay (19/10)', () => {
     expect(kinds).toContain('employee');
     expect(kinds).not.toContain('wms_tx');
     expect(kinds).not.toContain('purchase_order');
+  });
+});
+
+describe('tầng tìm ngay — trang + thao tác (19/10)', () => {
+  const local = buildLocalIndex(
+    [{ key: 'procurement', label: 'Mua hàng', route: '/procurement' }],
+    () => [{ to: '/procurement', label: 'Mua hàng' }, { to: '/procurement?mode=orders', label: 'Đơn hàng' }],
+    route => !route.startsWith('/finance'));
+  it('chỉ mục: thao tác theo quyền (bỏ lệnh đổi giao diện), trang của thanh bên', () => {
+    const keys = local.map(e => e.entry.key);
+    expect(keys).toContain('action:leave');
+    expect(keys).toContain('action:po');
+    expect(keys).not.toContain('action:payment');
+    expect(keys).not.toContain('action:theme');
+    expect(local.some(e => e.entry.kind === 'page' && e.entry.route === '/procurement')).toBe(true);
+  });
+  it('"chấm công" → thao tác khớp chắc (Enter làm ngay); "xin nghỉ phép" hiện nhưng Enter đi AI (Trợ lý tự lo); câu dài → không tự mở; "mua hàng" → trang', () => {
+    const q0 = 'chấm công';
+    expect(strongTopHit(rankLocalHits(local, parseQuery(q0)), q0)?.entry.key).toBe('action:checkin');
+    const q1 = 'xin nghỉ phép';
+    const h1 = rankLocalHits(local, parseQuery(q1));
+    expect(h1[0].entry.key).toBe('action:leave');
+    expect(strongTopHit(h1, q1)).toBeNull();
+    const q2 = 'xin nghỉ phép ngày mai lý do việc riêng';
+    expect(strongTopHit(rankLocalHits(local, parseQuery(q2)), q2)).toBeNull();
+    const q3 = 'mua hàng';
+    const h3 = rankLocalHits(local, parseQuery(q3));
+    expect(h3.some(h => h.entry.kind === 'page' && h.entry.route === '/procurement')).toBe(true);
+  });
+  it('ghép: hồ sơ đúng mã luôn trên cùng; trang / thao tác không gửi cổng', () => {
+    const parsed = parseQuery('PO-272');
+    const records = rankRecordHits([rec({ kind: 'purchase_order', id: 'po1', code: 'PO-272', title: 'Thép', rank: 100 })], parsed);
+    const merged = mergeHits(records, rankLocalHits(local, parseQuery('đơn hàng')));
+    expect(merged[0].record?.code).toBe('PO-272');
+    expect(hitsForGateway(merged).map(r => r.code)).toEqual(['PO-272']);
   });
 });

@@ -606,6 +606,10 @@ test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý 
   const rows = form.getByRole("list", { name: "Dòng đơn mua" }).locator(":scope > li");
   await expect(rows.nth(0)).toContainText("Vượt BOQ");
   await expect(rows.nth(1)).toContainText("Ngoài BOQ");
+  // 19/10: thành tiền báo giá (19.000.000) khác SL × đơn giá (1.900.000) → cảnh báo cam ngay trên dòng, chỉ dòng đó.
+  await expect(rows.nth(2)).toContainText("Lệch thành tiền");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toContainText("Báo giá ghi 19.000.000đ, tính ra 1.900.000đ — kiểm SL / đơn giá.");
+  await expect(rows.nth(0).getByTestId("po-amount-gap")).toHaveCount(0);
   await expect(form.getByLabel("Tiền đơn")).toContainText("Tạm tính 32.400.000đ");
   await expect(form.getByLabel("Tiền đơn")).toContainText("Tổng 34.992.000đ");
   await form.getByRole("button", { name: "Gửi duyệt" }).click();
@@ -613,12 +617,22 @@ test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý 
   await expect(form.getByRole("alert")).toContainText("Chọn lý do mua chủ động.");
   await expect(form.getByRole("alert")).toContainText("ghi lý do mua vượt");
   await expect(form.getByRole("alert")).toContainText("Chọn người duyệt.");
+  await expect(form.getByRole("alert")).toContainText("Một dòng SL × đơn giá khác thành tiền báo giá");
+  // Sửa SL cho khớp thì hết cảnh báo; sửa lại thì cảnh báo trở lại; "Giữ số này" khi số đang nhập đúng.
+  await form.getByLabel("Số lượng Ống PVC").fill("200");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toHaveCount(0);
+  await form.getByLabel("Số lượng Ống PVC").fill("20");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toBeVisible();
+  await rows.nth(2).getByRole("button", { name: "Giữ số này" }).click();
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toHaveCount(0);
+  await expect(rows.nth(2)).not.toContainText("Lệch thành tiền");
   await form.getByRole("group", { name: "Chọn nhà cung cấp" }).getByRole("button", { name: /Công ty CP Thép Hòa Phát/ }).click();
   await expect(form.getByRole("group", { name: "Nhà cung cấp đã chọn" })).toContainText("Công ty CP Thép Hòa Phát");
   await form.getByRole("group", { name: "Lý do mua chủ động" }).getByRole("button", { name: "Chốt giá tốt" }).click();
   await form.getByLabel("Lý do mua vượt BOQ").fill("Chốt giá trước tăng giá tháng 11");
   await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" }).click();
   await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(form.getByRole("alert")).toHaveCount(0);
   await expect(card).toHaveAttribute("data-state", "done");
   await expect(card).toContainText("Đã gửi đơn PO-2026-0712");
   await expect(card).toContainText("chờ Hà Đức Chuẩn duyệt");
@@ -692,6 +706,32 @@ test("19/10 ô hỏi hai tầng: gõ mã / tên → hồ sơ hiện ngay, Enter 
   const call = (await aiCalls(page)).filter(c => c.skill === "assistant_chat").pop() as { question: string; hits?: string[] };
   expect(call.question).toBe("nhân viên Hương còn bao nhiêu ngày phép năm");
   expect(call.hits).toEqual(["TT004431"]);
+});
+
+test("19/10 tầng tìm ngay có cả màn hình + thao tác: 'mua hàng' mở màn, 'tạo đề xuất' mở hộp thoại ngay; nghỉ phép là việc Trợ lý tự lo nên Enter đi AI", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  const hits = chat(page).getByTestId("instant-hits");
+  await box.fill("mua hàng");
+  await expect(hits.getByRole("option").filter({ hasText: "Màn hình" }).first()).toContainText("Mua hàng");
+  await box.press("Enter");
+  await expect(workTabs(page).getByRole("tab", { name: /Mua hàng/ })).toHaveAttribute("aria-selected", "true");
+  await openAssistant(page, false);
+  await box.fill("tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Thao tác");
+  await box.press("Enter");
+  await expect.poll(async () => (await aiCalls(page)).some(c => c.modal === "request")).toBe(true);
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(0);
+  // Nghỉ phép là việc Trợ lý tự lo trong chat (hỏi lại bằng nút): thao tác vẫn hiện để bấm, nhưng Enter đi AI.
+  await box.fill("Xin nghỉ");
+  await expect(hits.getByRole("option").first()).toContainText("Xin nghỉ phép");
+  await box.press("Enter");
+  await expect(chat(page).getByTestId("turn").last().locator(".vcc-msg-a")).toHaveText("Anh nghỉ loại nào?");
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(1);
+  expect((await aiCalls(page)).filter(c => c.modal)).toHaveLength(1);
 });
 
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {

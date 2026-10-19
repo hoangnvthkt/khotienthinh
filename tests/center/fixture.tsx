@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
+import { buildLocalIndex } from '../../lib/search/instantSearch';
+import { OPEN_MODAL_EVENT } from '../../lib/search/openGlobalSearch';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type SharedGroup } from '../../lib/aiMemory';
@@ -366,14 +368,15 @@ const poCommand = (): AssistantCommand => ({
   id: `cmd-po-${Date.now()}`, kind: 'purchase_order', status: 'prepared', title: 'Đơn mua Hòa Phát · SMB-2026',
   payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', warehouseId: 'wh-smb', vendorQuery: 'Hòa Phát',
     vendorOptions: PO_VENDORS.map(({ recentOrders: _r, ...v }) => v), vat: 8, deliveryDate: '2026-10-25', note: 'Báo giá BG-1810',
-    lines: [{ name: 'Xi măng PCB40', qty: 10, unit: 'tấn', price: 1650000 }, { name: 'Thép XD D16', qty: 50, unit: 'cây', price: 280000 }, { name: 'Ống PVC', qty: 20, unit: 'cây', price: 95000 }] },
+    // Ống PVC: báo giá ghi thành tiền 19.000.000 nhưng 20 × 95.000 = 1.900.000 (lệch 10 lần, công cụ không tự sửa) → thẻ cảnh báo trên dòng.
+    lines: [{ name: 'Xi măng PCB40', qty: 10, unit: 'tấn', price: 1650000 }, { name: 'Thép XD D16', qty: 50, unit: 'cây', price: 280000 }, { name: 'Ống PVC', qty: 20, unit: 'cây', price: 95000, amount: 19000000 }] },
   preview: { lineCount: 3 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
 });
 const poForm: PoFormActions = {
   load: async command => {
     await sleep(80);
     aiCalls.push({ poForm: 'load' });
-    const lines = (command.payload.lines as Array<{ name: string; qty: number; unit: string; price: number }>).map(l => ({ name: l.name, spec: null, qty: l.qty, unit: l.unit, price: l.price }));
+    const lines = (command.payload.lines as Array<{ name: string; qty: number; unit: string; price: number; amount?: number }>).map(l => ({ name: l.name, spec: null, qty: l.qty, unit: l.unit, price: l.price, amount: l.amount ?? null }));
     return { warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }], approvers: AI === 'po-noapprover' ? [] : [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
       rows: await buildRows(lines, poSearch) };
   },
@@ -442,6 +445,13 @@ const instantSearch: NonNullable<AssistantHooks['search']> = async (terms, kinds
     .map(r => ({ ...r, rank: terms.some(g => g.some(alt => alt === fold(r.code))) ? 100 : r.rank }));
   return { records: records.slice(0, limit), failed: [] };
 };
+
+// Trang + thao tác cho tầng tìm ngay (như ô Tìm kiếm): vài màn người này mở được.
+const LOCAL_INDEX = buildLocalIndex(
+  [{ key: 'procurement', label: 'Mua hàng', route: '/procurement' }, { key: 'hrm', label: 'Nhân sự', route: '/hrm' }],
+  key => (key === 'procurement' ? [{ to: '/procurement', label: 'Mua hàng' }, { to: '/procurement?mode=orders', label: 'Đơn hàng' }] : [{ to: '/hrm/leave', label: 'Nghỉ phép' }]),
+  route => !DENIED_ROUTES.has(route.split('?')[0]) && !route.startsWith('/finance'));
+window.addEventListener(OPEN_MODAL_EVENT, event => { aiCalls.push({ modal: (event as CustomEvent<{ modal?: string }>).detail?.modal }); });
 
 const assistantHooks: AssistantHooks = {
   search: instantSearch,
@@ -722,6 +732,7 @@ const Fixture: React.FC = () => {
             onLogout={() => setLastRoute('logout')}
             mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
+            searchLocal={LOCAL_INDEX}
             onNavigate={setLastRoute}
             now={params.get('defaults') === '1' ? undefined : NOW}
             // ?loader=app: như app thật — không truyền loadWorkItems (dùng nguồn mặc định).

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Brain, CheckCircle2, Loader2, Save, Search, Send, X } from 'lucide-react';
 import { poView, type AssistantCommand, type PoReasonCode } from '../../lib/assistantCommands';
-import { PO_REASONS, applyItem, parseNum, poProblems, poTotals, purchaseQtyOf, type PoFormActions, type PoFormContext, type PoFormRow } from '../../lib/assistantPoForm';
+import { PO_REASONS, applyItem, parseNum, poProblems, poTotals, purchaseQtyOf, quotedAmountGap, type PoFormActions, type PoFormContext, type PoFormRow } from '../../lib/assistantPoForm';
 import { boqStatusOf, type ProcurementCatalogItem, type ProcurementVendor } from '../../lib/procurementInboxService';
 import { Remembered } from './AssistantMrForm';
 import { clearFormDraft, readFormDraft, scheduleFormDraft } from '../../lib/assistantFormDraft';
@@ -172,6 +172,7 @@ const AssistantPoForm: React.FC<{
           const item = row.item;
           const stock = parseNum(row.stockQty);
           const boq = item && stock ? boqStatusOf(item, stock) : null;
+          const gap = quotedAmountGap(row);
           const options = [...row.options, ...(item && !row.options.some(o => o.id === item.id) ? [item] : [])];
           return (
             <li key={row.key} className="vcc-mr-row" data-state={item ? 'ok' : 'todo'}>
@@ -183,6 +184,7 @@ const AssistantPoForm: React.FC<{
                   {item ? (row.confidence === 'suggested' ? 'Gần giống · kiểm' : row.confidence === 'memory' ? 'Đã nhớ' : 'Đã khớp') : row.options.length ? 'Chọn mã' : 'Chưa có mã'}</span>
                 <span className="vcc-mr-said">“{[row.source.name, row.source.spec].filter(Boolean).join(' ')}{row.source.qty != null ? ` · ${num(row.source.qty)} ${row.source.unit}` : ''}{row.source.price != null ? ` · ${vnd(row.source.price)}` : ''}”</span>
                 {boq && boq !== 'within' && <span className="vcc-mr-pill" data-tone="warn">{boq === 'outside' ? 'Ngoài BOQ' : 'Vượt BOQ'}</span>}
+                {gap && <span className="vcc-mr-pill" data-tone="warn" title="Thành tiền trên báo giá khác số lượng × đơn giá đang nhập"><AlertTriangle size={11} aria-hidden="true" />Lệch thành tiền</span>}
                 <button type="button" className="vcc-mr-x" aria-label={`Bỏ dòng ${row.source.name}`} disabled={locked} onClick={() => setRows(rs => rs.filter(r => r.key !== row.key))}><X size={13} /></button>
               </div>
               <div className="vcc-mr-row-main vcc-po-main">
@@ -193,19 +195,19 @@ const AssistantPoForm: React.FC<{
                 </select>
                 <label className="vcc-mr-qty">
                   <input value={row.stockQty} inputMode="decimal" aria-label={`Số lượng ${row.source.name}`} disabled={locked} placeholder="SL"
-                    onChange={e => update(row.key, r => ({ ...r, stockQty: e.target.value }))} />
+                    onChange={e => update(row.key, r => ({ ...r, stockQty: e.target.value, amountOk: false }))} />
                   <span>{item?.unit || row.source.unit}</span>
                 </label>
                 <label className="vcc-mr-qty">
                   <input value={row.price} inputMode="decimal" aria-label={`Đơn giá ${row.source.name}`} disabled={locked} placeholder="Đơn giá"
-                    onChange={e => update(row.key, r => ({ ...r, price: e.target.value }))} />
+                    onChange={e => update(row.key, r => ({ ...r, price: e.target.value, amountOk: false }))} />
                   <span>/{row.altUnit && item?.purchaseUnit ? item.purchaseUnit : item?.unit || row.source.unit}</span>
                 </label>
               </div>
               {row.altUnit && item && (
                 <label className="vcc-mr-qty vcc-po-alt"><span className="vcc-mr-label">Mua theo {item.purchaseUnit}</span>
                   <input value={row.purchaseQty} inputMode="decimal" aria-label={`Số lượng mua ${row.source.name}`} disabled={locked}
-                    placeholder={num(purchaseQtyOf(row, stock || 0))} onChange={e => update(row.key, r => ({ ...r, purchaseQty: e.target.value }))} />
+                    placeholder={num(purchaseQtyOf(row, stock || 0))} onChange={e => update(row.key, r => ({ ...r, purchaseQty: e.target.value, amountOk: false }))} />
                 </label>
               )}
               {!item && row.options.length > 0 && (
@@ -222,6 +224,14 @@ const AssistantPoForm: React.FC<{
                     {searching.found.map(it => <button key={it.id} type="button" onClick={() => pick(row, it)}>{it.name} · {it.unit}</button>)}
                   </div>}
                 </div>
+              )}
+              {gap && (
+                <p className="vcc-mr-warn vcc-po-gap" data-testid="po-amount-gap"
+                  title="Thành tiền trên báo giá khác số lượng × đơn giá Trợ lý đọc được — thường do đọc sai số lượng (dấu chấm nghìn) hoặc đơn giá. Sửa SL / đơn giá cho khớp, hoặc Giữ số này nếu số đang nhập đúng.">
+                  <AlertTriangle size={12} aria-hidden="true" />
+                  <span>Báo giá ghi <b>{vnd(gap.quoted)}</b>, tính ra <b>{vnd(gap.computed)}</b> — kiểm SL / đơn giá.
+                    <button type="button" disabled={locked} onClick={() => update(row.key, r => ({ ...r, amountOk: true }))}>Giữ số này</button></span>
+                </p>
               )}
               {row.warnings.map(w => <p key={w} className="vcc-mr-warn"><AlertTriangle size={12} aria-hidden="true" /> {w}</p>)}
               <p className="vcc-mr-links">

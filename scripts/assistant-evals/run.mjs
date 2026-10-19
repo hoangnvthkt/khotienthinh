@@ -2,6 +2,7 @@
 // Chạy bộ kiểm hồi quy Trợ lý v2 — xem README.md. Gói evals.ts (cùng mã cổng AI) bằng esbuild rồi chạy với model thật.
 //   node scripts/assistant-evals/run.mjs                 # mọi ca
 //   node scripts/assistant-evals/run.mjs po-tool-totals  # một vài ca
+//   node scripts/assistant-evals/run.mjs --model deepseek-v4.1-flash   # chạy với kết nối khác (theo model / tên ở Cài đặt → Kết nối); hoặc ASSISTANT_EVAL_MODEL=…
 import { build } from 'esbuild';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -21,5 +22,13 @@ const outfile = join(outDir, `evals-${Date.now()}.mjs`);
 await build({ entryPoints: [join(here, 'evals.ts')], bundle: true, platform: 'node', format: 'esm', outfile, nodePaths: [modules], logLevel: 'warning',
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } });
 const { runEvals } = await import(pathToFileURL(outfile).href);
-const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), process.argv.slice(2), root);
+const argv = process.argv.slice(2);
+let model = process.env.ASSISTANT_EVAL_MODEL || '';
+const only = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--model') model = argv[++i] || '';
+  else if (argv[i].startsWith('--model=')) model = argv[i].slice('--model='.length);
+  else only.push(argv[i]);
+}
+const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), only, root, model || undefined);
 process.exit(failed ? 1 : 0);
