@@ -7,6 +7,8 @@
   --vcc-accent: #1f8a70; --vcc-accent-soft: #e8f3ee; --vcc-who: #7c3aed; --vcc-danger: #b42318; --vcc-warn: #b45309; --vcc-num: #2f7a2a;
   /* Mọi nhóm / module cùng một màu xanh thép (chủ SP 07/10): màu chỉ để đọc nhóm, không để phân biệt. */
   --vcc-steel: #2e6f80; --vcc-steel-s: #e7f0f3;
+  /* Biểu đồ Trợ lý (19/10): đã qua bộ kiểm mù màu dataviz trên nền sáng / tối. */
+  --vcc-chart-line: #0f766e; --vcc-chart-1: #3f9a2c; --vcc-chart-2: #7c5cc4;
   --c-project: var(--vcc-steel); --c-project-s: var(--vcc-steel-s); --c-request: var(--vcc-steel); --c-request-s: var(--vcc-steel-s);
   --c-workflow: var(--vcc-steel); --c-workflow-s: var(--vcc-steel-s); --c-vehicle: var(--vcc-steel); --c-vehicle-s: var(--vcc-steel-s);
   --c-hrm: var(--vcc-steel); --c-hrm-s: var(--vcc-steel-s); --c-work: var(--vcc-steel); --c-work-s: var(--vcc-steel-s);
@@ -22,6 +24,7 @@
   --vcc-fg: #ededed; --vcc-fg2: #c8c8c8; --vcc-muted: #9a9a9a; --vcc-hover: #2f2f2f;
   --vcc-accent: #5cc3a3; --vcc-accent-soft: #213229; --vcc-who: #c4b5fd; --vcc-danger: #f08c8c; --vcc-warn: #e9a23b; --vcc-num: #8fd27f;
   --vcc-steel: #8cc5d3; --vcc-steel-s: #1c3238;
+  --vcc-chart-line: #14b8a6; --vcc-chart-1: #4fae3a; --vcc-chart-2: #9a80dc;
 }
 :where(.vcc) button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 :where(.vcc) button:disabled { cursor: not-allowed; }
@@ -581,6 +584,35 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-cmd-lines li span { min-width: 0; overflow-wrap: anywhere; }
 .vcc-cmd-lines li b { flex: none; font-weight: 600; color: var(--vcc-num); font-variant-numeric: tabular-nums; }
 .vcc-cmd-lines li em { font-style: normal; font-weight: 500; color: var(--vcc-muted); }
+/* Thẻ biểu đồ (19/10): ô số tổng → khung một trục → ghi chú thiếu dữ liệu → nguồn. */
+.vcc-chart { border-left-color: var(--vcc-chart-line); }
+.vcc-chart .vcc-cmd-head .vcc-btn { height: 28px; font-size: 12px; }
+.vcc-chart-stats { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.vcc-chart-stats > div { border: 1px solid var(--vcc-border); border-radius: 10px; background: var(--vcc-card2); padding: 8px 10px; min-width: 0; }
+.vcc-chart-stats dt { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: var(--vcc-muted); }
+.vcc-chart-stats dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: var(--vcc-num); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.vcc-chart-stats dd[data-unknown] { color: var(--vcc-muted); }
+.vcc-chart-stats > div > span { display: block; font-size: 11px; color: var(--vcc-muted); white-space: normal; }
+.vcc-chart-panel { margin: 0; }
+.vcc-chart-panel figcaption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; font-size: 12.5px; font-weight: 600; color: var(--vcc-fg2); }
+.vcc-chart-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-weight: 500; color: var(--vcc-fg2); }
+.vcc-chart-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.vcc-chart-legend em { font-style: normal; color: var(--vcc-muted); }
+.vcc-chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.vcc-chart-swatch[data-line] { height: 2px; border-radius: 1px; }
+.vcc-chart-plot { height: 150px; margin-top: 4px; }
+.vcc-chart-tip { background: var(--vcc-card); border: 1px solid var(--vcc-border); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--vcc-fg); display: flex; flex-direction: column; gap: 2px; box-shadow: 0 4px 14px rgb(0 0 0 / .08); }
+.vcc-chart-tip > span { display: inline-flex; align-items: center; gap: 5px; color: var(--vcc-fg2); }
+.vcc-chart-tip em { font-style: normal; font-weight: 600; color: var(--vcc-fg); font-variant-numeric: tabular-nums; }
+.vcc-chart-table { overflow-x: auto; }
+.vcc-chart-table table { display: table !important; width: 100%; border-collapse: collapse; font-size: 12.5px; } /* index.css cho bảng thành khối trên điện thoại; khung này đã tự cuộn */
+.vcc-chart-table caption { text-align: left; font-weight: 600; color: var(--vcc-fg2); padding-bottom: 4px; }
+.vcc-chart-table th, .vcc-chart-table td { padding: 4px 8px; border-bottom: 1px solid var(--vcc-border); text-align: right; font-variant-numeric: tabular-nums; }
+.vcc-chart-table th:first-child { text-align: left; }
+.vcc-chart-table thead th { font-size: 11.5px; color: var(--vcc-muted); font-weight: 600; }
+.vcc-chart-table tbody th { font-weight: 500; color: var(--vcc-fg2); }
+.vcc-chart-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+@media (max-width: 560px) { .vcc-chart-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vcc-chart-plot { height: 140px; } }
 .vcc-cmd-lines .vcc-cmd-more { color: var(--vcc-muted); font-size: 12.5px; border-bottom: 0; }
 /* Form đề xuất vật tư ngay trong chat (chủ SP 18/10): ô nhập gọn, dòng vật tư thành khối nhỏ, gợi ý mã / người duyệt là nút bấm. */
 .vcc-mr { display: flex; flex-direction: column; gap: 10px; }

@@ -41,6 +41,10 @@ const HUONG_WORK = { employeeId: 'e-huong', title: 'Trưởng phòng TCKT', star
 const HUONG_CONTRACTS = { employeeId: 'e-huong', contracts: [{ id: 'c2', contractNumber: 'HĐLĐ-2021-015', type: 'indefinite', status: 'active', effectiveFrom: '2021-03-01', effectiveTo: null }],
   employmentEvents: [{ recordCode: 'EV-3', eventTypeCode: 'BO_NHIEM', eventDate: '2023-01-01', titleSnapshot: 'Trưởng phòng TCKT', orgUnitName: 'Phòng Tài chính kế toán' }] };
 
+// Biến động nhân sự: số giống prod 19/10 (61 → 68 người; 3 người đã nghỉ chưa có ngày nghỉ, 8 người chưa có ngày vào).
+const HEADCOUNT = { from: '2026-01-01', to: '2026-06-30', today: '2026-10-19', opening: 61, activeNow: 91, activeNoStartDate: 8, resignedNoExitDate: 3, resignedWithExitDate: 0,
+  months: [61, 61, 61, 63, 65, 68].map((headcount, i) => ({ month: `2026-0${i + 1}`, endDate: `2026-0${i + 1}-28`, hired: [0, 0, 0, 2, 2, 3][i], left: 0, headcount })) };
+
 const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = []) => async (fn: string, args: Record<string, unknown>): Promise<Rpc> => {
   if (deny.includes(fn)) return { data: null, error: { message: fn === 'get_hrm_leave_ledger' ? 'Chỉ xem được sổ phép của chính mình.' : fn.startsWith('get_hrm_employee') ? 'HRM_PROFILE_SECTION_ACCESS_DENIED' : 'PROCUREMENT_VIEW_DENIED', code: '42501' } };
   if (fn === 'get_hrm_employee_overview') return args.p_employee_id === 'e-huong' ? { data: HUONG_OVERVIEW, error: null } : { data: null, error: { message: 'HRM_PROFILE_SECTION_ACCESS_DENIED', code: '42501' } };
@@ -49,6 +53,8 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   if (fn === 'get_procurement_order_v1') return { data: args.p_po_id === 'po-646' ? PO646_DETAIL : null, error: args.p_po_id === 'po-646' ? null : { message: 'PROCUREMENT_PO_NOT_FOUND', code: 'PT404' } };
   if (fn === 'get_procurement_po_payment_status_v1') return { data: PO646_PAYMENT, error: null };
   if (fn === 'ai_stock_by_items_v1') return { data: STOCK_D16.filter(r => (args.p_item_ids as string[]).includes(r.itemId)), error: null };
+  // Ghi lại khoảng tháng model chọn (p_kind riêng, không phải lệnh nháp) để ca kiểm "6 tháng đầu năm" → 01–06.
+  if (fn === 'get_hrm_headcount_trend_v1') { created.push({ p_kind: 'rpc:headcount', p_title: '', p_payload: args }); return { data: HEADCOUNT, error: null }; }
   if (fn === 'get_hrm_leave_ledger') return { data: args.p_employee_id === 'e-huong' ? HUONG_LEDGER : { balance: null, entries: [] }, error: null };
   if (fn === 'assistant_leave_types_v1') return { data: LEAVE_TYPES, error: null };
   if (fn === 'preview_my_leave_request') return { data: { days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] }, error: null };
@@ -194,6 +200,22 @@ export const CASES: EvalCase[] = [
     check: o => firstFail(fail(!o.tools.includes('Hồ sơ nhân viên'), `không gọi chi_tiet_ho_so (gọi: ${o.tools.join(', ') || 'không gì'})`),
       fail(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i.test(o.text), `bịa dữ liệu hồ sơ: "${o.text.match(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i)?.[0]}"`),
       fail(/không tồn tại|không có (nhân viên|hồ sơ) (này|đó|nào)/i.test(o.text), 'nói như không tồn tại'), fail(!/quyền|phạm vi/i.test(o.text), 'không nói rõ là ngoài quyền xem')) },
+  // Biểu đồ (chủ SP 19/10): câu hỏi tự nhiên → model tự chọn công cụ từ mô tả, đúng khoảng tháng; thẻ vẽ số, model chỉ nhận xét.
+  { id: 'hr-chart-6m', bug: 'Chủ SP 19/10: "biểu đồ biến động nhân sự 6 tháng đầu năm" → gọi bien_dong_nhan_su đúng T1–T6, nêu tăng 7 người, nói rõ chưa có số nghỉ việc',
+    q: 'Hãy thống kê giúp tôi biểu đồ biến động nhân sự 6 tháng đầu năm',
+    check: o => { const call = o.created.find(x => x.p_kind === 'rpc:headcount')?.p_payload;
+      return firstFail(fail(!o.tools.includes('Biến động nhân sự'), `không gọi bien_dong_nhan_su (gọi: ${o.tools.join(', ') || 'không gì'})`),
+        fail(call?.p_from !== '2026-01-01' || call?.p_to !== '2026-06-30', `khoảng ${call?.p_from} → ${call?.p_to}`),
+        fail(!/\b7\b/.test(o.text) && !/61.{1,20}68/.test(o.text), 'không nêu tăng 7 người (61 → 68)'),
+        fail(!/nghỉ việc/i.test(o.text) || !/chưa (có|ghi|được ghi)/i.test(o.text), 'không nói rõ thiếu số nghỉ việc'),
+        fail(/0 người nghỉ|không (ai|có ai) nghỉ/i.test(o.text), 'coi số nghỉ việc chưa biết là 0'), fail(/\|.*\|/.test(o.text), 'tự vẽ bảng')); } },
+  { id: 'hr-chart-denied', bug: 'Người không có quyền Xem tổ chức hỏi biểu đồ nhân sự → RPC chặn 42501 → nói ngoài quyền, không bịa số',
+    deny: ['get_hrm_headcount_trend_v1'], q: 'Vẽ biểu đồ biến động nhân sự 6 tháng đầu năm', check: deniedAnswerCheck('Biến động nhân sự', /\b\d{2,} người/) },
+  { id: 'chart-unsupported', bug: 'Biểu đồ loại chưa có công cụ (doanh thu) → nói chưa vẽ được, không gọi nhầm công cụ nhân sự, không bịa số',
+    q: 'Vẽ giúp anh biểu đồ doanh thu 6 tháng đầu năm',
+    check: o => firstFail(fail(o.tools.includes('Biến động nhân sự'), 'gọi nhầm công cụ nhân sự'),
+      fail(!/chưa (vẽ|hỗ trợ|có|làm|tra)|không (vẽ|tra|có)/i.test(o.text), 'không nói rõ chưa vẽ được'), // Số tiền có mã nguồn từ bản tin (việc gợi ý thêm) là hợp lệ; chỉ hỏng khi đưa số ngay cạnh "doanh thu".
+      fail(/doanh thu[^.\n[]{0,60}\d+([,.]\d+)? ?(tỷ|triệu|đ\b)/i.test(o.text), 'bịa số doanh thu')) },
 ];
 
 const loadTarget = async (envPath: string) => {
