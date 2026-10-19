@@ -162,11 +162,26 @@ export const poProblems = (f: { warehouseId: string; vendor: { id: string } | nu
 };
 
 // ── Bản thật: lệnh máy chủ của màn Lập đơn chủ động ──────────────────────────────────────────────────────────────────
+/** Nhớ kết quả tải theo id lệnh trong 5 phút: rời tab rồi quay lại thẻ hiện ngay, không gọi lại danh mục / người duyệt. Gửi xong thì quên. */
+export const memoLoad = <T,>(load: (command: AssistantCommand) => Promise<T>, ttlMs = 5 * 60_000) => {
+  const cache = new Map<string, { at: number; value: Promise<T> }>();
+  return {
+    load: (command: AssistantCommand): Promise<T> => {
+      const hit = cache.get(command.id);
+      if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+      const value = load(command);
+      cache.set(command.id, { at: Date.now(), value });
+      value.catch(() => cache.delete(command.id));
+      return value;
+    },
+    forget: (commandId: string) => { cache.delete(commandId); },
+  };
+};
+
 export const createPoFormActions = (): PoFormActions => {
   // Đơn đã lưu cho từng lệnh: gửi lỗi giữa chừng rồi bấm lại thì sửa đúng đơn đó (không lập đơn trùng).
   const saved = new Map<string, { id: string; rowVersion: number; poNumber: string }>();
-  return {
-    async load(command) {
+  const memo = memoLoad(async (command: AssistantCommand): Promise<PoFormContext> => {
       const v = poView(command);
       const [memory, personal] = await Promise.all([
         aiLearning.get('purchase_order', null).catch(() => [] as LearnedAlias[]),
@@ -183,7 +198,9 @@ export const createPoFormActions = (): PoFormActions => {
       return { warehouses, approvers, rows, rememberedVendor: vendor ? { id: vendor.targetId, name: vendor.targetLabel } : null,
         rememberedWarehouseId: rememberedIds(personal, habitKey.poWarehouse(v.projectId), warehouses)[0] ?? null,
         rememberedApproverId: rememberedIds(personal, habitKey.poApprover(), approvers)[0] ?? null };
-    },
+  });
+  return {
+    load: memo.load,
     searchItems: (projectId, query) => procurementInboxService.searchItems(projectId, query),
     searchVendors: query => procurementInboxService.vendors(query),
     async submit(command, input) {
@@ -227,6 +244,7 @@ export const createPoFormActions = (): PoFormActions => {
         }
       }
       saved.delete(command.id);
+      memo.forget(command.id);
       // Người mua đã xác nhận bằng hành động → dạy AI: tên hàng trên báo giá → mã, tên NCC trên báo giá → NCC (không chặn biên nhận).
       void aiLearning.learn('purchase_order', null, [
         ...kept.map(r => ({ kind: 'item' as const, alias: [r.source.name, r.source.spec].filter(Boolean).join(' '), targetId: r.item!.id, targetLabel: r.item!.name })),

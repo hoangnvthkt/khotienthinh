@@ -115,11 +115,12 @@ export const formProblems = (f: { title: string; warehouseId: string; rows: MrFo
 // ── Bản thật: dùng dịch vụ của module + addRequest của app ──────────────────────────────────────────────────────────
 const dayToIso = (d: string | null) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00:00+07:00`).toISOString() : undefined);
 
+import { memoLoad } from './assistantPoForm';
+
 export const createMrFormActions = (deps: { userId: string; addRequest: (request: MaterialRequest) => Promise<boolean> }): MrFormActions => {
   // Mã + id phiếu đã cấp cho từng lệnh: gửi lỗi giữa chừng rồi bấm lại thì ghi đè đúng phiếu đó (không cấp mã mới, không sinh phiếu trùng).
   const issued = new Map<string, { id: string; code: string }>();
-  return {
-    async load(command) {
+  const memo = memoLoad(async (command: AssistantCommand): Promise<MrFormContext> => {
       const v = mrView(command);
       const [catalog, warehouses, approvers, memory, personal] = await Promise.all([
         materialRequestService.getProjectCatalog(v.projectId, v.siteId),
@@ -156,7 +157,9 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
         rememberedWarehouseId: rememberedIds(personal, habitKey.mrWarehouse(v.projectId), list)[0] ?? null,
         rememberedApproverIds: rememberedIds(personal, habitKey.mrApprovers(v.projectId), approvers.list),
       };
-    },
+  });
+  return {
+    load: memo.load,
 
     async submit(command, input) {
       const v = mrView(command);
@@ -189,6 +192,7 @@ export const createMrFormActions = (deps: { userId: string; addRequest: (request
         throw e instanceof Error ? e : new Error(message);
       }
       issued.delete(command.id);
+      memo.forget(command.id);
       // Người dùng đã xác nhận bằng hành động → dạy AI cách gọi của dự án này (không chặn biên nhận).
       void aiLearning.learn('material_request', v.projectId, input.lines.filter(l => l.said).map(l => ({ kind: 'item' as const, alias: l.said!, targetId: l.item.id, targetLabel: l.item.name })));
       // T4b: nhớ kho nhận + người duyệt người dùng vừa chọn cho dự án này (lần sau thẻ chọn sẵn).

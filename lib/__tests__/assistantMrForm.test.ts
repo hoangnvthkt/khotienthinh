@@ -127,8 +127,12 @@ describe('Form đề xuất trong chat', () => {
     expect(mocks.listRecipients).toHaveBeenCalledWith('p-smb', 's-1', 'material_request', 'approve');
     expect(ctx).toMatchObject({ defaultWarehouseId: 'wh-smb', approvers: [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }], sendBlocked: null });
     expect(ctx.warehouses.map(w => w.id)).toEqual(['wh-smb', 'wh-smb-2', 'wh-other']);
+    // Mở lại cùng thẻ trong 5 phút → dùng kết quả đã tải (không gọi lại danh mục / người duyệt); thẻ khác / lần tạo khác thì tải mới.
+    const calls = mocks.getProjectCatalog.mock.calls.length;
+    await actions.load(COMMAND);
+    expect(mocks.getProjectCatalog.mock.calls.length).toBe(calls);
     mocks.getConfiguration.mockResolvedValue({ valid: false, binding: null, errors: ['Dự án chưa gắn mẫu workflow.'] });
-    expect((await actions.load(COMMAND)).sendBlocked).toBe('Dự án chưa gắn mẫu workflow.');
+    expect((await createMrFormActions({ userId: 'u1', addRequest: vi.fn() }).load(COMMAND)).sendBlocked).toBe('Dự án chưa gắn mẫu workflow.');
   });
 
   it('gửi duyệt: cấp mã, lưu bằng addRequest, bắt đầu workflow, ghi biên nhận; lỗi giữa chừng → gửi lại dùng đúng mã + id cũ', async () => {

@@ -4,9 +4,16 @@ import { poView, type AssistantCommand, type PoReasonCode } from '../../lib/assi
 import { PO_REASONS, applyItem, parseNum, poProblems, poTotals, purchaseQtyOf, type PoFormActions, type PoFormContext, type PoFormRow } from '../../lib/assistantPoForm';
 import { boqStatusOf, type ProcurementCatalogItem, type ProcurementVendor } from '../../lib/procurementInboxService';
 import { Remembered } from './AssistantMrForm';
+import { clearFormDraft, readFormDraft, scheduleFormDraft } from '../../lib/assistantFormDraft';
 
 // Form đơn mua (PO chủ động) ngay trong khung chat (chủ SP 18/10/2026): Trợ lý tách báo giá → người Mua hàng chọn mã (gợi ý bấm), NCC
 // (gợi ý bấm), lý do mua chủ động, người duyệt rồi Lưu nháp / Gửi duyệt tại chỗ — lưu bằng đúng lệnh của màn Lập đơn chủ động.
+
+/** Phần người dùng sửa trên form (khôi phục khi quay lại). */
+interface PoDraft {
+  rows: PoFormRow[]; warehouseId: string; vendor: { id: string; name: string } | null; vendorQuery: string | null; deliveryDate: string;
+  vat: string; reasonCode: PoReasonCode | null; reason: string; overBoqReason: string; approverId: string | null;
+}
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString('vi-VN')}đ`;
 const num = (n: number) => n.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
@@ -39,15 +46,31 @@ const AssistantPoForm: React.FC<{
   const [busy, setBusy] = useState<null | 'send' | 'draft'>(null);
   const [problems, setProblems] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(command.status === 'failed' ? command.error : null);
+  const [hydrated, setHydrated] = useState(false);
+  // Ghi nháp (trễ 400 ms) mỗi khi người dùng sửa; thẻ đã gửi / bỏ thì không ghi.
+  useEffect(() => {
+    if (!hydrated || command.status !== 'prepared') return;
+    return scheduleFormDraft<PoDraft>(command.id, { rows, warehouseId, vendor, vendorQuery, deliveryDate, vat, reasonCode, reason, overBoqReason, approverId });
+  }, [hydrated, command.id, command.status, rows, warehouseId, vendor, vendorQuery, deliveryDate, vat, reasonCode, reason, overBoqReason, approverId]);
+  const cancel = () => { clearFormDraft(command.id); onCancel(); };
 
   useEffect(() => {
     let alive = true;
     actions.load(command).then(c => {
       if (!alive) return;
-      setCtx(c); setRows(c.rows);
-      if (c.rememberedVendor) { setVendor(cur => cur || c.rememberedVendor!); setVendorQuery(null); setVendorRemembered(true); }
-      setWarehouseId(w => w || c.rememberedWarehouseId || c.warehouses[0]?.id || '');
-      setApproverId(c.rememberedApproverId || (c.approvers.length === 1 ? c.approvers[0].id : null));
+      setCtx(c);
+      // Nháp đang sửa dở (rời tab / tải lại trang) → khôi phục đúng như lúc rời; không có thì điền mặc định như cũ.
+      const draft = command.status === 'prepared' ? readFormDraft<PoDraft>(command.id) : null;
+      if (draft) {
+        setRows(draft.rows); setWarehouseId(draft.warehouseId); setVendor(draft.vendor); setVendorQuery(draft.vendorQuery); setDeliveryDate(draft.deliveryDate);
+        setVat(draft.vat); setReasonCode(draft.reasonCode); setReason(draft.reason); setOverBoqReason(draft.overBoqReason); setApproverId(draft.approverId);
+      } else {
+        setRows(c.rows);
+        if (c.rememberedVendor) { setVendor(cur => cur || c.rememberedVendor!); setVendorQuery(null); setVendorRemembered(true); }
+        setWarehouseId(w => w || c.rememberedWarehouseId || c.warehouses[0]?.id || '');
+        setApproverId(c.rememberedApproverId || (c.approvers.length === 1 ? c.approvers[0].id : null));
+      }
+      setHydrated(true);
     }).catch(e => { if (alive) setLoadError(e instanceof Error ? e.message : 'Chưa tải được danh mục / dự án để lập đơn.'); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,10 +105,12 @@ const AssistantPoForm: React.FC<{
     if (found.length || !ctx || !vendor || !reasonCode) return;
     setBusy(mode); setError(null);
     try {
-      onDone(await actions.submit(command, {
+      const done = await actions.submit(command, {
         mode, warehouseId, vendor, deliveryDate: deliveryDate || null, vat: vatNum, reasonCode, reason, overBoqReason, note: v.note, rows,
         approverId, approverName: ctx.approvers.find(a => a.id === approverId)?.name || null, warehouseName: ctx.warehouses.find(w => w.id === warehouseId)?.name,
-      }));
+      });
+      clearFormDraft(command.id);
+      onDone(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Chưa lưu được đơn.');
     } finally { setBusy(null); }
@@ -97,7 +122,7 @@ const AssistantPoForm: React.FC<{
         <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {loadError}</p>
         <div className="vcc-cmd-actions">
           <button type="button" className="vcc-btn" onClick={onOpenProcurement}>Mở Mua hàng</button>
-          <button type="button" className="vcc-btn" onClick={onCancel} disabled={busyCancel}><X size={14} /> Bỏ</button>
+          <button type="button" className="vcc-btn" onClick={cancel} disabled={busyCancel}><X size={14} /> Bỏ</button>
         </div>
       </div>
     );
@@ -238,7 +263,7 @@ const AssistantPoForm: React.FC<{
           {busy === 'send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {busy === 'send' ? 'Đang gửi…' : 'Gửi duyệt'}</button>
         <button type="button" className="vcc-btn" onClick={() => void submit('draft')} disabled={locked}>
           {busy === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu nháp</button>
-        <button type="button" className="vcc-btn" onClick={onCancel} disabled={locked || busyCancel}><X size={14} /> Bỏ</button>
+        <button type="button" className="vcc-btn" onClick={cancel} disabled={locked || busyCancel}><X size={14} /> Bỏ</button>
       </div>
       <p className="vcc-cmd-note">{kept.length}/{rows.length} dòng đã có mã · chưa lưu gì tới khi {you} bấm.</p>
     </div>
