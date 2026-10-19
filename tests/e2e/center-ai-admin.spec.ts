@@ -111,3 +111,50 @@ test("Hoạt động: câu hỏi, thẻ gửi thật / chuẩn bị, hỏi về 
   expect((await calls(page)).filter(c => "activity" in c).map(c => c.activity)).toEqual([14, 30]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
+
+test("Skill · xem bên trong: dòng có lượt 7 ngày + màn gọi; skill chưa gắn màn báo rõ; công cụ mở ngăn chỉ xem (dùng khi, quyền, thẻ, lượt); từ Trợ lý mở công cụ rồi quay lại", async ({ page }) => {
+  await page.goto(base);
+  await page.getByRole("tab", { name: /Skill/ }).click();
+  const panel = page.getByRole("tabpanel", { name: "Skill" });
+  await expect(panel.getByRole("listitem", { name: "Trợ lý · hội thoại" })).toContainText("142 lượt · 11 người");
+  await expect(panel.getByRole("listitem", { name: "Tóm tắt đơn trước khi duyệt" })).toContainText("Mua hàng → đơn chờ duyệt");
+  await expect(panel.getByRole("listitem", { name: "Tóm tắt văn bản" })).toContainText("Chưa gắn màn nào");
+  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(13);
+
+  await panel.getByRole("button", { name: "Xem công cụ Chuẩn bị đơn mua" }).click();
+  const tool = page.getByRole("dialog", { name: "Công cụ Chuẩn bị đơn mua" });
+  await expect(tool.getByTestId("tool-when")).toContainText("Dùng khi người dùng muốn lập / đặt đơn mua");
+  await expect(tool).toContainText("Quản lý Mua hàng");
+  await expect(tool).toContainText("Form đơn mua trong chat");
+  await expect(tool.getByLabel("Lượt dùng 7 ngày")).toContainText("Thẻ đã tạo21");
+  await expect(tool.getByLabel("Lượt dùng 7 ngày")).toContainText("Gửi thật14");
+  await expect(tool).not.toContainText("Mọi người"); // ngăn chỉ xem: không có nút đổi quyền
+  await tool.getByRole("button", { name: "Đóng" }).last().click();
+
+  await panel.getByRole("button", { name: "Xem bên trong Trợ lý · hội thoại" }).click();
+  const chat = page.getByRole("dialog", { name: "Skill Trợ lý · hội thoại" });
+  await expect(chat).toContainText("Chỉ người được cấp ở Trung tâm AI");
+  await chat.getByText("Lời dặn gửi model").click();
+  await expect(chat.getByTestId("prompt")).toContainText("bien_dong_nhan_su");
+  await expect(chat).not.toContainText("Quy tắc an toàn chung");
+  await chat.getByRole("button", { name: /Biến động nhân sự/ }).click();
+  const chart = page.getByRole("dialog", { name: "Công cụ Biến động nhân sự" });
+  await expect(chart).toContainText("get_hrm_headcount_trend_v1");
+  await chart.getByRole("button", { name: "Về Trợ lý · hội thoại" }).click();
+  await expect(page.getByRole("dialog", { name: "Skill Trợ lý · hội thoại" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("Skill · cổng chưa cập nhật / lỗi lượt dùng: báo rõ + Thử lại, đổi quyền skill vẫn dùng được", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?catalog=fail&usage=fail`);
+  await page.getByRole("tab", { name: /Skill/ }).click();
+  const panel = page.getByRole("tabpanel", { name: "Skill" });
+  await expect(panel.getByRole("alert")).toContainText("Chưa đọc được lượt dùng");
+  await expect(panel).toContainText("Chưa đọc được lời dặn từ cổng AI");
+  await expect(panel.getByRole("listitem", { name: "Trợ lý · hội thoại" })).toContainText("—");
+  await panel.getByRole("button", { name: "Xem bên trong Đọc báo giá thành dòng đơn" }).click();
+  await expect(page.getByRole("dialog", { name: "Skill Đọc báo giá thành dòng đơn" })).toContainText("Chưa đọc được lời dặn");
+  await page.getByRole("dialog").getByRole("button", { name: "Đóng" }).last().click();
+  await expect(panel.getByRole("radiogroup", { name: "Ai được dùng Đọc báo giá thành dòng đơn" })).toBeVisible();
+});

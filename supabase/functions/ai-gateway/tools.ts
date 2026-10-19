@@ -45,6 +45,26 @@ export const TOOL_LABEL: Record<string, string> = {
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
 };
 
+/** Trung tâm AI · "Xem bên trong" (19/10): công cụ làm gì với dữ liệu — không gửi model. Thêm công cụ mới phải thêm dòng ở đây (test kiểm).
+ *  kind: tra_cuu (chỉ đọc) · bieu_do (đọc + thẻ biểu đồ) · chuan_bi (thẻ nháp, người dùng tự bấm). commandKind: loại thẻ trong assistant_commands. */
+export interface ToolInfo { kind: 'tra_cuu' | 'bieu_do' | 'chuan_bi'; rpcs: string[]; permission: string; result: string; commandKind?: string }
+export const TOOL_INFO: Record<string, ToolInfo> = {
+  tim_ho_so: { kind: 'tra_cuu', rpcs: ['search_global_v1'], permission: 'Theo quyền xem từng loại hồ sơ của người hỏi, như ô Tìm kiếm', result: 'Nút mở hồ sơ dưới câu trả lời' },
+  ton_kho: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'ai_stock_by_items_v1'], permission: 'Chỉ kho người hỏi được xem', result: 'Tồn theo từng kho + nút mở vật tư' },
+  chi_tiet_don_mua: { kind: 'tra_cuu', rpcs: ['get_procurement_order_v1', 'get_procurement_po_payment_status_v1'], permission: 'Xem đơn hàng (Mua hàng / dự án); thanh toán cần quyền Tài chính hoặc Mua hàng', result: 'Dòng hàng, còn phải giao, thanh toán + nút mở PO' },
+  chi_tiet_de_xuat: { kind: 'tra_cuu', rpcs: ['get_material_request_supply_v1'], permission: 'Xem đề xuất vật tư của dự án', result: 'Từng dòng: cần, đã đặt, đã nhận + nút mở đề xuất' },
+  viec_cua_toi: { kind: 'tra_cuu', rpcs: ['vcc_my_work_items_v1'], permission: 'Chỉ việc của chính người hỏi', result: 'Danh sách việc + nút mở việc' },
+  phep_nhan_vien: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'list_hrm_employee_directory', 'get_hrm_leave_ledger', 'list_hrm_leave_balances'], permission: 'Của mình: ai cũng xem; người khác / toàn công ty: HR (máy chủ chặn)', result: 'Số phép năm, sổ phép gần nhất' },
+  chi_tiet_ho_so: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'get_hrm_employee_overview', 'get_hrm_employee_work_organization', 'get_hrm_employee_contract_employment'],
+    permission: 'Mức xem hồ sơ: danh bạ / chính mình / quản lý trực tiếp / HR. Không bao giờ có lương, CCCD, số tài khoản, SĐT cá nhân', result: 'Chức danh, phòng ban, quản lý, ngày vào, hợp đồng + nút mở hồ sơ' },
+  bien_dong_nhan_su: { kind: 'bieu_do', rpcs: ['get_hrm_headcount_trend_v1'], permission: 'Xem tổ chức (BLĐ, HR, trưởng bộ phận)', result: 'Thẻ biểu đồ: ô số, số người cuối tháng, vào làm / nghỉ việc, nút Bảng' },
+  chuan_bi_don_nghi_phep: { kind: 'chuan_bi', rpcs: ['assistant_leave_types_v1', 'preview_my_leave_request', 'assistant_command_create_v1'], permission: 'Chỉ đơn của chính người hỏi', result: 'Thẻ đơn nghỉ nháp → người dùng bấm Gửi đơn', commandKind: 'leave_request' },
+  chuan_bi_de_xuat_vat_tu: { kind: 'chuan_bi', rpcs: ['assistant_mr_projects_v1', 'assistant_command_create_v1'], permission: 'Dự án người hỏi được lập đề xuất', result: 'Form đề xuất gọn trong chat → Gửi duyệt / Lưu nháp', commandKind: 'material_request' },
+  chuan_bi_don_mua: { kind: 'chuan_bi', rpcs: ['list_procurement_proactive_options_v1', 'list_procurement_vendors_v1', 'assistant_command_create_v1'], permission: 'Quản lý Mua hàng (lập đơn chủ động)', result: 'Form đơn mua trong chat → Lưu nháp / Gửi duyệt', commandKind: 'purchase_order' },
+  chuan_bi_nhat_ky: { kind: 'chuan_bi', rpcs: ['assistant_daily_log_projects_v1', 'assistant_command_create_v1'], permission: 'Dự án người hỏi được ghi Nhật ký', result: 'Thẻ đọc báo cáo → Tạo phiếu nháp', commandKind: 'daily_log' },
+  chuan_bi_ghi_nho: { kind: 'chuan_bi', rpcs: ['assistant_command_create_v1'], permission: 'Chỉ ghi nhớ của chính người hỏi', result: 'Thẻ ghi nhớ → Lưu ghi nhớ', commandKind: 'memory_note' },
+};
+
 export const TOOLS: ToolSpec[] = [
   {
     name: 'tim_ho_so',

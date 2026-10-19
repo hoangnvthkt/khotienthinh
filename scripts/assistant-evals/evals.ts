@@ -171,7 +171,7 @@ export const CASES: EvalCase[] = [
     q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?', check: deniedAnswerCheck('Số phép nhân viên', /\b\d+([,.]\d+)? ngày/) },
   { id: 'hits-prefound', bug: '19/10 ô hỏi hai tầng: hồ sơ ô tìm ngay gửi kèm → không gọi tim_ho_so nữa, đi thẳng công cụ chi tiết, dẫn nguồn hN',
     q: 'Nhân viên Hương còn bao nhiêu ngày phép năm?',
-    hits: [{ kind: 'employee', id: 'emp-huong', code: 'TT004431', title: 'Nguyễn Thị Hương', subtitle: 'Trưởng phòng TCKT', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: {} }],
+    hits: [{ kind: 'employee', id: 'e-huong', code: 'TT004431', title: 'Nguyễn Thị Hương', subtitle: 'Trưởng phòng TCKT', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: {} }],
     check: o => firstFail(fail(o.tools.includes('Tìm hồ sơ'), 'vẫn gọi tim_ho_so dù hồ sơ đã có sẵn'), fail(!o.tools.includes('Số phép nhân viên'), `không gọi phep_nhan_vien (gọi: ${o.tools.join(', ') || 'không gì'})`),
       fail(!/9[,.]5/.test(o.text), 'không nêu số phép còn lại 9,5'), fail(!/\[\[h\d+\]\]/.test(o.text), 'không gắn mã nguồn')) },
   // Rà soát quyền 18/10: cùng câu hỏi, Admin nhận số liệu kèm nguồn; nhân viên thường nhận "ngoài phạm vi được xem" từ RPC — không bịa, không nói "không tồn tại".

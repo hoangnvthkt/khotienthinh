@@ -6,8 +6,11 @@ import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import AiCenter from '../../pages/AiCenter';
 import type { AiActivity, AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
+import { parseSkillCatalog, type AiSkillCatalogService, type SkillUsage } from '../../lib/aiSkillCatalog';
+import { skillCatalog } from '../../supabase/functions/ai-gateway/catalog';
 
 // Trung tâm AI · fixture (không gọi Supabase). ?role=staff: người không phải Admin. ?empty=1: chưa cấp ai.
+// Tab Skill: lời dặn / công cụ lấy từ catalog.ts thật; ?catalog=fail (cổng chưa cập nhật), ?usage=fail (lỗi đọc lượt dùng).
 const params = new URLSearchParams(location.search);
 const calls: Array<Record<string, unknown>> = [];
 (window as unknown as { __aiAdminCalls: typeof calls }).__aiAdminCalls = calls;
@@ -30,6 +33,7 @@ const state: AiAdminOverview = {
     { code: 'po_quote_lines', name: 'Đọc báo giá thành dòng đơn', access: 'everyone', enabled: true, dailyLimit: 30 },
     { code: 'mr_photo_lines', name: 'Đọc ảnh phiếu đề xuất', access: 'everyone', enabled: true, dailyLimit: 20 },
     { code: 'po_review_brief', name: 'Tóm tắt đơn trước khi duyệt', access: 'everyone', enabled: true, dailyLimit: 60 },
+    { code: 'text_summary', name: 'Tóm tắt văn bản', access: 'everyone', enabled: true, dailyLimit: 50 },
   ],
   connections: [
     { id: CLAUDE, name: 'RevidAPI', model: 'claude-sonnet-5-5', enabled: true, pricePerCall: 0.008, displayName: 'Claude Sonnet 5.5', blurb: 'Hiểu sâu, đọc ảnh / PDF scan — hợp báo giá, phân tích', icon: '🧠', vision: true },
@@ -106,11 +110,35 @@ const ACTIVITY: AiActivity = {
     { at: new Date(Date.now() - 86_400_000).toISOString(), name: 'Nguyễn Thị Mơ', skill: 'assistant_chat', reason: 'incomplete', note: null }],
 };
 
+const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+const usageRow = (code: string, name: string, description: string, tier: string, mode: string, runs: number, people: number, extra: Partial<SkillUsage['skills'][number]> = {}) =>
+  ({ code, name, description, tier, mode, modelClass: 'fast', enabled: true, access: 'everyone' as const, dailyLimit: 50, runs, people, ok: runs, errors: 0, blocked: 0,
+    costUsd: Math.round(runs * 0.008 * 1000) / 1000, likes: Math.floor(runs / 6), dislikes: 0, lastAt: runs ? ago(2) : null, ...extra });
+const USAGE: SkillUsage = {
+  days: 7,
+  skills: [
+    usageRow('assistant_chat', 'Trợ lý · hội thoại', 'Tab Trợ lý: hội thoại nhiều lượt, tự tra cứu bằng công cụ, chuẩn bị nháp.', 'base', 'draft', 142, 11,
+      { access: 'granted', errors: 2, blocked: 3, likes: 21, dislikes: 4, costUsd: 1.136 }),
+    usageRow('po_quote_lines', 'Đọc báo giá thành dòng đơn', 'Mua hàng: đọc ảnh / chữ báo giá thành dòng đơn.', 'ops', 'read', 18, 3),
+    usageRow('mr_photo_lines', 'Đọc ảnh phiếu đề xuất', 'Đề xuất vật tư: đọc ảnh phiếu viết tay.', 'base', 'read', 6, 2),
+    usageRow('po_review_brief', 'Tóm tắt đơn trước khi duyệt', 'Mua hàng: một câu cho người duyệt đơn.', 'ops', 'read', 31, 4),
+    usageRow('text_summary', 'Tóm tắt văn bản', 'Tóm tắt đoạn văn bản người dùng đưa vào.', 'base', 'read', 0, 0),
+  ],
+  tools: [{ tool: 'tim_ho_so', runs: 48, people: 9, lastAt: ago(1) }, { tool: 'chuan_bi_don_mua', runs: 21, people: 4, lastAt: ago(3) }, { tool: 'ton_kho', runs: 17, people: 6, lastAt: ago(5) },
+    { tool: 'chuan_bi_de_xuat_vat_tu', runs: 15, people: 5, lastAt: ago(6) }, { tool: 'bien_dong_nhan_su', runs: 4, people: 2, lastAt: ago(0.5) }],
+  commands: [{ kind: 'purchase_order', prepared: 21, done: 14 }, { kind: 'material_request', prepared: 15, done: 11 }],
+};
+const skillService: AiSkillCatalogService = {
+  usage: async days => { calls.push({ skillUsage: days }); await sleep(70); if (params.get('usage') === 'fail') throw new Error('Mất kết nối'); return { ...USAGE, days }; },
+  catalog: async () => { calls.push({ skillCatalog: true }); await sleep(120); if (params.get('catalog') === 'fail') throw new Error('Chưa đọc được lời dặn từ cổng AI — cổng chưa cập nhật hoặc mất kết nối.');
+    return parseSkillCatalog(JSON.parse(JSON.stringify(skillCatalog('Chủ nhật 19/10/2026, 09:41')))); },
+};
+
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}</p>; };
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter initialEntries={['/ai']}>
     <ToastProvider><ConfirmProvider>
-      <Routes><Route path="/ai" element={<AiCenter service={service} />} /><Route path="*" element={<Where />} /></Routes>
+      <Routes><Route path="/ai" element={<AiCenter service={service} skillService={skillService} />} /><Route path="*" element={<Where />} /></Routes>
     </ConfirmProvider></ToastProvider>
   </MemoryRouter>,
 );
