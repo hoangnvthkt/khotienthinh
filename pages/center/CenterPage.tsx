@@ -16,6 +16,8 @@ import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDo
 import { fetchFlow, fetchFlowAccess, fetchFlowItems, remindFlow, type FlowItemsFilter, type FlowQuery } from '../../lib/center/centerFlowService';
 import { site3dHooks } from '../../lib/site3d/site3dService';
 import { defaultAssistantHooks } from '../../components/center/AssistantView';
+import { navigationModulesFor, useModuleNavigation } from '../../components/Sidebar';
+import { buildLocalIndex } from '../../lib/search/instantSearch';
 import { createMrFormActions } from '../../lib/assistantMrForm';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
@@ -83,6 +85,12 @@ const CenterPage: React.FC = () => {
   const loadDashboard = useCallback((options?: { force?: boolean }) => fetchDashboard(userId as string, options?.force), [userId]);
   const loadDashboardAccess = useCallback(() => fetchDashboardAccess(userId as string), [userId]);
   const titleForRoute = useRouteTitle();
+  // Ô hỏi Trợ lý tìm ngay cả trang + thao tác (như ô Tìm kiếm) — chỉ mục theo quyền, tính một lần.
+  const navFor = useModuleNavigation();
+  const searchLocal = useMemo(() => buildLocalIndex(
+    navigationModulesFor(user).map(m => ({ key: m.key, label: m.label, route: m.route })),
+    key => navFor(key as Parameters<typeof navFor>[0]).map(item => ({ to: item.to, label: item.label, icon: item.icon })),
+    route => canAccessRoute(user, route)), [user, navFor]);
   const { logout } = useAuth();
   const onLogout = useCallback(() => {
     logout().catch(error => console.warn('Logout failed:', error)).finally(() => navigate('/login'));
@@ -137,6 +145,7 @@ const CenterPage: React.FC = () => {
         remindFlow={remindFlowHolders}
         initialTab={initialTab}
         initialAsk={initialAsk}
+        searchLocal={searchLocal}
         site3d={site3dHooks}
         assistant={assistantHooks}
       />

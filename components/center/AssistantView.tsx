@@ -26,6 +26,8 @@ import AssistantMemoryPanel from './AssistantMemoryPanel';
 import AssistantModelPicker, { modelForTurn, readStoredModel, storeModel } from './AssistantModelPicker';
 import { useInstantSearch, type InstantSearchFn } from './useInstantSearch';
 import { hitsForGateway, isLookupQuery, strongTopHit, type RankedHit } from '../../lib/search/instantSearch';
+import { openGlobalSearch, openSearchModal } from '../../lib/search/openGlobalSearch';
+import type { PreparedEntry } from '../../lib/search/searchEngine';
 import { ACCEPT, addAttachments, attachmentLabel, type ChatAttachment } from '../../lib/assistantFiles';
 
 // Tab Trợ lý v2 · T0 (chủ SP duyệt 17/10/2026): khung chat. Bản tin gọn (câu đầu · Làm trước ≤ 3 · Đáng lo ≤ 3) là khối đầu của hội thoại
@@ -266,8 +268,10 @@ const AssistantView: React.FC<{
   initialQuestion?: string | null;
   /** Mở được màn này không (quyền người dùng) — quyết định loại hồ sơ tìm ngay. Không có → không tìm ngay. */
   canOpenRoute?: (route: string) => boolean;
+  /** Trang + thao tác người này mở được (buildLocalIndex) — tìm ngay cùng hồ sơ. */
+  searchLocal?: readonly PreparedEntry[];
   hooks?: AssistantHooks;
-}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, initialQuestion = null, canOpenRoute, hooks = defaultAssistantHooks }) => {
+}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, onOpenRoute, initialQuestion = null, canOpenRoute, searchLocal, hooks = defaultAssistantHooks }) => {
   const [items, setItems] = useState<WorkItem[] | 'loading' | 'error'>('loading');
   const [itemsAttempt, setItemsAttempt] = useState(0);
   const [ai, setAi] = useState<AiGatewayStatus | null>(null);
@@ -291,14 +295,17 @@ const AssistantView: React.FC<{
   const [hitsHidden, setHitsHidden] = useState(false);
   const [hitIndex, setHitIndex] = useState(-1);
   const noCanOpen = useCallback(() => false, []);
-  const instant = useInstantSearch(question, { enabled: Boolean(canOpenRoute) && attachments.length === 0 && question.trim().length >= 2 && question.trim().length <= 120, canOpen: canOpenRoute || noCanOpen, search: hooks.search });
+  const instant = useInstantSearch(question, { enabled: Boolean(canOpenRoute) && attachments.length === 0 && question.trim().length >= 2 && question.trim().length <= 120, canOpen: canOpenRoute || noCanOpen, search: hooks.search, local: searchLocal });
   const hits = hitsHidden ? [] : instant.hits;
   useEffect(() => { setHitsHidden(false); setHitIndex(-1); }, [question]);
   const openHit = (hit: RankedHit) => {
     const { entry } = hit;
+    setQuestion(''); setHitIndex(-1);
+    // Thao tác tại chỗ (Xin nghỉ phép / Tạo đề xuất) → hộp thoại; thao tác cần chọn dự án → hộp Tìm kiếm điền sẵn để chọn dự án.
+    if (entry.modal) { openSearchModal(entry.modal); return; }
+    if (entry.needsProject) { openGlobalSearch(entry.title); return; }
     if (!entry.route) return;
     if (onOpenRoute) onOpenRoute(entry.route, entry.code || entry.title, entry.routeState); else onDrill({ kind: 'route', path: entry.route, title: entry.code || entry.title });
-    setQuestion(''); setHitIndex(-1);
   };
   const filePicker = useRef<HTMLInputElement | null>(null);
   const [sending, setSending] = useState(false);
@@ -524,7 +531,8 @@ const AssistantView: React.FC<{
     if ((text.trim().length < 2 && !attachments.length) || reading) return;
     // Đang chọn một dòng hồ sơ (↑↓), hoặc câu chỉ là mã / tên và khớp chắc một hồ sơ → mở luôn, không hỏi AI.
     if (hitIndex >= 0 && hits[hitIndex]) { openHit(hits[hitIndex]); return; }
-    const strong = !attachments.length && isLookupQuery(text) ? strongTopHit(hits) : null;
+    const top = hits[0];
+    const strong = !attachments.length && (top && !top.record ? true : isLookupQuery(text)) ? strongTopHit(hits, text) : null;
     if (strong) { openHit(strong); return; }
     const files = attachments;
     const carry = hits;
@@ -756,9 +764,9 @@ const AssistantView: React.FC<{
                 {hits.map((hit, i) => (
                   <li key={hit.entry.key} role="option" aria-selected={hitIndex === i}>
                     <button type="button" className="vcc-hit" aria-selected={hitIndex === i} onMouseEnter={() => setHitIndex(i)} onClick={() => openHit(hit)}
-                      title={`Mở ${hit.entry.context || 'hồ sơ'} — không hỏi AI`}>
+                      data-kind={hit.entry.kind} title={`${hit.entry.kind === 'action' ? 'Làm ngay' : 'Mở'} ${hit.entry.context || 'hồ sơ'} — không hỏi AI`}>
                       <span className="vcc-hit-main">{hit.entry.code && <span className="vcc-hit-code">{hit.entry.code}</span>}<span className="vcc-hit-title">{hit.entry.title}</span></span>
-                      <span className="vcc-hit-kind">{hit.entry.context}{hit.entry.status ? ` · ${hit.entry.status}` : ''}</span>
+                      <span className="vcc-hit-kind">{hit.entry.kind === 'action' ? 'Thao tác' : hit.entry.kind === 'page' ? 'Màn hình' : hit.entry.context}{hit.entry.status ? ` · ${hit.entry.status}` : ''}</span>
                       {hit.entry.subtitle && <span className="vcc-hit-sub">{hit.entry.subtitle}</span>}
                     </button>
                   </li>

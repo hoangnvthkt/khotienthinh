@@ -1,3 +1,4 @@
+import type { PreparedEntry } from '../../lib/search/searchEngine';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun, UserRound, Wallet } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
@@ -131,6 +132,8 @@ export interface CenterShellProps {
   initialTab?: 'flow' | 'site3d' | 'assistant' | null;
   /** Câu hỏi gửi ngay khi mở tab Trợ lý (từ ô Tìm kiếm "Hỏi Trợ lý AI"). */
   initialAsk?: string | null;
+  /** Trang + thao tác người này mở được — ô hỏi Trợ lý tìm ngay (buildLocalIndex). */
+  searchLocal?: readonly PreparedEntry[];
   /** Công trường 3D: quyền + số liệu + mô hình; không truyền = chưa có tab. */
   site3d?: Site3dHooks;
   /** Bản thử nghiệm: gắn window.__site3d (điều khiển cảnh 3D) để kiểm bằng Playwright. */
@@ -152,7 +155,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
-  loadFlow, loadFlowAccess, initialTab = null, initialAsk = null, loadFlowItems, remindFlow,
+  loadFlow, loadFlowAccess, initialTab = null, initialAsk = null, searchLocal, loadFlowItems, remindFlow,
   assistant, site3d, exposeSite3dDebug = false,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
@@ -674,6 +677,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
               onOpenRoute={openRoute}
               initialQuestion={initialAsk}
               canOpenRoute={canOpenRoute}
+              searchLocal={searchLocal}
               hooks={assistant}
             />
           </div>}
