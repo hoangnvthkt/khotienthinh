@@ -1,7 +1,7 @@
 # Thu hẹp quyền đọc chữ ký và bảng tiền / lương / hợp đồng — 10/2026
 
 **Nguồn:** audit bảo mật 20/10/2026 (`docs/audits/security-performance-scale-2026-10-20/README.md`, mục S1, S2).
-**Migration:** `supabase/migrations/20261021120000_rls_signatures_sensitive_select.sql` (chưa áp lên Cloud; chờ chủ sản phẩm duyệt PR).
+**Migration:** `supabase/migrations/20261021130000_rls_signatures_sensitive_select.sql` (chưa áp lên Cloud; chờ chủ sản phẩm duyệt PR).
 **Phạm vi:** chỉ policy SELECT và cách client đọc ảnh chữ ký. Không đổi quyền ghi, không đổi RPC.
 **Cách đo:** chạy migration + đếm `count(*)` theo 4 vai trong một transaction kết thúc bằng `rollback` trên Cloud `ftciqmqhmfvjtwoycswe` (20/10/2026). Không ghi tên / email / UUID.
 

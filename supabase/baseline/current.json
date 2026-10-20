@@ -364,7 +364,7 @@
     "20261020130000_hrm_headcount_trend.sql",
     "20261020150000_ai_skill_usage.sql",
     "20261021090000_assistant_reports_a1.sql",
-    "20261021120000_rls_signatures_sensitive_select.sql"
+    "20261021130000_rls_signatures_sensitive_select.sql"
   ],
   "forbidIncludeAll": true
 }
