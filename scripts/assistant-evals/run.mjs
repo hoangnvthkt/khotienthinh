@@ -3,6 +3,7 @@
 //   node scripts/assistant-evals/run.mjs                 # mọi ca
 //   node scripts/assistant-evals/run.mjs po-tool-totals  # một vài ca
 //   node scripts/assistant-evals/run.mjs --model deepseek-v4.1-flash   # chạy với kết nối khác (theo model / tên ở Cài đặt → Kết nối); hoặc ASSISTANT_EVAL_MODEL=…
+//   node scripts/assistant-evals/run.mjs --kind anthropic              # cùng kết nối nhưng gọi chuẩn Anthropic (RevidAPI có /v1/messages); hoặc ASSISTANT_EVAL_KIND=…
 import { build } from 'esbuild';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -24,11 +25,13 @@ await build({ entryPoints: [join(here, 'evals.ts')], bundle: true, platform: 'no
 const { runEvals } = await import(pathToFileURL(outfile).href);
 const argv = process.argv.slice(2);
 let model = process.env.ASSISTANT_EVAL_MODEL || '';
+let kind = process.env.ASSISTANT_EVAL_KIND || '';
 const only = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--model') model = argv[++i] || '';
   else if (argv[i].startsWith('--model=')) model = argv[i].slice('--model='.length);
+  else if (argv[i] === '--kind') kind = argv[++i] || '';
   else only.push(argv[i]);
 }
-const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), only, root, model || undefined);
+const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), only, root, model || undefined, kind || undefined);
 process.exit(failed ? 1 : 0);

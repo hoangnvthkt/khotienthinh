@@ -230,6 +230,10 @@ async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (tex
   if (!t.model) throw new Error('AI_MODEL_REQUIRED');
   const compatible = t.kind === 'openai_compatible';
   const cap = outputTokenCap(t.kind, req.maxTokens);
+  // Đo 20/10/2026 (claude-sonnet-5-5 qua RevidAPI chuẩn OpenAI): "none" nhanh (7–10 s) nhưng RevidAPI chèn suy nghĩ vào content
+  // ("Let me try tim_ho_so…" trước khi gọi công cụ — loop.ts bỏ; một đoạn tiếng Anh đầu câu trả lời ở ~1/4 lượt — không tách được).
+  // "low" / "minimal" / không gửi thì suy nghĩ vào reasoning_content nhưng chậm thất thường (4–112 s một bước). Claude: dùng kết nối
+  // loại Anthropic (RevidAPI có /v1/messages) — suy nghĩ là khối riêng, 5–10 s một bước (scripts/assistant-evals/README.md).
   const body = (extras: boolean) => JSON.stringify({
     model: t.model, stream: true, messages: toOpenAIMessages(req.system, req.messages),
     ...(req.tools.length ? { tools: openAITools(req.tools), tool_choice: openAIToolChoice(req.toolChoice) } : {}),

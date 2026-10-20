@@ -493,6 +493,7 @@ const AssistantView: React.FC<{
       {
         onStart: ({ runId }) => patch(m => ({ ...m, runId })),
         onDelta: delta => patch(m => ({ ...m, state: 'streaming', content: m.content + delta })),
+        onReset: () => patch(m => ({ ...m, content: '' })),
         onTool: tool => patch(m => ({ ...m, tools: [...(m.tools || []), tool] })),
         onCommand: command => patch(m => ({ ...m, commands: [...(m.commands || []), command] })),
         onChart: chart => patch(m => ({ ...m, sources: [...m.sources.filter(x => !isChartSource(x) || x.ref !== chart.ref), chart] })),

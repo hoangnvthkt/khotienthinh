@@ -47,6 +47,8 @@ export interface ChatSendInput {
 }
 export interface ChatHandlers {
   onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;
+  /** 20/10: chữ vừa chạy ra là ghi chú của bước gọi công cụ, không phải câu trả lời — xóa chữ đang hiện. */
+  onReset?: () => void;
   onCommand?: (command: AssistantCommand) => void;
   onChart?: (chart: ChartSource) => void;
 }
@@ -197,6 +199,7 @@ export const assistantChat = {
         for (const event of taken.events) {
           if (event.type === 'start') { runId = str(event.runId); handlers.onStart?.({ runId, model: str(event.model) }); }
           else if (event.type === 'delta') { const d = str(event.text); partial += d; handlers.onDelta(d); }
+          else if (event.type === 'reset') { partial = ''; handlers.onReset?.(); }
           else if (event.type === 'tool') handlers.onTool?.({ name: str(event.name), label: str(event.label) || str(event.name), query: str(event.query) });
           else if (event.type === 'command') { const command = parseCommand(event.command); if (command) handlers.onCommand?.(command); }
           else if (event.type === 'chart') { const chart = parseSources([event.chart]).find(isChartSource); if (chart) handlers.onChart?.(chart); }
