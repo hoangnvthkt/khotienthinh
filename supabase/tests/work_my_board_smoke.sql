@@ -111,7 +111,8 @@ begin
   r := public.work_my_board_v1();
   perform pg_temp.ok(r->'me'->>'name' = 'Work dot1 staff' and r->'me'->'unit'->>'code' = 'WD1-U1', 'thông tin của tôi: '||(r->'me')::text);
   perform pg_temp.ok((r->>'weekEnd')::date - (r->>'weekStart')::date = 6 and extract(isodow from (r->>'weekStart')::date) = 1, 'tuần bắt đầu thứ 2');
-  perform pg_temp.ok(jsonb_array_length(r->'tasks') = 5, 'chỉ việc giao cho tôi, chưa xong (5 việc, bỏ việc đã xong tuần trước): '||jsonb_array_length(r->'tasks'));
+  perform pg_temp.ok(jsonb_array_length(r->'tasks') = 6, 'việc giao cho tôi: 5 việc đang làm + 1 việc xong tuần trước (cho Lịch): '||jsonb_array_length(r->'tasks'));
+  perform pg_temp.ok((r->>'doneSince')::date = (r->>'weekStart')::date - 35, 'mốc Lịch lùi 5 tuần');
   perform pg_temp.ok(not (r->'tasks')::text like '%việc của người khác%', 'không lẫn việc người khác');
 
   execute find into t using r->'tasks', 'Board: đã nhận, chưa bắt đầu';

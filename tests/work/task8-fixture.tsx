@@ -137,6 +137,10 @@ const boardTasks: any[] = query.get("board") === "empty" ? [] : [
   bTask("b-06", { title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", deadlineAt: bDay(Math.max(1, toSaturday)), createdByMe: true, createdByHead: false, needsReview: true,
     origin: { origin: "oral_claim", claimStatus: "pending", giver: { id: "ptgd", name: "Phó TGĐ" }, meeting: null } }),
   bTask("b-07", { title: "Rà soát hồ sơ thanh toán đợt 2 SMB", level: "B", deadlineAt: bDay(-1), status: "completed", completedAt: bDay(-1, 15), progressPercent: 100 }),
+  bTask("b-08", { title: "Nghiệm thu cốp pha sàn tầng 3 – SMB", level: "B", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 20, lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }),
+  bTask("b-09", { title: "Chốt khối lượng thép tháng 10 – XinHai", level: "C", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 50, lastProgressAt: new Date(Date.now() - 6 * 3_600_000).toISOString() }),
+  bTask("b-10", { title: "Báo cáo tuần 42 cho Trưởng phòng", level: "C", deadlineAt: bDay(-6), status: "completed", completedAt: bDay(-6, 11), progressPercent: 100 }),
+  bTask("b-11", { title: "Cập nhật danh bạ nhà cung cấp", level: "C", deadlineAt: null, progressPercent: 10, lastProgressAt: new Date(Date.now() - 20 * 3_600_000).toISOString() }),
 ];
 for (const t of boardTasks) t.can = canOf(t);
 
@@ -147,7 +151,7 @@ const board = {
     if (query.get("board") === "error") throw new Error("network");
     const load = boardTasks.filter((t) => !["completed", "cancelled"].includes(t.status)).reduce((n, t) => n + ({ A: 3, B: 2, C: 1 } as any)[t.level], 0);
     return { me: { userId: "actor", name: "Lê Minh An", title: "Kỹ sư dự án", unit: { id: "u", code: "QLDA", name: "Phòng Quản lý dự án" } },
-      today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), tasks: boardTasks.map((t) => ({ ...t })),
+      today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), doneSince: bIso(bAdd(bMonday, -35)), tasks: boardTasks.map((t) => ({ ...t })),
       weeks: [7, 14, 21, 28].map((n, i) => ({ weekStart: bIso(bAdd(bMonday, -n)), due: [7, 6, 5, 4][i], ontime: [6, 5, 4, 3][i] })),
       review: { reviewed: 5, firstPass: 4 }, load };
   },

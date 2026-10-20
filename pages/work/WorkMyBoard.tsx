@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, CalendarDays, Check, CheckCircle2, ClipboardList, Clock3, Loader2, MessageSquare, PenLine, Plus, User, UserCheck, UserRound,
+  AlertTriangle, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, LayoutList, ListChecks, Loader2, MessageSquare, PenLine, Plus,
+  User, UserCheck, UserRound,
 } from "lucide-react";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { WorkAssignablePerson, WorkBoardService, WorkLevel, WorkMyBoard as Board, WorkMyTask } from "../../lib/work/workBoardService";
@@ -9,12 +10,26 @@ import { WORK_LEVEL_LABELS } from "../../lib/work/workBoardService";
 import { WorkCreateAttempt, workDocument, workError } from "../../lib/work/workForm";
 import { workDayLabel, workDueInfo, workUpdateInfo } from "../../lib/work/workPresentation";
 import { dateAt, quickTaskInput } from "../../lib/work/workQuick";
-import { MY_GROUP_LABELS, ddmm, myBoardGroups, myOntime, mySource, myWeekDays, myWeekLabel, saturdayOf, type MyGroupId } from "../../lib/work/workMyBoard";
+import {
+  MY_GROUP_LABELS, MY_RANGE_LABELS, ddmm, myBoardGroups, myDay, myNoDue, myOntime, myRangeDays, myShiftAnchor, mySource, myWeekDays, myWeekLabel, saturdayOf,
+  type MyGroupId, type MyRange,
+} from "../../lib/work/workMyBoard";
 
 const CAP = 10;
 type Edit = { id: string; kind: "blocked" | "done"; text: string } | null;
+type View = "calendar" | "list";
+const WEEKDAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const DOW_LABEL = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+const dayTitle = (day: string) => `${DOW_LABEL[new Date(`${day}T00:00:00Z`).getUTCDay()]} ${ddmm(day)}`;
+/** Lựa chọn riêng từng máy (Lịch / Danh sách, khoảng); trình duyệt chặn lưu thì dùng mặc định. */
+const remembered = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+  try { const v = localStorage.getItem(key) as T | null; return v && allowed.includes(v) ? v : fallback; } catch { return fallback; }
+};
+const remember = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* bỏ qua */ } };
+const isPhone = () => typeof window !== "undefined" && window.matchMedia?.("(max-width: 760px)").matches;
 
-/** Việc của tôi (mockup v1, chủ SP 20/10/2026): việc được giao nhóm theo hạn, nút một chạm Đang làm / Vướng / Xong, ghi việc giao miệng. */
+/** Việc của tôi (mockup v1 + Lịch, chủ SP 20/10/2026): nhìn lướt bằng màu, số, %; bấm ngày ra danh sách gọn, bấm việc ra chi tiết.
+ *  Nút một chạm Đang làm / Vướng / Xong; ghi việc giao miệng. Công tắc Lịch | Danh sách nhớ theo máy. */
 export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, headerActions, children }: {
   board: Pick<WorkBoardService, "myBoard" | "assignablePeople" | "setOrigin">;
   service: Pick<WorkTaskService, "command" | "preview" | "create">;
@@ -23,18 +38,23 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
   detailTo: (code: string) => string;
   onNotice: (message: string) => void;
   headerActions?: React.ReactNode;
-  /** Giao nhanh + tab danh sách (đặt giữa ô số và các nhóm việc). */
+  /** Giao nhanh + tab danh sách (đặt giữa ô số và phần việc). */
   children?: React.ReactNode;
 }) {
   const [data, setData] = useState<Board | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
+  const [view, setView] = useState<View>(() => remembered("work.my.view", ["calendar", "list"] as const, "calendar"));
+  const [range, setRange] = useState<MyRange>(() => remembered("work.my.range", ["week", "2weeks", "month"] as const, isPhone() ? "week" : "2weeks"));
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<MyGroupId | "all">("all");
   const [showDone, setShowDone] = useState(false);
   const [composer, setComposer] = useState(false);
   const [edit, setEdit] = useState<Edit>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const panel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -43,8 +63,21 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
     return () => { live = false; };
   }, [board, refreshKey, reload]);
 
-  const groups = useMemo(() => (data ? myBoardGroups(data.tasks, data.today, data.weekEnd) : null), [data]);
+  const groups = useMemo(() => (data ? myBoardGroups(data.tasks, data.today, data.weekEnd, new Date(), data.weekStart) : null), [data]);
   const ontime = data ? myOntime(data.weeks) : null;
+  const today = data?.today || null;
+  const span = useMemo(() => (today ? myRangeDays(range, anchor || today) : null), [range, anchor, today]);
+  const days = useMemo(() => (data && span ? span.days.map((d) => myDay(d, data.tasks)) : []), [data, span]);
+  const noDue = useMemo(() => (data ? myNoDue(data.tasks) : []), [data]);
+  const pick = selected || today;
+  const picked = pick === "nodue" ? null : days.find((d) => d.day === pick) || (data && pick ? myDay(pick, data.tasks) : null);
+
+  const chooseView = (v: View) => { setView(v); remember("work.my.view", v); };
+  const chooseRange = (r: MyRange) => { setRange(r); remember("work.my.range", r); };
+  const selectDay = (day: string) => {
+    setSelected(day); setEdit(null);
+    if (isPhone()) requestAnimationFrame(() => panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
 
   /** Một chạm: nhận việc (nếu chưa) → bắt đầu / gỡ vướng → vướng / nộp. Mỗi lệnh kiểm phiên bản như màn chi tiết. */
   async function act(t: WorkMyTask, kind: "doing" | "blocked" | "done", text = "") {
@@ -78,20 +111,43 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
       </section>
     );
   }
-  if (!data || !groups || !ontime) {
+  if (!data || !groups || !ontime || !span) {
     return <section className="work-my" aria-label="Việc của tôi" aria-busy="true"><p className="work-hint" role="status"><Loader2 size={15} className="work-spin" /> Đang tải việc của bạn…</p>{children}</section>;
   }
 
-  const sections = (Object.keys(MY_GROUP_LABELS) as MyGroupId[])
-    .filter((id) => groups[id].length && (filter === "all" || filter === id));
+  const row = (t: WorkMyTask) => (
+    <TaskRow key={t.id} t={t} unitName={data.me.unit?.name || null} to={detailTo(t.code)} edit={edit} setEdit={setEdit} busy={busy === t.id}
+      error={rowError?.id === t.id ? rowError.message : null} act={act} />
+  );
+  const sections = (Object.keys(MY_GROUP_LABELS) as MyGroupId[]).filter((id) => groups[id].length && (filter === "all" || filter === id));
+  // Ô số: ở Lịch thì bấm để xem danh sách đúng nhóm đó; bấm lại để bỏ lọc.
   const kpi = (id: MyGroupId, tone: string, icon: React.ReactNode, label: string, value: number, sub: string) => (
-    <button type="button" className={`work-kpi tone-${tone}`} aria-pressed={filter === id} onClick={() => setFilter((f) => (f === id ? "all" : id))}
-      title={filter === id ? "Bấm lại để xem tất cả" : `Chỉ xem nhóm ${label.toLowerCase()}`}>
+    <button type="button" className={`work-kpi tone-${tone}`} aria-pressed={view === "list" && filter === id}
+      onClick={() => { if (view === "list" && filter === id) setFilter("all"); else { setFilter(id); chooseView("list"); } }}
+      title={view === "list" && filter === id ? "Bấm lại để xem tất cả" : `Xem danh sách ${label.toLowerCase()}`}>
       <span className="work-kpi-icon" aria-hidden="true">{icon}</span>
       <span><span className="work-kpi-label">{label}</span><b className="work-kpi-value">{value}</b><span className="work-kpi-sub">{sub}</span></span>
     </button>
   );
   const live = data.tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
+  const attention = [...groups.over, ...groups.confirm];
+  const canBack = !data.doneSince || span.from > data.doneSince;
+  const stats = (
+    <section className="work-my-card" aria-label="Số của tôi">
+      <header><h2>Số của tôi</h2></header>
+      <dl className="work-my-stats">
+        <div><dt>Đúng hạn 4 tuần</dt><dd>
+          <span className="work-my-spark" aria-hidden="true">{ontime.trend.map((r, i) => <i key={i} style={{ height: `${r == null ? 4 : Math.max(8, r)}%` }} className={r == null ? "is-empty" : ""} />)}</span>
+          {ontime.rate == null ? "—" : `${ontime.rate}%`}</dd></div>
+        <div><dt>Duyệt lần đầu</dt><dd>{data.review.reviewed ? `${Math.round((data.review.firstPass / data.review.reviewed) * 100)}%` : "—"}
+          {data.review.reviewed > 0 && <small> {data.review.firstPass}/{data.review.reviewed}</small>}</dd></div>
+        <div><dt>Tải việc</dt><dd>
+          <span className="work-my-bar" aria-hidden="true"><i className={data.load >= CAP ? "is-full" : ""} style={{ width: `${Math.min(100, (data.load / CAP) * 100)}%` }} /></span>
+          {data.load}/{CAP}{data.load >= CAP && <span className="work-pill tone-amber">Đầy</span>}</dd></div>
+        <div><dt>Đang làm</dt><dd>{live.length} việc</dd></div>
+      </dl>
+    </section>
+  );
 
   return (
     <section className="work-my" aria-label="Việc của tôi">
@@ -130,68 +186,123 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
         onCancel={() => setComposer(false)} onDone={(message) => { setComposer(false); onNotice(message); setReload((v) => v + 1); }} />}
       {children}
 
-      <div className="work-my-cols">
-        <div className="work-my-main">
-          {error && <p className="work-error" role="alert">{workError(error)} <button className="work-text-button" onClick={() => setReload((v) => v + 1)}>Thử lại</button></p>}
-          {sections.length ? sections.map((id) => (
-            <section key={id} className="work-my-group" aria-label={MY_GROUP_LABELS[id]}>
-              <h2 className="work-my-group-h">{MY_GROUP_LABELS[id]} <span className={`work-count tone-${id}`}>{groups[id].length}</span></h2>
-              <div className="work-my-list">{groups[id].map((t) => (
-                <TaskRow key={t.id} t={t} unitName={data.me.unit?.name || null} to={detailTo(t.code)} edit={edit} setEdit={setEdit} busy={busy === t.id}
-                  error={rowError?.id === t.id ? rowError.message : null} act={act} />
-              ))}</div>
-            </section>
-          )) : (
-            <div className="work-my-empty">
-              {filter === "all"
-                ? <><CheckCircle2 size={18} aria-hidden="true" /> Chưa có việc nào đang giao cho bạn. Việc được giao trong họp hay giao miệng thì bấm <b>Ghi việc được giao</b>.</>
-                : <>Không có việc trong nhóm này. <button className="work-text-button" onClick={() => setFilter("all")}>Xem tất cả</button></>}
-            </div>
-          )}
-          {groups.done.length > 0 && filter === "all" && (
-            <section className="work-my-group" aria-label="Đã xong tuần này">
-              <h2 className="work-my-group-h">Đã xong tuần này <span className="work-count">{groups.done.length}</span>
-                <button type="button" className="work-text-button" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)}>{showDone ? "Ẩn" : "Xem"}</button></h2>
-              {showDone && <div className="work-my-list">{groups.done.map((t) => (
-                <TaskRow key={t.id} t={t} unitName={data.me.unit?.name || null} to={detailTo(t.code)} edit={edit} setEdit={setEdit} busy={false} error={null} act={act} />
-              ))}</div>}
-            </section>
-          )}
+      <div className="work-my-toolbar">
+        <div className="work-quick-seg" role="group" aria-label="Cách xem">
+          <button type="button" aria-pressed={view === "calendar"} onClick={() => chooseView("calendar")}><CalendarDays size={15} /> Lịch</button>
+          <button type="button" aria-pressed={view === "list"} onClick={() => { chooseView("list"); setFilter("all"); }}><LayoutList size={15} /> Danh sách</button>
         </div>
-
-        <aside className="work-my-side">
-          <section className="work-my-card" aria-label={`Tuần ${myWeekLabel(data)}`}>
-            <header><h2><CalendarDays size={15} aria-hidden="true" /> {myWeekLabel(data).split(" · ")[0]}</h2><span>Chốt thứ 7 {ddmm(saturdayOf(data.weekStart))}</span></header>
-            <div className="work-my-week">{myWeekDays(data.weekStart, data.tasks).map((d) => (
-              <div key={d.day} className={`work-my-day${d.day === data.today ? " is-today" : ""}`}>
-                <span>{d.label}</span><b>{d.date}</b>
-                <span className="work-my-dots">{d.tasks.slice(0, 6).map((t) => (
-                  <i key={t.id} className={`level-${t.level}${t.status === "completed" ? " is-done" : ""}`} title={`${t.level} · ${t.title}`} />
-                ))}</span>
-              </div>
-            ))}</div>
-            <p className="work-my-legend">{(["A", "B", "C"] as const).map((l) => <span key={l}><span className={`work-level-chip level-${l}`}>{l}</span> {WORK_LEVEL_LABELS[l]}</span>)}</p>
-          </section>
-          <section className="work-my-card" aria-label="Số của tôi">
-            <header><h2>Số của tôi</h2></header>
-            <dl className="work-my-stats">
-              <div><dt>Đúng hạn 4 tuần</dt><dd>
-                <span className="work-my-spark" aria-hidden="true">{ontime.trend.map((r, i) => <i key={i} style={{ height: `${r == null ? 4 : Math.max(8, r)}%` }} className={r == null ? "is-empty" : ""} />)}</span>
-                {ontime.rate == null ? "—" : `${ontime.rate}%`}</dd></div>
-              <div><dt>Duyệt lần đầu</dt><dd>{data.review.reviewed ? `${Math.round((data.review.firstPass / data.review.reviewed) * 100)}%` : "—"}
-                {data.review.reviewed > 0 && <small> {data.review.firstPass}/{data.review.reviewed}</small>}</dd></div>
-              <div><dt>Tải việc</dt><dd>
-                <span className="work-my-bar" aria-hidden="true"><i className={data.load >= CAP ? "is-full" : ""} style={{ width: `${Math.min(100, (data.load / CAP) * 100)}%` }} /></span>
-                {data.load}/{CAP}{data.load >= CAP && <span className="work-pill tone-amber">Đầy</span>}</dd></div>
-              <div><dt>Đang làm</dt><dd>{live.length} việc</dd></div>
-            </dl>
-          </section>
-        </aside>
+        {view === "calendar" && <>
+          <div className="work-my-nav">
+            <button type="button" className="work-icon-button" aria-label="Khoảng trước" disabled={!canBack}
+              title={canBack || !data.doneSince ? undefined : `Lịch chỉ xem lùi đến ${ddmm(data.doneSince)}`} onClick={() => setAnchor(myShiftAnchor(range, anchor || data.today, -1))}><ChevronLeft size={18} /></button>
+            <b>{span.label}</b>
+            <button type="button" className="work-icon-button" aria-label="Khoảng sau" onClick={() => setAnchor(myShiftAnchor(range, anchor || data.today, 1))}><ChevronRight size={18} /></button>
+            {(anchor && !span.days.includes(data.today)) && <button type="button" className="work-text-button" onClick={() => { setAnchor(null); setSelected(null); }}>Hôm nay</button>}
+          </div>
+          <div className="work-quick-seg work-my-range" role="group" aria-label="Khoảng thời gian">
+            {(Object.keys(MY_RANGE_LABELS) as MyRange[]).map((r) => <button type="button" key={r} aria-pressed={range === r} onClick={() => chooseRange(r)}>{MY_RANGE_LABELS[r]}</button>)}
+          </div>
+        </>}
       </div>
+
+      {error && <p className="work-error" role="alert">{workError(error)} <button className="work-text-button" onClick={() => setReload((v) => v + 1)}>Thử lại</button></p>}
+
+      {view === "calendar" ? (
+        <>
+          {attention.length > 0 && (
+            <section className="work-my-attention" aria-label="Cần xử lý">
+              <h2 className="work-my-group-h">Cần xử lý <span className="work-count tone-over">{attention.length}</span></h2>
+              <div className="work-my-list">{attention.map(row)}</div>
+            </section>
+          )}
+          <div className="work-my-cols is-calendar">
+            <div className="work-my-main">
+              <div className={`work-my-cal range-${range}`} role="grid" aria-label={`Lịch việc · ${span.label}`}>
+                {WEEKDAYS.map((w) => <span key={w} className="work-my-cal-dow" role="columnheader">{w}</span>)}
+                {days.map((d) => {
+                  const out = range === "month" && d.day.slice(0, 7) !== (anchor || data.today).slice(0, 7);
+                  const sat = new Date(`${d.day}T00:00:00Z`).getUTCDay() === 6;
+                  return (
+                    <button type="button" key={d.day} role="gridcell" aria-pressed={pick === d.day}
+                      className={`work-my-cell state-${d.state}${d.day === data.today ? " is-today" : ""}${out ? " is-out" : ""}`}
+                      aria-label={`${dayTitle(d.day)}: ${d.count ? `${d.count} việc, ${d.percent}%${d.state === "late" ? ", có việc trễ" : d.state === "warn" ? ", có việc vướng hoặc lâu chưa cập nhật" : d.state === "done" ? ", đã xong hết" : ""}` : "không có việc đến hạn"}`}
+                      onClick={() => selectDay(d.day)}>
+                      <span className="work-my-cell-top"><span className="work-my-cell-day">{Number(d.day.slice(8, 10))}</span>{sat && <span className="work-my-cell-close" title="Chốt tuần">Chốt</span>}</span>
+                      {d.count > 0 && <>
+                        <b className="work-my-cell-count">{d.count}</b>
+                        <span className="work-my-cell-dots" aria-hidden="true">{d.levels.slice(0, 5).map((l, i) => <i key={i} className={`level-${l}`} />)}</span>
+                        <span className="work-my-cell-pct" aria-hidden="true"><span><i style={{ width: `${d.percent}%` }} /></span><small>{d.percent}%</small></span>
+                      </>}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="work-my-cal-legend" aria-hidden="true">
+                <span><i className="state-late" /> Có việc trễ</span><span><i className="state-warn" /> Vướng / lâu chưa cập nhật</span>
+                <span><i className="state-open" /> Đang làm</span><span><i className="state-done" /> Xong hết</span>
+                {noDue.length > 0 && <button type="button" className="work-chip-button" aria-pressed={pick === "nodue"} onClick={() => selectDay("nodue")}>Chưa có hạn · {noDue.length}</button>}
+              </p>
+            </div>
+            <aside className="work-my-side">
+              <section className="work-my-card work-my-dayp" aria-label="Việc trong ngày" ref={panel}>
+                <header><h2>{pick === "nodue" ? "Chưa có hạn" : pick ? dayTitle(pick) : ""}</h2>
+                  <span>{pick === "nodue" ? `${noDue.length} việc` : picked?.count ? `${picked.count} việc · ${picked.percent}%` : ""}</span></header>
+                <div className="work-my-list">
+                  {pick === "nodue" ? noDue.map(row)
+                    : picked && picked.count ? picked.tasks.map(row)
+                    : <p className="work-my-dayp-empty"><CheckCircle2 size={16} aria-hidden="true" /> Không có việc đến hạn ngày này.</p>}
+                </div>
+              </section>
+              {stats}
+            </aside>
+          </div>
+        </>
+      ) : (
+        <div className="work-my-cols">
+          <div className="work-my-main">
+            {sections.length ? sections.map((id) => (
+              <section key={id} className="work-my-group" aria-label={MY_GROUP_LABELS[id]}>
+                <h2 className="work-my-group-h">{MY_GROUP_LABELS[id]} <span className={`work-count tone-${id}`}>{groups[id].length}</span></h2>
+                <div className="work-my-list">{groups[id].map(row)}</div>
+              </section>
+            )) : (
+              <div className="work-my-empty">
+                {filter === "all"
+                  ? <><CheckCircle2 size={18} aria-hidden="true" /> Chưa có việc nào đang giao cho bạn. Việc được giao trong họp hay giao miệng thì bấm <b>Ghi việc được giao</b>.</>
+                  : <>Không có việc trong nhóm này. <button className="work-text-button" onClick={() => setFilter("all")}>Xem tất cả</button></>}
+              </div>
+            )}
+            {groups.done.length > 0 && filter === "all" && (
+              <section className="work-my-group" aria-label="Đã xong tuần này">
+                <h2 className="work-my-group-h">Đã xong tuần này <span className="work-count">{groups.done.length}</span>
+                  <button type="button" className="work-text-button" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)}>{showDone ? "Ẩn" : "Xem"}</button></h2>
+                {showDone && <div className="work-my-list">{groups.done.map(row)}</div>}
+              </section>
+            )}
+          </div>
+          <aside className="work-my-side">
+            <section className="work-my-card" aria-label={`Tuần ${myWeekLabel(data)}`}>
+              <header><h2><CalendarDays size={15} aria-hidden="true" /> {myWeekLabel(data).split(" · ")[0]}</h2><span>Chốt thứ 7 {ddmm(saturdayOf(data.weekStart))}</span></header>
+              <div className="work-my-week">{myWeekDays(data.weekStart, data.tasks).map((d) => (
+                <div key={d.day} className={`work-my-day${d.day === data.today ? " is-today" : ""}`}>
+                  <span>{d.label}</span><b>{d.date}</b>
+                  <span className="work-my-dots">{d.tasks.slice(0, 6).map((t) => (
+                    <i key={t.id} className={`level-${t.level}${t.status === "completed" ? " is-done" : ""}`} title={`${t.level} · ${t.title}`} />
+                  ))}</span>
+                </div>
+              ))}</div>
+              <p className="work-my-legend">{(["A", "B", "C"] as const).map((l) => <span key={l}><span className={`work-level-chip level-${l}`}>{l}</span> {WORK_LEVEL_LABELS[l]}</span>)}</p>
+            </section>
+            {stats}
+          </aside>
+        </div>
+      )}
     </section>
   );
 }
 
+/** Dòng việc gọn (chủ SP 20/10: ít chữ, cần thì bấm xem chi tiết): nguồn chỉ còn biểu tượng (chữ khi rê chuột), trừ Chỉ đạo / Giao miệng;
+ *  không hiện thẻ; "cập nhật …" chỉ khi đã quá 48 giờ. */
 function TaskRow({ t, unitName, to, edit, setEdit, busy, error, act }: {
   t: WorkMyTask; unitName: string | null; to: string; edit: Edit; setEdit: (e: Edit) => void; busy: boolean; error: string | null;
   act: (t: WorkMyTask, kind: "doing" | "blocked" | "done", text?: string) => Promise<void>;
@@ -200,6 +311,7 @@ function TaskRow({ t, unitName, to, edit, setEdit, busy, error, act }: {
   const upd = workUpdateInfo(t.lastProgressAt, t.status);
   const src = mySource(t, unitName);
   const SrcIcon = src.kind === "directive" ? MessageSquare : src.kind === "oral" ? PenLine : src.kind === "self" ? User : src.kind === "head" ? UserCheck : UserRound;
+  const srcShort = src.kind === "directive" ? "Chỉ đạo" : src.kind === "oral" ? "Giao miệng" : null;
   const editing = edit?.id === t.id ? edit : null;
   const claim = t.origin?.origin === "oral_claim" && t.origin.claimStatus === "pending";
   const done = t.status === "completed";
@@ -225,8 +337,8 @@ function TaskRow({ t, unitName, to, edit, setEdit, busy, error, act }: {
     <span key="due" className={`work-due tone-${due.tone}`}><Clock3 size={13} aria-hidden="true" /> {done && t.completedAt ? `Xong ${workDayLabel(t.completedAt)}` : due.text}</span>,
   ];
   if (!claim) meta.push(<span key="p" className="work-row-progress"><span><i style={{ width: `${t.progressPercent}%` }} /></span><b>{t.progressPercent}%</b></span>);
-  if (upd) meta.push(<span key="u" className={upd.stale ? "work-stale" : ""}>{upd.text}</span>);
-  if (t.checklist.total) meta.push(<span key="c" className="work-num">Checklist {t.checklist.done}/{t.checklist.total}</span>);
+  if (upd?.stale) meta.push(<span key="u" className="work-stale">{upd.text}</span>);
+  if (t.checklist.total) meta.push(<span key="c" className="work-num" title={`Checklist ${t.checklist.done}/${t.checklist.total}`}><ListChecks size={13} aria-hidden="true" /> {t.checklist.done}/{t.checklist.total}</span>);
   if (!t.acknowledged && !done) meta.push(<span key="a" className="work-pill tone-amber">Chưa nhận việc</span>);
   if (t.status === "blocked" && t.blockedReason) meta.push(<span key="b" className="work-my-blocked"><AlertTriangle size={13} aria-hidden="true" /> {t.blockedReason}</span>);
   return (
@@ -234,10 +346,9 @@ function TaskRow({ t, unitName, to, edit, setEdit, busy, error, act }: {
       <div className="work-my-task-main">
         <div className="work-my-task-top">
           <span className={`work-level-chip level-${t.level}`} title={WORK_LEVEL_LABELS[t.level]}>{t.level}</span>
-          <span className={`work-src is-${src.kind}`}><SrcIcon size={13} aria-hidden="true" /> {src.text}</span>
-          {t.labels.slice(0, 2).map((l) => <span key={l} className="work-tag">{l}</span>)}
+          <span className={`work-src is-${src.kind}`} title={src.text} aria-label={src.text}><SrcIcon size={13} aria-hidden="true" />{srcShort && ` ${srcShort}`}</span>
+          <h3 className="work-my-task-title"><Link to={to}>{t.title}</Link></h3>
         </div>
-        <h3 className="work-my-task-title"><Link to={to}>{t.title}</Link></h3>
         <div className="work-my-task-meta">{meta}</div>
         {editing && (
           <form className="work-my-edit" onSubmit={(e) => { e.preventDefault(); if (editing.text.trim().length >= 3) void act(t, editing.kind, editing.text); }}>

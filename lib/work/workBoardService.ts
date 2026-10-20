@@ -131,6 +131,8 @@ export interface WorkMyTask {
 export interface WorkMyBoard {
   me: { userId: string; name: string; title: string | null; unit: WorkUnitRef | null };
   today: string; weekStart: string; weekEnd: string; tasks: WorkMyTask[];
+  /** Lịch xem lùi đến ngày này (việc đã xong trước đó không trả về). */
+  doneSince: string;
   /** 4 tuần đã qua, gần nhất trước. */
   weeks: Array<{ weekStart: string; due: number; ontime: number }>;
   review: { reviewed: number; firstPass: number }; load: number;

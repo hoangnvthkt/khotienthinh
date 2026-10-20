@@ -1,5 +1,5 @@
 -- Vioo Work · Việc của tôi theo mockup v1 (chủ SP 20/10/2026): một lệnh đọc cho màn nhân viên.
---   work_my_board_v1(p_week_start): việc đang giao cho chính người hỏi (+ xong trong tuần), nguồn việc (chỉ đạo / giao miệng / trưởng
+--   work_my_board_v1(p_week_start): việc đang giao cho chính người hỏi (+ việc đã xong 5 tuần gần đây cho Lịch), nguồn việc (chỉ đạo / giao miệng / trưởng
 --   đơn vị giao / tự tạo), checklist, lần cập nhật gần nhất, nút bấm được (nhận / bắt đầu / vướng / gỡ vướng / nộp), số đúng hạn 4 tuần
 --   (cùng định nghĩa work_team_board_v1: việc giao miệng chưa xác nhận không tính), duyệt lần đầu 28 ngày, tải việc.
 --   Chỉ việc của chính mình nên không cần kiểm quyền xem từng việc; vẫn đòi quyền vào Vioo Work.
@@ -9,7 +9,7 @@ language plpgsql stable security definer set search_path = '' as $$
 declare
   v_actor uuid := public.current_app_user_id();
   v_today date := (now() at time zone 'Asia/Ho_Chi_Minh')::date;
-  v_ws date; v_week_from timestamptz;
+  v_ws date; v_done_from timestamptz;
   v_active constant text[] := array['pending_acknowledgement', 'clarification_requested', 'not_started', 'in_progress', 'blocked', 'awaiting_review', 'changes_requested'];
   v_tasks jsonb; v_weeks jsonb; v_first jsonb; v_load integer;
 begin
@@ -17,7 +17,8 @@ begin
     raise exception 'WORK_TASK_NOT_FOUND' using errcode = '42501';
   end if;
   v_ws := coalesce(p_week_start, (date_trunc('week', now() at time zone 'Asia/Ho_Chi_Minh'))::date);
-  v_week_from := v_ws::timestamp at time zone 'Asia/Ho_Chi_Minh';
+  -- Lịch xem lùi tối đa 5 tuần: trả việc đã xong có hạn / ngày xong từ mốc đó.
+  v_done_from := (v_ws - 35)::timestamp at time zone 'Asia/Ho_Chi_Minh';
 
   with mine as (
     select t.id, t.task_code, t.title, t.status, t.priority, t.deadline_at, t.progress_percent, t.labels, t.lock_version, t.blocked_reason,
@@ -26,9 +27,9 @@ begin
     from public.work_task_assignments a
     join public.work_tasks t on t.id = a.task_id
     where a.user_id = v_actor and a.ended_at is null and t.status <> 'draft'
-      and (t.status = any(v_active) or (t.status = 'completed' and t.completed_at >= v_week_from))
-    order by t.deadline_at nulls last, t.created_at desc
-    limit 200
+      and (t.status = any(v_active) or (t.status = 'completed' and (t.completed_at >= v_done_from or t.deadline_at >= v_done_from)))
+    order by (t.status = 'completed'), t.deadline_at nulls last, t.created_at desc
+    limit 300
   )
   select coalesce(jsonb_agg(jsonb_build_object(
       'id', m.id, 'code', m.task_code, 'title', m.title, 'status', m.status, 'level', app_private.work_level(m.priority),
@@ -92,7 +93,7 @@ begin
       left join lateral (select e2.title, e2.org_unit_id from public.employees e2
         where e2.user_id = u.id and coalesce(e2.status, '') <> 'Đã nghỉ việc' order by e2.updated_at desc nulls last limit 1) e on true
       where u.id = v_actor),
-    'today', v_today, 'weekStart', v_ws, 'weekEnd', v_ws + 6,
+    'today', v_today, 'weekStart', v_ws, 'weekEnd', v_ws + 6, 'doneSince', v_ws - 35,
     'tasks', v_tasks, 'weeks', coalesce(v_weeks, '[]'::jsonb), 'review', v_first, 'load', v_load);
 end $$;
 

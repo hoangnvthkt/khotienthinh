@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isoWeek, myBoardGroups, myOntime, mySource, myWeekDays, myWeekLabel, saturdayOf, vnDay } from "../work/workMyBoard";
+import { isoWeek, myBoardGroups, myDay, myNoDue, myOntime, myRangeDays, myShiftAnchor, mySource, myWeekDays, myWeekLabel, saturdayOf, vnDay } from "../work/workMyBoard";
 import type { WorkMyTask } from "../work/workBoardService";
 
 const migration = readFileSync("supabase/migrations/20261022150000_work_my_board.sql", "utf8");
@@ -44,6 +44,10 @@ describe("Việc của tôi · nhóm theo hạn", () => {
     expect(same.week.map((t) => t.id)).toEqual(["a", "b"]);
   });
   it("ngày theo giờ Việt Nam", () => expect(vnDay("2026-10-20T17:30:00Z")).toBe("2026-10-21"));
+  it("nhóm Đã xong chỉ lấy việc xong trong tuần (Lịch nhận thêm việc xong các tuần trước)", () => {
+    const old = task("old-done", { status: "completed", deadlineAt: "2026-10-14T10:00:00Z", completedAt: "2026-10-14T08:00:00Z" });
+    expect(myBoardGroups([...tasks, old], "2026-10-20", "2026-10-25", now, "2026-10-19").done.map((t) => t.id)).toEqual(["done"]);
+  });
 });
 
 describe("Việc của tôi · nguồn việc", () => {
@@ -87,3 +91,38 @@ describe("Việc của tôi · hợp đồng RPC", () => {
     expect(migration).toMatch(/grant execute on function public\.work_my_board_v1\(date\) to authenticated;/);
   });
 });
+
+describe("Việc của tôi · Lịch", () => {
+  const now = new Date("2026-10-20T03:00:00Z");
+  it("khoảng: tuần / 2 tuần / tháng luôn đủ tuần, bắt đầu thứ 2", () => {
+    const w = myRangeDays("week", "2026-10-22");
+    expect([w.from, w.to, w.days.length, w.label]).toEqual(["2026-10-19", "2026-10-25", 7, "Tuần 43 · 19/10–25/10"]);
+    const two = myRangeDays("2weeks", "2026-10-20");
+    expect([two.from, two.to, two.days.length, two.label]).toEqual(["2026-10-19", "2026-11-01", 14, "Tuần 43–44 · 19/10–01/11"]);
+    const m = myRangeDays("month", "2026-10-20");
+    expect([m.from, m.to, m.days.length % 7, m.label]).toEqual(["2026-09-28", "2026-11-01", 0, "Tháng 10/2026"]);
+  });
+  it("lùi / tiến theo đúng khoảng", () => {
+    expect(myShiftAnchor("week", "2026-10-20", 1)).toBe("2026-10-27");
+    expect(myShiftAnchor("2weeks", "2026-10-20", -1)).toBe("2026-10-06");
+    expect(myShiftAnchor("month", "2026-10-20", 1)).toBe("2026-11-01");
+    expect(myShiftAnchor("month", "2026-01-15", -1)).toBe("2025-12-01");
+  });
+  it("ô ngày: số việc, % trung bình (xong = 100), màu đỏ trễ > cam vướng / lâu chưa cập nhật > xanh xong hết", () => {
+    const late = myDay("2026-10-17", [task("a", { deadlineAt: "2026-10-17T10:00:00Z", progressPercent: 60 })], now);
+    expect([late.count, late.percent, late.state]).toEqual([1, 60, "late"]);
+    const warn = myDay("2026-10-24", [task("b", { deadlineAt: "2026-10-24T10:00:00Z", status: "blocked", progressPercent: 40 }),
+      task("c", { deadlineAt: "2026-10-24T09:00:00Z", status: "completed", progressPercent: 100 })], now);
+    expect([warn.count, warn.open, warn.percent, warn.state]).toEqual([2, 1, 70, "warn"]);
+    const stale = myDay("2026-10-24", [task("s", { deadlineAt: "2026-10-24T10:00:00Z", lastProgressAt: "2026-10-17T03:00:00Z" })], now);
+    expect(stale.state).toBe("warn");
+    const done = myDay("2026-10-19", [task("d", { deadlineAt: "2026-10-19T10:00:00Z", status: "completed" })], now);
+    expect([done.state, done.percent]).toEqual(["done", 100]);
+    expect(myDay("2026-10-22", [], now)).toMatchObject({ count: 0, percent: null, state: "none" });
+    expect(myDay("2026-10-24", [task("o", { deadlineAt: "2026-10-24T10:00:00Z", lastProgressAt: "2026-10-20T01:00:00Z" })], now).state).toBe("open");
+  });
+  it("việc chưa có hạn gom riêng (không có ô ngày)", () => {
+    expect(myNoDue([task("n", {}), task("x", { status: "completed" }), task("y", { deadlineAt: "2026-10-24T10:00:00Z" })]).map((t) => t.id)).toEqual(["n"]);
+  });
+});
+
