@@ -5,7 +5,7 @@
 //   AI_PRICE_IN_PER_M / AI_PRICE_OUT_PER_M = USD mỗi triệu token (không đặt → chi phí ghi "chưa rõ")
 //   Kết nối Admin thêm ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên; chưa gán thì dùng các biến trên (index.ts chọn đích).
 import Anthropic from '@anthropic-ai/sdk';
-import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, runCostUsd, type AiPrice, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
+import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, runCostUsd, stripThinkTags, thinkTagFilter, type AiPrice, type AiTarget, type ModelClass } from '../_shared/aiTargets.ts';
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
 export type { ModelClass };
@@ -69,14 +69,14 @@ export const envTarget = (config: GatewayConfig, modelClass: ModelClass): AiTarg
 async function withAnthropic(t: AiTarget, req: CompletionRequest): Promise<Completion> {
   const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
   const response = await client.messages.create({
-    model: t.model, max_tokens: req.maxTokens, system: req.system,
+    model: t.model, max_tokens: outputTokenCap(t.kind, req.maxTokens), system: req.system,
     messages: [{ role: 'user', content: req.images?.length
       ? [...req.images.map(i => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: i.mime, data: i.b64 } })), { type: 'text' as const, text: req.user }]
       : req.user }],
   });
   if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
-  const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text;
-  if (!text) throw new Error('AI_EMPTY');
+  const text = stripThinkTags(response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text || '');
+  if (!text) throw new Error(emptyReplyError(response.stop_reason));
   return { text, usage: { tokensIn: response.usage?.input_tokens ?? null, tokensOut: response.usage?.output_tokens ?? null } };
 }
 
@@ -118,7 +118,7 @@ async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completi
   if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
   const data = await res.json();
   if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
-  const text = data?.choices?.[0]?.message?.content;
+  const text = stripThinkTags(String(data?.choices?.[0]?.message?.content ?? ''));
   if (!text) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
   return { text, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
 }
@@ -130,16 +130,23 @@ export const complete = (target: AiTarget, req: CompletionRequest): Promise<Comp
 export interface ChatRequest { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; maxTokens: number; noThinking?: boolean }
 /** Cả lượt (kể cả chờ model suy nghĩ) tối đa 110 s; cổng gửi nhịp giữ kết nối nên không chạm mốc 150 s không trả byte của Supabase. */
 const CHAT_TIMEOUT_MS = 110_000;
+/** Chữ model gửi dần → bỏ thẻ <think>…</think> (aiTargets.thinkTagFilter) rồi mới đưa màn hình; done() trả chữ đã hiện. */
+const shownText = (onDelta: (text: string) => void) => {
+  const filter = thinkTagFilter(); let text = '';
+  const show = (piece: string) => { if (piece) { text += piece; onDelta(piece); } };
+  return { add: (delta: string) => show(filter.push(delta)), done: () => { show(filter.flush()); return text; } };
+};
 
 async function streamAnthropic(t: AiTarget, req: ChatRequest, onDelta: (text: string) => void): Promise<Completion> {
   const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
   const stream = client.messages.stream(
-    { model: t.model, max_tokens: req.maxTokens, system: req.system, messages: req.messages },
+    { model: t.model, max_tokens: outputTokenCap(t.kind, req.maxTokens), system: req.system, messages: req.messages },
     { signal: AbortSignal.timeout(CHAT_TIMEOUT_MS) },
   );
-  let text = '';
-  stream.on('text', delta => { text += delta; onDelta(delta); });
+  const { add, done } = shownText(onDelta);
+  stream.on('text', add);
   const final = await stream.finalMessage();
+  const text = done();
   if (final.stop_reason === 'refusal') throw new Error('AI_REFUSED');
   if (!text) throw new Error(emptyReplyError(final.stop_reason));
   return { text, usage: { tokensIn: final.usage?.input_tokens ?? null, tokensOut: final.usage?.output_tokens ?? null } };
@@ -191,23 +198,25 @@ async function streamOpenAI(t: AiTarget, req: ChatRequest, onDelta: (text: strin
   if (!(res.headers.get('content-type') || '').includes('event-stream')) {
     const data = await res.json();
     if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
-    const whole = data?.choices?.[0]?.message?.content;
+    const whole = stripThinkTags(String(data?.choices?.[0]?.message?.content ?? ''));
     if (!whole) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
     onDelta(whole);
     return { text: whole, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
   }
-  let text = ''; let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
+  let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
+  const { add, done } = shownText(onDelta);
   await readSse(res.body, data => {
     if (data === '[DONE]') return;
     let j: Record<string, any>;
     try { j = JSON.parse(data); } catch { return; }
     const choice = j?.choices?.[0];
-    // Model suy nghĩ (deepseek…) gửi reasoning_content trước — không hiện cho người dùng.
+    // Model suy nghĩ (deepseek…) gửi reasoning_content / reasoning riêng — không hiện cho người dùng.
     const delta = choice?.delta?.content;
-    if (typeof delta === 'string' && delta) { text += delta; onDelta(delta); }
+    if (typeof delta === 'string' && delta) add(delta);
     if (choice?.finish_reason) finish = choice.finish_reason;
     if (j?.usage) usage = { tokensIn: j.usage.prompt_tokens ?? null, tokensOut: j.usage.completion_tokens ?? null };
   });
+  const text = done();
   if (finish === 'content_filter') throw new Error('AI_REFUSED');
   if (!text) throw new Error(emptyReplyError(finish));
   return { text, usage };
@@ -230,6 +239,10 @@ async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (tex
   if (!t.model) throw new Error('AI_MODEL_REQUIRED');
   const compatible = t.kind === 'openai_compatible';
   const cap = outputTokenCap(t.kind, req.maxTokens);
+  // Đo 20/10/2026 (claude-sonnet-5-5 qua RevidAPI chuẩn OpenAI): "none" nhanh (7–10 s) nhưng RevidAPI chèn suy nghĩ vào content
+  // ("Let me try tim_ho_so…" trước khi gọi công cụ — loop.ts bỏ; một đoạn tiếng Anh đầu câu trả lời ở ~1/4 lượt — không tách được);
+  // 21/10 RevidAPI tự đổi, "none" sạch. "low" / "minimal" / không gửi: suy nghĩ vào reasoning_content nhưng chậm thất thường. Cổng tự
+  // đổi được → chạy bộ kiểm trước khi gán / deploy; Claude ưu tiên kết nối loại Anthropic (suy nghĩ là khối riêng; scripts/assistant-evals).
   const body = (extras: boolean) => JSON.stringify({
     model: t.model, stream: true, messages: toOpenAIMessages(req.system, req.messages),
     ...(req.tools.length ? { tools: openAITools(req.tools), tool_choice: openAIToolChoice(req.toolChoice) } : {}),
@@ -247,40 +260,62 @@ async function agentStepOpenAI(t: AiTarget, req: AgentStepRequest, onDelta: (tex
     const msg = data?.choices?.[0]?.message || {};
     if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
     const calls = finishToolCalls(accumulateToolDeltas([], (msg.tool_calls || []).map((c: Record<string, unknown>, index: number) => ({ ...c, index }))));
-    const whole = typeof msg.content === 'string' ? msg.content : '';
+    const whole = typeof msg.content === 'string' ? stripThinkTags(msg.content) : '';
     if (whole) onDelta(whole);
     if (!whole && !calls.length) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
     return { text: whole, toolCalls: calls, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
   }
-  let text = ''; let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
+  let finish: unknown = null; let usage: Usage = { tokensIn: null, tokensOut: null };
   const acc: Array<{ id: string; name: string; args: string }> = [];
+  const { add, done } = shownText(onDelta);
   await readSse(res.body, data => {
     if (data === '[DONE]') return;
     let j: Record<string, any>;
     try { j = JSON.parse(data); } catch { return; }
     const choice = j?.choices?.[0];
     const delta = choice?.delta?.content;
-    if (typeof delta === 'string' && delta) { text += delta; onDelta(delta); }
+    if (typeof delta === 'string' && delta) add(delta);
     if (choice?.delta?.tool_calls) accumulateToolDeltas(acc, choice.delta.tool_calls);
     if (choice?.finish_reason) finish = choice.finish_reason;
     if (j?.usage) usage = { tokensIn: j.usage.prompt_tokens ?? null, tokensOut: j.usage.completion_tokens ?? null };
   });
+  const text = done();
   if (finish === 'content_filter') throw new Error('AI_REFUSED');
   const toolCalls = finishToolCalls(acc);
   if (!text && !toolCalls.length) throw new Error(emptyReplyError(finish));
   return { text, toolCalls, usage };
 }
 
+/** Endpoint + model đã từ chối buộc gọi công cụ (400 "tool_choice: type tool and any are not supported" — Sonnet 5.5, Opus 5.5,
+ *  Fable 5.1 trên API Anthropic): các lần sau gửi auto + dặn trong lời nhắc, khỏi tốn một lượt lỗi. */
+const NO_FORCED_TOOL = new Set<string>();
+
 async function agentStepAnthropic(t: AiTarget, req: AgentStepRequest, onDelta: (text: string) => void): Promise<AgentStep> {
   const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
-  const stream = client.messages.stream({
-    model: t.model, max_tokens: req.maxTokens, system: req.system,
+  const forced = typeof req.toolChoice === 'object' ? req.toolChoice.name : null;
+  const key = `${t.baseUrl}|${t.model}`;
+  const send = (force: boolean) => client.messages.stream({
+    model: t.model, max_tokens: outputTokenCap(t.kind, req.maxTokens),
+    system: forced && !force ? `${req.system}\nBước này: gọi ngay công cụ ${forced}.` : req.system,
     messages: toAnthropicMessages(req.messages) as Anthropic.MessageParam[],
-    ...(req.tools.length ? { tools: anthropicTools(req.tools) as Anthropic.Tool[], tool_choice: anthropicToolChoice(req.toolChoice) as Anthropic.ToolChoice } : {}),
+    ...(req.tools.length ? { tools: anthropicTools(req.tools) as Anthropic.Tool[],
+      tool_choice: anthropicToolChoice(forced && !force ? 'auto' : req.toolChoice) as Anthropic.ToolChoice } : {}),
   }, { signal: AbortSignal.timeout(CHAT_TIMEOUT_MS) });
-  let text = '';
-  stream.on('text', delta => { text += delta; onDelta(delta); });
-  const final = await stream.finalMessage();
+  let force = Boolean(forced) && !NO_FORCED_TOOL.has(key);
+  let { add, done } = shownText(onDelta);
+  let stream = send(force);
+  stream.on('text', add);
+  let final: Anthropic.Message;
+  try { final = await stream.finalMessage(); } catch (e) {
+    // Lỗi 400 trả về trước khi có chữ nào → gửi lại không buộc, chữ chưa hiện gì.
+    if (!force || !(e instanceof Anthropic.BadRequestError) || !/tool_choice/i.test(e.message)) throw e;
+    NO_FORCED_TOOL.add(key); force = false;
+    ({ add, done } = shownText(onDelta));
+    stream = send(false);
+    stream.on('text', add);
+    final = await stream.finalMessage();
+  }
+  const text = done();
   if (final.stop_reason === 'refusal') throw new Error('AI_REFUSED');
   const toolCalls: ToolCall[] = final.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
     .map(b => ({ id: b.id, name: b.name, args: parseToolArgs(b.input) }));

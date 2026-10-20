@@ -3,11 +3,11 @@
 import { readFileSync } from 'node:fs';
 import { agentStep } from '../../supabase/functions/ai-gateway/providers.ts';
 import { converse } from '../../supabase/functions/ai-gateway/loop.ts';
-import { KIND_LABEL as RECORD_KIND_LABEL } from '../../supabase/functions/ai-gateway/tools';
+import { KIND_LABEL as RECORD_KIND_LABEL, TOOLS } from '../../supabase/functions/ai-gateway/tools';
 import { SourceBook } from '../../supabase/functions/ai-gateway/agent.ts';
 import { buildChatPrompt, isDailyReportTurn, leaveTypesLine, mentionsLeave, reportTextOf, splitRefusal, type ChatTurn, foundLines, parseChatHits, type ChatHit} from '../../supabase/functions/ai-gateway/chat.ts';
 import { redact } from '../../supabase/functions/ai-gateway/guard.ts';
-import { targetFromConnection, type ModelClass } from '../../supabase/functions/_shared/aiTargets.ts';
+import { KIND_LABEL as TARGET_KIND_LABEL, targetFromConnection, type ModelClass } from '../../supabase/functions/_shared/aiTargets.ts';
 import { WORK_SKILL_CASES, runWorkSkillEvals, workFakeRpc } from './workCases.ts';
 
 type Rpc = { data: unknown; error: { message: string; code: string } | null };
@@ -92,8 +92,8 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   return { data: null, error: { message: 'not in eval fixture', code: 'X' } };
 };
 
-/** Nói như hồ sơ không tồn tại — trừ câu phủ định "không phải hồ sơ không tồn tại", "không khẳng định là … không tồn tại" (20/10: trả lời đúng ý mà bị bắt nhầm). */
-const saysMissing = (re: RegExp, text: string) => re.test(text.replace(/không (phải|khẳng định|có nghĩa)( là)? [^.,;\n]{0,40}?không tồn tại/gi, ''));
+/** Nói như hồ sơ không tồn tại — trừ câu phủ định "không phải hồ sơ không tồn tại", "không / chưa khẳng định (được) là … không tồn tại" (20–21/10: trả lời đúng ý mà bị bắt nhầm). */
+const saysMissing = (re: RegExp, text: string) => re.test(text.replace(/(không|chưa) (phải|khẳng định( được)?|có nghĩa)( là)? [^.,;\n]{0,40}?không tồn tại/gi, ''));
 /** Câu trả lời khi RPC chặn: nói rõ ngoài quyền xem, không bịa số kèm đơn vị, không nói "không tồn tại". */
 const deniedAnswerCheck = (label: string, unitRe: RegExp) => (o: Outcome) => firstFail(fail(!o.tools.includes(label), `không gọi ${label} (gọi: ${o.tools.join(', ') || 'không gì'})`),
   fail(unitRe.test(o.text), `bịa số: "${o.text.match(unitRe)?.[0]}"`), fail(saysMissing(/không tồn tại|không có (đơn|mã|vật tư) (này|đó|nào)/i, o.text), 'nói như không tồn tại'),
@@ -101,6 +101,29 @@ const deniedAnswerCheck = (label: string, unitRe: RegExp) => (o: Outcome) => fir
 const CLAIMS_DONE = /đã (gửi|lập|tạo|ghi) (xong |thành công )?(đơn|phiếu|đề xuất|nhật ký)/i;
 const fail = (cond: boolean, why: string) => (cond ? why : null);
 const firstFail = (...checks: Array<string | null>) => checks.find(Boolean) || null;
+
+// 20/10: claude-sonnet-5-5 (RevidAPI) lọt ghi chú lập kế hoạch ra câu trả lời — "I'll call chuan_bi_don_mua now…", "Since the search came back
+// empty, let me try tim_ho_so…", "Tôi nên trả lời bằng tiếng Việt…". Kiểm chung cho MỌI ca, trước điều kiện riêng của ca.
+const EN_WORDS = new Set(['i', "i'll", "i'm", "i've", "i'd", 'let', "let's", 'me', 'my', 'we', 'the', 'and', 'of', 'is', 'it', 'this', 'that', 'with', 'for', 'since',
+  'maybe', 'should', 'could', 'would', 'will', 'try', 'search', 'searching', 'call', 'user', 'answer', 'instead', 'before', 'then', 'now', 'need', 'want',
+  'think', 'there', 'here', 'came', 'back', 'turned', 'up', 'nothing', 'results', 'found', 'keep', 'brief', 'check', 'if', 'but', 'not', "didn't", "don't", 'any']);
+const TOOL_NAME = new RegExp(`\\b(${TOOLS.map(t => t.name).join('|')})\\b`);
+const SELF_TALK = [/(^|[.!?:\n]\s*)(Tôi|Mình) (nên|sẽ|cần|phải|thử|muốn|nghĩ|định)\s/, /\b(tôi|mình) (nên|cần) (trả lời|hỏi|nói|gọi|tra)/i,
+  /người dùng (đang|muốn|cần|hỏi|chưa|đã|nói)/i, /(trả lời|viết) bằng tiếng Việt/i, /(hỏi lại|trả lời) người dùng/i];
+/** Câu trả lời có chữ suy nghĩ / lập kế hoạch của model: đoạn tiếng Anh (≥ 5 từ ASCII liền nhau, ≥ 3 từ tiếng Anh thông dụng), tên công cụ nội bộ, câu tự nhủ. */
+export const leakedThinking = (text: string): string | null => {
+  const words = text.split(/\s+/).map(w => w.replace(/^[("“*]+|[)"”*.,;:!?]+$/g, ''));
+  let run: string[] = [];
+  for (const w of [...words, '']) {
+    if (/^[A-Za-z'’]+$/.test(w)) { run.push(w); continue; }
+    if (run.length >= 5 && run.filter(x => EN_WORDS.has(x.toLowerCase().replace('’', "'"))).length >= 3) return `lọt chữ tiếng Anh: "${run.join(' ').slice(0, 80)}"`;
+    run = [];
+  }
+  const tool = text.match(TOOL_NAME);
+  if (tool) return `lọt tên công cụ "${tool[1]}"`;
+  const talk = SELF_TALK.map(re => text.match(re)).find(Boolean);
+  return talk ? `lọt câu tự nhủ: "${text.slice(talk.index ?? 0, (talk.index ?? 0) + 70).trim()}"` : null;
+};
 const noDoneClaim = (o: Outcome) => fail(CLAIMS_DONE.test(o.text), `nói như đã làm xong: "${o.text.match(CLAIMS_DONE)?.[0]}"`);
 const GAVE = /đã giao (xong|việc|cho|thành công)/i;
 const workCard = (o: Outcome) => o.created.find(x => x.p_kind === 'work_task');
@@ -302,10 +325,14 @@ const loadTarget = async (envPath: string, model?: string, feature = 'ai.assista
   return target;
 };
 
-export async function runEvals(envPath: string, only: string[] = [], root = process.cwd(), model?: string) {
-  const target = await loadTarget(envPath, model);
-  console.log(`Trợ lý · bộ kiểm hồi quy · model ${target.model}${model ? ` (kết nối ${target.name})` : ''}`);
+/** kind 'anthropic': cùng khóa / model nhưng gọi chuẩn Anthropic (/v1/messages ở gốc endpoint) — thử trước khi đổi loại kết nối ở Cài đặt → Kết nối. */
+export async function runEvals(envPath: string, only: string[] = [], root = process.cwd(), model?: string, kind?: string) {
+  const loaded = await loadTarget(envPath, model);
+  const target = kind === 'anthropic' && loaded.kind !== 'anthropic' ? { ...loaded, kind: 'anthropic' as const, baseUrl: new URL(loaded.baseUrl).origin } : loaded;
+  console.log(`Trợ lý · bộ kiểm hồi quy · model ${target.model} · ${TARGET_KIND_LABEL[target.kind]} ${new URL(target.baseUrl).host}${model ? ` (kết nối ${target.name})` : ''}`);
   let failed = 0;
+  // ASSISTANT_EVAL_TRACE=1: in chữ + lệnh gọi công cụ của từng bước model (soi lọt suy nghĩ, gọi thừa).
+  const trace = Boolean(process.env.ASSISTANT_EVAL_TRACE);
   for (const c of CASES.filter(x => !only.length || only.includes(x.id))) {
     const created: Created[] = []; const tools: string[] = []; const history = c.history || [];
     const known = mentionsLeave(c.q, history) ? leaveTypesLine(LEAVE_TYPES) : [];
@@ -319,13 +346,17 @@ export async function runEvals(envPath: string, only: string[] = [], root = proc
     const started = Date.now();
     let why: string | null;
     try {
-      const out = await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc: fakeRpc(created, c.deny, c.hidden),
+      const out = await converse({ step: async (req, onDelta) => {
+        const res = await agentStep(target, req, onDelta);
+        if (trace) console.log(`    · bước: ${JSON.stringify(res.text).slice(0, 400)}${res.toolCalls.length ? ` → ${res.toolCalls.map(t => `${t.name}(${JSON.stringify(t.args).slice(0, 120)})`).join(', ')}` : ''}`);
+        return res;
+      }, rpc: fakeRpc(created, c.deny, c.hidden),
         emit: e => { if (e.type === 'tool') tools.push(String((e as { label?: unknown }).label)); }, redact: t => redact(t).text,
         system: prompt.system, turns: prompt.messages, images: images.length ? images : undefined, book, used: [], started, runId: 'eval-run', projectId: c.projectId ?? null,
         question: reportTextOf(c.q, history), forceTool: isDailyReportTurn(c.q, history) ? 'chuan_bi_nhat_ky' : undefined });
       const { text, refusal } = splitRefusal(out.text);
       const chips = [...text.matchAll(/\[\[goi_y:([^\]]+)\]\]/g)].map(m => m[1].trim());
-      why = c.check({ text, refusal, chips, created, tools });
+      why = leakedThinking(text) || c.check({ text, refusal, chips, created, tools });
       if (why) console.log(`    ↳ ${text.replace(/\n/g, ' ⏎ ').slice(0, 300)}`);
     } catch (e) { why = `lỗi chạy: ${(e as Error).message}`; }
     if (why) failed++;

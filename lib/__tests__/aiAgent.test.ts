@@ -3,7 +3,7 @@ import {
   SourceBook, accumulateToolDeltas, finishToolCalls, parseToolArgs, toAnthropicMessages, toOpenAIMessages, type AgentMsg,
 } from '../../supabase/functions/ai-gateway/agent';
 import { TOOLS, runTool, searchTerms, type Rpc } from '../../supabase/functions/ai-gateway/tools';
-import { converse, type StepRequest, type StepResult } from '../../supabase/functions/ai-gateway/loop';
+import { HOLD_CHARS, converse, type StepRequest, type StepResult } from '../../supabase/functions/ai-gateway/loop';
 
 const rpcOf = (table: Record<string, unknown | ((args: Record<string, unknown>) => unknown)>): Rpc & { calls: Array<[string, Record<string, unknown>]> } => {
   const calls: Array<[string, Record<string, unknown>]> = [];
@@ -117,16 +117,19 @@ describe('Trợ lý T1 · vòng gọi công cụ (model giả)', () => {
     return { run, events, used, book };
   };
 
-  it('tra → nhận kết quả (đã che SĐT) → trả lời; báo màn hình đang tra; nối chữ các bước', async () => {
+  it('tra → nhận kết quả (đã che SĐT) → trả lời; báo màn hình đang tra; chữ của bước gọi công cụ không vào câu trả lời', async () => {
     const seen: StepRequest[] = [];
     const step = vi.fn(async (req: StepRequest, onDelta: (t: string) => void): Promise<StepResult> => {
       seen.push(JSON.parse(JSON.stringify(req)));
-      if (seen.length === 1) { onDelta('Để em tra.'); return { text: 'Để em tra.', toolCalls: [{ id: 'c1', name: 'ton_kho', args: { vat_tu: 'thép D16' } }, { id: 'c2', name: 'tim_ho_so', args: { tu_khoa: 'A' } }], usage: { tokensIn: 100, tokensOut: 5 } }; }
-      onDelta('Còn 12,4 tấn [[h1]].'); return { text: 'Còn 12,4 tấn [[h1]].', toolCalls: [], usage: { tokensIn: 300, tokensOut: 20 } };
+      if (seen.length === 1) { onDelta('Let me check '); onDelta('ton_kho.'); return { text: 'Let me check ton_kho.', toolCalls: [{ id: 'c1', name: 'ton_kho', args: { vat_tu: 'thép D16' } }, { id: 'c2', name: 'tim_ho_so', args: { tu_khoa: 'A' } }], usage: { tokensIn: 100, tokensOut: 5 } }; }
+      onDelta('Còn 12,4 tấn '); onDelta('[[h1]].'); return { text: 'Còn 12,4 tấn [[h1]].', toolCalls: [], usage: { tokensIn: 300, tokensOut: 20 } };
     });
     const { run, events, used, book } = base(step);
     const out = await run;
-    expect(out.text).toBe('Để em tra.\n\nCòn 12,4 tấn [[h1]].');
+    // 20/10: ghi chú lập kế hoạch trước khi tra ("Let me check…") không hiện, không lưu; câu trả lời ngắn hiện một lần khi xong bước.
+    expect(out.text).toBe('Còn 12,4 tấn [[h1]].');
+    expect(events.filter(e => e.type === 'delta' || e.type === 'reset')).toEqual([{ type: 'delta', text: 'Còn 12,4 tấn [[h1]].' }]);
+    expect((seen[1].messages.at(-2) as Extract<AgentMsg, { role: 'assistant' }>).content).toBe('Let me check ton_kho.');
     expect(out.usage).toEqual({ tokensIn: 400, tokensOut: 25, calls: 2 });
     expect(used).toEqual(['ton_kho', 'tim_ho_so']);
     expect(events.filter(e => e.type === 'tool')).toEqual([{ type: 'tool', name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }, { type: 'tool', name: 'tim_ho_so', label: 'Tìm hồ sơ', query: 'A' }]);
@@ -135,6 +138,25 @@ describe('Trợ lý T1 · vòng gọi công cụ (model giả)', () => {
     expect(toolMsg.results[1].content).not.toContain('0912345678');
     expect(seen[0].toolChoice).toBe('auto');
     expect(book.cited(out.text)[0]).toMatchObject({ type: 'record', record: { code: 'THEP-D16' } });
+  });
+
+  it('chữ dài chạy dần sau HOLD_CHARS ký tự; bước dài lỡ chạy ra rồi mới gọi công cụ → màn hình xóa (reset)', async () => {
+    const long = 'Em tra tồn kho thép D16 theo từng kho anh được xem. '.repeat(10);
+    let n = 0;
+    const step = vi.fn(async (_req: StepRequest, onDelta: (t: string) => void): Promise<StepResult> => {
+      n++;
+      for (const piece of long.match(/.{1,50}/g) || []) onDelta(piece);
+      return { text: long, toolCalls: n === 1 ? [{ id: 'c1', name: 'ton_kho', args: { vat_tu: 'thép D16' } }] : [], usage: { tokensIn: 1, tokensOut: 1 } };
+    });
+    const { run, events } = base(step);
+    expect((await run).text).toBe(long);
+    const shown = events.filter(e => e.type === 'delta' || e.type === 'reset');
+    const reset = shown.findIndex(e => e.type === 'reset');
+    expect(reset).toBeGreaterThan(0);
+    expect(shown.slice(0, reset).map(e => e.text).join('')).toBe(long);
+    expect(shown.slice(reset + 1).map(e => e.text).join('')).toBe(long);
+    expect(String(shown[reset + 1].text).length).toBeGreaterThanOrEqual(HOLD_CHARS);
+    expect(shown.length - reset - 1).toBeGreaterThan(1);
   });
 
   it('hết bước / hết thời gian: bước cuối bắt trả lời, không gọi thêm công cụ', async () => {
