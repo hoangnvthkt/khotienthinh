@@ -1817,3 +1817,75 @@
   .work-quick-more { grid-template-columns: minmax(0, 1fr); }
   .work-task-list a.work-level-row { padding-left: 14px; }
 }
+
+/* Đợt 1 PR-3 · nháp AI trong Giao nhanh / Giao từ biên bản */
+.work-quick-head { display: flex; gap: 8px; align-items: stretch; }
+.work-quick-head .work-quick-title { flex: 1 1 auto; min-width: 0; }
+.work-quick-ai { display: flex; gap: 8px; }
+.work-ai-button svg { color: #0f766e; }
+.work-ai-button:disabled { opacity: .7; }
+.work-quick-when { display: inline-flex; gap: 6px; }
+.work-quick-time { width: 104px; }
+.work-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.work-ai-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; color: #0f766e; }
+.work-ai-note { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+.work-ai-note > span { flex: 1 1 220px; }
+.work-ai-note.is-ok { background: #f0fdfa; color: #134e4a; border: 1px solid #99f6e4; }
+.work-ai-note.is-ok svg { color: #0f766e; }
+.work-ai-note.is-warn { background: #fffbeb; color: #78350f; border: 1px solid #fde68a; }
+.work-ai-note.is-warn svg { color: #b45309; }
+.work-ai-note .work-text-button { display: inline-flex; align-items: center; gap: 4px; font-weight: 650; }
+.work-ai-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: #334155; }
+.work-ai-pick > span { font-weight: 650; }
+.work-chip-button { border: 1px solid #99f6e4; background: #fff; color: #115e59; border-radius: 99px; padding: 6px 12px; min-height: 34px; font-size: 13px; font-weight: 600; }
+.work-chip-button:hover, .work-chip-button[aria-pressed="true"] { background: #f0fdfa; border-color: #0f766e; }
+.work-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: 8px; background: none; color: #475569; }
+.work-icon-button:hover { background: #f1f5f9; border-color: #e2e8f0; }
+.work-spin { animation: work-spin 0.9s linear infinite; }
+@keyframes work-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .work-spin { animation: none; } }
+
+.work-meeting { display: grid; gap: 10px; margin: -6px 0 18px; padding: 12px; border: 1px solid #99f6e4; border-radius: 10px; background: #fff; }
+.work-meeting-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.work-meeting-head h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; color: #0f172a; }
+.work-meeting-head h3 svg { color: #0f766e; }
+.work-meeting-text { min-height: 120px; resize: vertical; padding: 10px 12px; line-height: 1.5; }
+.work-meeting-photos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.work-meeting-photos .work-primary { margin-left: auto; }
+.work-meeting-thumb { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1; }
+.work-meeting-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.work-meeting-thumb button { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 99px; border: 0; background: #0f172acc; color: #fff; display: grid; place-items: center; }
+.work-meeting-meta { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 10px; align-items: end; }
+.work-meeting-record { display: flex; align-items: center; gap: 6px; min-height: 42px; font-size: 13px; font-weight: 600; color: #334155; white-space: nowrap; }
+.work-meeting-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.work-meeting-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; border: 1px solid var(--work-border); border-radius: 8px; background: #f8fafc; }
+.work-meeting-row > input[type="checkbox"] { margin-top: 13px; width: 18px; height: 18px; accent-color: #0f766e; }
+.work-meeting-row.is-off { opacity: .55; }
+.work-meeting-row.is-done { background: #f0fdfa; border-color: #99f6e4; }
+.work-meeting-row.is-error { border-color: #fca5a5; }
+.work-meeting-fields { display: grid; gap: 6px; min-width: 0; }
+.work-meeting-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.work-meeting-line select { flex: 1 1 220px; min-width: 0; min-height: 40px; }
+.work-meeting-line input[type="date"] { width: auto; }
+.work-meeting-quote { margin: 0; font-size: 12px; color: #64748b; font-style: italic; overflow-wrap: anywhere; }
+.work-meeting-ok { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #0f766e; }
+.work-meeting-foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+  .work-quick-head { flex-wrap: wrap; }
+  .work-quick-head .work-quick-title { flex: 1 1 100%; }
+  .work-quick-ai { flex: 1 1 100%; }
+  .work-quick-ai > button { flex: 1; }
+  .work-quick-when { flex: 1 1 100%; }
+  .work-quick-when .work-quick-date { flex: 1; }
+  .work-meeting-meta { grid-template-columns: minmax(0, 1fr); }
+  .work-meeting-photos .work-primary { flex: 1 1 100%; margin-left: 0; }
+  .work-meeting-line select, .work-meeting-line input[type="date"] { flex: 1 1 100%; }
+  .work-meeting-line .work-quick-level { flex: 1 1 55%; }
+  .work-meeting-foot > button { flex: 1; }
+}
+.work-quick-more .work-label { align-content: start; }
+.work-label-row { min-height: 18px; }
+.work-label-row .work-ai-inline { padding: 0; min-height: 0; line-height: 18px; }
+/* WebKit (iPhone) bỏ qua min-height của select: đặt chiều cao cố định. */
+.work-quick-person, .work-meeting-line select, .work-meeting-meta select { height: 42px; }

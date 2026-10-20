@@ -217,7 +217,7 @@ export const parseWorkspaceScope = (value: unknown): WorkspaceScope => {
       return { type: 'project', projectId: requiredScopeId(record, 'projectId') };
     }
     default:
-      invalidScope('WORK_SCOPE_INVALID_TYPE', `unsupported type ${JSON.stringify(type)}`);
+      return invalidScope('WORK_SCOPE_INVALID_TYPE', `unsupported type ${JSON.stringify(type)}`);
   }
 };
 

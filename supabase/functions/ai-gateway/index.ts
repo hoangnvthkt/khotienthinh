@@ -190,7 +190,9 @@ Deno.serve(async request => {
   const def = SKILLS[body.skill];
   if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }
   // Skill đọc ảnh đi kết nối đọc ảnh (Cài đặt → Kết nối · "Đọc ảnh chứng từ", đang dùng cho Kho); chưa gán thì như skill thường.
-  const target = (def.images ? await assigned('wms.doc_reader', 'fast') : null) ?? await resolveTarget(opened.skill?.modelClass || 'fast');
+  // textUsesFast (Vioo Work): lượt chỉ có chữ chạy model theo lớp như skill thường.
+  const hasImages = (() => { try { return Boolean(def.images?.(body.input).length); } catch { return true; } })();
+  const target = (def.images && (hasImages || !def.textUsesFast) ? await assigned('wms.doc_reader', 'fast') : null) ?? await resolveTarget(opened.skill?.modelClass || 'fast');
   if (!target) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
 
   const model = target.model;

@@ -16,6 +16,7 @@ import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type 
 import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
 import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
 import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
+import type { WorkTaskCardActions } from '../../lib/assistantWorkTask';
 import type { ReportRead } from '../../lib/dailyLogReport';
 import type { ProjectTask } from '../../types';
 import DL_DATA from '../daily-log/report-fixture-data.json';
@@ -455,7 +456,25 @@ const LOCAL_INDEX = buildLocalIndex(
   route => !DENIED_ROUTES.has(route.split('?')[0]) && !route.startsWith('/finance'));
 window.addEventListener(OPEN_MODAL_EVENT, event => { aiCalls.push({ modal: (event as CustomEvent<{ modal?: string }>).detail?.modal }); });
 
+// Vioo Work (PR-3): thẻ giao việc — người giao được + Giao (ghi lại để kiểm, không gọi máy chủ).
+const workPeople = { canAssignOthers: true, people: [
+  { userId: 'me', name: 'Phan Quốc Bảo', title: null, unit: { id: 'u1', code: 'BLĐ', name: 'Ban lãnh đạo' }, myTeam: false, sameUnit: false, isMe: true, canReceive: true, load: 0, aliases: [] },
+  { userId: 'do', name: 'Vương Thành Đô', title: null, unit: { id: 'u2', code: 'QLDA', name: 'Phòng QLDA' }, myTeam: true, sameUnit: false, isMe: false, canReceive: true, load: 5, aliases: [] },
+  { userId: 'ha', name: 'Đặng Thu Hà', title: null, unit: { id: 'u3', code: 'KH', name: 'Phòng KH' }, myTeam: true, sameUnit: false, isMe: false, canReceive: true, load: 2, aliases: [] },
+] };
+const workTask: WorkTaskCardActions = {
+  people: async () => workPeople,
+  give: async (command, input) => {
+    aiCalls.push({ workTask: 'give', assigneeId: input.assigneeId, level: input.level, deadline: input.deadline.toISOString(), title: input.title });
+    await sleep(200);
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'VW-2026-000301', taskId: 't301', route: '/work/tasks/VW-2026-000301', assigneeName: input.assigneeName, deadlineAt: input.deadline.toISOString() }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+
 const assistantHooks: AssistantHooks = {
+  workTask,
   search: instantSearch,
   poForm,
   memory,
@@ -541,6 +560,29 @@ const assistantHooks: AssistantHooks = {
       const messageId = `msg-${aiCalls.length}`;
       thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
         { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [note] });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Vioo Work (PR-3): "giao cho … " → thẻ giao việc (người dùng tự bấm Giao).
+    if (/^giao (cho|việc)/i.test(input.question) && !refused) {
+      const command: AssistantCommand = { id: `cmd-work-${Date.now()}`, kind: 'work_task', status: 'prepared', title: 'Giao việc: Rà soát hồ sơ thanh toán đợt 3 SMB',
+        payload: { title: 'Rà soát hồ sơ thanh toán đợt 3 SMB', assigneeUserId: 'do', assigneeName: 'Vương Thành Đô', deadlineDate: '2099-10-23', deadlineTime: '17:00', level: 'A',
+          description: 'Đối chiếu hồ sơ với hợp đồng, nộp bảng chênh lệch.', checklist: ['Gom hồ sơ', 'Đối chiếu khối lượng', 'Lập bảng chênh lệch'], runId },
+        preview: {}, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null };
+      await sleep(120);
+      handlers.onTool?.({ name: 'chuan_bi_giao_viec', label: 'Chuẩn bị giao việc', query: '' });
+      await sleep(100);
+      handlers.onCommand?.(command);
+      const text = 'Em đã chuẩn bị việc cho **Vương Thành Đô**, mức A, hạn T6 23/10 — anh kiểm rồi bấm **Giao** trên thẻ.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [command] });
       thread.lastMessageAt = at;
       saveThreads(all);
       return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };

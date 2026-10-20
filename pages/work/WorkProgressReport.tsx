@@ -1,24 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Paperclip, PenLine, Send, Sparkles } from "lucide-react";
+import { AlertTriangle, Loader2, Paperclip, PenLine, Send, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { WorkCollaborationCommand, WorkTask, WorkTaskAttachment } from "../../lib/work/workTypes";
-import type { WorkBoardService, WorkTaskUpdate } from "../../lib/work/workBoardService";
+import type { WorkBoardService, WorkTaskBrief, WorkTaskUpdate } from "../../lib/work/workBoardService";
 import { normalizeProgressReport, PROGRESS_REPORT_PROBLEMS } from "../../lib/work/workBoardService";
 import { workDayLabel } from "../../lib/work/workPresentation";
 import { workError } from "../../lib/work/workForm";
+import { workBriefFacts, workUpdateFacts, type WorkAiService } from "../../lib/work/workAi";
 import { WorkTaskSection } from "./WorkTaskSection";
 
 const STEPS = [25, 50, 75, 90, 100];
 /** App dùng HashRouter: không dùng liên kết "#…" để cuộn (sẽ đổi trang), cuộn bằng mã. */
 export const scrollToAttachments = () => document.getElementById("work-attachments")?.scrollIntoView({ behavior: "smooth", block: "start" });
-/** Mốc % để bấm: giữ nguyên mức hiện tại + các mốc lớn hơn. */
-export const progressChoices = (current: number) => [...new Set([current, ...STEPS.filter((s) => s > current)])].sort((a, b) => a - b);
+/** Mốc % để bấm: giữ nguyên mức hiện tại + các mốc lớn hơn (+ mức AI gợi ý nếu có). */
+export const progressChoices = (current: number, extra: number | null = null) =>
+  [...new Set([current, ...STEPS.filter((s) => s > current), ...(extra != null ? [extra] : [])])].sort((a, b) => a - b);
 
 /** Tệp người làm vừa tải sau lần cập nhật trước → gợi ý gắn vào lần cập nhật này. */
 export const freshAttachments = (files: WorkTaskAttachment[], actorId: string, since: string | null) =>
   files.filter((f) => f.uploader_user_id === actorId && !f.deleted_at && (!since || f.created_at > since));
 
-export function WorkProgressComposer({ task, attachments, actorId, lastUpdateAt, busy, run, onBlock }: {
+export function WorkProgressComposer({ task, attachments, actorId, lastUpdateAt, busy, run, onBlock, ai, brief = null }: {
   task: WorkTask;
+  /** Đợt 1 PR-3: "Viết giúp" — ghi chú lộn xộn → Đã / Đang / Sẽ / Vướng (+ % khi ghi chú nói rõ). */
+  ai?: WorkAiService;
+  brief?: WorkTaskBrief | null;
   attachments: WorkTaskAttachment[];
   actorId: string;
   lastUpdateAt: string | null;
@@ -36,23 +41,62 @@ export function WorkProgressComposer({ task, attachments, actorId, lastUpdateAt,
   const [picked, setPicked] = useState<string[]>([]);
   const [problem, setProblem] = useState("");
   const [askBlock, setAskBlock] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [helpBusy, setHelpBusy] = useState(false);
+  const [helpNote, setHelpNote] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  const [aiRunId, setAiRunId] = useState<string | null>(null);
+  const [aiPercent, setAiPercent] = useState<number | null>(null);
   useEffect(() => { setPercent(task.progress_percent); }, [task.id, task.progress_percent]);
   useEffect(() => { setPicked(fresh.map((f) => f.id)); }, [fresh.map((f) => f.id).join(",")]);
 
+  async function splitNotes() {
+    if (!ai) return;
+    if (notes.trim().length < 3) { setHelpNote({ tone: "warn", text: "Gõ vài ý đã làm / đang làm / vướng gì trước." }); return; }
+    setHelpBusy(true); setHelpNote(null);
+    const r = await ai.updateDraft(notes.trim(), workUpdateFacts(task, brief), task.id);
+    setHelpBusy(false);
+    if (!r.ok) { setHelpNote({ tone: "warn", text: `${r.message} Bạn vẫn ghi tay được.` }); return; }
+    setDone(r.result.done); setDoing(r.result.doing); setNext(r.result.next); setBlocked(r.result.blocked);
+    if (r.result.percent != null) { setPercent(r.result.percent); setAiPercent(r.result.percent); }
+    setAiRunId(r.runId); setHelpOpen(false); setNotes("");
+    setHelpNote({ tone: r.result.warnings.length ? "warn" : "ok",
+      text: `AI đã chia vào Đã / Đang / Sẽ / Vướng${r.result.percent != null ? ` · ${r.result.percent}%` : ""}${r.result.warnings.length ? ` · ${r.result.warnings[0]}` : ""}. Sửa nếu cần rồi bấm Gửi.` });
+  }
+
   async function send() {
-    const input = { done, doing, next, blocked, progressPercent: percent, attachmentIds: picked, expectedLockVersion: task.lock_version };
+    const input = { done, doing, next, blocked, progressPercent: percent, attachmentIds: picked, expectedLockVersion: task.lock_version, aiRunId };
     const normalized = normalizeProgressReport(input);
     if ("problem" in normalized) { setProblem(PROGRESS_REPORT_PROBLEMS[normalized.problem]); return; }
     setProblem("");
     const ok = await run({ command: "progress_report", payload: normalized.payload as Extract<WorkCollaborationCommand, { command: "progress_report" }>["payload"] });
     if (!ok) return;
     const reason = blocked.trim();
-    setDone(""); setDoing(""); setNext(""); setBlocked("");
+    setDone(""); setDoing(""); setNext(""); setBlocked(""); setAiRunId(null); setAiPercent(null); setHelpNote(null);
     if (reason && task.status !== "blocked") setAskBlock(reason);
   }
 
   return (
-    <WorkTaskSection className="work-report" title="Cập nhật tiến độ" actions={<span className="work-report-percent">{task.progress_percent}%</span>}>
+    <WorkTaskSection className="work-report" title="Cập nhật tiến độ" actions={<>
+      {ai && (
+        <button type="button" className="work-text-button work-ai-inline" aria-expanded={helpOpen} onClick={() => setHelpOpen((v) => !v)}
+          title="Gõ / dán ghi chú, AI chia vào Đã – Đang – Sẽ – Vướng">
+          <Sparkles size={13} /> Viết giúp
+        </button>
+      )}
+      <span className="work-report-percent">{task.progress_percent}%</span>
+    </>}>
+      {helpOpen && (
+        <div className="work-report-help">
+          <textarea className="work-input" rows={3} maxLength={3000} value={notes} aria-label="Ghi chú nhanh"
+            placeholder="Gõ / dán ghi chú lộn xộn cũng được, VD: xong bóc KL móng, đang làm dầm, mai đối chiếu dự toán, chờ CĐT duyệt bản vẽ, được tầm 60%"
+            onChange={(e) => setNotes(e.target.value)} />
+          <button type="button" className="work-secondary work-ai-button" disabled={helpBusy} onClick={() => void splitNotes()}>
+            {helpBusy ? <Loader2 size={15} className="work-spin" /> : <Sparkles size={15} />} {helpBusy ? "AI đang chia…" : "Chia giúp"}
+          </button>
+        </div>
+      )}
+      {helpNote && <p className={`work-ai-note is-${helpNote.tone}`} role="status"><Sparkles size={14} aria-hidden="true" /> <span>{helpNote.text}</span></p>}
       <div className="work-report-grid">
         <label className="work-label">Đã làm<textarea className="work-input" rows={2} maxLength={2000} value={done} placeholder="Xong gì từ lần trước" onChange={(e) => setDone(e.target.value)} /></label>
         <label className="work-label">Đang làm<textarea className="work-input" rows={2} maxLength={2000} value={doing} placeholder="Đang làm gì" onChange={(e) => setDoing(e.target.value)} /></label>
@@ -61,7 +105,7 @@ export function WorkProgressComposer({ task, attachments, actorId, lastUpdateAt,
       <label className="work-label work-report-blocked">Vướng<input className="work-input" maxLength={2000} value={blocked} placeholder="Để trống nếu không vướng" onChange={(e) => setBlocked(e.target.value)} /></label>
       <div className="work-report-foot">
         <div className="work-quick-seg" role="group" aria-label="Phần trăm hoàn thành">
-          {progressChoices(task.progress_percent).map((value) => (
+          {progressChoices(task.progress_percent, aiPercent).map((value) => (
             <button type="button" key={value} aria-pressed={percent === value} onClick={() => setPercent(value)}>{value}%</button>
           ))}
         </div>
@@ -162,5 +206,45 @@ export function WorkUpdateTimeline({ taskId, board, refreshKey }: {
       )}
       {nextBefore && <button className="work-secondary" disabled={loadingMore} onClick={() => void more()}>{loadingMore ? "Đang tải…" : "Xem cập nhật cũ hơn"}</button>}
     </WorkTaskSection>
+  );
+}
+
+/** Đợt 1 PR-3 · Tóm tắt một việc (người giao / BLĐ): AI viết 2–3 câu từ số liệu của chính việc này; kịp hạn do máy tính. */
+export function WorkAiBrief({ brief, taskId, ai }: { brief: WorkTaskBrief | null; taskId: string; ai: WorkAiService }) {
+  const [state, setState] = useState<{ busy: boolean; text: string | null; runId: string | null; error: string | null; rated: boolean | null }>(
+    { busy: false, text: null, runId: null, error: null, rated: null });
+  useEffect(() => { setState({ busy: false, text: null, runId: null, error: null, rated: null }); }, [taskId]);
+  async function summarize() {
+    if (!brief) return;
+    setState((s) => ({ ...s, busy: true, error: null }));
+    const r = await ai.briefTask(workBriefFacts(brief), taskId);
+    setState(r.ok ? { busy: false, text: r.result.brief, runId: r.runId, error: null, rated: null } : { busy: false, text: null, runId: null, error: r.message, rated: null });
+  }
+  const rate = (accepted: boolean) => { if (state.runId) ai.feedback(state.runId, accepted); setState((s) => ({ ...s, rated: accepted })); };
+  if (!state.text) {
+    return (
+      <div className="work-ai-brief is-idle">
+        <button type="button" className="work-secondary work-ai-button" disabled={!brief || state.busy} onClick={() => void summarize()}
+          title="AI tóm tắt việc đang ở đâu, vướng gì, có kịp hạn không — từ số liệu của việc này">
+          {state.busy ? <Loader2 size={15} className="work-spin" /> : <Sparkles size={15} />} {state.busy ? "AI đang tóm tắt…" : "Tóm tắt việc này"}
+        </button>
+        {state.error && <span className="work-error" role="alert">{state.error}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="work-ai-brief" role="status">
+      <p><Sparkles size={14} aria-hidden="true" /> {state.text}</p>
+      <div className="work-ai-brief-foot">
+        <span>AI tóm tắt từ số liệu của việc · kịp hạn do máy tính</span>
+        {state.rated == null ? (
+          <>
+            <button type="button" className="work-icon-button" aria-label="Tóm tắt đúng" onClick={() => rate(true)}><ThumbsUp size={14} /></button>
+            <button type="button" className="work-icon-button" aria-label="Tóm tắt chưa đúng" onClick={() => rate(false)}><ThumbsDown size={14} /></button>
+          </>
+        ) : <span>{state.rated ? "Cảm ơn bạn" : "Đã ghi nhận"}</span>}
+        <button type="button" className="work-text-button" disabled={state.busy} onClick={() => void summarize()}>Tóm tắt lại</button>
+      </div>
+    </div>
   );
 }

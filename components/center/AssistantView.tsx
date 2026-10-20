@@ -16,6 +16,7 @@ import {
 import { recordTarget } from '../../lib/search/recordPresentation';
 import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
+import { defaultWorkTaskCardActions, type WorkTaskCardActions } from '../../lib/assistantWorkTask';
 import AssistantChartCard from './AssistantChartCard';
 import type { MrFormActions } from '../../lib/assistantMrForm';
 import { createPoFormActions, type PoFormActions } from '../../lib/assistantPoForm';
@@ -54,6 +55,8 @@ export interface AssistantHooks {
   dailyLog?: DailyLogFormActions;
   /** T4b: bảng "Trí nhớ" (xem / quên) + thẻ "nhớ giúp". */
   memory?: MemoryActions;
+  /** Vioo Work (Đợt 1 PR-3): thẻ giao việc. */
+  workTask?: WorkTaskCardActions;
   /** Trung tâm AI: người dùng đã được cấp Trợ lý chưa, trần câu / ngày. Không có → coi như được dùng (bản cũ). */
   access?: () => Promise<MyAiAccess>;
 }
@@ -62,6 +65,7 @@ export const defaultAssistantHooks: AssistantHooks = {
   access: () => aiGateway.myAccess(),
   poForm: createPoFormActions(),
   dailyLog: defaultDailyLogFormActions,
+  workTask: defaultWorkTaskCardActions,
   status: () => aiGateway.status(),
   narrate: (facts, context) => aiGateway.run<{ brief: string }>('morning_brief', { facts }, context),
   feedback: (runId, accepted, detail) => aiGateway.feedback(runId, accepted, detail),
@@ -443,6 +447,7 @@ const AssistantView: React.FC<{
     dailyLog: hooks.dailyLog,
     memory: hooks.memory,
     openMemory: hooks.memory ? () => setMemoryOpen(true) : undefined,
+    workTask: hooks.workTask,
   };
 
   const askQuick = (id: string, text: string) => {

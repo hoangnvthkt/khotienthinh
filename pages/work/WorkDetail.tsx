@@ -15,14 +15,17 @@ import { WorkTaskChildren } from "./WorkTaskChildren";
 import { WorkTaskHeader } from "./WorkTaskHeader";
 import { WorkTaskPeople } from "./WorkTaskPeople";
 import { WorkTaskDescription, WorkTaskResult } from "./WorkTaskContent";
-import { WorkProgressComposer, WorkUpdateTimeline } from "./WorkProgressReport";
+import { WorkAiBrief, WorkProgressComposer, WorkUpdateTimeline } from "./WorkProgressReport";
+import type { WorkAiService } from "../../lib/work/workAi";
 import type { WorkBoardService, WorkTaskBrief } from "../../lib/work/workBoardService";
 
-export function WorkDetail({ detail, service, board, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
+export function WorkDetail({ detail, service, board, ai, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
   detail: WorkTaskDetail;
   service: WorkTaskService;
   /** Đợt 1: tóm tắt việc, dòng cập nhật, xác nhận việc giao miệng. */
   board: Pick<WorkBoardService, "taskBrief" | "listUpdates" | "decideClaim">;
+  /** Đợt 1 PR-3: Viết giúp cập nhật, Tóm tắt việc. */
+  ai?: WorkAiService;
   attachments: ReturnType<typeof createWorkAttachmentService>;
   actorId: string;
   session: WorkMutationSession;
@@ -192,8 +195,9 @@ export function WorkDetail({ detail, service, board, attachments, actorId, sessi
 
             {canReport && (
               <WorkProgressComposer task={task} attachments={detail.attachments} actorId={actorId} lastUpdateAt={lastUpdateAt} busy={locked} run={collab}
-                onBlock={(reason) => run("lifecycle", { command: "block", payload: { reason } })} />
+                onBlock={(reason) => run("lifecycle", { command: "block", payload: { reason } })} ai={ai} brief={brief} />
             )}
+            {ai && <WorkAiBrief brief={brief} taskId={task.id} ai={ai} />}
             <WorkUpdateTimeline taskId={task.id} board={board} refreshKey={detail} />
             <WorkTaskDescription task={task} canUpdate={!!caps.canUpdateDescription} busy={locked} run={collab} />
             <WorkChecklist items={detail.checklist} assignments={detail.assignments} names={context.names} canManage={caps.canManageChecklist} busy={locked} run={collab} completed={completed} error={error} />
