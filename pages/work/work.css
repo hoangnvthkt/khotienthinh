@@ -1743,3 +1743,77 @@
     padding: 18px;
   }
 }
+
+/* ── Đợt 1: mức A/B/C, giao nhanh, dòng việc ─────────────────────────────────────────────── */
+.work-level-chip {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  vertical-align: 1px;
+}
+.work-level-chip.level-A { background: #0f766e; color: #fff; }
+.work-level-chip.level-B { background: #ccfbf1; color: #115e59; }
+.work-level-chip.level-C { background: #eef2f6; color: #475569; }
+.work-task-list a.work-level-row { border-left: 4px solid #cbd5e1; padding-left: 16px; }
+.work-task-list a.work-level-row.level-A { border-left-color: #0f766e; }
+.work-task-list a.work-level-row.level-B { border-left-color: #5eead4; }
+.work-task-list .work-code { display: inline-flex; align-items: center; gap: 7px; }
+.work-row-progress { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #334155; }
+.work-row-progress > span { flex: 1; height: 6px; border-radius: 99px; background: #e2e8f0; overflow: hidden; min-width: 40px; }
+.work-row-progress > span > i { display: block; height: 100%; background: #0f766e; border-radius: 99px; }
+.work-row-progress b { font-variant-numeric: tabular-nums; }
+.work-due { font-size: 12px; font-weight: 600; color: #334155; }
+.work-due.tone-over { color: #b91c1c; }
+.work-due.tone-soon { color: #b45309; }
+.work-due.tone-none { color: #94a3b8; font-weight: 500; }
+.work-stale { color: #b45309; font-weight: 600; }
+
+.work-quick {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid var(--work-border);
+  border-radius: 10px;
+  background: #fff;
+}
+.work-quick-title { font-size: 15px; min-height: 44px; }
+.work-quick-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.work-quick-person { width: auto; min-width: 240px; max-width: 360px; min-height: 42px; }
+.work-level-text { font-size: 12px; font-weight: 650; color: #334155; }
+.work-quick-date { width: auto; }
+.work-quick-seg { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #fff; }
+.work-quick-seg button { border: 0; background: none; padding: 0 12px; min-height: 40px; font-size: 13px; font-weight: 600; color: #334155; white-space: nowrap; }
+.work-quick-seg button + button { border-left: 1px solid #cbd5e1; }
+.work-quick-seg button[aria-pressed="true"] { background: #f0fdfa; color: #0f766e; }
+.work-quick-level button { min-width: 42px; }
+.work-quick-level button[data-level="A"][aria-pressed="true"] { background: #0f766e; color: #fff; }
+.work-quick-level button[data-level="B"][aria-pressed="true"] { background: #ccfbf1; color: #115e59; }
+.work-quick-level button[data-level="C"][aria-pressed="true"] { background: #eef2f6; color: #475569; }
+.work-quick-submit { margin-left: auto; }
+.work-quick-more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.work-quick-more textarea { min-height: 64px; resize: vertical; padding: 8px 12px; }
+.work-quick-toggles { display: flex; gap: 6px; margin-top: 6px; }
+.work-quick-toggles button { border: 1px solid #cbd5e1; border-radius: 99px; background: #fff; padding: 5px 14px; font-size: 13px; font-weight: 600; color: #334155; }
+.work-quick-toggles button[aria-pressed="true"] { border-color: #0f766e; background: #f0fdfa; color: #0f766e; }
+.work-quick-preview { margin: 0; font-size: 13px; color: #334155; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.work-quick-bad { color: #b91c1c; }
+.work-quick .work-error { margin: 0; }
+
+@media (max-width: 760px) {
+  .work-quick-person { min-width: 0; max-width: none; flex: 1 1 100%; }
+  .work-quick-seg { flex: 1 1 100%; }
+  .work-quick-seg button { flex: 1; padding: 0 6px; }
+  .work-quick-level { flex: 1 1 55%; }
+  .work-quick-more-toggle { flex: 1 1 35%; }
+  .work-quick-submit { flex: 1 1 100%; margin-left: 0; }
+  .work-quick-more { grid-template-columns: minmax(0, 1fr); }
+  .work-task-list a.work-level-row { padding-left: 14px; }
+}

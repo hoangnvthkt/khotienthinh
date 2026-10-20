@@ -42,24 +42,25 @@ import { WorkCreateDrawer } from "./WorkCreateDrawer";
 import { WorkPicker } from "./WorkPicker";
 import "./work.css";
 import "./workTaskDetail.css";
-import { workStatusLabels } from "../../lib/work/workPresentation";
+import { workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdateInfo } from "../../lib/work/workPresentation";
+import { createWorkBoardService, type WorkBoardService } from "../../lib/work/workBoardService";
+import { WorkQuickAssign } from "./WorkQuickAssign";
+import { canPerform } from "../../lib/permissions/permissionService";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
 import type { WorkUploadState } from "./WorkAttachments";
 import { workspaceTabRoute } from "./workspaceManagement";
 const taskService = createWorkTaskService(supabase),
-  attachmentService = createWorkAttachmentService(supabase);
+  attachmentService = createWorkAttachmentService(supabase),
+  boardService = createWorkBoardService(supabase);
 const views: { id: WorkTaskView; label: string }[] = [
   { id: "assigned_to_me", label: "Được giao" },
   { id: "created_by_me", label: "Tôi đã giao" },
   { id: "following", label: "Tôi theo dõi" },
   { id: "pinned", label: "Đã ghim" },
 ];
-const priorities = {
-  normal: "Bình thường",
-  important: "Quan trọng",
-  urgent: "Khẩn cấp",
-};
+/** Đợt 1: mức A / B / C (A = urgent, B = important, C = normal). */
+const priorities = workLevelLabels;
 const when = (iso: string | null) =>
   iso
     ? new Intl.DateTimeFormat("vi-VN", {
@@ -72,12 +73,19 @@ export interface WorkWorkspaceProps {
   service: WorkTaskService;
   attachments: ReturnType<typeof createWorkAttachmentService>;
   subscribe?: (invalidate: () => void) => () => void;
+  /** Đợt 1: Giao nhanh, tóm tắt việc, dòng cập nhật. */
+  board?: WorkBoardService;
+  actorName?: string;
+  canQuickAssign?: boolean;
 }
 export function WorkWorkspace({
   actorId,
   service,
   attachments,
   subscribe,
+  board = boardService,
+  actorName = "Bạn",
+  canQuickAssign = false,
 }: WorkWorkspaceProps) {
   const { taskCode } = useParams();
   const routeLocation = useLocation();
@@ -370,11 +378,7 @@ export function WorkWorkspace({
                       <span className="work-rail-scope">
                         {t.scope_type === "direct" ? "Trực tiếp" : t.scope_type === "department" ? "Phòng ban" : t.scope_type === "workspace" ? "Workspace" : "Dự án"}
                       </span>
-                      {t.priority !== "normal" && (
-                        <span className={`work-rail-priority priority-${t.priority}`}>
-                          {priorities[t.priority]}
-                        </span>
-                      )}
+                      <span className={`work-level-chip level-${workLevelOf(t.priority)}`} title={priorities[t.priority]}>{workLevelOf(t.priority)}</span>
                       <time dateTime={t.deadline_at || undefined}>{when(t.deadline_at)}</time>
                     </span>
                     <span className="work-rail-progress" aria-label={`Tiến độ ${t.progress_percent}%`}>
@@ -429,6 +433,7 @@ export function WorkWorkspace({
                   key={currentDetail.data.task.id}
                   detail={currentDetail.data}
                   service={service}
+                  board={board}
                   attachments={attachments}
                   actorId={actorId}
                   session={mutation.current}
@@ -472,6 +477,10 @@ export function WorkWorkspace({
         </div>
       ) : (
         <>
+          {canQuickAssign && !workspaceContextId && (
+            <WorkQuickAssign service={service} board={board} actorName={actorName}
+              onCreated={(message) => { setNotice(message); void list.refresh(); }} />
+          )}
           <nav className="work-tabs" aria-label="Danh sách công việc">
             {views.map((tab) => (
               <button
@@ -594,6 +603,7 @@ export function WorkWorkspace({
                 <li key={task.id}>
                   <Link
                     to={detailTo(task.task_code)}
+                    className={`work-level-row level-${workLevelOf(task.priority)}`}
                     state={{
                       workListSearch: params.toString(),
                       workScroll: workScrollHost(root.current).scrollTop,
@@ -605,7 +615,10 @@ export function WorkWorkspace({
                     }}
                   >
                     <div className="work-task-main">
-                      <span className="work-code">{task.task_code}</span>
+                      <span className="work-code">
+                        <span className={`work-level-chip level-${workLevelOf(task.priority)}`} title={priorities[task.priority]}>{workLevelOf(task.priority)}</span>
+                        {task.task_code}
+                      </span>
                       <h2>{task.title}</h2>
                       <span className="work-scope">
                         {task.scope_type === "direct"
@@ -614,11 +627,10 @@ export function WorkWorkspace({
                             ? "Phòng ban"
                             : "Dự án"}
                         {task.privacy === "restricted" ? " · Hạn chế" : ""}
-                      </span>
-                      <span
-                        className={`work-priority-inline priority-${task.priority}`}
-                      >
-                        {priorities[task.priority]}
+                        {(() => {
+                          const info = workUpdateInfo(task.last_progress_at, task.status);
+                          return info ? <span className={info.stale ? " work-stale" : ""}> · {info.text}</span> : null;
+                        })()}
                       </span>
                     </div>
                     <span className={`work-status status-${task.status}`}>
@@ -630,21 +642,18 @@ export function WorkWorkspace({
                         </small>
                       )}
                     </span>
-                    <span className={`work-priority priority-${task.priority}`}>
-                      {priorities[task.priority]}
+                    <span className="work-row-progress" aria-label={`Tiến độ ${task.progress_percent}%`}>
+                      <span><i style={{ width: `${task.progress_percent}%` }} /></span>
+                      <b>{task.progress_percent}%</b>
                     </span>
-                    <time
-                      dateTime={task.deadline_at || undefined}
-                      className={
-                        task.deadline_at &&
-                        new Date(task.deadline_at).getTime() < Date.now() &&
-                        !["completed", "cancelled"].includes(task.status)
-                          ? "work-overdue"
-                          : ""
-                      }
-                    >
-                      {when(task.deadline_at)}
-                    </time>
+                    {(() => {
+                      const due = workDueInfo(task.deadline_at, task.status);
+                      return (
+                        <time dateTime={task.deadline_at || undefined} className={`work-due tone-${due.tone}`}>
+                          {due.text}
+                        </time>
+                      );
+                    })()}
                   </Link>
                 </li>
               ))}
@@ -716,6 +725,9 @@ export default function WorkPage() {
       service={taskService}
       attachments={attachmentService}
       subscribe={subscribe}
+      board={boardService}
+      actorName={user.name}
+      canQuickAssign={canPerform(user, "work.task.create", { scopeType: "own", scopeId: "*" })}
     />
   );
 }
