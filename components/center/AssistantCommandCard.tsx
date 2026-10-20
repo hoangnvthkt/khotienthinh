@@ -8,6 +8,8 @@ import type { MrFormActions } from '../../lib/assistantMrForm';
 import type { PoFormActions } from '../../lib/assistantPoForm';
 import AssistantMrForm from './AssistantMrForm';
 import AssistantPoForm from './AssistantPoForm';
+import type { WorkTaskCardActions } from '../../lib/assistantWorkTask';
+import { AssistantWorkTaskCard } from './AssistantWorkTaskCard';
 
 // Thẻ lệnh nháp của Trợ lý (T2a, chủ SP duyệt 18/10/2026): Trợ lý chỉ chuẩn bị; người dùng xem, sửa lý do, bấm Gửi đơn.
 // Gửi = đúng lệnh gửi của module (như form thường). Sau đó thẻ thành biên nhận (mã đơn + Mở). Không gửi gì tới khi người dùng bấm.
@@ -28,6 +30,8 @@ export interface CommandActions {
   /** T4b: thẻ "nhớ giúp" — lưu ghi nhớ cá nhân; mở bảng Trí nhớ. */
   memory?: MemoryActions;
   openMemory?: () => void;
+  /** Vioo Work (Đợt 1 PR-3): thẻ giao việc — người làm, hạn, mức rồi Giao bằng lệnh của Giao nhanh. */
+  workTask?: WorkTaskCardActions;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
@@ -356,6 +360,7 @@ const AssistantCommandCard: React.FC<CardProps> = props =>
     : props.command.kind === 'material_request' ? <MaterialRequestCard {...props} />
     : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} />
       : props.command.kind === 'daily_log' ? <DailyLogCard {...props} />
-        : props.command.kind === 'memory_note' ? <MemoryNoteCard {...props} /> : <LeaveCard {...props} />;
+        : props.command.kind === 'memory_note' ? <MemoryNoteCard {...props} />
+          : props.command.kind === 'work_task' ? <AssistantWorkTaskCard {...props} /> : <LeaveCard {...props} />;
 
 export default AssistantCommandCard;

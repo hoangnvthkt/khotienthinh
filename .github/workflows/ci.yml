@@ -25,6 +25,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Audit 20/10/2026 mục S6: chặn thư viện runtime có lỗ hổng high/critical (moderate còn lại: react-router SSR, không dùng).
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run check:supabase-migrations
       - run: npm run lint
       - run: npm run check:supabase-queries

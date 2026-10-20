@@ -19,10 +19,12 @@
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
 //   chuan_bi_nhat_ky         assistant_daily_log_projects_v1 → lệnh nháp daily_log (thẻ đọc báo cáo bằng bộ của màn Nhật ký, tạo phiếu nháp)
 //   chuan_bi_ghi_nho         → lệnh nháp memory_note (T4b: thẻ sửa chữ, người dùng bấm Lưu ghi nhớ)
+//   viec_giao · tom_tat_viec · chuan_bi_giao_viec  Vioo Work (workTools.ts) — lệnh nháp work_task (thẻ form giao việc, người dùng bấm Giao)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
 import { REPORT_KINDS, inventoryReport, procurementReport, reportRange, workflowReport, type BuiltReport, type ReportKind } from './reports.ts';
+import { WORK_TOOLS, WORK_TOOL_INFO, WORK_TOOL_LABEL, runWorkTool } from './workTools.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
 /** runId + emit: công cụ CHUẨN BỊ (lệnh nháp) ghi dòng lệnh vào lượt AI và hiện thẻ cho người dùng (T2a).
@@ -45,6 +47,7 @@ export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   bien_dong_nhan_su: 'Biến động nhân sự', bao_cao: 'Báo cáo',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
+  ...WORK_TOOL_LABEL,
 };
 
 /** Trung tâm AI · "Xem bên trong" (19/10): công cụ làm gì với dữ liệu — không gửi model. Thêm công cụ mới phải thêm dòng ở đây (test kiểm).
@@ -66,6 +69,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
   chuan_bi_don_mua: { kind: 'chuan_bi', rpcs: ['list_procurement_proactive_options_v1', 'list_procurement_vendors_v1', 'assistant_command_create_v1'], permission: 'Quản lý Mua hàng (lập đơn chủ động)', result: 'Form đơn mua trong chat → Lưu nháp / Gửi duyệt', commandKind: 'purchase_order' },
   chuan_bi_nhat_ky: { kind: 'chuan_bi', rpcs: ['assistant_daily_log_projects_v1', 'assistant_command_create_v1'], permission: 'Dự án người hỏi được ghi Nhật ký', result: 'Thẻ đọc báo cáo → Tạo phiếu nháp', commandKind: 'daily_log' },
   chuan_bi_ghi_nho: { kind: 'chuan_bi', rpcs: ['assistant_command_create_v1'], permission: 'Chỉ ghi nhớ của chính người hỏi', result: 'Thẻ ghi nhớ → Lưu ghi nhớ', commandKind: 'memory_note' },
+  ...WORK_TOOL_INFO,
 };
 
 export const TOOLS: ToolSpec[] = [
@@ -216,6 +220,8 @@ export const TOOLS: ToolSpec[] = [
       noi_dung: { type: 'string', description: 'Nội dung ghi nhớ, một câu gọn, rõ nghĩa khi đọc riêng (3–300 ký tự).' },
     } },
   },
+  // Vioo Work (Đợt 1 PR-3): việc theo người / đơn vị, tóm tắt một việc, chuẩn bị giao việc.
+  ...WORK_TOOLS,
 ];
 
 // ── tiện ích ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -967,5 +973,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   if (name === 'chuan_bi_nhat_ky') return prepareDailyLog(args, ctx);
   if (name === 'chuan_bi_ghi_nho') return prepareMemoryNote(args, ctx);
 
+  const work = await runWorkTool(name, args, ctx, refBook);
+  if (work != null) return work;
   return JSON.stringify({ loi: `Không có công cụ ${name}.` });
 }

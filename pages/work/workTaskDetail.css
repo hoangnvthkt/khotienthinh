@@ -1137,6 +1137,7 @@
 .work-report-files button[aria-pressed="true"] { border-color: #0f766e; color: #0f766e; background: #f0fdfa; }
 .work-report-send { margin-left: auto; }
 .work-report-askblock { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.work-report-askblock button { text-decoration: none; }
 
 .work-count { font-size: 12px; font-weight: 700; color: #475569; background: #eef2f6; border-radius: 99px; padding: 2px 8px; }
 .work-updates-list { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -1170,4 +1171,23 @@
   .work-report-foot .work-quick-seg button { flex: 1; padding: 0 4px; }
   .work-module-detail .work-action-bar { flex-wrap: wrap; overflow-x: visible; }
   .work-module-detail .work-action-bar button { flex: 1 1 calc(50% - 8px); }
+}
+
+/* Đợt 1 PR-3 · Viết giúp cập nhật + Tóm tắt việc */
+.work-report .work-ai-inline { margin-right: 10px; }
+.work-report-help { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+.work-report-help textarea { min-height: 70px; resize: vertical; padding: 8px 12px; }
+.work-report > .work-ai-note, .work-report .work-ai-note { margin-bottom: 10px; }
+.work-ai-brief { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid #99f6e4; border-radius: 10px; background: #f0fdfa; }
+.work-ai-brief.is-idle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0; border: 0; background: none; }
+.work-ai-brief > p { margin: 0; display: flex; gap: 8px; font-size: 14px; line-height: 1.55; color: #134e4a; }
+.work-ai-brief > p svg { flex: none; margin-top: 4px; color: #0f766e; }
+.work-ai-brief-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+.work-ai-brief-foot > span:first-child { margin-right: auto; }
+@media (max-width: 760px) {
+  /* Ô cập nhật: "Viết giúp" + % nằm cùng hàng tiêu đề, không rớt xuống dòng riêng. */
+  .work-module-detail .work-report .work-task-section-header { flex-direction: row; align-items: center; }
+  .work-report .work-task-section-actions { display: flex; align-items: center; gap: 10px; }
+  .work-report-help { grid-template-columns: minmax(0, 1fr); }
+  .work-report-help .work-ai-button { width: 100%; }
 }

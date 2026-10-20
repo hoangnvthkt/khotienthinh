@@ -3,6 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { WorkWorkspace } from "../../pages/work/WorkPage";
+import { createWorkAi } from "../../lib/work/workAi";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
 import {
@@ -65,6 +66,8 @@ const summary = (id: string, title: string): WorkTaskSummary => ({
 const people = [
   { id: "actor", name: "Lê Minh An", kind: "user" },
   { id: "second", name: "Nguyễn Thu Hà", kind: "user" },
+  { id: "third", name: "Lý Thị Hà", kind: "user" },
+  { id: "fourth", name: "Vương Thành Đô", kind: "user" },
 ];
 let taskStatus = query.get("state") || "in_progress";
 let taskVersion = 1;
@@ -106,13 +109,67 @@ const fixtureUpdates: any[] = query.get("updates") === "1" ? [
   { id: "u1", at: "2026-09-08T09:30:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Gom đủ 12 biên bản.", next: "Đối chiếu trục A–D.",
     progressBefore: 10, progressAfter: 40, ai: false, files: [] },
 ] : [];
+// Việc của tôi (mockup v1): bảng giả theo giờ máy; ?board=empty | error. Lệnh trên việc "b-*" đổi trạng thái việc đó.
+const bDay = (offset: number, h = 17) => { const d = new Date(); d.setHours(h, 0, 0, 0); d.setDate(d.getDate() + offset); return d.toISOString(); };
+const bIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const bMonday = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+const bAdd = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const toSaturday = (6 - new Date().getDay() + 7) % 7;
+const canOf = (t: any) => {
+  const live = !["completed", "cancelled", "awaiting_review"].includes(t.status);
+  return { acknowledge: live && !t.acknowledged, start: live && t.acknowledged && ["not_started", "changes_requested"].includes(t.status),
+    block: live && t.acknowledged && t.status === "in_progress", unblock: live && t.acknowledged && t.status === "blocked",
+    submit: live && t.acknowledged && ["in_progress", "changes_requested"].includes(t.status) };
+};
+const bTask = (id: string, x: any) => ({ id, code: `VW-2026-0002${id.slice(2)}`, labels: [], lockVersion: 1, blockedReason: null, completedAt: null,
+  createdAt: bDay(-6, 9), lastProgressAt: bDay(-1, 10), acknowledged: true, needsReview: true, createdBy: { id: "head", name: "Vương Thành Đô" },
+  createdByMe: false, createdByHead: true, checklist: { done: 0, total: 0 }, origin: null, progressPercent: 0, status: "in_progress", ...x });
+const boardTasks: any[] = query.get("board") === "empty" ? [] : [
+  bTask("b-01", { title: "Bóc khối lượng phát sinh móng PĐ3 – XinHai", level: "A", deadlineAt: bDay(-3), progressPercent: 60, lastProgressAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    labels: ["XinHai", "Khối lượng"], checklist: { done: 3, total: 5 }, createdByHead: false, createdBy: { id: "tgd", name: "Tổng giám đốc" },
+    origin: { origin: "directive", claimStatus: "not_needed", giver: { id: "tgd", name: "BLĐ" }, meeting: { title: "Giao ban 12/10", heldOn: "2026-10-12" } } }),
+  bTask("b-02", { title: "Gửi biên bản nghiệm thu cột trục A–D cho CĐT – SMB", level: "B", deadlineAt: bDay(0, 23), progressPercent: 80, lastProgressAt: new Date(Date.now() - 18 * 3_600_000).toISOString(), labels: ["SMB", "Nghiệm thu"] }),
+  bTask("b-03", { title: "Cập nhật ảnh tiến độ tuần vào Nhật ký SMB", level: "C", deadlineAt: bDay(0, 23), status: "not_started", createdByMe: true, createdByHead: false, needsReview: false,
+    lastProgressAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), labels: ["SMB", "Nhật ký"] }),
+  bTask("b-04", { title: "Đối chiếu đơn giá cốp pha với 3 nhà cung cấp", level: "B", deadlineAt: bDay(Math.max(1, toSaturday)), status: "blocked", blockedReason: "Chờ phòng Mua hàng gửi báo giá thứ 3",
+    progressPercent: 40, lastProgressAt: new Date(Date.now() - 60 * 3_600_000).toISOString(), labels: ["Mua hàng"] }),
+  bTask("b-05", { title: "Lập kế hoạch vật tư tuần 44 cho XinHai", level: "A", deadlineAt: bDay(Math.max(1, toSaturday) + 3), status: "pending_acknowledgement", acknowledged: false, lastProgressAt: bDay(-1, 9), labels: ["XinHai"] }),
+  bTask("b-06", { title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", deadlineAt: bDay(Math.max(1, toSaturday)), createdByMe: true, createdByHead: false, needsReview: true,
+    origin: { origin: "oral_claim", claimStatus: "pending", giver: { id: "ptgd", name: "Phó TGĐ" }, meeting: null } }),
+  bTask("b-07", { title: "Rà soát hồ sơ thanh toán đợt 2 SMB", level: "B", deadlineAt: bDay(-1), status: "completed", completedAt: bDay(-1, 15), progressPercent: 100 }),
+  bTask("b-08", { title: "Nghiệm thu cốp pha sàn tầng 3 – SMB", level: "B", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 20, lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }),
+  bTask("b-09", { title: "Chốt khối lượng thép tháng 10 – XinHai", level: "C", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 50, lastProgressAt: new Date(Date.now() - 6 * 3_600_000).toISOString() }),
+  bTask("b-10", { title: "Báo cáo tuần 42 cho Trưởng phòng", level: "C", deadlineAt: bDay(-6), status: "completed", completedAt: bDay(-6, 11), progressPercent: 100 }),
+  bTask("b-11", { title: "Cập nhật danh bạ nhà cung cấp", level: "C", deadlineAt: null, progressPercent: 10, lastProgressAt: new Date(Date.now() - 20 * 3_600_000).toISOString() }),
+];
+for (const t of boardTasks) t.can = canOf(t);
+
 const board = {
+  async myBoard() {
+    log("myBoard");
+    await wait(150);
+    if (query.get("board") === "error") throw new Error("network");
+    const load = boardTasks.filter((t) => !["completed", "cancelled"].includes(t.status)).reduce((n, t) => n + ({ A: 3, B: 2, C: 1 } as any)[t.level], 0);
+    return { me: { userId: "actor", name: "Lê Minh An", title: "Kỹ sư dự án", unit: { id: "u", code: "QLDA", name: "Phòng Quản lý dự án" } },
+      today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), doneSince: bIso(bAdd(bMonday, -35)), tasks: boardTasks.map((t) => ({ ...t })),
+      weeks: [7, 14, 21, 28].map((n, i) => ({ weekStart: bIso(bAdd(bMonday, -n)), due: [7, 6, 5, 4][i], ontime: [6, 5, 4, 3][i] })),
+      review: { reviewed: 5, firstPass: 4 }, load };
+  },
   async assignablePeople() {
     log("assignablePeople");
     return { canAssignOthers: true, people: [
       { userId: "actor", name: "Lê Minh An", title: "Kỹ sư", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: false, sameUnit: true, isMe: true, canReceive: true, load: 4, aliases: [] },
       { userId: "second", name: "Nguyễn Thu Hà", title: "Kỹ sư kế hoạch", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: true, sameUnit: true, isMe: false, canReceive: true, load: 3, aliases: [] },
+      { userId: "third", name: "Lý Thị Hà", title: "Kế toán", unit: { id: "u2", code: "TCKT", name: "Phòng TCKT" }, myTeam: false, sameUnit: false, isMe: false, canReceive: true, load: 1, aliases: [] },
+      { userId: "fourth", name: "Vương Thành Đô", title: "Trưởng phòng", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: false, sameUnit: true, isMe: false, canReceive: true, load: 9, aliases: [] },
     ] };
+  },
+  async linkAi(taskId: string, runId: string, kind: string) { log("linkAi", taskId, runId, kind); return { taskId, runId, kind }; },
+  async learnPersonAlias(taskId: string, alias: string) { log("learnPersonAlias", taskId, alias); return { saved: 1 }; },
+  async createMeeting(title: string, heldOn: string) { log("createMeeting", title, heldOn); return { meetingId: "meeting-1", title, heldOn }; },
+  async setOrigin(taskId: string, origin: string, meetingId: string | null, giverUserId: string | null) {
+    log("setOrigin", taskId, origin, meetingId, giverUserId);
+    return { taskId, origin, claimStatus: "not_needed" };
   },
   async taskBrief(taskId: string) {
     log("taskBrief", taskId);
@@ -132,9 +189,41 @@ const board = {
     return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected" };
   },
 };
+// Đợt 1 PR-3: AI giả (không gọi cổng AI). ?ai=off → tắt nút AI; ?ai=fail → cổng báo hết lượt.
+const aiResults: Record<string, (input: any) => unknown> = {
+  work_task_draft: (input) => /Hà/.test(input.text)
+    ? { title: "Bóc khối lượng mái khu B", assignee: "Hà", assigneeName: null, dueText: "thứ 6", dueDate: null, dueTime: null, level: "B", description: "", checklist: [], tags: ["XinHai"], evidence: { photo: false, file: true }, warnings: [] }
+    : { title: "Rà soát hồ sơ thanh toán đợt 3 SMB", assignee: "anh Đô", assigneeName: "Vương Thành Đô", dueText: "mai 9h", dueDate: null, dueTime: "09:00", level: "A",
+        description: "Đối chiếu hồ sơ với hợp đồng, ghi chênh lệch.", checklist: ["Đối chiếu khối lượng", "Đối chiếu đơn giá"], tags: ["SMB"], evidence: { photo: false, file: true }, warnings: [] },
+  work_task_writer: () => ({ description: "Rà soát toàn bộ hồ sơ đợt 3, nộp bảng chênh lệch so với hợp đồng [số hợp đồng].", checklist: ["Gom hồ sơ", "Đối chiếu khối lượng", "Lập bảng chênh lệch"], evidence: { photo: false, file: true } }),
+  work_meeting_tasks: () => ({ meetingTitle: "Giao ban tuần 43", heldOn: "2026-09-07", chairman: "Nguyễn Thu Hà", warnings: ["Ý 5 chưa rõ người làm."], tasks: [
+    { title: "Rà soát hồ sơ thanh toán đợt 3 SMB", assignee: "anh Đô", assigneeName: "Vương Thành Đô", dueText: "thứ 6", dueDate: null, dueTime: null, level: "A", note: null, quote: "Anh Đô rà soát lại hồ sơ thanh toán đợt 3 SMB, xong trước thứ 6. Gấp." },
+    { title: "Chốt kế hoạch dòng tiền tháng 11", assignee: "Hà", assigneeName: null, dueText: "cuối tuần", dueDate: null, dueTime: null, level: "B", note: "Gửi BLĐ", quote: "Hà chốt KH dòng tiền T11." },
+    { title: "Liên hệ CĐT xin lịch nghiệm thu móng M4", assignee: null, assigneeName: null, dueText: "mai", dueDate: null, dueTime: null, level: null, note: null, quote: "Cần một người liên hệ CĐT." },
+  ] }),
+  work_update_draft: () => ({ done: "Bóc xong khối lượng móng M1–M3", doing: "Bóc dầm tầng 2", next: "Mai đối chiếu dự toán", blocked: "Chờ CĐT duyệt bản vẽ kết cấu", percent: 80, warnings: [] }),
+  work_task_brief: () => ({ brief: "Việc đang ở 65%, còn vướng chữ ký chỉ huy trưởng. Đang kịp hạn theo đánh giá của máy." }),
+};
+const fakeAiRun = async (skill: string, input: Record<string, unknown>, context: Record<string, unknown>) => {
+  log("ai", skill, input, context);
+  await wait(250);
+  if (query.get("ai") === "fail") return { code: "AI_QUOTA", reason: "user_day", dailyLimit: 20 } as any;
+  return { code: "OK", runId: `run-${skill}`, result: aiResults[skill](input), model: "fixture", provider: "anthropic", usage: { tokensIn: 1, tokensOut: 1, costUsd: 0, durationMs: 250 } } as any;
+};
+const fixtureAi = query.get("ai") === "off" ? null : createWorkAi(fakeAiRun as any, (runId: string, accepted: boolean) => log("aiFeedback", runId, accepted));
 const service: WorkTaskService = {
   async command(input) {
     log("command", structuredClone(input));
+    const bt = boardTasks.find((t) => t.id === input.taskId);
+    if (bt) {
+      await wait(80);
+      if (input.command === "acknowledge") { bt.acknowledged = true; bt.status = "not_started"; }
+      else if (input.command === "start" || input.command === "unblock") bt.status = "in_progress";
+      else if (input.command === "block") { bt.status = "blocked"; bt.blockedReason = (input.payload as any).reason; }
+      else if (input.command === "submit") { bt.status = bt.needsReview ? "awaiting_review" : "completed"; if (!bt.needsReview) bt.completedAt = new Date().toISOString(); }
+      bt.lockVersion++; bt.lastProgressAt = new Date().toISOString(); bt.can = canOf(bt);
+      return { taskId: bt.id, taskCode: bt.code, lockVersion: bt.lockVersion, status: bt.status } as any;
+    }
     commandAttempts++;
     if (commandResults.has(input.idempotencyKey))
       return commandResults.get(input.idempotencyKey);
@@ -664,6 +753,7 @@ createRoot(document.getElementById("root")!).render(
             board={board as any}
             actorName="Lê Minh An"
             canQuickAssign={query.get("quick") !== "false"}
+            ai={fixtureAi}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
@@ -678,6 +768,7 @@ createRoot(document.getElementById("root")!).render(
             board={board as any}
             actorName="Lê Minh An"
             canQuickAssign={query.get("quick") !== "false"}
+            ai={fixtureAi}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />

@@ -897,3 +897,19 @@ button.vcc-model:hover:not(:disabled) { background: var(--vcc-hover); color: var
 .vcc-chart-donut-legend li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vcc-chart-donut-legend em { font-style: normal; color: var(--vcc-muted); font-variant-numeric: tabular-nums; }
 @container (max-width: 640px) { .vcc-chart-donut { grid-template-columns: 1fr; } }
+
+/* Vioo Work · thẻ Giao việc (Đợt 1 PR-3) */
+.vcc-wt .vcc-cmd-field input, .vcc-wt .vcc-cmd-field select { min-height: 36px; border: 1px solid var(--vcc-border); border-radius: 8px; padding: 6px 10px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 13.5px; min-width: 0; }
+.vcc-wt .vcc-cmd-field input:focus, .vcc-wt .vcc-cmd-field select:focus { outline: 2px solid var(--vcc-accent); outline-offset: 1px; }
+.vcc-wt-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, .8fr); gap: 8px; }
+.vcc-wt-levels { display: flex; flex-wrap: wrap; gap: 6px; }
+.vcc-wt-levels button { border: 1px solid var(--vcc-border); border-radius: 999px; background: var(--vcc-card); color: var(--vcc-fg); padding: 5px 12px; font-size: 12.5px; font-weight: 600; min-height: 32px; }
+.vcc-wt-levels button[aria-pressed="true"] { border-color: var(--vcc-accent); background: var(--vcc-accent-soft); color: var(--vcc-accent); }
+/* WebKit (iPhone) bỏ qua min-height của select / ô ngày: đặt chiều cao cố định cho cả hàng. */
+.vcc-wt .vcc-cmd-field input:not([type="checkbox"]), .vcc-wt .vcc-cmd-field select { height: 38px; }
+@media (max-width: 640px) {
+  .vcc-wt-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .vcc-wt-person { grid-column: 1 / -1; }
+  .vcc-wt-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .vcc-wt-levels button { padding: 5px 2px; font-size: 12px; white-space: nowrap; }
+}

@@ -65,3 +65,11 @@ Khi thêm ca mới, chạy cả hai model rồi cập nhật bảng.
 Gặp lỗi mới khi thử thật → thêm một ca vào `CASES` (ghi rõ lỗi gốc ở `bug`) rồi mới sửa lời nhắc / công cụ.
 
 Type-check mã cổng AI + bộ kiểm (Node, không cần Deno): sau khi cài SDK như trên, `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json`.
+
+## Vioo Work (Đợt 1 PR-3, 20/10/2026)
+
+- **Ca hội thoại** `work-*` (9 ca, trong `CASES`): việc theo người / đơn vị, trùng tên hỏi lại, thẻ giao việc đúng người / hạn / mức, tự ghi việc, tóm tắt việc, từ chối duyệt hộ, máy chủ chặn theo quyền. Lệnh máy chủ giả ở `workCases.ts · workFakeRpc`.
+- **Ca skill** `wk-*` (11 ca, `WORK_SKILL_CASES`): chạy đúng lời dặn / lược đồ / chuẩn hóa của 5 skill (`supabase/functions/ai-gateway/workSkills.ts`) với kết nối **"AI nhanh"** (`ai.fast`); ca ảnh sổ họp (`tests/work/files/so-hop-giao-ban.png`) dùng kết nối **đọc ảnh** (`wms.doc_reader`), như cổng AI. Người / hạn được khớp bằng đúng mã trên máy (`lib/work/workAiText.ts`).
+- Tên người trong ca là tên giả đã đối chiếu không trùng nhân viên thật.
+
+Chạy riêng phần Vioo Work: `node scripts/assistant-evals/run.mjs work-list-person … wk-brief` (liệt kê id cần chạy).
