@@ -19,13 +19,15 @@ type Form = { title: string; assigneeId: string; dueId: string; otherDate: strin
   description: string; checklist: string; tags: string; evidence: { photo: boolean; file: boolean }; more: boolean };
 type AiNote = { tone: "ok" | "warn"; text: string; undo?: Form };
 
-export function WorkQuickAssign({ service, board, ai, actorName, onCreated }: {
+export function WorkQuickAssign({ service, board, ai, actorName, onCreated, preset }: {
   service: Pick<WorkTaskService, "preview" | "create">;
   board: Pick<WorkBoardService, "assignablePeople" | "linkAi" | "learnPersonAlias" | "createMeeting" | "setOrigin">;
   /** Đợt 1 PR-3: nháp AI (Điền giúp, Viết yêu cầu, Dán biên bản). Không có → chỉ giao tay. */
   ai?: WorkAiService;
   actorName: string;
   onCreated: (message: string) => void;
+  /** Từ Phòng tôi / Toàn công ty: điền sẵn người làm ("Giao việc cho X") hoặc mở Dán biên bản ("Ghi chỉ đạo"); nonce đổi mỗi lần bấm. */
+  preset?: { assigneeId?: string; meeting?: boolean; nonce: number } | null;
 }) {
   const [people, setPeople] = useState<WorkAssignablePeople | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -44,6 +46,12 @@ export function WorkQuickAssign({ service, board, ai, actorName, onCreated }: {
   const [pick, setPick] = useState<{ phrase: string; people: WorkAssignablePerson[] } | null>(null);
   const [dueAlt, setDueAlt] = useState<Date[] | null>(null);
   const [meeting, setMeeting] = useState(false);
+  useEffect(() => {
+    if (!preset) return;
+    if (preset.assigneeId) set({ assigneeId: preset.assigneeId });
+    if (preset.meeting) setMeeting(true);
+    requestAnimationFrame(() => { titleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); if (!preset.meeting) titleRef.current?.focus(); });
+  }, [preset?.nonce]);
   const attempt = useRef<{ signature: string; value: WorkCreateAttempt } | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 

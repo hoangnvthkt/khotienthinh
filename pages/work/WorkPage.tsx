@@ -9,6 +9,7 @@ import {
 import {
   Plus,
   LayoutList,
+  MessageSquare,
   Search,
   RefreshCw,
   Copy,
@@ -48,6 +49,9 @@ import { createWorkBoardService, type WorkBoardService } from "../../lib/work/wo
 import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
 import { WorkQuickAssign } from "./WorkQuickAssign";
 import { WorkMyBoard } from "./WorkMyBoard";
+import { WorkTeamBoard } from "./WorkTeamBoard";
+import { WorkCompanyBoard } from "./WorkCompanyBoard";
+import type { WorkBoardAccess } from "../../lib/work/workBoardService";
 import { canPerform } from "../../lib/permissions/permissionService";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
@@ -163,7 +167,20 @@ export function WorkWorkspace({
     workspaceContextId,
   );
   // Việc của tôi (mockup v1): tab "Được giao" khi không tìm / lọc → bảng nhóm theo hạn; "Tìm & lọc" (mode=list) về danh sách cũ.
-  const boardMode = !taskCode && !workspaceContextId && view === "assigned_to_me" && params.get("mode") !== "list"
+  // Phòng tôi / Toàn công ty (PR-4): tab theo quyền (trưởng đơn vị theo sơ đồ tổ chức · xem toàn công ty).
+  const [access, setAccess] = useState<WorkBoardAccess | null>(null);
+  const [accessTick, setAccessTick] = useState(0);
+  useEffect(() => {
+    if (workspaceContextId || typeof board.boardAccess !== "function") return;
+    let live = true;
+    board.boardAccess().then((a) => { if (live) setAccess(a); }, () => { if (live) setAccess(null); });
+    return () => { live = false; };
+  }, [board, workspaceContextId, accessTick]);
+  const requestedSpace = params.get("space");
+  const space = !taskCode && !workspaceContextId && access
+    ? (requestedSpace === "team" && access.myUnits.length ? "team" : requestedSpace === "company" && access.company ? "company" : null) : null;
+  const [preset, setPreset] = useState<{ assigneeId?: string; meeting?: boolean; nonce: number } | null>(null);
+  const boardMode = !space && !taskCode && !workspaceContextId && view === "assigned_to_me" && params.get("mode") !== "list"
     && Object.keys(filters).length === 0 && typeof board.myBoard === "function";
   const [boardTick, setBoardTick] = useState(0);
   // Tải lại bảng khi danh sách tải lại (sau lệnh, realtime, quay lại tab) hoặc vừa giao nhanh.
@@ -307,7 +324,19 @@ export function WorkWorkspace({
   }, [taskCode, list.loading, routeLocation.key]);
   return (
     <main className={`work-module${taskCode ? " work-module-detail" : ""}`} ref={root}>
-      {!boardMode && <header className="work-heading">
+      {!taskCode && !workspaceContextId && access && (access.myUnits.length > 0 || access.company) && (
+        <nav className="work-space-switch" aria-label="Phạm vi xem việc">
+          {([["", "Việc của tôi", 0], ...(access.myUnits.length ? [["team", "Phòng tôi", access.reviewsWaitingMe]] : []),
+            ...(access.company ? [["company", "Toàn công ty", access.claimsWaitingMe]] : [])] as Array<[string, string, number]>).map(([id, label, n]) => (
+            <button type="button" key={id || "my"} aria-current={(space || "") === id ? "page" : undefined}
+              onClick={() => setParams(() => { const next = new URLSearchParams(); if (id) next.set("space", id); return next; })}
+              title={id === "team" && n ? `${n} việc chờ bạn duyệt` : id === "company" && n ? `${n} việc giao miệng chờ bạn xác nhận` : undefined}>
+              {label}{n > 0 && <span className="work-space-badge">{n}</span>}
+            </button>
+          ))}
+        </nav>
+      )}
+      {!boardMode && !space && <header className="work-heading">
         <div>
           <p className="work-eyebrow">VIOO WORK</p>
           <h1>{taskCode ? "Công việc" : "Công việc của tôi"}</h1>
@@ -488,6 +517,20 @@ export function WorkWorkspace({
             )}
           </section>
         </div>
+      ) : space === "team" && access ? (
+        <WorkTeamBoard board={board} service={service} access={access} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
+          onAssignTo={canQuickAssign ? (userId) => setPreset({ assigneeId: userId, nonce: Date.now() }) : undefined} key={`team-${boardTick}`}>
+          {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
+        </WorkTeamBoard>
+      ) : space === "company" && access ? (
+        <WorkCompanyBoard board={board} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
+          headerActions={canQuickAssign && ai && (
+            <button className="work-secondary" onClick={() => setPreset({ meeting: true, nonce: Date.now() })}><MessageSquare size={17} /> Ghi chỉ đạo</button>
+          )}>
+          {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
+        </WorkCompanyBoard>
       ) : boardMode ? (
         <WorkMyBoard board={board} service={service} refreshKey={boardKey} detailTo={detailTo} onNotice={setNotice}
           headerActions={scopes.length > 0 && (
