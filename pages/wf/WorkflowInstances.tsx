@@ -19,6 +19,7 @@ import KanbanBoard from '../../components/KanbanBoard';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
+import { downloadSignatureImage } from '../../lib/signatureService';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
@@ -707,26 +708,27 @@ const WorkflowInstances: React.FC = () => {
             try { ImageModule = (await import('open-docxtemplater-image-module')).default; } catch { }
 
             const imageMap: Record<string, ArrayBuffer> = {};
+            // Tải thẳng từ Storage qua RLS: người cùng xử lý phiếu được đọc chữ ký của nhau;
+            // mỗi người chỉ tải một lần dù ký nhiều bước.
+            const signatureCache = new Map<string, ArrayBuffer | null>();
+            const signatureOf = async (userId: string) => {
+                if (!signatureCache.has(userId)) signatureCache.set(userId, await downloadSignatureImage(userId));
+                return signatureCache.get(userId) ?? null;
+            };
             // Collect approver signatures
             const instanceLogs = logs.filter(l => l.instanceId === instance.id);
             for (const log of instanceLogs) {
                 const node = nodes.find(n => n.id === log.nodeId);
                 if (!node) continue;
-                const actor = users.find(u => u.id === log.actedBy);
-                if (!actor?.signatureUrl) continue;
                 const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
-                try {
-                    const sigRes = await fetch(actor.signatureUrl);
-                    if (sigRes.ok) imageMap[`signature_${safeLabel}`] = await sigRes.arrayBuffer();
-                } catch { }
+                const signature = await signatureOf(log.actedBy);
+                if (signature) imageMap[`signature_${safeLabel}`] = signature;
             }
             // Creator signature
             const creator = users.find(u => u.id === instance.createdBy);
-            if (creator?.signatureUrl) {
-                try {
-                    const sigRes = await fetch(creator.signatureUrl);
-                    if (sigRes.ok) imageMap['signature_creator'] = await sigRes.arrayBuffer();
-                } catch { }
+            if (instance.createdBy) {
+                const signature = await signatureOf(instance.createdBy);
+                if (signature) imageMap['signature_creator'] = signature;
             }
 
             // 3. Parse with PizZip + Docxtemplater
