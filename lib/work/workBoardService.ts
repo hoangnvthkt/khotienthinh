@@ -119,6 +119,22 @@ export interface WorkTaskUpdate {
   files: Array<{ id: string; name: string; mime: string | null; evidenceType: string | null }>;
 }
 export interface WorkUpdatePage { items: WorkTaskUpdate[]; nextBefore: string | null }
+/** Việc của tôi (màn nhân viên, mockup v1): việc đang giao cho chính mình + số tuần. */
+export interface WorkMyTask {
+  id: string; code: string; title: string; status: WorkTaskStatus; level: WorkLevel; deadlineAt: string | null; progressPercent: number; labels: string[];
+  lockVersion: number; blockedReason: string | null; completedAt: string | null; createdAt: string; lastProgressAt: string | null; acknowledged: boolean;
+  needsReview: boolean; createdBy: WorkPersonRef | null; createdByMe: boolean; createdByHead: boolean; checklist: { done: number; total: number };
+  origin: null | { origin: "directive" | "oral_claim"; claimStatus: "not_needed" | "pending" | "confirmed" | "rejected"; giver: WorkPersonRef | null;
+    meeting: { title: string; heldOn: string } | null };
+  can: { acknowledge: boolean; start: boolean; block: boolean; unblock: boolean; submit: boolean };
+}
+export interface WorkMyBoard {
+  me: { userId: string; name: string; title: string | null; unit: WorkUnitRef | null };
+  today: string; weekStart: string; weekEnd: string; tasks: WorkMyTask[];
+  /** 4 tuần đã qua, gần nhất trước. */
+  weeks: Array<{ weekStart: string; due: number; ontime: number }>;
+  review: { reviewed: number; firstPass: number }; load: number;
+}
 export type WorkAiLinkKind = "task_draft" | "meeting_tasks" | "update_draft" | "task_writer" | "task_brief" | "week_report" | "assistant";
 
 /** Tỷ lệ đúng hạn; chưa có việc đến hạn thì null (không che bằng 0). */
@@ -143,6 +159,7 @@ export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
     /** Dòng cập nhật, mới nhất trước; truyền nextBefore để xem thêm. */
     listUpdates: (taskId: string, before: string | null = null, limit = 20) =>
       call<WorkUpdatePage>("list_work_task_updates_v1", { p_task_id: taskId, p_before: before, p_limit: limit }),
+    myBoard: (weekStart: string | null = null) => call<WorkMyBoard>("work_my_board_v1", { p_week_start: weekStart }),
     teamBoard: (orgUnitId: string | null = null, weekStart: string | null = null) =>
       call<WorkTeamBoard>("work_team_board_v1", { p_org_unit_id: orgUnitId, p_week_start: weekStart }),
     companyBoard: (weekStart: string | null = null) => call<WorkCompanyBoard>("work_company_board_v1", { p_week_start: weekStart }),

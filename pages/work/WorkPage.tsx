@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import {
   Plus,
+  LayoutList,
   Search,
   RefreshCw,
   Copy,
@@ -46,6 +47,7 @@ import { workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdate
 import { createWorkBoardService, type WorkBoardService } from "../../lib/work/workBoardService";
 import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
 import { WorkQuickAssign } from "./WorkQuickAssign";
+import { WorkMyBoard } from "./WorkMyBoard";
 import { canPerform } from "../../lib/permissions/permissionService";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
@@ -160,6 +162,12 @@ export function WorkWorkspace({
     true,
     workspaceContextId,
   );
+  // Việc của tôi (mockup v1): tab "Được giao" khi không tìm / lọc → bảng nhóm theo hạn; "Tìm & lọc" (mode=list) về danh sách cũ.
+  const boardMode = !taskCode && !workspaceContextId && view === "assigned_to_me" && params.get("mode") !== "list"
+    && Object.keys(filters).length === 0 && typeof board.myBoard === "function";
+  const [boardTick, setBoardTick] = useState(0);
+  // Tải lại bảng khi danh sách tải lại (sau lệnh, realtime, quay lại tab) hoặc vừa giao nhanh.
+  const boardKey = useMemo(() => ({}), [list.items, boardTick]);
   const detailSeq = useRef(0),
     alive = useRef(true);
   const refNow = useRef(taskCode);
@@ -299,7 +307,7 @@ export function WorkWorkspace({
   }, [taskCode, list.loading, routeLocation.key]);
   return (
     <main className={`work-module${taskCode ? " work-module-detail" : ""}`} ref={root}>
-      <header className="work-heading">
+      {!boardMode && <header className="work-heading">
         <div>
           <p className="work-eyebrow">VIOO WORK</p>
           <h1>{taskCode ? "Công việc" : "Công việc của tôi"}</h1>
@@ -311,7 +319,7 @@ export function WorkWorkspace({
             Tạo công việc
           </button>
         )}
-      </header>
+      </header>}
       {notice && (
         <div className="work-success" role="status">
           {notice}
@@ -480,6 +488,30 @@ export function WorkWorkspace({
             )}
           </section>
         </div>
+      ) : boardMode ? (
+        <WorkMyBoard board={board} service={service} refreshKey={boardKey} detailTo={detailTo} onNotice={setNotice}
+          headerActions={scopes.length > 0 && (
+            <button className="work-secondary" onClick={() => setDrawer({})}><Plus size={18} /> Tạo công việc</button>
+          )}>
+          {canQuickAssign && !workspaceContextId && (
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); }} />
+          )}
+          <nav className="work-tabs" aria-label="Danh sách công việc">
+            {views.map((tab) => (
+              <button
+                key={tab.id}
+                aria-current={tab.id === view ? "page" : undefined}
+                onClick={() => setFilter("view", tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+            <button className="work-tabs-extra" onClick={() => setFilter("mode", "list")} title="Tìm, lọc theo trạng thái, mức, phạm vi, hạn">
+              <Search size={15} /> Tìm & lọc
+            </button>
+          </nav>
+        </WorkMyBoard>
       ) : (
         <>
           {canQuickAssign && !workspaceContextId && (
@@ -496,6 +528,11 @@ export function WorkWorkspace({
                 {tab.label}
               </button>
             ))}
+            {!workspaceContextId && view === "assigned_to_me" && (
+              <button className="work-tabs-extra" onClick={() => setParams(() => new URLSearchParams())} title="Về bảng Việc của tôi (nhóm theo hạn)">
+                <LayoutList size={15} /> Bảng việc của tôi
+              </button>
+            )}
           </nav>
           <section className="work-toolbar" aria-label="Bộ lọc công việc">
             <label className="work-search">
