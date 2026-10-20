@@ -25,10 +25,14 @@ with check (
   and name !~ '\.\.'
 );
 
--- 2. Images: bucket public không dùng, không tệp → xoá (chỉ khi thật sự rỗng).
-delete from storage.buckets b
-where b.id = 'Images'
-  and not exists (select 1 from storage.objects o where o.bucket_id = b.id);
+-- 2. Images: bucket public không dùng, không tệp. Không xoá được bằng SQL (storage.protect_delete() chặn, phải dùng
+--    Storage API / Dashboard) → khoá: chuyển private, giới hạn 1 byte để không ai tải lên được; chủ sản phẩm xoá hẳn
+--    trên Dashboard → Storage → Images → Delete bucket.
+update storage.buckets
+set public = false,
+    file_size_limit = 1,
+    allowed_mime_types = array['image/png']
+where id = 'Images';
 
 -- 3. Giới hạn kích thước bucket private còn mở (lớn nhất hiện có: project-files 13 MB, project-attachments 2,8 MB).
 update storage.buckets set file_size_limit = 52428800 where id in ('project-files', 'project-attachments') and file_size_limit is null;
