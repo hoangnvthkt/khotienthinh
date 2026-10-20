@@ -44,6 +44,7 @@ import "./work.css";
 import "./workTaskDetail.css";
 import { workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdateInfo } from "../../lib/work/workPresentation";
 import { createWorkBoardService, type WorkBoardService } from "../../lib/work/workBoardService";
+import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
 import { WorkQuickAssign } from "./WorkQuickAssign";
 import { canPerform } from "../../lib/permissions/permissionService";
 import { WorkDetail } from "./WorkDetail";
@@ -77,6 +78,8 @@ export interface WorkWorkspaceProps {
   board?: WorkBoardService;
   actorName?: string;
   canQuickAssign?: boolean;
+  /** Đợt 1 PR-3: nháp AI (giao nhanh, biên bản, viết giúp cập nhật, tóm tắt). null = tắt. */
+  ai?: WorkAiService | null;
 }
 export function WorkWorkspace({
   actorId,
@@ -86,6 +89,7 @@ export function WorkWorkspace({
   board = boardService,
   actorName = "Bạn",
   canQuickAssign = false,
+  ai = defaultWorkAi,
 }: WorkWorkspaceProps) {
   const { taskCode } = useParams();
   const routeLocation = useLocation();
@@ -434,6 +438,7 @@ export function WorkWorkspace({
                   detail={currentDetail.data}
                   service={service}
                   board={board}
+                  ai={ai || undefined}
                   attachments={attachments}
                   actorId={actorId}
                   session={mutation.current}
@@ -478,7 +483,7 @@ export function WorkWorkspace({
       ) : (
         <>
           {canQuickAssign && !workspaceContextId && (
-            <WorkQuickAssign service={service} board={board} actorName={actorName}
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName}
               onCreated={(message) => { setNotice(message); void list.refresh(); }} />
           )}
           <nav className="work-tabs" aria-label="Danh sách công việc">

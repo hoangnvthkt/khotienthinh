@@ -1025,3 +1025,29 @@ test("biểu đồ biến động nhân sự: thẻ ô số + 2 khung, nghỉ vi
   await expect(chat(page).getByTestId("turn").last()).toContainText("ngoài phạm vi anh được xem");
   await expect(chat(page).getByTestId("chart-card")).toHaveCount(0);
 });
+
+test("Vioo Work PR-3: \"giao cho …\" → thẻ Giao việc (người, hạn, mức sửa được); chỉ giao khi người dùng bấm Giao", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  await ask(page, "Giao cho anh Đô rà soát hồ sơ thanh toán đợt 3 SMB trước thứ 6, gấp");
+  const card = chat(page).getByRole("group", { name: "Giao việc" });
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card).toContainText("Nháp · chưa giao");
+  await expect(card.getByLabel("Người làm")).toHaveValue("do");
+  await expect(card.getByLabel("Ngày hạn")).toHaveValue("2099-10-23");
+  await expect(card.getByRole("button", { name: "A · Trọng điểm" })).toHaveAttribute("aria-pressed", "true");
+  await expect(card).toContainText("Checklist 3 mục");
+  // Chưa bấm thì chưa giao gì.
+  expect((await aiCalls(page)).filter(call => call.workTask)).toEqual([]);
+  await card.getByLabel("Người làm").selectOption("ha");
+  await card.getByRole("button", { name: "B · Quan trọng" }).click();
+  await card.getByRole("button", { name: "Giao", exact: true }).click();
+  const done = chat(page).getByTestId("command").filter({ hasText: "Đã giao VW-2026-000301" });
+  await expect(done).toHaveAttribute("data-state", "done");
+  await expect(done).toContainText("cho Đặng Thu Hà");
+  await expect(done.getByRole("button", { name: "Mở việc" })).toBeVisible();
+  const gave = (await aiCalls(page)).filter(call => call.workTask);
+  expect(gave).toHaveLength(1);
+  expect(gave[0]).toMatchObject({ workTask: "give", assigneeId: "ha", level: "B", title: "Rà soát hồ sơ thanh toán đợt 3 SMB" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

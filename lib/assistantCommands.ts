@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
 /** 'unknown': loại lệnh mới hơn bản app đang mở (trang mở từ trước khi cập nhật) — thẻ nhắc tải lại trang thay vì biến mất. */
-export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'memory_note' | 'unknown';
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'memory_note' | 'work_task' | 'unknown';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -25,7 +25,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log', 'memory_note']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log', 'memory_note', 'work_task']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -184,3 +184,23 @@ export const finishCommand = async (id: string, status: Exclude<CommandStatus, '
   if (rpcError) throw rpcError;
   return parseCommand(data);
 };
+
+// ── Vioo Work · giao việc (Đợt 1 PR-3) ────────────────────────────────────────────────────────────────────────────
+export interface WorkTaskCommandView {
+  title: string; assigneeUserId: string | null; assigneeName: string | null; deadlineDate: string | null; deadlineTime: string;
+  level: 'A' | 'B' | 'C' | null; description: string; checklist: string[]; runId: string | null;
+}
+export const workTaskView = (command: AssistantCommand): WorkTaskCommandView => {
+  const p = command.payload;
+  const level = str(p.level);
+  return {
+    title: str(p.title), assigneeUserId: str(p.assigneeUserId) || null, assigneeName: str(p.assigneeName) || null,
+    deadlineDate: /^\d{4}-\d{2}-\d{2}$/.test(str(p.deadlineDate)) ? str(p.deadlineDate) : null,
+    deadlineTime: /^\d{2}:\d{2}$/.test(str(p.deadlineTime)) ? str(p.deadlineTime) : '17:00',
+    level: level === 'A' || level === 'B' || level === 'C' ? level : null, description: str(p.description),
+    checklist: (Array.isArray(p.checklist) ? p.checklist : []).filter((x): x is string => typeof x === 'string' && Boolean(x.trim())),
+    runId: str(p.runId) || null,
+  };
+};
+export const workTaskRoute = (code: string) => `/work/tasks/${encodeURIComponent(code)}`;
+

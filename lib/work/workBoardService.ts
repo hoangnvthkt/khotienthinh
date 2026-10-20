@@ -159,6 +159,9 @@ export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
     /** Gắn lượt AI đã soạn nháp vào việc sau khi người dùng gửi thật (đánh dấu nháp được dùng). */
     linkAi: (taskId: string, runId: string, kind: WorkAiLinkKind) =>
       call<{ taskId: string; runId: string; kind: WorkAiLinkKind }>("work_ai_link_v1", { p_task_id: taskId, p_run_id: runId, p_kind: kind }),
+    /** Học cách gọi người ("Hà KH") sau khi giao thật bằng nháp AI; máy chủ chỉ nhận từ người giao của việc. */
+    learnPersonAlias: (taskId: string, alias: string) =>
+      call<{ saved: number }>("work_learn_person_alias_v1", { p_task_id: taskId, p_alias: alias.trim() }),
   };
 }
 export type WorkBoardService = ReturnType<typeof createWorkBoardService>;

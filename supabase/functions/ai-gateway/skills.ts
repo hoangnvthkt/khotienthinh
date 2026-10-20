@@ -2,6 +2,7 @@
 // Bậc, chế độ, bật tắt, hạn mức của skill nằm ở bảng ai_skills (Admin chỉnh trong Cài đặt → Cổng AI); mã ở đây chỉ là cách chạy.
 import { clampText, wrapData } from './guard.ts';
 import type { ImagePart } from './images.ts';
+import { WORK_SKILLS } from './workSkills.ts';
 
 export interface SkillDef {
   code: string;
@@ -23,6 +24,8 @@ export interface SkillDef {
   images?: (raw: unknown) => ImagePart[];
   /** Chỉ chép lại chứng từ (không suy luận, không tính toán): tắt phần suy nghĩ của model để trả lời nhanh. */
   noThinking?: boolean;
+  /** Skill đọc được ảnh nhưng lượt này chỉ có chữ: chạy model theo lớp (nhanh) thay vì kết nối đọc ảnh (Vioo Work, chủ SP 20/10). */
+  textUsesFast?: boolean;
 }
 
 const asObject = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {});
@@ -339,4 +342,5 @@ export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
   [poReviewBrief.code]: poReviewBrief, [mrTextLines.code]: mrTextLines, [mrPhotoLines.code]: mrPhotoLines,
   [poQuoteLines.code]: poQuoteLines, [dailyLogFromReport.code]: dailyLogFromReport,
+  ...Object.fromEntries(WORK_SKILLS.map(def => [def.code, def])),
 };
