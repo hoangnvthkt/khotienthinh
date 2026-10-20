@@ -436,14 +436,22 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
       cac_du_an: options6.map(projectLabel), du_an_dang_xem: current ? projectLabel(current) : null }));
   }
   // NCC: khớp một thì chọn sẵn; nhiều thì đưa lên thẻ làm nút chọn (người dùng bấm, không phải gõ lại).
+  // RPC tìm chuỗi con trong "tên MST mã": model có lúc ghép "Tên (MST 0101234567)" (bộ kiểm 20/10) → không thấy thì tìm lại theo MST, rồi theo tên bỏ phần MST.
   const vendorQuery = str(args.ncc, 120);
   let vendor: Record<string, unknown> | null = null;
   let vendorOptions: Array<Record<string, unknown>> = [];
   if (vendorQuery) {
-    const found = await ctx.rpc('list_procurement_vendors_v1', { p_search: vendorQuery });
-    const vendors = found.error ? [] : asArray(found.data).map(asObject).filter(v => str(v.id));
-    const q = fold(vendorQuery);
-    const exact = vendors.filter(v => fold(v.name) === q || (str(v.taxCode) && fold(v.taxCode) === q));
+    const taxCode = vendorQuery.match(/(?<!\d)\d{10}(?:-\d{3})?(?!\d)/)?.[0] || null;
+    const name = vendorQuery.replace(/[([]?\s*(?:mst|mã số thuế)?\s*:?\s*\d{10}(?:-\d{3})?\s*[)\]]?/gi, ' ').replace(/[\s,;·-]+$/, '').replace(/\s+/g, ' ').trim();
+    let vendors: Array<Record<string, unknown>> = [];
+    for (const term of [...new Set([vendorQuery, taxCode, name])].filter((t): t is string => !!t && t.length >= 2)) {
+      const found = await ctx.rpc('list_procurement_vendors_v1', { p_search: term });
+      if (found.error) break;
+      vendors = asArray(found.data).map(asObject).filter(v => str(v.id));
+      if (vendors.length) break;
+    }
+    const names = new Set([fold(vendorQuery), fold(name)]);
+    const exact = vendors.filter(v => names.has(fold(v.name)) || (str(v.taxCode) && [fold(vendorQuery), taxCode].includes(fold(v.taxCode))));
     vendor = exact.length === 1 ? exact[0] : vendors.length === 1 ? vendors[0] : null;
     vendorOptions = vendor ? [] : vendors.slice(0, 5);
   }
