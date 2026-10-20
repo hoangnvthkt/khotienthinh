@@ -11,10 +11,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
-// SDK Anthropic chỉ có trong deno.json của cổng AI; cài tạm: npm i --no-save @anthropic-ai/sdk@0.131.0 (hoặc trỏ ASSISTANT_EVAL_NODE_MODULES).
+// SDK Anthropic (devDependencies, cùng bản deno.json của cổng AI) có sẵn sau npm ci; hoặc trỏ ASSISTANT_EVAL_NODE_MODULES.
 const modules = process.env.ASSISTANT_EVAL_NODE_MODULES || join(root, 'node_modules');
 if (!existsSync(join(modules, '@anthropic-ai/sdk'))) {
-  console.error('Thiếu @anthropic-ai/sdk. Chạy: npm i --no-save @anthropic-ai/sdk@0.131.0');
+  console.error('Thiếu @anthropic-ai/sdk. Chạy: npm ci');
   process.exit(2);
 }
 const outDir = join(root, 'node_modules/.cache/assistant-evals');

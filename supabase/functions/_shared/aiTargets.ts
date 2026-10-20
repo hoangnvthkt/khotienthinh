@@ -234,10 +234,45 @@ const probeTypeSafe = async (base: string, target: Pick<AiTarget, 'apiKey' | 'mo
 /**
  * Model "suy nghĩ trước khi trả lời" (DeepSeek, Gemini 2.5, dòng o của OpenAI…) tính phần suy nghĩ vào giới hạn token đầu ra.
  * 16/10: bản tin sáng qua RevidAPI deepseek-v4.1-flash dùng hết 600/600 token để suy nghĩ → nội dung rỗng (AI_EMPTY).
- * Chừa thêm chỗ cho suy nghĩ; model không suy nghĩ dừng khi trả lời xong nên không tốn thêm. Anthropic chỉ suy nghĩ khi bật riêng.
+ * Chừa thêm chỗ cho suy nghĩ; model không suy nghĩ dừng khi trả lời xong nên không tốn thêm. 21/10: cả Anthropic — Claude đời 5
+ * (Opus 5.5, Sonnet 5.5, Haiku 5.5…) mặc định tự suy nghĩ, phần suy nghĩ cũng tính vào max_tokens.
  */
 export const THINKING_HEADROOM = 4000;
-export const outputTokenCap = (kind: AiKind, maxTokens: number) => kind === 'anthropic' ? maxTokens : maxTokens + THINKING_HEADROOM;
+export const outputTokenCap = (_kind: AiKind, maxTokens: number) => maxTokens + THINKING_HEADROOM;
+
+const THINK_TAGS = ['<think>', '<thinking>', '</think>', '</thinking>'];
+/**
+ * 21/10: vài cổng chuẩn OpenAI (DeepSeek-R1, Qwen… qua vLLM / Together…) gửi suy nghĩ lẫn trong chữ trả lời dạng <think>…</think>.
+ * Lọc theo luồng: bỏ phần trong thẻ (cả <thinking>), chịu thẻ bị cắt giữa hai mảnh, bỏ khoảng trắng ngay sau thẻ đóng; thẻ mở không
+ * đóng (hết token) thì bỏ hết phần sau. Không tách được suy nghĩ cổng trộn thẳng vào chữ không có thẻ — bộ kiểm bắt loại đó.
+ */
+export const thinkTagFilter = () => {
+  let inside = false; let pending = ''; let trim = false;
+  const emit = (text: string) => {
+    const out = trim ? text.replace(/^\s+/, '') : text;
+    if (out) trim = false;
+    return out;
+  };
+  return {
+    push(delta: string): string {
+      let s = pending + delta; pending = ''; let out = '';
+      for (;;) {
+        const m = s.match(inside ? /<\/think(?:ing)?>/i : /<think(?:ing)?>/i);
+        if (!m || m.index == null) break;
+        if (!inside) out += emit(s.slice(0, m.index));
+        s = s.slice(m.index + m[0].length); inside = !inside;
+        if (!inside) trim = true;
+      }
+      const lt = s.lastIndexOf('<');
+      const tail = lt >= 0 ? s.slice(lt).toLowerCase() : '';
+      if (tail && THINK_TAGS.some(t => t.length > tail.length && t.startsWith(tail))) { pending = s.slice(lt); s = s.slice(0, lt); }
+      return inside ? out : out + emit(s);
+    },
+    /** Hết luồng: trả phần còn giữ (đuôi giống đầu thẻ nhưng không thành thẻ). */
+    flush(): string { const rest = inside ? '' : emit(pending); pending = ''; return rest; },
+  };
+};
+export const stripThinkTags = (text: string) => { const f = thinkTagFilter(); return f.push(text) + f.flush(); };
 
 /** Trả lời rỗng: hết giới hạn token (thường do suy nghĩ quá dài) → AI_TRUNCATED; còn lại AI_EMPTY. */
 export const emptyReplyError = (finishReason: unknown) => /^(length|max_tokens)$/i.test(String(finishReason ?? '')) ? 'AI_TRUNCATED' : 'AI_EMPTY';

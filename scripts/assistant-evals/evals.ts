@@ -92,8 +92,8 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   return { data: null, error: { message: 'not in eval fixture', code: 'X' } };
 };
 
-/** Nói như hồ sơ không tồn tại — trừ câu phủ định "không phải hồ sơ không tồn tại", "không khẳng định là … không tồn tại" (20/10: trả lời đúng ý mà bị bắt nhầm). */
-const saysMissing = (re: RegExp, text: string) => re.test(text.replace(/không (phải|khẳng định|có nghĩa)( là)? [^.,;\n]{0,40}?không tồn tại/gi, ''));
+/** Nói như hồ sơ không tồn tại — trừ câu phủ định "không phải hồ sơ không tồn tại", "không / chưa khẳng định (được) là … không tồn tại" (20–21/10: trả lời đúng ý mà bị bắt nhầm). */
+const saysMissing = (re: RegExp, text: string) => re.test(text.replace(/(không|chưa) (phải|khẳng định( được)?|có nghĩa)( là)? [^.,;\n]{0,40}?không tồn tại/gi, ''));
 /** Câu trả lời khi RPC chặn: nói rõ ngoài quyền xem, không bịa số kèm đơn vị, không nói "không tồn tại". */
 const deniedAnswerCheck = (label: string, unitRe: RegExp) => (o: Outcome) => firstFail(fail(!o.tools.includes(label), `không gọi ${label} (gọi: ${o.tools.join(', ') || 'không gì'})`),
   fail(unitRe.test(o.text), `bịa số: "${o.text.match(unitRe)?.[0]}"`), fail(saysMissing(/không tồn tại|không có (đơn|mã|vật tư) (này|đó|nào)/i, o.text), 'nói như không tồn tại'),

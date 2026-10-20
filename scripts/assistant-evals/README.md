@@ -8,7 +8,7 @@ tổng đơn mua do công cụ tính, báo cáo Zalo buộc gọi công cụ nh�
 - Chạy tay **trước khi deploy cổng AI** (`supabase/functions/ai-gateway`). Có ca hỏng thì chưa deploy.
 
 ```bash
-npm i --no-save @anthropic-ai/sdk@0.131.0
+npm ci   # có sẵn @anthropic-ai/sdk (devDependencies, cùng bản deno.json của cổng AI)
 node scripts/assistant-evals/run.mjs
 ```
 
@@ -30,15 +30,32 @@ ASSISTANT_EVAL_ENV=/đường/dẫn/.env node scripts/assistant-evals/run.mjs --
 `--kind anthropic` (hoặc `ASSISTANT_EVAL_KIND`): cùng khóa / model nhưng gọi chuẩn Anthropic ở gốc endpoint (RevidAPI có `/v1/messages`) —
 thử trước khi thêm kết nối loại Anthropic ở Cài đặt → Kết nối.
 
-Kết quả 20/10/2026 tối (29 ca, sau khi sửa lọt suy nghĩ):
+## Thêm cổng / nhà cung cấp mới (chuẩn OpenAI hay Anthropic)
+
+1. Thêm kết nối ở Cài đặt → Kết nối, **chưa gán** cho Trợ lý. Bấm Thử kết nối.
+2. Chạy cả bộ với kết nối đó: `--model <model hoặc tên kết nối>`; cổng có cả hai chuẩn thì chạy thêm `--kind anthropic` và chọn chuẩn đạt hơn.
+3. **Đạt hết mới gán.** Ca hỏng vì lọt suy nghĩ (`leakedThinking`) nghĩa là cổng trộn suy nghĩ vào chữ trả lời — đổi chuẩn / cổng, không sửa lời nhắc.
+4. Cổng có thể tự đổi cách xử lý mà không báo (RevidAPI 20→21/10) → chạy lại bộ kiểm trước mỗi lần deploy cổng AI và khi thấy Trợ lý trả lời lạ.
+   Với Claude, ưu tiên chuẩn Anthropic: suy nghĩ là khối riêng theo giao thức, không phụ thuộc cổng ánh xạ `reasoning_effort` thế nào.
+
+Cổng AI đã chịu sẵn (kiểm bằng cổng giả trong `lib/__tests__/aiGatewayProviders.test.ts`, chạy cùng vitest trên CI, không cần model):
+suy nghĩ ở `reasoning_content` / `reasoning` (DeepSeek, OpenRouter) hay khối `thinking` (Anthropic) không hiện; thẻ `<think>…</think>` /
+`<thinking>` trong chữ trả lời (DeepSeek-R1, Qwen qua vLLM…) bị lọc, kể cả thẻ cắt giữa hai mảnh; chữ trước khi gọi công cụ không vào câu trả lời;
+cổng không nhận `reasoning_effort` (400) → gửi lại bản tối giản; cổng trả JSON một lần thay vì stream; model Anthropic từ chối buộc gọi công cụ
+(400 `tool_choice` — Sonnet 5.5, Opus 5.5 trên API Anthropic) → gửi lại `auto` + dặn trong lời nhắc, các lần sau gửi `auto` luôn;
+`max_tokens` chừa 4.000 token cho suy nghĩ ở mọi nhà cung cấp (Claude đời 5 tự suy nghĩ).
+Không tự tách được: cổng trộn suy nghĩ thẳng vào chữ trả lời **không có thẻ** (RevidAPI chuẩn OpenAI với `none`) — chỉ bộ kiểm bắt được.
+
+Kết quả 21/10/2026 (49 ca = 29 ca Trợ lý + 9 ca `work-*` + 11 ca skill `wk-*`; sau khi lọc `<think>`, chừa token suy nghĩ, bỏ buộc gọi công cụ khi bị từ chối):
 
 | Model · cách gọi | Kết quả | Tổng thời gian | Ca hỏng |
 | --- | --- | --- | --- |
-| `claude-sonnet-5-5` · RevidAPI **chuẩn Anthropic** (`--kind anthropic`, khuyến nghị) | 29/29 · 29/29 (2 lần) | 4 phút 57 giây · 4 phút 30 giây (≈ 9–10 s/ca) | — · `stock-denied` thêm 3/3 lần (10,9–15,1 s) |
-| `claude-sonnet-5-5` · RevidAPI chuẩn OpenAI (kết nối "Trợ lý · hội thoại" hiện nay) | 22/29 | 8 phút 16 giây (≈ 17,1 s/ca) | 7 ca **lọt một đoạn suy nghĩ tiếng Anh đầu câu trả lời** (`po-tool-totals`, `po-from-excel`, `hits-prefound`, `po-detail-admin`, `stock-denied`, `report-po-vendor`, `chart-unsupported`) — xem dưới |
-| `deepseek-v4.1-flash` · RevidAPI chuẩn OpenAI | 29/29 · 29/29 (2 lần) | 7 phút 21 giây · 6 phút 17 giây (≈ 13–15 s/ca) | — |
+| `claude-sonnet-5-5` · RevidAPI **chuẩn Anthropic** (`--kind anthropic`, khuyến nghị) | **49/49** | 7 phút 07 giây | — · lần trước 48/49: `stock-denied` bị bộ kiểm bắt nhầm câu phủ định "chưa khẳng định được là … không tồn tại" (đã sửa bộ kiểm); `stock-denied` chạy riêng 6/7 lần — lần hỏng model rào "Có thể vật tư không tồn tại" (lỗi diễn đạt, không phải lọt suy nghĩ). Một lần chạy khác hết giờ 110 s liền 4 ca lúc RevidAPI nghẽn (đo lại ngay sau: 4–9 s/bước) |
+| `claude-sonnet-5-5` · RevidAPI chuẩn OpenAI (kết nối "Trợ lý · hội thoại" hiện nay) | 49/49 | 11 phút 33 giây | — · **RevidAPI tự đổi cách xử lý `none` qua đêm**: tối 20/10 lọt suy nghĩ 7/29 ca (`chart-unsupported` 3/3 lần), sáng 21/10 sạch (cùng câu 4/4 lần; số token vào RevidAPI báo đổi 23.372 → 19.731). Không dựa được vào điều này — xem mục Thêm cổng |
+| `deepseek-v4.1-flash` · RevidAPI chuẩn OpenAI | 48/49 | 12 phút | `wk-meeting-image` **hết giờ** 100 s ở bước đọc ảnh (kết nối đọc ảnh claude-sonnet-5-5, RevidAPI) — chạy lại riêng 14,8 s đạt |
 
-Trước đó trong ngày (trước khi kiểm lọt suy nghĩ): Sonnet 28/29 (`stock-denied` đạt 2/6 lần), DeepSeek 29/29 (~9 phút 13 giây). 19/10/2026 (26 ca): cả hai 26/26.
+20/10 tối (29 ca): Sonnet chuẩn Anthropic 29/29 × 2 (4 phút 57 giây / 4 phút 30 giây); Sonnet chuẩn OpenAI 22/29 (7 ca lọt một đoạn suy nghĩ tiếng Anh đầu câu trả lời); DeepSeek 29/29 × 2.
+20/10 sáng (trước khi kiểm lọt suy nghĩ): Sonnet 28/29 (`stock-denied` đạt 2/6 lần), DeepSeek 29/29 (~9 phút 13 giây). 19/10/2026 (26 ca): cả hai 26/26.
 
 Ghi nhận 20/10:
 
@@ -57,14 +74,14 @@ Ghi nhận 20/10:
   rồi mới chạy dần; bước dài lỡ hiện rồi mới gọi công cụ → sự kiện `reset`, màn hình xóa chữ đang hiện. Áp cho cả hai cách gọi.
 - **`po-from-image` hỏng trên main** ("NCC undefined", 1/8 lần đạt): lời nhắc / công cụ đơn mua không đổi từ 19/10, nhưng `claude-sonnet-5-5` nay gửi `ncc` là **MST** "0101234567" (6/7 lần) hoặc "Tên (MST …)" (1/7). RPC thật `list_procurement_vendors_v1` tìm chuỗi con trong tên + MST + mã nên MST vẫn khớp; lệnh máy chủ giả chỉ khớp chữ "hanaka" nên báo nhầm. Ngược lại, "Tên (MST …)" thì giả cho qua mà RPC thật không thấy. Sửa: giả tìm như RPC; công cụ không thấy thì tìm lại theo MST, rồi theo tên bỏ phần MST. Sau sửa 5/5 đạt (18–27 s).
 - **RevidAPI chậm thất thường**: một bước model có lúc quá 110 s (`CHAT_TIMEOUT_MS`) → "lỗi chạy: The operation was aborted due to timeout"; mạng chập → "fetch failed". Ca hết giờ / mất mạng thì chạy lại riêng ca đó.
-- Bộ kiểm "không nói không tồn tại" bỏ qua câu phủ định ("không phải hồ sơ không tồn tại", "không khẳng định là … không tồn tại") — trước đây DeepSeek trả lời đúng ý mà `profile-denied` vẫn bắt nhầm.
+- Bộ kiểm "không nói không tồn tại" bỏ qua câu phủ định ("không phải hồ sơ không tồn tại", "không / chưa khẳng định (được) là … không tồn tại") — trước đây DeepSeek / Sonnet trả lời đúng ý mà `profile-denied`, `stock-denied` vẫn bắt nhầm.
 
 Quy ước: **không sửa lời nhắc chỉ để chiều một model** nếu làm Claude kém đi — DeepSeek hỏng ca nào thì ghi vào bảng này, chủ SP quyết.
 Khi thêm ca mới, chạy cả hai model rồi cập nhật bảng.
 
 Gặp lỗi mới khi thử thật → thêm một ca vào `CASES` (ghi rõ lỗi gốc ở `bug`) rồi mới sửa lời nhắc / công cụ.
 
-Type-check mã cổng AI + bộ kiểm (Node, không cần Deno): sau khi cài SDK như trên, `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json`.
+Type-check mã cổng AI + bộ kiểm (Node, không cần Deno): `node_modules/.bin/tsc -p scripts/assistant-evals/tsconfig.gateway.json`.
 
 ## Vioo Work (Đợt 1 PR-3, 20/10/2026)
 
