@@ -14,6 +14,7 @@ import { AlertTriangle, LogOut, RefreshCw, WifiOff } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
 import { clearAppOwnedAuthStorage } from '../lib/authStorage';
+import { loadSignatureUrlForUser } from '../lib/signatureService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { userActivityService } from '../lib/userActivityService';
 import {
@@ -124,22 +125,8 @@ const authGateway: AuthProfileGateway = {
     if (!data) throw new Error('Supabase did not return an authorization snapshot');
     return data;
   },
-  loadSignatureUrl: async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_signatures')
-        .select('image_path')
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (error || !data?.image_path) return undefined;
-      const { data: publicUrlData } = supabase.storage
-        .from('workflow-templates')
-        .getPublicUrl(data.image_path);
-      return publicUrlData?.publicUrl || undefined;
-    } catch {
-      return undefined;
-    }
-  },
+  // Signed URL ngắn hạn qua Storage RLS (bucket riêng tư; getPublicUrl không còn mở được).
+  loadSignatureUrl: async (userId) => loadSignatureUrlForUser(userId),
 };
 
 const toAuthFailure = (error: unknown): AuthFailure => {

@@ -53,6 +53,7 @@ import {
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { loadSignatureUrlForUser } from '../lib/signatureService';
 import { canPerform, canPerformHrmTemplatePermission } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
@@ -164,6 +165,14 @@ const Settings: React.FC = () => {
         : 'general',
   );
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  // Signed URL chữ ký hết hạn sau 10 phút: mở lại Cài đặt thì ký mới, không dùng URL cũ từ lúc đăng nhập.
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | undefined>(currentUser.signatureUrl);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser.signatureUrl) { setSignaturePreviewUrl(undefined); return; }
+    loadSignatureUrlForUser(currentUser.id).then(url => { if (!cancelled) setSignaturePreviewUrl(url || currentUser.signatureUrl); });
+    return () => { cancelled = true; };
+  }, [currentUser.id, currentUser.signatureUrl]);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -2218,10 +2227,10 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-6">
-                  {currentUser.signatureUrl ? (
+                  {signaturePreviewUrl ? (
                     <div className="flex items-center gap-6">
                       <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-center w-64 h-32">
-                        <img src={currentUser.signatureUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
+                        <img src={signaturePreviewUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
                       </div>
                       <div className="space-y-2">
                         <button onClick={() => setShowSignaturePad(true)}
@@ -2243,7 +2252,7 @@ const Settings: React.FC = () => {
 
               {showSignaturePad && (
                 <SignaturePad
-                  currentSignatureUrl={currentUser.signatureUrl}
+                  currentSignatureUrl={signaturePreviewUrl}
                   onSave={async (dataUrl) => { await saveSignature(currentUser.id, dataUrl); setShowSignaturePad(false); }}
                   onDelete={async () => { await deleteSignature(currentUser.id); setShowSignaturePad(false); }}
                   onClose={() => setShowSignaturePad(false)}

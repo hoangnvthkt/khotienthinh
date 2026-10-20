@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { createSignatureUrl, createSignatureUrls, signaturePathFor } from '../lib/signatureService';
 import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import { wmsRecipientService } from '../lib/wmsRecipientService';
 import {
@@ -948,10 +949,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ]);
           const requiredUsers = requireModuleData(module, 'users', usersData);
           if (requiredUsers.length === 0) throw new Error('Danh sách người dùng đang trống bất thường.');
+          // Chỉ những chữ ký RLS cho đọc (của mình, người cùng phiếu, hoặc mọi người nếu quản trị).
           const signatureByUserId = new Map<string, string>();
+          const signedByPath = await createSignatureUrls((sigData || []).map((signature: any) => signature.image_path));
           for (const signature of sigData || []) {
-            const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(signature.image_path);
-            if (urlData?.publicUrl) signatureByUserId.set(signature.user_id, urlData.publicUrl);
+            const signedUrl = signedByPath.get(signature.image_path);
+            if (signedUrl) signatureByUserId.set(signature.user_id, signedUrl);
           }
           const mappedUsers = requiredUsers.map(mapUserFromDb).map((candidate: User) => ({
             ...candidate,
@@ -985,9 +988,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const mappedUsers = requiredUsers.map(mapUserFromDb);
             if (sigData && sigData.length > 0) {
               const sigMap = new Map<string, string>();
+              const signedByPath = await createSignatureUrls(sigData.map((sig: any) => sig.image_path));
               for (const sig of sigData) {
-                const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
-                if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
+                const signedUrl = signedByPath.get(sig.image_path);
+                if (signedUrl) sigMap.set(sig.user_id, signedUrl);
               }
               mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
             }
@@ -3569,17 +3573,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const res = await fetch(dataUrl);
       const blob = await res.blob();
-      const path = `signatures/${userId}.png`;
+      const path = signaturePathFor(userId);
       // Upload with upsert
       const { error: upErr } = await supabase.storage.from('workflow-templates').upload(path, blob, { contentType: 'image/png', upsert: true });
       if (upErr) { console.error('Signature upload error:', upErr); return false; }
       // Upsert DB
       const { error: dbErr } = await supabase.from('user_signatures').upsert({ user_id: userId, image_path: path }, { onConflict: 'user_id' });
       if (dbErr) { console.error('Signature DB error:', dbErr); return false; }
-      // Update local state
-      const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(path);
-      const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : '';
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: publicUrl } : u));
+      // Update local state (signed URL mới nên không cần chống cache)
+      const signedUrl = (await createSignatureUrl(path)) || '';
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: signedUrl } : u));
       if (user.id === userId) await refreshProfile();
       return true;
     } catch (err) { console.error('Save signature error:', err); return false; }
@@ -3587,7 +3590,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteSignature = async (userId: string): Promise<boolean> => {
     try {
-      const path = `signatures/${userId}.png`;
+      const path = signaturePathFor(userId);
       await supabase.storage.from('workflow-templates').remove([path]);
       const { error } = await supabase.from('user_signatures').delete().eq('user_id', userId);
       if (error) { console.error('Delete signature error:', error); return false; }
