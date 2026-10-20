@@ -60,6 +60,7 @@ const summary = (id: string, title: string): WorkTaskSummary => ({
   assignment_count: 2,
   acknowledged_count: 1,
   progress_percent: id === "1" ? 65 : 25,
+  last_progress_at: "2026-09-09T01:15:00Z",
 });
 const people = [
   { id: "actor", name: "Lê Minh An", kind: "user" },
@@ -97,6 +98,40 @@ const comment = (id: string, text: string) => ({
   mentionedUserIds: [],
   can_edit: role !== "watcher",
 });
+// Đợt 1: dòng cập nhật + tóm tắt + người giao được (bật bằng ?updates=1, ?origin=claim|directive, ?quick=false).
+const fixtureUpdates: any[] = query.get("updates") === "1" ? [
+  { id: "u2", at: "2026-09-09T01:15:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Đối chiếu xong biên bản trục A–D.", doing: "Ký nháy biên bản trục E–H.",
+    next: "Nộp hồ sơ cho tư vấn giám sát 10/9.", blocked: "Thiếu chữ ký chỉ huy trưởng.", progressBefore: 40, progressAfter: 65, ai: true,
+    files: [{ id: "f1", name: "BB-nghiem-thu-A-D.pdf", mime: "application/pdf", evidenceType: null }] },
+  { id: "u1", at: "2026-09-08T09:30:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Gom đủ 12 biên bản.", next: "Đối chiếu trục A–D.",
+    progressBefore: 10, progressAfter: 40, ai: false, files: [] },
+] : [];
+const board = {
+  async assignablePeople() {
+    log("assignablePeople");
+    return { canAssignOthers: true, people: [
+      { userId: "actor", name: "Lê Minh An", title: "Kỹ sư", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: false, sameUnit: true, isMe: true, canReceive: true, load: 4, aliases: [] },
+      { userId: "second", name: "Nguyễn Thu Hà", title: "Kỹ sư kế hoạch", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: true, sameUnit: true, isMe: false, canReceive: true, load: 3, aliases: [] },
+    ] };
+  },
+  async taskBrief(taskId: string) {
+    log("taskBrief", taskId);
+    const origin = query.get("origin");
+    return { task: { lastProgressAt: fixtureUpdates[0]?.at || "2026-09-07T00:10:00Z" },
+      origin: origin === "claim" ? { origin: "oral_claim", claimStatus: "pending", decidedAt: null, giver: { id: "actor", name: "Lê Minh An" }, meeting: null }
+        : origin === "directive" ? { origin: "directive", claimStatus: "not_needed", decidedAt: null, giver: null, meeting: { id: "m", title: "Giao ban 07/09", heldOn: "2026-09-07" } }
+        : null,
+      updates: fixtureUpdates.slice(0, 5), assignees: [], checklist: { done: 0, total: 0 }, children: { open: 0, total: 0 }, events: [] } as any;
+  },
+  async listUpdates(taskId: string) {
+    log("listUpdates", taskId);
+    return { items: fixtureUpdates.slice(), nextBefore: null };
+  },
+  async decideClaim(taskId: string, decision: string, note: string | null) {
+    log("decideClaim", taskId, decision, note);
+    return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected" };
+  },
+};
 const service: WorkTaskService = {
   async command(input) {
     log("command", structuredClone(input));
@@ -170,6 +205,14 @@ const service: WorkTaskService = {
     if (input.command === "result_draft_update") {
       resultDraftDocument = input.payload.content;
       taskVersion++;
+    }
+    if (input.command === "progress_report") {
+      const payload = input.payload;
+      fixtureUpdates.unshift({ id: `u${fixtureUpdates.length + 1}`, at: new Date().toISOString(), authorId: "actor", authorName: "Lê Minh An",
+        ...payload, progressBefore: progressPercent, progressAfter: payload.progressPercent, ai: false,
+        files: (payload.attachmentIds || []).map((id: string) => ({ id, name: `${id}.jpg`, mime: "image/jpeg", evidenceType: null })) });
+      progressPercent = payload.progressPercent;
+      if (taskStatus === "not_started") taskStatus = "in_progress";
     }
     if (input.command === "progress_update") {
       progressPercent = input.payload.progressPercent;
@@ -618,6 +661,9 @@ createRoot(document.getElementById("root")!).render(
           <WorkWorkspace
             actorId="actor"
             service={service}
+            board={board as any}
+            actorName="Lê Minh An"
+            canQuickAssign={query.get("quick") !== "false"}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
@@ -629,6 +675,9 @@ createRoot(document.getElementById("root")!).render(
           <WorkWorkspace
             actorId="actor"
             service={service}
+            board={board as any}
+            actorName="Lê Minh An"
+            canQuickAssign={query.get("quick") !== "false"}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />

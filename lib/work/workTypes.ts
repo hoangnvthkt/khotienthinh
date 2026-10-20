@@ -122,6 +122,8 @@ export interface WorkTaskSummary {
   updated_at: string;
   lock_version: number;
   progress_percent: number;
+  /** Lần chuyển động gần nhất (cập nhật, bắt đầu, nộp, vướng); danh sách trả từ Đợt 1. */
+  last_progress_at?: string | null;
 }
 export interface WorkTask extends WorkTaskSummary {
   started_at: string | null;
@@ -376,6 +378,14 @@ export type WorkCollaborationCommand =
   | {
       command: "progress_update";
       payload: { progressPercent: number; expectedLockVersion: number };
+    }
+  | {
+      /** Đợt 1: cập nhật có cấu trúc (Đã làm / Đang làm / Sẽ làm / Vướng) + % + tệp; việc chưa bắt đầu tự chuyển Đang làm. */
+      command: "progress_report";
+      payload: {
+        done?: string; doing?: string; next?: string; blocked?: string;
+        progressPercent: number; attachmentIds?: string[]; expectedLockVersion?: number; aiRunId?: string;
+      };
     };
 export type WorkCollaborationCommandInput = WorkCollaborationCommand & { taskId: string; idempotencyKey: string };
 export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: number } & (

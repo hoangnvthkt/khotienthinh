@@ -113,6 +113,12 @@ export interface WorkAssignablePerson {
   canReceive: boolean; load: number; aliases: string[];
 }
 export interface WorkAssignablePeople { canAssignOthers: boolean; people: WorkAssignablePerson[] }
+export interface WorkTaskUpdate {
+  id: string; at: string; authorId: string; authorName: string; done?: string; doing?: string; next?: string; blocked?: string;
+  progressBefore: number; progressAfter: number; ai: boolean;
+  files: Array<{ id: string; name: string; mime: string | null; evidenceType: string | null }>;
+}
+export interface WorkUpdatePage { items: WorkTaskUpdate[]; nextBefore: string | null }
 export type WorkAiLinkKind = "task_draft" | "meeting_tasks" | "update_draft" | "task_writer" | "task_brief" | "week_report" | "assistant";
 
 /** Tỷ lệ đúng hạn; chưa có việc đến hạn thì null (không che bằng 0). */
@@ -134,6 +140,9 @@ export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
       });
     },
     taskBrief: (taskId: string) => call<WorkTaskBrief>("work_task_brief_v1", { p_task_id: taskId }),
+    /** Dòng cập nhật, mới nhất trước; truyền nextBefore để xem thêm. */
+    listUpdates: (taskId: string, before: string | null = null, limit = 20) =>
+      call<WorkUpdatePage>("list_work_task_updates_v1", { p_task_id: taskId, p_before: before, p_limit: limit }),
     teamBoard: (orgUnitId: string | null = null, weekStart: string | null = null) =>
       call<WorkTeamBoard>("work_team_board_v1", { p_org_unit_id: orgUnitId, p_week_start: weekStart }),
     companyBoard: (weekStart: string | null = null) => call<WorkCompanyBoard>("work_company_board_v1", { p_week_start: weekStart }),
