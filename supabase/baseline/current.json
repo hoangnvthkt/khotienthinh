@@ -372,7 +372,8 @@
     "20261021210000_work_dot1_foundation.sql",
     "20261022090000_work_dot1_notify_quick.sql",
     "20261022120000_storage_bucket_hardening.sql",
-    "20261022130000_work_dot1_ai.sql"
+    "20261022130000_work_dot1_ai.sql",
+    "20261022150000_work_my_board.sql"
   ],
   "forbidIncludeAll": true
 }

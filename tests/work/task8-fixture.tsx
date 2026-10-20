@@ -109,7 +109,52 @@ const fixtureUpdates: any[] = query.get("updates") === "1" ? [
   { id: "u1", at: "2026-09-08T09:30:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Gom đủ 12 biên bản.", next: "Đối chiếu trục A–D.",
     progressBefore: 10, progressAfter: 40, ai: false, files: [] },
 ] : [];
+// Việc của tôi (mockup v1): bảng giả theo giờ máy; ?board=empty | error. Lệnh trên việc "b-*" đổi trạng thái việc đó.
+const bDay = (offset: number, h = 17) => { const d = new Date(); d.setHours(h, 0, 0, 0); d.setDate(d.getDate() + offset); return d.toISOString(); };
+const bIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const bMonday = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+const bAdd = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const toSaturday = (6 - new Date().getDay() + 7) % 7;
+const canOf = (t: any) => {
+  const live = !["completed", "cancelled", "awaiting_review"].includes(t.status);
+  return { acknowledge: live && !t.acknowledged, start: live && t.acknowledged && ["not_started", "changes_requested"].includes(t.status),
+    block: live && t.acknowledged && t.status === "in_progress", unblock: live && t.acknowledged && t.status === "blocked",
+    submit: live && t.acknowledged && ["in_progress", "changes_requested"].includes(t.status) };
+};
+const bTask = (id: string, x: any) => ({ id, code: `VW-2026-0002${id.slice(2)}`, labels: [], lockVersion: 1, blockedReason: null, completedAt: null,
+  createdAt: bDay(-6, 9), lastProgressAt: bDay(-1, 10), acknowledged: true, needsReview: true, createdBy: { id: "head", name: "Vương Thành Đô" },
+  createdByMe: false, createdByHead: true, checklist: { done: 0, total: 0 }, origin: null, progressPercent: 0, status: "in_progress", ...x });
+const boardTasks: any[] = query.get("board") === "empty" ? [] : [
+  bTask("b-01", { title: "Bóc khối lượng phát sinh móng PĐ3 – XinHai", level: "A", deadlineAt: bDay(-3), progressPercent: 60, lastProgressAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    labels: ["XinHai", "Khối lượng"], checklist: { done: 3, total: 5 }, createdByHead: false, createdBy: { id: "tgd", name: "Tổng giám đốc" },
+    origin: { origin: "directive", claimStatus: "not_needed", giver: { id: "tgd", name: "BLĐ" }, meeting: { title: "Giao ban 12/10", heldOn: "2026-10-12" } } }),
+  bTask("b-02", { title: "Gửi biên bản nghiệm thu cột trục A–D cho CĐT – SMB", level: "B", deadlineAt: bDay(0, 23), progressPercent: 80, lastProgressAt: new Date(Date.now() - 18 * 3_600_000).toISOString(), labels: ["SMB", "Nghiệm thu"] }),
+  bTask("b-03", { title: "Cập nhật ảnh tiến độ tuần vào Nhật ký SMB", level: "C", deadlineAt: bDay(0, 23), status: "not_started", createdByMe: true, createdByHead: false, needsReview: false,
+    lastProgressAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), labels: ["SMB", "Nhật ký"] }),
+  bTask("b-04", { title: "Đối chiếu đơn giá cốp pha với 3 nhà cung cấp", level: "B", deadlineAt: bDay(Math.max(1, toSaturday)), status: "blocked", blockedReason: "Chờ phòng Mua hàng gửi báo giá thứ 3",
+    progressPercent: 40, lastProgressAt: new Date(Date.now() - 60 * 3_600_000).toISOString(), labels: ["Mua hàng"] }),
+  bTask("b-05", { title: "Lập kế hoạch vật tư tuần 44 cho XinHai", level: "A", deadlineAt: bDay(Math.max(1, toSaturday) + 3), status: "pending_acknowledgement", acknowledged: false, lastProgressAt: bDay(-1, 9), labels: ["XinHai"] }),
+  bTask("b-06", { title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", deadlineAt: bDay(Math.max(1, toSaturday)), createdByMe: true, createdByHead: false, needsReview: true,
+    origin: { origin: "oral_claim", claimStatus: "pending", giver: { id: "ptgd", name: "Phó TGĐ" }, meeting: null } }),
+  bTask("b-07", { title: "Rà soát hồ sơ thanh toán đợt 2 SMB", level: "B", deadlineAt: bDay(-1), status: "completed", completedAt: bDay(-1, 15), progressPercent: 100 }),
+  bTask("b-08", { title: "Nghiệm thu cốp pha sàn tầng 3 – SMB", level: "B", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 20, lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }),
+  bTask("b-09", { title: "Chốt khối lượng thép tháng 10 – XinHai", level: "C", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 50, lastProgressAt: new Date(Date.now() - 6 * 3_600_000).toISOString() }),
+  bTask("b-10", { title: "Báo cáo tuần 42 cho Trưởng phòng", level: "C", deadlineAt: bDay(-6), status: "completed", completedAt: bDay(-6, 11), progressPercent: 100 }),
+  bTask("b-11", { title: "Cập nhật danh bạ nhà cung cấp", level: "C", deadlineAt: null, progressPercent: 10, lastProgressAt: new Date(Date.now() - 20 * 3_600_000).toISOString() }),
+];
+for (const t of boardTasks) t.can = canOf(t);
+
 const board = {
+  async myBoard() {
+    log("myBoard");
+    await wait(150);
+    if (query.get("board") === "error") throw new Error("network");
+    const load = boardTasks.filter((t) => !["completed", "cancelled"].includes(t.status)).reduce((n, t) => n + ({ A: 3, B: 2, C: 1 } as any)[t.level], 0);
+    return { me: { userId: "actor", name: "Lê Minh An", title: "Kỹ sư dự án", unit: { id: "u", code: "QLDA", name: "Phòng Quản lý dự án" } },
+      today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), doneSince: bIso(bAdd(bMonday, -35)), tasks: boardTasks.map((t) => ({ ...t })),
+      weeks: [7, 14, 21, 28].map((n, i) => ({ weekStart: bIso(bAdd(bMonday, -n)), due: [7, 6, 5, 4][i], ontime: [6, 5, 4, 3][i] })),
+      review: { reviewed: 5, firstPass: 4 }, load };
+  },
   async assignablePeople() {
     log("assignablePeople");
     return { canAssignOthers: true, people: [
@@ -169,6 +214,16 @@ const fixtureAi = query.get("ai") === "off" ? null : createWorkAi(fakeAiRun as a
 const service: WorkTaskService = {
   async command(input) {
     log("command", structuredClone(input));
+    const bt = boardTasks.find((t) => t.id === input.taskId);
+    if (bt) {
+      await wait(80);
+      if (input.command === "acknowledge") { bt.acknowledged = true; bt.status = "not_started"; }
+      else if (input.command === "start" || input.command === "unblock") bt.status = "in_progress";
+      else if (input.command === "block") { bt.status = "blocked"; bt.blockedReason = (input.payload as any).reason; }
+      else if (input.command === "submit") { bt.status = bt.needsReview ? "awaiting_review" : "completed"; if (!bt.needsReview) bt.completedAt = new Date().toISOString(); }
+      bt.lockVersion++; bt.lastProgressAt = new Date().toISOString(); bt.can = canOf(bt);
+      return { taskId: bt.id, taskCode: bt.code, lockVersion: bt.lockVersion, status: bt.status } as any;
+    }
     commandAttempts++;
     if (commandResults.has(input.idempotencyKey))
       return commandResults.get(input.idempotencyKey);
