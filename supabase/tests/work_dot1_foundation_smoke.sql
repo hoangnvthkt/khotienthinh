@@ -1,6 +1,6 @@
 -- Vioo Work Đợt 1 PR-1: nền giao việc + hạ tầng AI. Chạy cùng migration trong một giao dịch rollback:
 -- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> \
---   --migration supabase/migrations/20261021170000_work_dot1_foundation.sql \
+--   --migration supabase/migrations/20261021210000_work_dot1_foundation.sql \
 --   --smoke supabase/tests/work_dot1_foundation_smoke.sql
 -- Vai: head (trưởng đơn vị U1) · staff (nhân viên U1) · outsider (nhân viên U2) · bld (xem toàn công ty) · noaccess (không có Vioo Work).
 -- Việc tạo bằng đúng lệnh thật (xem trước người nhận → create_work_task) để kiểm cả luồng quyền hiện có.

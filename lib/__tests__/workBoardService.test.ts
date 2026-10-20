@@ -11,7 +11,7 @@ import {
 } from "../work/workBoardService";
 import { workError } from "../work/workForm";
 
-const migration = readFileSync("supabase/migrations/20261021170000_work_dot1_foundation.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20261021210000_work_dot1_foundation.sql", "utf8");
 
 describe("Vioo Work Đợt 1 · mức A/B/C và tải việc", () => {
   it("A/B/C dùng priority sẵn có, đổi qua lại không mất", () => {
