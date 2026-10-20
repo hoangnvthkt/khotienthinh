@@ -128,6 +128,25 @@ export interface WorkMyTask {
     meeting: { title: string; heldOn: string } | null };
   can: { acknowledge: boolean; start: boolean; block: boolean; unblock: boolean; submit: boolean };
 }
+/** Tab được thấy (Phòng tôi / Toàn công ty) + số chờ mình. */
+export interface WorkBoardAccess { myUnits: WorkUnitRef[]; company: boolean; reviewsWaitingMe: number; claimsWaitingMe: number }
+export interface WorkReviewItem {
+  id: string; code: string; title: string; level: WorkLevel; deadlineAt: string | null; lockVersion: number; progressPercent: number;
+  assignees: string[]; iteration: number | null; submittedAt: string | null; result: string; files: number;
+}
+export type WorkDirectiveBucket = "late" | "doing" | "confirm" | "done";
+export interface WorkDirective {
+  id: string; code: string; title: string; level: WorkLevel; status: WorkTaskStatus; deadlineAt: string | null; progressPercent: number;
+  completedAt: string | null; createdAt: string; lastProgressAt: string | null; origin: "directive" | "oral_claim";
+  claimStatus: "not_needed" | "pending" | "confirmed" | "rejected"; giver: WorkPersonRef | null; meeting: { title: string; heldOn: string } | null;
+  assignees: Array<{ name: string; unit: string | null }>; canDecide: boolean; bucket: WorkDirectiveBucket;
+}
+export interface WorkOverviewTask {
+  id: string; code: string; title: string; status: WorkTaskStatus; level: WorkLevel; deadlineAt: string | null; progressPercent: number;
+  lastProgressAt: string | null; overdue: boolean; restricted: boolean; createdByName: string | null; assignees: Array<{ userId: string; name: string }>;
+}
+export interface WorkOverview { unit: WorkUnitRef | null; total: number; overdue: number; stale: number; items: WorkOverviewTask[]; code?: string }
+export type WorkOverviewState = "open" | "overdue" | "stale" | "review" | "unack" | "done_recent" | "all";
 export interface WorkMyBoard {
   me: { userId: string; name: string; title: string | null; unit: WorkUnitRef | null };
   today: string; weekStart: string; weekEnd: string; tasks: WorkMyTask[];
@@ -162,6 +181,17 @@ export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
     listUpdates: (taskId: string, before: string | null = null, limit = 20) =>
       call<WorkUpdatePage>("list_work_task_updates_v1", { p_task_id: taskId, p_before: before, p_limit: limit }),
     myBoard: (weekStart: string | null = null) => call<WorkMyBoard>("work_my_board_v1", { p_week_start: weekStart }),
+    boardAccess: () => call<WorkBoardAccess>("work_board_access_v1", {}),
+    reviewQueue: () => call<WorkReviewItem[]>("work_review_queue_v1", {}),
+    directives: (orgUnitId: string | null = null) => call<WorkDirective[]>("work_directives_v1", { p_org_unit_id: orgUnitId }),
+    /** Việc theo người / đơn vị (mã) / trạng thái, theo quyền xem của người hỏi. */
+    tasksOverview: (input: { assigneeUserId?: string | null; unit?: string | null; state?: WorkOverviewState; dueBefore?: string | null; limit?: number }) =>
+      call<WorkOverview>("work_tasks_overview_v1", { p_assignee_user_id: input.assigneeUserId ?? null, p_unit_query: input.unit ?? null,
+        p_state: input.state ?? "open", p_due_before: input.dueBefore ?? null, p_limit: input.limit ?? 30 }),
+    /** Người giao xác nhận / không nhận việc giao miệng; xác nhận có thể kèm hạn mới. */
+    decideClaimV2: (taskId: string, decision: "confirm" | "reject", note: string | null = null, deadlineAt: string | null = null) =>
+      call<{ taskId: string; claimStatus: string; deadlineAt?: string }>("work_task_claim_decide_v2", {
+        p_task_id: taskId, p_decision: decision, p_note: note?.trim() || null, p_deadline_at: deadlineAt }),
     teamBoard: (orgUnitId: string | null = null, weekStart: string | null = null) =>
       call<WorkTeamBoard>("work_team_board_v1", { p_org_unit_id: orgUnitId, p_week_start: weekStart }),
     companyBoard: (weekStart: string | null = null) => call<WorkCompanyBoard>("work_company_board_v1", { p_week_start: weekStart }),

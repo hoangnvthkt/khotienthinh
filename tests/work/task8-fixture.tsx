@@ -144,7 +144,94 @@ const boardTasks: any[] = query.get("board") === "empty" ? [] : [
 ];
 for (const t of boardTasks) t.can = canOf(t);
 
+// Phòng tôi / Toàn công ty / Sổ chỉ đạo (PR-4): ?access=staff → không có tab; ?access=head → chỉ Phòng tôi.
+const bLastWeek = bIso(bAdd(bMonday, -7));
+const member = (userId: string, name: string, title: string, x: any) => ({ userId, name, title, orgUnitId: "u-qlda", isHead: false,
+  active: 3, levels: { A: 1, B: 1, C: 1 }, load: 6, overdue: 0, stale: 0, unack: 0, due: 3, ontime: 3, ...x });
+const teamMembers = (prev: boolean) => [
+  member("fourth", "Vương Thành Đô", "Trưởng phòng", { isHead: true, active: 2, levels: { A: 1, B: 1, C: 0 }, load: 5, due: 2, ontime: 2 }),
+  member("actor", "Lê Minh An", "Kỹ sư dự án", { active: 6, levels: { A: 2, B: 3, C: 1 }, load: 13, overdue: 1, stale: 1, due: 7, ontime: prev ? 5 : 6 }),
+  member("second", "Nguyễn Thu Hà", "Kỹ sư kế hoạch", { active: 4, levels: { A: 1, B: 2, C: 1 }, load: 8, unack: 1, due: 4, ontime: prev ? 4 : 3 }),
+  member("khoi", "Tạ Minh Khôi", "Kỹ sư hiện trường", { active: 5, levels: { A: 2, B: 1, C: 2 }, load: 10, overdue: 2, stale: 2, due: 5, ontime: 2 }),
+  member("bao", "Phan Quốc Bảo", "Chuyên viên hồ sơ", { active: 1, levels: { A: 0, B: 0, C: 1 }, load: 1, due: 0, ontime: 0 }),
+];
+const unit = (id: string, code: string, name: string, parent: string, x: any) => ({ id, code, name, type: "department",
+  parent: { id: `p-${parent}`, code: null, name: parent }, people: 6, hasHead: true, active: 12, overdue: 0, stale: 0, due: 8, ontime: 7,
+  directives: { open: 1, late: 0, doneThisMonth: 2 }, claimsPending: 0, ...x });
+const companyUnits = (prev: boolean) => [
+  unit("u-qlda", "QLDA", "Phòng Quản lý dự án", "Khối Văn phòng", { people: 5, due: 18, ontime: prev ? 14 : 15, overdue: 3, stale: 3, directives: { open: 3, late: 1, doneThisMonth: 2 } }),
+  unit("u-tckt", "TCKT", "Phòng Tài chính kế toán", "Khối Văn phòng", { people: 7, due: 12, ontime: 11 }),
+  unit("u-hcns", "HCNS", "Phòng Hành chính nhân sự", "Khối Văn phòng", { people: 6, due: 9, ontime: prev ? 8 : 6, overdue: 2, directives: { open: 2, late: 1, doneThisMonth: 1 } }),
+  unit("u-tktl", "TKTL", "Thư ký – Trợ lý", "Khối Văn phòng", { people: 3, due: 2, ontime: 2, hasHead: false, directives: { open: 0, late: 0, doneThisMonth: 0 } }),
+  unit("u-smb", "BCH SMB", "Ban chỉ huy SMB", "Khối Công trường", { people: 9, due: 14, ontime: 9, overdue: 4, stale: 5, directives: { open: 2, late: 1, doneThisMonth: 0 } }),
+  unit("u-xh", "XINHAI", "Ban chỉ huy XinHai", "Khối Công trường", { people: 8, due: 10, ontime: 9 }),
+  unit("u-nm", "VPNM", "Văn phòng nhà máy", "Khối Nhà máy", { people: 4, due: 0, ontime: 0, hasHead: false, directives: { open: 0, late: 0, doneThisMonth: 0 } }),
+];
+const directiveRows: any[] = [
+  { id: "d-1", code: "VW-2026-000301", title: "Rà soát hồ sơ thanh toán đợt 3 SMB", level: "A", status: "in_progress", deadlineAt: bDay(-2), progressPercent: 60, completedAt: null,
+    createdAt: bDay(-8, 9), lastProgressAt: new Date(Date.now() - 70 * 3_600_000).toISOString(), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 42", heldOn: "2026-10-12" }, assignees: [{ name: "Lê Minh An", unit: "QLDA" }], canDecide: false, bucket: "late" },
+  { id: "d-2", code: "VW-2026-000302", title: "Chốt kế hoạch dòng tiền tháng 11", level: "A", status: "in_progress", deadlineAt: bDay(4), progressPercent: 40, completedAt: null,
+    createdAt: bDay(-6, 9), lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 43", heldOn: "2026-10-19" }, assignees: [{ name: "Trịnh Thị Hương", unit: "TCKT" }], canDecide: false, bucket: "doing" },
+  { id: "d-3", code: "VW-2026-000303", title: "Lập kế hoạch vật tư tuần 44 cho XinHai", level: "B", status: "not_started", deadlineAt: bDay(6), progressPercent: 0, completedAt: null,
+    createdAt: bDay(-1, 9), lastProgressAt: bDay(-1, 9), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 43", heldOn: "2026-10-19" }, assignees: [{ name: "Tạ Minh Khôi", unit: "QLDA" }], canDecide: false, bucket: "doing" },
+  { id: "d-4", code: "VW-2026-000304", title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", status: "not_started", deadlineAt: bDay(4), progressPercent: 0, completedAt: null,
+    createdAt: bDay(-1, 10), lastProgressAt: bDay(-1, 10), origin: "oral_claim", claimStatus: "pending",
+    giver: { id: "actor", name: "Lê Minh An" }, meeting: null, assignees: [{ name: "Nguyễn Thu Hà", unit: "QLDA" }], canDecide: true, bucket: "confirm" },
+  { id: "d-5", code: "VW-2026-000305", title: "Nghiệm thu móng PĐ1 – XinHai", level: "A", status: "completed", deadlineAt: bDay(-5), progressPercent: 100, completedAt: bDay(-6, 15),
+    createdAt: bDay(-15, 9), lastProgressAt: bDay(-6, 15), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 41", heldOn: "2026-10-05" }, assignees: [{ name: "Tạ Minh Khôi", unit: "QLDA" }], canDecide: false, bucket: "done" },
+];
+const reviewRows: any[] = [
+  { id: "r-1", code: "VW-2026-000311", title: "Bảng so sánh giá cốp pha 3 nhà cung cấp", level: "B", deadlineAt: bDay(1), lockVersion: 4, progressPercent: 100,
+    assignees: ["Tạ Minh Khôi"], iteration: 1, submittedAt: bDay(0, 9), result: "Đã so sánh 3 NCC, đề xuất chọn nhà cung cấp B vì giá thấp hơn 4%", files: 2 },
+  { id: "r-2", code: "VW-2026-000312", title: "Biên bản nghiệm thu cốt thép sàn tầng 3", level: "A", deadlineAt: bDay(-1), lockVersion: 6, progressPercent: 100,
+    assignees: ["Lê Minh An"], iteration: 2, submittedAt: bDay(0, 8), result: "Bổ sung chữ ký tư vấn giám sát theo góp ý lần 1", files: 1 },
+];
+const overviewItem = (t: any) => ({ id: t.id, code: t.code, title: t.title, status: t.status, level: t.level, deadlineAt: t.deadlineAt, progressPercent: t.progressPercent,
+  lastProgressAt: t.lastProgressAt, overdue: false, restricted: false, createdByName: "Vương Thành Đô", assignees: [{ userId: "actor", name: "Lê Minh An" }] });
+
 const board = {
+  async boardAccess() {
+    log("boardAccess");
+    const a = query.get("access");
+    return { myUnits: a === "staff" ? [] : [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }], company: !a,
+      reviewsWaitingMe: reviewRows.length, claimsWaitingMe: directiveRows.filter((d) => d.bucket === "confirm").length };
+  },
+  async teamBoard(unitId: string | null, weekStart: string | null = null) {
+    log("teamBoard", unitId, weekStart);
+    await wait(80);
+    const prev = Boolean(weekStart && weekStart < bLastWeek);
+    return { unit: { id: unitId || "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }, myUnits: [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }],
+      weekStart: weekStart || bLastWeek, canViewAll: true, reviewWaiting: reviewRows.length, members: teamMembers(prev) };
+  },
+  async companyBoard(weekStart: string | null = null) {
+    log("companyBoard", weekStart);
+    await wait(80);
+    return { weekStart: weekStart || bLastWeek, units: companyUnits(Boolean(weekStart && weekStart < bLastWeek)), claimsWaitingMe: 1 };
+  },
+  async reviewQueue() { log("reviewQueue"); return reviewRows.slice(); },
+  async directives(orgUnitId: string | null = null) {
+    log("directives", orgUnitId);
+    return orgUnitId ? directiveRows.filter((d) => d.assignees.some((a: any) => a.unit === "QLDA")) : directiveRows.slice();
+  },
+  async tasksOverview(input: any) {
+    log("tasksOverview", input);
+    await wait(60);
+    const items = boardTasks.filter((t) => t.status !== "completed").map(overviewItem)
+      .filter((t) => input.state !== "overdue" || (t.deadlineAt && Date.parse(t.deadlineAt) < Date.now()))
+      .filter((t) => input.state !== "unack" || t.status === "pending_acknowledgement");
+    return { unit: null, total: items.length, overdue: 0, stale: 0, items };
+  },
+  async decideClaimV2(taskId: string, decision: string, note: string | null, deadlineAt: string | null) {
+    log("decideClaimV2", taskId, decision, note, deadlineAt);
+    const d = directiveRows.find((x) => x.id === taskId);
+    if (d) { d.claimStatus = decision === "confirm" ? "confirmed" : "rejected"; d.canDecide = false; d.bucket = decision === "confirm" ? "doing" : "gone";
+      if (deadlineAt) d.deadlineAt = deadlineAt; if (decision !== "confirm") directiveRows.splice(directiveRows.indexOf(d), 1); }
+    return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected", deadlineAt };
+  },
   async myBoard() {
     log("myBoard");
     await wait(150);
@@ -214,6 +301,8 @@ const fixtureAi = query.get("ai") === "off" ? null : createWorkAi(fakeAiRun as a
 const service: WorkTaskService = {
   async command(input) {
     log("command", structuredClone(input));
+    const rv = reviewRows.find((r) => r.id === input.taskId);
+    if (rv && input.command === "review") { reviewRows.splice(reviewRows.indexOf(rv), 1); return { taskId: rv.id, taskCode: rv.code, lockVersion: rv.lockVersion + 1, status: "completed" } as any; }
     const bt = boardTasks.find((t) => t.id === input.taskId);
     if (bt) {
       await wait(80);
