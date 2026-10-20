@@ -23,6 +23,7 @@ const PROJECTS = [
   { id: 'p-da29', code: 'DA29', name: 'Nhà máy sản xuất GĐ2', client: 'Công ty TNHH Xin Hai Việt Nam', siteId: 's-da29', warehouses: [] },
 ];
 
+const VENDORS = [{ id: 'v-hk', name: 'CÔNG TY TNHH HANAKA VIỆT NAM', taxCode: '0101234567' }];
 const HUONG = { kind: 'employee', id: 'e-huong', code: 'TT123456', title: 'Nguyễn Thị Hương', subtitle: 'TP TCKT', status: 'Đang làm việc', extra: {} };
 const PO646 = { kind: 'purchase_order', id: 'po-646', code: 'PO-646', title: 'Thép kết cấu nhà xưởng SMB', subtitle: 'Hòa Phát', status: 'confirmed', projectId: 'p-smb', extra: {} };
 const PO646_DETAIL = { poNumber: 'PO-646', status: 'confirmed', vendorName: 'CÔNG TY CP THÉP HÒA PHÁT', projectCode: 'SMB-2026', warehouseName: 'Kho SMB', expectedDeliveryDate: '2026-10-20',
@@ -72,7 +73,8 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   if (fn === 'preview_my_leave_request') return { data: { days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] }, error: null };
   if (fn === 'assistant_mr_projects_v1' || fn === 'assistant_daily_log_projects_v1') return { data: PROJECTS, error: null };
   if (fn === 'list_procurement_proactive_options_v1') return { data: { projects: PROJECTS, stockWarehouses: [] }, error: null };
-  if (fn === 'list_procurement_vendors_v1') return { data: /hanaka/i.test(String(args.p_search)) ? [{ id: 'v-hk', name: 'CÔNG TY TNHH HANAKA VIỆT NAM', taxCode: '0101234567' }] : [], error: null };
+  // Như RPC thật: chuỗi con (không phân biệt hoa thường) trong "tên MST" — 20/10 model gửi ncc = MST, giả cũ chỉ khớp chữ "hanaka" nên báo nhầm "không thấy NCC".
+  if (fn === 'list_procurement_vendors_v1') { const q = String(args.p_search ?? '').trim().toLowerCase(); return { data: VENDORS.filter(v => `${v.name} ${v.taxCode}`.toLowerCase().includes(q)), error: null }; }
   if (fn === 'search_global_v1') {
     const kinds = (args.p_kinds as string[] | null) || ['employee', 'purchase_order', 'item'];
     const terms = JSON.stringify(args.p_terms);
@@ -88,9 +90,11 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   return { data: null, error: { message: 'not in eval fixture', code: 'X' } };
 };
 
+/** Nói như hồ sơ không tồn tại — trừ câu phủ định "không phải hồ sơ không tồn tại", "không khẳng định là … không tồn tại" (20/10: trả lời đúng ý mà bị bắt nhầm). */
+const saysMissing = (re: RegExp, text: string) => re.test(text.replace(/không (phải|khẳng định|có nghĩa)( là)? [^.,;\n]{0,40}?không tồn tại/gi, ''));
 /** Câu trả lời khi RPC chặn: nói rõ ngoài quyền xem, không bịa số kèm đơn vị, không nói "không tồn tại". */
 const deniedAnswerCheck = (label: string, unitRe: RegExp) => (o: Outcome) => firstFail(fail(!o.tools.includes(label), `không gọi ${label} (gọi: ${o.tools.join(', ') || 'không gì'})`),
-  fail(unitRe.test(o.text), `bịa số: "${o.text.match(unitRe)?.[0]}"`), fail(/không tồn tại|không có (đơn|mã|vật tư) (này|đó|nào)/i.test(o.text), 'nói như không tồn tại'),
+  fail(unitRe.test(o.text), `bịa số: "${o.text.match(unitRe)?.[0]}"`), fail(saysMissing(/không tồn tại|không có (đơn|mã|vật tư) (này|đó|nào)/i, o.text), 'nói như không tồn tại'),
   fail(!/quyền|phạm vi/i.test(o.text), 'không nói rõ là ngoài quyền xem'));
 const CLAIMS_DONE = /đã (gửi|lập|tạo|ghi) (xong |thành công )?(đơn|phiếu|đề xuất|nhật ký)/i;
 const fail = (cond: boolean, why: string) => (cond ? why : null);
@@ -211,7 +215,7 @@ export const CASES: EvalCase[] = [
     deny: ['get_hrm_employee_overview'], q: 'Hồ sơ nhân sự chi tiết của Nguyễn Thị Hương',
     check: o => firstFail(fail(!o.tools.includes('Hồ sơ nhân viên'), `không gọi chi_tiet_ho_so (gọi: ${o.tools.join(', ') || 'không gì'})`),
       fail(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i.test(o.text), `bịa dữ liệu hồ sơ: "${o.text.match(/Trưởng phòng|Chuẩn|\d{1,2}\/\d{1,2}\/\d{4}|HĐLĐ|2019|2021/i)?.[0]}"`),
-      fail(/không tồn tại|không có (nhân viên|hồ sơ) (này|đó|nào)/i.test(o.text), 'nói như không tồn tại'), fail(!/quyền|phạm vi/i.test(o.text), 'không nói rõ là ngoài quyền xem')) },
+      fail(saysMissing(/không tồn tại|không có (nhân viên|hồ sơ) (này|đó|nào)/i, o.text), 'nói như không tồn tại'), fail(!/quyền|phạm vi/i.test(o.text), 'không nói rõ là ngoài quyền xem')) },
   // Biểu đồ (chủ SP 19/10): câu hỏi tự nhiên → model tự chọn công cụ từ mô tả, đúng khoảng tháng; thẻ vẽ số, model chỉ nhận xét.
   // Báo cáo A1 (chủ SP 20/10: ưu tiên báo cáo / biểu đồ): bao_cao phải chọn đúng loai, đổi "quý 3" / "tháng này" thành ngày, nhận xét từ số công cụ.
   { id: 'report-wf-q3', bug: 'Báo cáo A1: "thống kê phiếu quy trình quý 3" → bao_cao loai phieu_quy_trinh với 01/07–30/09, nêu tổng 119 phiếu và mẫu nhiều nhất', q: 'Thống kê phiếu quy trình quý 3 năm nay cho anh',
