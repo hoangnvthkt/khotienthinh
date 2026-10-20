@@ -15,7 +15,7 @@ import { SourceBook } from '../../supabase/functions/ai-gateway/agent';
 import { runTool, type Rpc } from '../../supabase/functions/ai-gateway/tools';
 import { chatSystem } from '../../supabase/functions/ai-gateway/chat';
 
-const migration = readFileSync('supabase/migrations/20261022120000_work_dot1_ai.sql', 'utf8');
+const migration = readFileSync('supabase/migrations/20261022130000_work_dot1_ai.sql', 'utf8');
 const person = (userId: string, name: string, unit: string | null, extra: Partial<WorkAssignablePerson> = {}): WorkAssignablePerson => ({
   userId, name, title: null, unit: unit ? { id: `u-${unit}`, code: unit, name: unit } : null, myTeam: false, sameUnit: false, isMe: false,
   canReceive: true, load: 0, aliases: [], ...extra,

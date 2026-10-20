@@ -1,7 +1,7 @@
 -- Vioo Work Đợt 1 PR-3: skill AI Vioo Work (quyền module + chung 20 lượt / ngày), thẻ Trợ lý work_task, việc theo người / đơn vị, học cách gọi người.
 -- Chạy cùng migration trong một giao dịch rollback:
 -- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> \
---   --migration supabase/migrations/20261022120000_work_dot1_ai.sql \
+--   --migration supabase/migrations/20261022130000_work_dot1_ai.sql \
 --   --smoke supabase/tests/work_dot1_ai_smoke.sql
 -- Vai: head (trưởng đơn vị U1) · staff (nhân viên U1) · outsider (nhân viên U2) · bld (xem toàn công ty) · noaccess (không có Vioo Work).
 create temporary table wt_people(name text primary key, id uuid default gen_random_uuid(),
