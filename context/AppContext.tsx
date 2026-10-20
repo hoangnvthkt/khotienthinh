@@ -915,17 +915,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return data;
   };
 
-  const loadModuleData = useCallback(async (module: AppModule, force = false) => {
+  // silent: tải lại ngầm (giữ dữ liệu + trạng thái 'loaded' đang hiện) — dùng khi nối lại realtime sau lúc tab ẩn.
+  const loadModuleData = useCallback(async (module: AppModule, force = false, options?: { silent?: boolean }) => {
     if (!isSupabaseConfigured) return;
     if (!force && (loadedModulesRef.current.has(module)
       || (module === 'wms-core' && loadedModulesRef.current.has('wms'))
       || (module === 'hrm-core' && loadedModulesRef.current.has('hrm')))) return;
     const existingLoad = inflightModuleLoadsRef.current[module];
     if (existingLoad) return existingLoad;
+    const silent = options?.silent === true;
 
     const loadTask = (async () => {
-      setModuleStatus(module, 'loading');
-      loadedModulesRef.current.delete(module);
+      if (!silent) {
+        setModuleStatus(module, 'loading');
+        loadedModulesRef.current.delete(module);
+      }
       try {
         const loadWmsCoreData = async () => {
           const [itemsData, whData, whTypeData, reqData] = await Promise.all([
@@ -1239,6 +1243,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     inflightModuleLoadsRef.current[module] = loadTask;
     return loadTask;
   }, [markModuleLoaded, setModuleStatus, user.authId, user.email]);
+
+  // Realtime nối lại sau khi tab ẩn > 5 phút: các sự kiện trong lúc ngắt đã mất → tải lại ngầm module đã có.
+  useEffect(() => realtimeService.onResume(() => {
+    for (const module of Array.from(loadedModulesRef.current) as AppModule[]) {
+      void loadModuleData(module, true, { silent: true }).catch(() => undefined);
+    }
+  }), [loadModuleData]);
 
   // Helper to sync a single table to Supabase
   const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
