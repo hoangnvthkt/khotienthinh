@@ -28,7 +28,7 @@ const peopleService = createWorkWorkspacePeopleService(supabase);
 const taskService = createWorkTaskService(supabase);
 const attachmentService = createWorkAttachmentService(supabase);
 const configurationService = createWorkConfigurationService(supabase);
-const priorityLabels = { normal: "Bình thường", important: "Quan trọng", urgent: "Khẩn cấp" };
+const priorityLabels = { normal: "C · Thường", important: "B · Quan trọng", urgent: "A · Trọng điểm" };
 
 function currentTab(pathname: string): WorkspaceTab {
   if (pathname.endsWith("/members")) return "members";

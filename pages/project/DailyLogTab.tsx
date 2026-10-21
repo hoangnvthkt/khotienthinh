@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText, History } from 'lucide-react';
+import { ClipboardPaste, Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText, History } from 'lucide-react';
 import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogContributionService, dailyLogService, dailyLogWbsService, workBoqService } from '../../lib/projectService';
@@ -57,6 +57,9 @@ import {
 import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
 import { DailyLogTodayBoard } from '../../components/project/daily-log/DailyLogTodayBoard';
 import { DailyLogReviewQueueBar, DailyLogReviewQueueCard, type OtherProjectGroup } from '../../components/project/daily-log/DailyLogReviewQueue';
+import { DailyLogReportImport } from '../../components/project/daily-log/DailyLogReportImport';
+import { aiGateway } from '../../lib/aiGateway';
+import { vnToday } from '../../lib/businessDate';
 import { EMPTY_REVIEW_QUEUE, dailyLogReviewQueueService, nextReviewItem, otherProjects, scopeQueue, type DailyLogReviewItem, type DailyLogReviewQueue } from '../../lib/dailyLogReviewQueue';
 import { calendarDayState, calendarDayTask, type CalendarDayState } from '../../lib/dailyLogTodayBoard';
 import type { DailyLogCalendarDay } from '../../lib/dailyLogWbsService';
@@ -1402,6 +1405,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     // Duyệt nhanh (PR-1, 17/10/2026): hàng chờ duyệt của tôi + phiếu treo tôi được duyệt thay; tải lại sau mỗi lần danh sách đổi.
     const [reviewQueue, setReviewQueue] = useState<DailyLogReviewQueue>(EMPTY_REVIEW_QUEUE);
+    // Dán báo cáo Zalo / chụp sổ → phiếu nháp (PR-2): nút chỉ hiện khi cổng AI đã bật skill daily_log_from_report.
+    const [reportAiReady, setReportAiReady] = useState(false);
+    const [showReportImport, setShowReportImport] = useState(false);
+    const [engineerOpenId, setEngineerOpenId] = useState<string | null>(null);
+    useEffect(() => {
+        let alive = true;
+        aiGateway.status().then(st => { if (alive) setReportAiReady(st.configured && st.skills.includes('daily_log_from_report')); }).catch(() => undefined);
+        return () => { alive = false; };
+    }, []);
     const [reviewTakeoverBusy, setReviewTakeoverBusy] = useState(false);
     const refreshReviewQueue = useCallback(async () => {
         try {
@@ -1528,6 +1540,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (prefill) setFWeather(prefill.weather);
         setShowForm(true);
     };
+
+    // Trợ lý (T2d): thẻ nhật ký trong khung chat "Mở phiếu" → ?slipDate=&slipContribution=: mở đúng phiếu kỹ sư nháp vừa tạo
+    // (như nút "Mở phiếu" của Dán báo cáo Zalo). Đợi quyền tải xong; mỗi liên kết mở một lần.
+    const slipLink = useMemo(() => {
+        const params = new URLSearchParams(location.search);
+        const date = params.get('slipDate'); const id = params.get('slipContribution');
+        return date && id && /^\d{4}-\d{2}-\d{2}$/.test(date) ? { date, id } : null;
+    }, [location.search]);
+    const slipLinkHandled = useRef<string | null>(null);
+    useEffect(() => {
+        if (!slipLink || !pbacLoaded || slipLinkHandled.current === slipLink.id) return;
+        slipLinkHandled.current = slipLink.id;
+        setEngineerOpenId(slipLink.id);
+        openCreateForDate(slipLink.date);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [slipLink, pbacLoaded]);
 
     const handleCalendarDayClick = (date: string, dayLogs: DailyLog[]) => {
         // Ngày theo quy trình mới: mở bảng của ngày (báo cáo + ghi / tổng hợp / duyệt).
@@ -2859,6 +2887,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         <div className="space-y-6">
             <DailyLogReviewQueueCard mine={reviewMineHere} takeover={reviewTakeoverHere} takeoverDays={reviewQueue.takeoverDays}
                 others={reviewOthers} onOpen={openReviewItem} otherLink={reviewOtherLink} />
+            {showReportImport && boardProjectId && <DailyLogReportImport projectId={boardProjectId} constructionSiteId={constructionSiteId || null}
+                tasks={tasks} defaultDate={vnToday()} onClose={() => setShowReportImport(false)}
+                onCreated={() => { reloadDailyLogRecords().catch(console.error); }}
+                onOpenSlip={(date, contributionId) => { setShowReportImport(false); setEngineerOpenId(contributionId); openCreateForDate(date); }} />}
             {/* Log List */}
             <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
@@ -2919,6 +2951,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <BarChart3 size={13} className="text-teal-600" /> Báo cáo
                         </a>
                         <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
+                        {reportAiReady && todayBoardEnabled && boardProjectId && <button type="button" onClick={() => setShowReportImport(true)}
+                            disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
+                            title="Dán tin báo cáo Zalo hoặc chụp sổ — AI tách ngày, mũi, hạng mục thành phiếu nháp"
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-leaf-600 hover:bg-leaf-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                            <ClipboardPaste size={13} /> Dán báo cáo Zalo
+                        </button>}
                         <button onClick={() => openCreateForDate(new Date().toISOString().split('T')[0])}
                             disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
@@ -3740,6 +3778,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         </div>}
                         <div className={shouldRenderWbsEditor ? 'min-w-0 overflow-y-auto flex-1 bg-card' : 'p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card'}>
                             {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={isDailyLogDocumentBundle(wbsBundle) ? wbsBundle : null}
+                                initialContributionId={engineerOpenId} onInitialOpened={() => setEngineerOpenId(null)}
                                 loading={wbsBundleLoading} error={wbsBundleError} projectId={projectId || effectiveId} constructionSiteId={constructionSiteId || null}
                                 date={fDate} onDateChange={setFDate} onClose={resetForm} onSubmitted={() => { reloadDailyLogRecords().catch(console.error); }}
                                 onUploadPhoto={async file => {

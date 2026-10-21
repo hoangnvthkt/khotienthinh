@@ -1,6 +1,6 @@
 -- Smoke VPP báo cáo + chi phí sang Tài chính (Cloud đã có 2 migration VPP), chạy trong transaction ROLLBACK:
 --   node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe \
---     --migration supabase/migrations/20261018110000_vpp_report_finance.sql --smoke supabase/tests/vpp_report_finance_smoke.sql
+--     --migration supabase/migrations/20261024150000_vpp_report_finance.sql --smoke supabase/tests/vpp_report_finance_smoke.sql
 -- Nhập 15/09 + cấp 30/09 (tháng đã qua để chốt được), trả lại hôm nay → tháng 09 chốt 142.500 đ, tháng hiện tại có trả lại.
 begin;
 

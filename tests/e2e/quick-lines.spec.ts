@@ -74,3 +74,30 @@ test('AI đọc ảnh lỗi: báo rõ, gõ tay vẫn được', async ({ page })
   await page.getByRole('textbox', { name: 'Danh sách vật tư', exact: true }).fill('cut pvc 110 15 cai');
   await expect(panel.getByText('1 dòng · 1 đã khớp mã')).toBeVisible();
 });
+
+test('mở từ thẻ nháp Trợ lý: dòng tách sẵn, dùng cho + ngày cần điền sẵn; dòng chưa chắc mã có nút gợi ý bấm là chọn', async ({ page }) => {
+  await page.goto(`${URL}?assistant=1`);
+  const panel = page.getByTestId('quick-lines');
+  await expect(page.getByTestId('quick-assistant')).toContainText('Trợ lý đã tách 3 dòng');
+  await expect(page.getByTestId('quick-assistant')).toContainText('Ngày cần 23/10/2026');
+  await expect(page.getByRole('textbox', { name: 'Dùng cho', exact: true })).toHaveValue('Đổ bê tông sàn tầng 4');
+  // Không tự bật bàn phím điện thoại khi mở từ thẻ.
+  await expect(page.getByRole('textbox', { name: 'Danh sách vật tư', exact: true })).not.toBeFocused();
+  await expect(panel.locator('li').nth(0).locator('select')).toHaveValue(/.+/);
+  const pipe = panel.locator('li').nth(1);
+  const hints = pipe.getByRole('group', { name: 'Gợi ý mã cho Ống PVC' }).getByRole('button');
+  await expect(hints).toHaveCount(3);
+  const pick = (await hints.first().textContent())!.split(' · ')[0];
+  await hints.first().click();
+  await expect(pipe.getByRole('group', { name: 'Gợi ý mã cho Ống PVC' })).toHaveCount(0);
+  await expect(pipe.getByText('Đã khớp')).toBeVisible();
+  await panel.getByRole('button', { name: 'Thêm 2 dòng' }).click();
+  const rows = page.getByTestId('request-lines').locator('tr');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('Xi măng PCB40');
+  await expect(rows.nth(0)).toContainText('2 Tấn');
+  await expect(rows.nth(0)).toContainText('cần 2026-10-23');
+  await expect(rows.nth(0)).toContainText('Đổ bê tông sàn tầng 4');
+  await expect(rows.nth(1)).toContainText(pick);
+  await noSideScroll(page);
+});

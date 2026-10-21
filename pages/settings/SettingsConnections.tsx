@@ -4,7 +4,7 @@ import { Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../comp
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
-  FEATURES, PRESETS, integrationError, integrationsService, kindLabel, kindLabelFull, presetOf, testedAtLabel,
+  FEATURES, PRESETS, integrationError, integrationsService, kindLabel, kindLabelFull, presetOf, priceLabel, testedAtLabel,
   type Connection, type ConnectionDraft, type ConnectionFeature, type ConnectionKind, type EnvConnection, type ProbeResult,
 } from '../../lib/integrationsService';
 
@@ -21,7 +21,8 @@ const probeLine = (r: ProbeResult) => r.ok
   ? `${r.code === 'MODEL_NOT_FOUND' ? r.message : 'Kết nối được'} · ${r.ms} ms${r.models != null ? ` · ${r.models} model` : ''}${r.balance ? ` · còn ${r.balance.amount.toLocaleString('vi-VN')} ${r.balance.unit}` : ''}`
   : `${r.httpStatus ? `Lỗi ${r.httpStatus} — ` : ''}${r.message}`;
 
-const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: '', model: 'gemini-2.5-flash', enabled: true });
+const emptyDraft = (): ConnectionDraft => ({ kind: 'gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: '', model: 'gemini-2.5-flash', enabled: true, priceIn: '', priceOut: '', pricePerCall: '' });
+const priceInput = (v: number | null) => (v == null ? '' : String(v).replace('.', ','));
 
 const ConnectionEditor: React.FC<{
   initial: Connection | null;
@@ -32,7 +33,8 @@ const ConnectionEditor: React.FC<{
   const toast = useToast();
   const confirm = useConfirm();
   const [draft, setDraft] = useState<ConnectionDraft>(() => initial
-    ? { id: initial.id, kind: initial.kind, name: initial.name, baseUrl: initial.baseUrl, apiKey: '', model: initial.model || '', enabled: initial.enabled }
+    ? { id: initial.id, kind: initial.kind, name: initial.name, baseUrl: initial.baseUrl, apiKey: '', model: initial.model || '', enabled: initial.enabled,
+      priceIn: priceInput(initial.priceInPerM), priceOut: priceInput(initial.priceOutPerM), pricePerCall: priceInput(initial.pricePerCall) }
     : emptyDraft());
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ProbeResult | null>(null);
@@ -113,6 +115,19 @@ const ConnectionEditor: React.FC<{
             className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Model" />
           <datalist id="connection-models">{(result?.modelIds || []).map(id => <option key={id} value={id} />)}</datalist>
         </label>
+        {/* Giá để tính chi phí từng lượt AI và trần tháng (Cài đặt → Cổng AI); nhà cung cấp tính VND thì chia tỷ giá (RevidAPI ÷ 26.000). */}
+        <label className={label} title="Để tính chi phí từng lượt AI và trần tháng. Nhà cung cấp tính VND thì chia tỷ giá, VD RevidAPI ÷ 26.000.">Giá vào · USD / 1 triệu token
+          <input value={draft.priceIn} onChange={e => set({ priceIn: e.target.value })} inputMode="decimal" placeholder="VD 0,33" spellCheck={false}
+            className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Giá vào (USD / 1 triệu token)" />
+        </label>
+        <label className={label} title="Để tính chi phí từng lượt AI và trần tháng.">Giá ra · USD / 1 triệu token
+          <input value={draft.priceOut} onChange={e => set({ priceOut: e.target.value })} inputMode="decimal" placeholder="VD 1,64" spellCheck={false}
+            className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Giá ra (USD / 1 triệu token)" />
+        </label>
+        <label className={label} title="Cổng báo số token vào không ổn định (VD RevidAPI) thì khai giá mỗi lượt gọi model: chi phí = số lượt × giá lượt + token ra × giá ra, bỏ giá vào.">Giá mỗi lượt gọi · USD
+          <input value={draft.pricePerCall} onChange={e => set({ pricePerCall: e.target.value })} inputMode="decimal" placeholder="VD 0,008 (để trống nếu tính theo token)" spellCheck={false}
+            className={`${inputCls} mt-1 block w-full font-mono`} aria-label="Giá mỗi lượt gọi (USD)" />
+        </label>
         {initial && (
           <label className="flex items-center gap-2 self-end pb-1.5 text-sm font-semibold">
             <input type="checkbox" checked={draft.enabled} onChange={e => set({ enabled: e.target.checked })} className="h-4 w-4 accent-teal-700" />Đang bật
@@ -137,7 +152,7 @@ const SettingsConnections: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'error'>('loading');
   const [error, setError] = useState('');
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null });
+  const [assignments, setAssignments] = useState<Record<ConnectionFeature, string | null>>({ 'ai.fast': null, 'ai.reasoning': null, 'wms.doc_reader': null, 'ai.assistant': null, 'ai.decisions': null });
   const [envs, setEnvs] = useState<EnvConnection[] | null>(null);
   const [envResults, setEnvResults] = useState<Record<string, ProbeResult | 'testing' | undefined>>({});
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -233,7 +248,7 @@ const SettingsConnections: React.FC = () => {
                       <div className="min-w-0 flex-1 basis-56">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <span className="font-bold text-foreground">{row.name}</span>
-                          <span className="text-xs text-muted-foreground">AI · {row.model || kindLabel(row.kind)}</span>
+                          <span className="text-xs text-muted-foreground">AI · {row.model || kindLabel(row.kind)}{row.connection && priceLabel(row.connection) ? ` · ${priceLabel(row.connection)}` : ''}</span>
                           {row.env && <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" title="Khóa đặt trong Supabase Secrets — sửa ở trang quản trị Supabase">Secrets · chỉ đọc</span>}
                         </div>
                         <p className="m-0 text-xs text-muted-foreground">
@@ -265,7 +280,7 @@ const SettingsConnections: React.FC = () => {
                     <div className="flex items-center gap-2">
                       {chosen && chosen.status === 'error' && <span className="text-xs font-semibold text-rose-700">kết nối đang lỗi</span>}
                       <select value={assignments[f.feature] || ''} onChange={e => assign(f.feature, e.target.value || null)} className={`${inputCls} min-w-56`} aria-label={f.label}>
-                        <option value="">Khóa trong Secrets (mặc định)</option>
+                        <option value="">{f.emptyLabel || 'Khóa trong Secrets (mặc định)'}</option>
                         {enabledConnections.map(c => <option key={c.id} value={c.id}>{c.name} · {kindLabelFull(c.kind)}</option>)}
                         {chosen && !chosen.enabled && <option value={chosen.id}>{chosen.name} (đang tắt)</option>}
                       </select>

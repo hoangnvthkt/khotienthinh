@@ -137,7 +137,8 @@ export const GlobalSearchView: React.FC<GlobalSearchViewProps> = ({
     .map(prepareEntry), [actions, pages, recentEntries]);
 
   const allowedKinds = useMemo(() => RECORD_KINDS.filter(kind => KIND_META[kind].gates.some(canOpen)), [canOpen]);
-  const canAskAi = useMemo(() => canOpen('/ai'), [canOpen]);
+  // Hỏi Trợ lý = tab Trợ lý trong Trung tâm điều hành (/ai nay là Trung tâm AI của Admin, #245).
+  const canAskAi = useMemo(() => canOpen('/center'), [canOpen]);
 
   const parsed = useMemo<ParsedQuery | null>(() => (query.trim() ? parseQuery(query) : null), [query]);
   const debouncedQuery = useDebounced(query, DEBOUNCE_MS);
@@ -302,7 +303,7 @@ export const GlobalSearchView: React.FC<GlobalSearchViewProps> = ({
     }
     remember(entry);
     if (entry.command === 'toggle-theme') { onToggleTheme(); close(); return; }
-    if (entry.command === 'ask-ai') { go(`/ai?q=${encodeURIComponent(query.trim())}`); return; }
+    if (entry.command === 'ask-ai') { go(`/center?view=assistant&ask=${encodeURIComponent(query.trim())}`); return; }
     if (entry.modal) { onModal(entry.modal); return; }
     if (!entry.route) return;
     // Không mở được màn chính (vd. có Danh mục vật tư nhưng không có Tồn kho) → màn liên quan đầu tiên mở được.

@@ -342,6 +342,9 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
   workflowTemplateId: row.workflow_template_id ?? row.workflowTemplateId ?? null,
 });
 
+const PROJECT_CATALOG_PAGE = 1000;
+const PROJECT_CATALOG_MAX_ROWS = 20_000;
+
 export const materialRequestService = {
   listWmsPage(input: { limit?: number | null; cursor?: string | null } = {}) {
     return listWmsRequestsPage(input);
@@ -371,12 +374,19 @@ export const materialRequestService = {
   /** Danh mục vật tư theo quyền phòng "Đề xuất vật tư" của dự án (không cần quyền kho). */
   async getProjectCatalog(projectId: string, constructionSiteId?: string | null): Promise<InventoryItem[]> {
     if (!projectId) return [];
-    const { data, error } = await supabase.rpc('list_project_material_request_catalog_v1', {
-      p_project_id: projectId,
-      p_construction_site_id: constructionSiteId || null,
-    });
-    if (error) throw error;
-    return (data || []).map((row: any): InventoryItem => ({
+    // Máy chủ trả tối đa 1.000 dòng mỗi lần (danh mục 18/10 có 1.624 mã, xếp theo tên) → tải theo trang, không thì mất các mã
+    // từ chữ "T" trở đi (Thép, Xi măng…) và Trợ lý / Gõ nhanh không khớp được mã (chủ SP báo 18/10).
+    const rows: any[] = [];
+    for (let from = 0; from < PROJECT_CATALOG_MAX_ROWS; from += PROJECT_CATALOG_PAGE) {
+      const { data, error } = await supabase.rpc('list_project_material_request_catalog_v1', {
+        p_project_id: projectId,
+        p_construction_site_id: constructionSiteId || null,
+      }).range(from, from + PROJECT_CATALOG_PAGE - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < PROJECT_CATALOG_PAGE) break;
+    }
+    return rows.map((row: any): InventoryItem => ({
       id: row.id,
       sku: row.sku,
       name: row.name,

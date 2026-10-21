@@ -8,6 +8,8 @@ import {
 } from "react-router-dom";
 import {
   Plus,
+  LayoutList,
+  MessageSquare,
   Search,
   RefreshCw,
   Copy,
@@ -42,24 +44,32 @@ import { WorkCreateDrawer } from "./WorkCreateDrawer";
 import { WorkPicker } from "./WorkPicker";
 import "./work.css";
 import "./workTaskDetail.css";
-import { workStatusLabels } from "../../lib/work/workPresentation";
+import { workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdateInfo } from "../../lib/work/workPresentation";
+import { createWorkBoardService, type WorkBoardService } from "../../lib/work/workBoardService";
+import { createWorkGoalService, type WorkGoalService } from "../../lib/work/workGoals";
+import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
+import { WorkQuickAssign } from "./WorkQuickAssign";
+import { WorkMyBoard } from "./WorkMyBoard";
+import { WorkTeamBoard } from "./WorkTeamBoard";
+import { WorkCompanyBoard } from "./WorkCompanyBoard";
+import type { WorkBoardAccess } from "../../lib/work/workBoardService";
+import { canPerform } from "../../lib/permissions/permissionService";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
 import type { WorkUploadState } from "./WorkAttachments";
 import { workspaceTabRoute } from "./workspaceManagement";
 const taskService = createWorkTaskService(supabase),
-  attachmentService = createWorkAttachmentService(supabase);
+  attachmentService = createWorkAttachmentService(supabase),
+  boardService = createWorkBoardService(supabase),
+  goalService = createWorkGoalService(supabase);
 const views: { id: WorkTaskView; label: string }[] = [
   { id: "assigned_to_me", label: "Được giao" },
   { id: "created_by_me", label: "Tôi đã giao" },
   { id: "following", label: "Tôi theo dõi" },
   { id: "pinned", label: "Đã ghim" },
 ];
-const priorities = {
-  normal: "Bình thường",
-  important: "Quan trọng",
-  urgent: "Khẩn cấp",
-};
+/** Đợt 1: mức A / B / C (A = urgent, B = important, C = normal). */
+const priorities = workLevelLabels;
 const when = (iso: string | null) =>
   iso
     ? new Intl.DateTimeFormat("vi-VN", {
@@ -72,12 +82,25 @@ export interface WorkWorkspaceProps {
   service: WorkTaskService;
   attachments: ReturnType<typeof createWorkAttachmentService>;
   subscribe?: (invalidate: () => void) => () => void;
+  /** Đợt 1: Giao nhanh, tóm tắt việc, dòng cập nhật. */
+  board?: WorkBoardService;
+  actorName?: string;
+  canQuickAssign?: boolean;
+  /** Đợt 1 PR-3: nháp AI (giao nhanh, biên bản, viết giúp cập nhật, tóm tắt). null = tắt. */
+  ai?: WorkAiService | null;
+  /** Đợt 2 PR-6: mục tiêu, chốt kỳ, lịch chốt. */
+  goals?: WorkGoalService;
 }
 export function WorkWorkspace({
   actorId,
   service,
   attachments,
   subscribe,
+  board = boardService,
+  actorName = "Bạn",
+  canQuickAssign = false,
+  ai = defaultWorkAi,
+  goals = goalService,
 }: WorkWorkspaceProps) {
   const { taskCode } = useParams();
   const routeLocation = useLocation();
@@ -148,6 +171,32 @@ export function WorkWorkspace({
     true,
     workspaceContextId,
   );
+  // Việc của tôi (mockup v1): tab "Được giao" khi không tìm / lọc → bảng nhóm theo hạn; "Tìm & lọc" (mode=list) về danh sách cũ.
+  // Phòng tôi / Toàn công ty (PR-4): tab theo quyền (trưởng đơn vị theo sơ đồ tổ chức · xem toàn công ty).
+  const [access, setAccess] = useState<WorkBoardAccess | null>(null);
+  const [accessTick, setAccessTick] = useState(0);
+  useEffect(() => {
+    if (workspaceContextId || typeof board.boardAccess !== "function") return;
+    let live = true;
+    board.boardAccess().then((a) => { if (live) setAccess(a); }, () => { if (live) setAccess(null); });
+    return () => { live = false; };
+  }, [board, workspaceContextId, accessTick]);
+  const requestedSpace = params.get("space");
+  // Link bản tin kỳ (PR-7): ?space=…&from=…&to=…&report=1[&unit=…] — chỉ đọc lúc mở bảng.
+  const boardLink = useMemo(() => (params.get("from") || params.get("report")
+    ? { from: params.get("from"), to: params.get("to"), report: params.get("report") === "1", unit: params.get("unit") } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [requestedSpace]);
+  const space = !taskCode && !workspaceContextId && access
+    // BLĐ không làm trưởng đơn vị nào vẫn mở được "Phòng tôi" của một đơn vị qua link (?space=team&unit=…): máy chủ cho BLĐ xem mọi đơn vị.
+    ? (requestedSpace === "team" && (access.myUnits.length || (access.company && params.get("unit"))) ? "team"
+      : requestedSpace === "company" && access.company ? "company" : null) : null;
+  const [preset, setPreset] = useState<{ assigneeId?: string; meeting?: boolean; nonce: number } | null>(null);
+  const boardMode = !space && !taskCode && !workspaceContextId && view === "assigned_to_me" && params.get("mode") !== "list"
+    && Object.keys(filters).length === 0 && typeof board.myBoard === "function";
+  const [boardTick, setBoardTick] = useState(0);
+  // Tải lại bảng khi danh sách tải lại (sau lệnh, realtime, quay lại tab) hoặc vừa giao nhanh.
+  const boardKey = useMemo(() => ({}), [list.items, boardTick]);
   const detailSeq = useRef(0),
     alive = useRef(true);
   const refNow = useRef(taskCode);
@@ -200,6 +249,14 @@ export function WorkWorkspace({
       detailSeq.current++;
     };
   }, [actorId, service]);
+  // Trung tâm → "Giao việc" (?assign=1): cuộn tới ô Giao nhanh và đặt con trỏ vào tên việc, một lần.
+  const queryAssignOpened = useRef(false);
+  useEffect(() => {
+    if (params.get("assign") === "1" && canQuickAssign && !queryAssignOpened.current) {
+      queryAssignOpened.current = true;
+      setPreset({ nonce: Date.now() });
+    }
+  }, [params, canQuickAssign]);
   useEffect(() => {
     if (params.get("create") === "1" && scopes.length > 0 && !queryCreateOpened.current) {
       queryCreateOpened.current = true;
@@ -287,7 +344,19 @@ export function WorkWorkspace({
   }, [taskCode, list.loading, routeLocation.key]);
   return (
     <main className={`work-module${taskCode ? " work-module-detail" : ""}`} ref={root}>
-      <header className="work-heading">
+      {!taskCode && !workspaceContextId && access && (access.myUnits.length > 0 || access.company) && (
+        <nav className="work-space-switch" aria-label="Phạm vi xem việc">
+          {([["", "Việc của tôi", 0], ...(access.myUnits.length ? [["team", "Phòng tôi", access.reviewsWaitingMe]] : []),
+            ...(access.company ? [["company", "Toàn công ty", access.claimsWaitingMe]] : [])] as Array<[string, string, number]>).map(([id, label, n]) => (
+            <button type="button" key={id || "my"} aria-current={(space || "") === id ? "page" : undefined}
+              onClick={() => setParams(() => { const next = new URLSearchParams(); if (id) next.set("space", id); return next; })}
+              title={id === "team" && n ? `${n} việc chờ bạn duyệt` : id === "company" && n ? `${n} việc giao miệng chờ bạn xác nhận` : undefined}>
+              {label}{n > 0 && <span className="work-space-badge">{n}</span>}
+            </button>
+          ))}
+        </nav>
+      )}
+      {!boardMode && !space && <header className="work-heading">
         <div>
           <p className="work-eyebrow">VIOO WORK</p>
           <h1>{taskCode ? "Công việc" : "Công việc của tôi"}</h1>
@@ -299,7 +368,7 @@ export function WorkWorkspace({
             Tạo công việc
           </button>
         )}
-      </header>
+      </header>}
       {notice && (
         <div className="work-success" role="status">
           {notice}
@@ -370,11 +439,7 @@ export function WorkWorkspace({
                       <span className="work-rail-scope">
                         {t.scope_type === "direct" ? "Trực tiếp" : t.scope_type === "department" ? "Phòng ban" : t.scope_type === "workspace" ? "Workspace" : "Dự án"}
                       </span>
-                      {t.priority !== "normal" && (
-                        <span className={`work-rail-priority priority-${t.priority}`}>
-                          {priorities[t.priority]}
-                        </span>
-                      )}
+                      <span className={`work-level-chip level-${workLevelOf(t.priority)}`} title={priorities[t.priority]}>{workLevelOf(t.priority)}</span>
                       <time dateTime={t.deadline_at || undefined}>{when(t.deadline_at)}</time>
                     </span>
                     <span className="work-rail-progress" aria-label={`Tiến độ ${t.progress_percent}%`}>
@@ -429,6 +494,8 @@ export function WorkWorkspace({
                   key={currentDetail.data.task.id}
                   detail={currentDetail.data}
                   service={service}
+                  board={board}
+                  ai={ai || undefined}
                   attachments={attachments}
                   actorId={actorId}
                   session={mutation.current}
@@ -470,8 +537,29 @@ export function WorkWorkspace({
             )}
           </section>
         </div>
-      ) : (
-        <>
+      ) : space === "team" && access ? (
+        <WorkTeamBoard board={board} service={service} goalsService={goals} ai={ai} access={access} link={boardLink} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
+          onAssignTo={canQuickAssign ? (userId) => setPreset({ assigneeId: userId, nonce: Date.now() }) : undefined} key={`team-${boardTick}`}>
+          {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
+        </WorkTeamBoard>
+      ) : space === "company" && access ? (
+        <WorkCompanyBoard board={board} goalsService={goals} ai={ai} link={boardLink} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
+          headerActions={canQuickAssign && ai && (
+            <button className="work-secondary" onClick={() => setPreset({ meeting: true, nonce: Date.now() })}><MessageSquare size={17} /> Ghi chỉ đạo</button>
+          )}>
+          {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
+        </WorkCompanyBoard>
+      ) : boardMode ? (
+        <WorkMyBoard board={board} service={service} refreshKey={boardKey} detailTo={detailTo} onNotice={setNotice}
+          headerActions={scopes.length > 0 && (
+            <button className="work-secondary" onClick={() => setDrawer({})}><Plus size={18} /> Tạo công việc</button>
+          )}>
+          {canQuickAssign && !workspaceContextId && (
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); }} />
+          )}
           <nav className="work-tabs" aria-label="Danh sách công việc">
             {views.map((tab) => (
               <button
@@ -482,6 +570,32 @@ export function WorkWorkspace({
                 {tab.label}
               </button>
             ))}
+            <button className="work-tabs-extra" onClick={() => setFilter("mode", "list")} title="Tìm, lọc theo trạng thái, mức, phạm vi, hạn">
+              <Search size={15} /> Tìm & lọc
+            </button>
+          </nav>
+        </WorkMyBoard>
+      ) : (
+        <>
+          {canQuickAssign && !workspaceContextId && (
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
+              onCreated={(message) => { setNotice(message); void list.refresh(); }} />
+          )}
+          <nav className="work-tabs" aria-label="Danh sách công việc">
+            {views.map((tab) => (
+              <button
+                key={tab.id}
+                aria-current={tab.id === view ? "page" : undefined}
+                onClick={() => setFilter("view", tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+            {!workspaceContextId && view === "assigned_to_me" && (
+              <button className="work-tabs-extra" onClick={() => setParams(() => new URLSearchParams())} title="Về bảng Việc của tôi (nhóm theo hạn)">
+                <LayoutList size={15} /> Bảng việc của tôi
+              </button>
+            )}
           </nav>
           <section className="work-toolbar" aria-label="Bộ lọc công việc">
             <label className="work-search">
@@ -594,6 +708,7 @@ export function WorkWorkspace({
                 <li key={task.id}>
                   <Link
                     to={detailTo(task.task_code)}
+                    className={`work-level-row level-${workLevelOf(task.priority)}`}
                     state={{
                       workListSearch: params.toString(),
                       workScroll: workScrollHost(root.current).scrollTop,
@@ -605,7 +720,10 @@ export function WorkWorkspace({
                     }}
                   >
                     <div className="work-task-main">
-                      <span className="work-code">{task.task_code}</span>
+                      <span className="work-code">
+                        <span className={`work-level-chip level-${workLevelOf(task.priority)}`} title={priorities[task.priority]}>{workLevelOf(task.priority)}</span>
+                        {task.task_code}
+                      </span>
                       <h2>{task.title}</h2>
                       <span className="work-scope">
                         {task.scope_type === "direct"
@@ -614,11 +732,10 @@ export function WorkWorkspace({
                             ? "Phòng ban"
                             : "Dự án"}
                         {task.privacy === "restricted" ? " · Hạn chế" : ""}
-                      </span>
-                      <span
-                        className={`work-priority-inline priority-${task.priority}`}
-                      >
-                        {priorities[task.priority]}
+                        {(() => {
+                          const info = workUpdateInfo(task.last_progress_at, task.status);
+                          return info ? <span className={info.stale ? " work-stale" : ""}> · {info.text}</span> : null;
+                        })()}
                       </span>
                     </div>
                     <span className={`work-status status-${task.status}`}>
@@ -630,21 +747,18 @@ export function WorkWorkspace({
                         </small>
                       )}
                     </span>
-                    <span className={`work-priority priority-${task.priority}`}>
-                      {priorities[task.priority]}
+                    <span className="work-row-progress" aria-label={`Tiến độ ${task.progress_percent}%`}>
+                      <span><i style={{ width: `${task.progress_percent}%` }} /></span>
+                      <b>{task.progress_percent}%</b>
                     </span>
-                    <time
-                      dateTime={task.deadline_at || undefined}
-                      className={
-                        task.deadline_at &&
-                        new Date(task.deadline_at).getTime() < Date.now() &&
-                        !["completed", "cancelled"].includes(task.status)
-                          ? "work-overdue"
-                          : ""
-                      }
-                    >
-                      {when(task.deadline_at)}
-                    </time>
+                    {(() => {
+                      const due = workDueInfo(task.deadline_at, task.status);
+                      return (
+                        <time dateTime={task.deadline_at || undefined} className={`work-due tone-${due.tone}`}>
+                          {due.text}
+                        </time>
+                      );
+                    })()}
                   </Link>
                 </li>
               ))}
@@ -716,6 +830,9 @@ export default function WorkPage() {
       service={taskService}
       attachments={attachmentService}
       subscribe={subscribe}
+      board={boardService}
+      actorName={user.name}
+      canQuickAssign={canPerform(user, "work.task.create", { scopeType: "own", scopeId: "*" })}
     />
   );
 }

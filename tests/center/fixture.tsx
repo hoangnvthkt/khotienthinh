@@ -8,11 +8,28 @@ import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { AssistantHooks } from '../../components/center/AssistantView';
+import { buildLocalIndex } from '../../lib/search/instantSearch';
+import { OPEN_MODAL_EVENT } from '../../lib/search/openGlobalSearch';
+import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
+import type { MrFormActions } from '../../lib/assistantMrForm';
+import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type SharedGroup } from '../../lib/aiMemory';
+import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
+import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
+import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
+import type { WorkTaskCardActions } from '../../lib/assistantWorkTask';
+import type { ReportRead } from '../../lib/dailyLogReport';
+import type { ProjectTask } from '../../types';
+import DL_DATA from '../daily-log/report-fixture-data.json';
+import MR_CATALOG_RAW from '../material-request/quick-lines-items.json';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
 import CenterEntrance from '../../components/center/CenterIntro';
 import UiModeSwitch from '../../components/center/UiModeSwitch';
+import { headcountChart } from '../../supabase/functions/ai-gateway/tools';
+import { parseChart } from '../../lib/assistantChart';
+import { workflowReport } from '../../supabase/functions/ai-gateway/reports';
+import { parseSources, type ChatSource } from '../../lib/assistantChat';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
@@ -211,30 +228,454 @@ const saveLayout = (layout: CenterLayout): Promise<number> => new Promise(resolv
   resolve(layoutVersion);
 }, 30));
 
-// Tab Trợ lý: ?ai=gemini giả lập đã có khóa (hỏi tự do trả lời từ dòng số liệu, trích khóa); mặc định chưa có khóa (chỉ câu hỏi nhanh).
-// Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
+// Tab Trợ lý v2: ?ai=gemini giả lập đã có khóa (hội thoại chạy dần, trích khóa dòng số liệu); ?ai=fail lỗi giữa chừng; ?ai=quota hết lượt;
+// ?ai=busy còn câu đang trả lời / ?ai=rate gửi quá nhanh (chống spam); ?ai=refuse câu từ chối lịch sự;
+// mặc định chưa có khóa (chỉ câu hỏi nhanh). ?threads=today|old gieo sẵn một hội thoại hôm nay / ngày cũ. Hội thoại lưu sessionStorage
+// (giả lập máy chủ) để tải lại trang vẫn mở lại được. Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
 const AI = params.get('ai') || 'off';
 const aiCalls: Array<Record<string, unknown>> = [];
 (window as unknown as { __aiCalls: typeof aiCalls }).__aiCalls = aiCalls;
 const aiStatus = (configured: boolean) => ({
   deployed: true, configured, provider: 'gemini' as const, providerSource: 'AI_PROVIDER' as const, models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
-  keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['center_question', 'morning_brief'],
+  keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['assistant_chat', 'morning_brief'],
   targets: { fast: null, reasoning: null },
 });
+type FxThread = { id: string; title: string; lastMessageAt: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; sources: ChatSource[]; runId: string | null; accepted: boolean | null; createdAt: string; commands?: AssistantCommand[] }> };
+const THREADS_KEY = 'center-fixture-ai-threads';
+const loadThreads = (): FxThread[] => { try { return JSON.parse(sessionStorage.getItem(THREADS_KEY) || '[]'); } catch { return []; } };
+const saveThreads = (list: FxThread[]) => sessionStorage.setItem(THREADS_KEY, JSON.stringify(list));
+if (params.get('threads') && !sessionStorage.getItem(THREADS_KEY)) {
+  const at = params.get('threads') === 'old' ? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - 3, 9, 15) : new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate(), 7, 40);
+  const iso = at.toISOString();
+  saveThreads([{ id: '0d4c2f1e-8a5b-4c3d-9e2f-1a2b3c4d5e6f', title: 'PO nào sắp giao?', lastMessageAt: iso, messages: [
+    { id: 'm1', role: 'user', content: 'PO nào sắp giao?', sources: [], runId: null, accepted: null, createdAt: iso },
+    { id: 'm2', role: 'assistant', content: 'PO-116 hẹn giao 09/10 nhưng **đã quá hạn 2 ngày** [[item.po.po-116]].', sources: ['item.po.po-116'], runId: 'run-old', accepted: true, createdAt: iso },
+  ] }]);
+}
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const saveCommand = (command: AssistantCommand) => saveThreads(loadThreads().map(t => ({ ...t, messages: t.messages.map(m => ({ ...m,
+  commands: (m.commands || []).map(c => (c.id === command.id ? command : c)) })) })));
+// Lệnh nháp giả lập: câu xin nghỉ → Trợ lý gọi công cụ chuẩn bị, hiện thẻ (không gửi). ?ai=leave-short: thiếu phép (nút Gửi khóa).
+const leaveCommand = (): AssistantCommand => ({
+  id: `cmd-${Date.now()}`, kind: 'leave_request', status: 'prepared', title: 'Đơn phép năm 21/10',
+  payload: { type: 'annual', typeName: 'Phép năm', start: '2026-10-21', end: '2026-10-21', startSession: 'full', endSession: 'full', reason: 'Việc gia đình', requiresAttachment: false },
+  preview: { days: 1, annualRemaining: AI === 'leave-short' ? 0.5 : 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }],
+    problems: AI === 'leave-short' ? ['Phép năm còn 0,5 ngày, không đủ 1 ngày.'] : [] },
+  result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+// T2b: câu đề xuất vật tư → Trợ lý tách dòng, chọn dự án đang xem, hiện thẻ mở form Đề xuất (không lập phiếu).
+const mrCommand = (): AssistantCommand => ({
+  id: `cmd-mr-${Date.now()}`, kind: 'material_request', status: 'prepared', title: 'Đề xuất vật tư SMB-2026',
+  payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', title: 'Vật tư đổ bê tông sàn tầng 4', purpose: 'Đổ bê tông sàn tầng 4',
+    neededDate: '2026-10-23', lines: [{ name: 'Xi măng PCB40', qty: 2, unit: 'tấn' }, { name: 'Thép', spec: 'D16', qty: 50, unit: 'cây' }, { name: 'Ống PVC', qty: 20, unit: 'cây' }, { name: 'Dây thép buộc', unit: 'kg' }] },
+  preview: { lineCount: 4, missingQty: 1 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+// Form Đề xuất (bản thử) lưu xong: báo thẻ cùng trang đổi thành biên nhận như form thật.
+(window as unknown as { __fxSaveMr: (submitted: boolean) => void }).__fxSaveMr = submitted => {
+  const command = loadThreads().flatMap(t => t.messages.flatMap(m => m.commands || [])).filter(c => c.kind === 'material_request' && c.status === 'prepared').at(-1);
+  if (!command) return;
+  const done: AssistantCommand = { ...command, status: 'done', result: { code: 'MR-2026-0042', id: 'mr-42', submitted }, confirmedAt: new Date(NOW).toISOString() };
+  saveCommand(done);
+  notifyCommandChanged(done);
+};
+// T4b: trí nhớ giả lập (sessionStorage). ?memory=1: đã có 1 ghi nhớ, đã nhớ người duyệt Bùi Thị Tâm + Kho Xin Hai Vina ở SMB-2026, 2 cách gọi chung.
+const MEMORY_KEY = 'center-fixture-memory';
+type FxMemory = PersonalMemory & { shared: SharedGroup[] };
+const loadMemory = (): FxMemory => {
+  try { const raw = sessionStorage.getItem(MEMORY_KEY); if (raw) return JSON.parse(raw); } catch { /* bỏ qua */ }
+  const at = new Date(NOW).toISOString();
+  return params.get('memory') ? {
+    notes: [{ id: 'note-1', text: 'Phụ trách dự án SMB-2026', source: 'user', createdAt: at }],
+    habits: [{ id: 'hb-1', key: habitKey.mrApprovers('smb'), value: 'u-tam', label: 'Bùi Thị Tâm', scopeLabel: 'SMB-2026', hits: 3, updatedAt: at },
+      { id: 'hb-2', key: habitKey.mrWarehouse('smb'), value: 'wh-xh', label: 'Kho Xin Hai Vina', scopeLabel: 'SMB-2026', hits: 1, updatedAt: at }],
+    shared: [
+      { key: 'company:procurement:po', title: 'Mua hàng · Báo giá', kind: 'po', items: [{ id: 'al-2', kind: 'vendor', alias: 'Hòa Phát', target: 'Công ty CP Thép Hòa Phát', hits: 5, lastUsedAt: at, by: 'Bùi Thị Tâm' }] },
+      { key: 'project:smb:mr', title: 'SMB-2026 · Đề xuất vật tư', kind: 'mr', items: [{ id: 'al-1', kind: 'item', alias: 'Ống PVC', target: 'Ống PVC 42', hits: 2, lastUsedAt: at, by: 'Phạm Ngọc Sơn' }] },
+    ],
+  } : { notes: [], habits: [], shared: [] };
+};
+const saveMemory = (m: FxMemory) => sessionStorage.setItem(MEMORY_KEY, JSON.stringify(m));
+const memory: MemoryActions = {
+  personal: async () => { await sleep(60); const { notes, habits } = loadMemory(); return { notes, habits }; },
+  shared: async () => { await sleep(60); return loadMemory().shared; },
+  addNote: async text => {
+    aiCalls.push({ memory: 'add', text });
+    const m = loadMemory();
+    const same = m.notes.find(n => n.text.toLowerCase() === text.trim().toLowerCase());
+    if (same) return { id: same.id, created: false };
+    const note = { id: `note-${Date.now()}`, text: text.trim(), source: 'user' as const, createdAt: new Date(NOW).toISOString() };
+    saveMemory({ ...m, notes: [note, ...m.notes] });
+    return { id: note.id, created: true };
+  },
+  forget: async (scope, id) => {
+    aiCalls.push({ memory: 'forget', scope, id });
+    await sleep(40);
+    const m = loadMemory();
+    saveMemory({ ...m, notes: m.notes.filter(n => n.id !== id), habits: m.habits.filter(h => h.id !== id),
+      shared: m.shared.map(g => ({ ...g, items: g.items.filter(i => i.id !== id) })).filter(g => g.items.length) });
+  },
+  saveNoteCommand: async (command, text) => {
+    aiCalls.push({ memory: 'save-command', text });
+    const m = loadMemory();
+    const note = { id: `note-${Date.now()}`, text: text.trim(), source: 'assistant' as const, createdAt: new Date(NOW).toISOString() };
+    saveMemory({ ...m, notes: [note, ...m.notes] });
+    const done: AssistantCommand = { ...command, status: 'done', result: { id: note.id, text: note.text, created: true }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+const memoryCommand = (text: string): AssistantCommand => ({
+  id: `cmd-mem-${Date.now()}`, kind: 'memory_note', status: 'prepared', title: 'Ghi nhớ', payload: { text }, preview: {}, result: {}, error: null,
+  createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+
+// Form đề xuất ngay trong chat (bản thử): danh mục 175 mã thật, 2 kho, 2 người duyệt. ?ai=mr-noflow: dự án chưa có workflow (chỉ lưu nháp);
+// ?ai=mr-fail: lần gửi đầu mất kết nối (giữ mã đã cấp, gửi lại được); ?mrform=0: bản cũ không có form (thẻ mở form của dự án).
+const MR_CATALOG = (MR_CATALOG_RAW as Array<{ id: string; sku: string; name: string; unit: string }>).map(i => ({ id: i.id, sku: i.sku, name: i.name, unit: i.unit }));
+const mrForm: MrFormActions = {
+  load: async () => {
+    await sleep(80);
+    aiCalls.push({ mrForm: 'load' });
+    // ?memory=1: dự án đã nhớ "Ống PVC" = Ống PVC 42 (người dùng xác nhận lần trước) → thẻ chọn sẵn, không bắt chọn lại.
+    const memory = params.get('memory') ? [{ kind: 'item' as const, alias: 'Ống PVC', aliasNorm: 'ong pvc', targetId: 'it-1a7f772d34ab4306be08e57a597b0641', targetLabel: 'Ống PVC 42', hits: 2 }] : [];
+    const warehouses = [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }, { id: 'wh-xh', name: 'Kho Xin Hai Vina' }];
+    const approvers = [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }];
+    const personal = loadMemory();
+    return { memory, catalog: MR_CATALOG, warehouses, defaultWarehouseId: 'wh-smb', approvers,
+      rememberedWarehouseId: rememberedIds(personal, habitKey.mrWarehouse('smb'), warehouses)[0] ?? null,
+      rememberedApproverIds: rememberedIds(personal, habitKey.mrApprovers('smb'), approvers),
+      sendBlocked: AI === 'mr-noflow' ? 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.' : null };
+  },
+  submit: async (command, input) => {
+    aiCalls.push({ mrForm: 'submit', mode: input.mode, title: input.title, warehouseId: input.warehouseId, neededDate: input.neededDate, approverIds: input.approverIds,
+      lines: input.lines.map(l => ({ item: l.item.name, qty: l.qty, spec: l.spec, reason: l.reason, said: l.said })) });
+    await sleep(120);
+    if (AI === 'mr-fail' && !aiCalls.some(c => c.mrForm === 'failed')) {
+      aiCalls.push({ mrForm: 'failed' });
+      saveCommand({ ...command, status: 'failed', result: { code: 'MR-2026-0042', id: 'mr-42' }, error: 'Mất kết nối, chưa gửi được.' });
+      throw new Error('Mất kết nối, chưa gửi được.');
+    }
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'MR-2026-0042', id: 'mr-42', submitted: input.mode === 'send', approvers: input.approverNames },
+      confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+// T2c: báo giá dán vào → thẻ đơn mua. Danh mục mua hàng = 175 mã thật (Xi măng PCB40 trong BOQ còn 8 tấn); NCC "Hòa Phát" có 2 công ty gần giống.
+const PO_CATALOG: ProcurementCatalogItem[] = MR_CATALOG.map(i => ({ id: i.id, name: i.name, sku: i.sku, unit: i.unit, purchaseUnit: null, purchaseFactor: null,
+  inBoq: i.name === 'Xi măng PCB40', boqQty: i.name === 'Xi măng PCB40' ? 20 : 0, orderedQty: i.name === 'Xi măng PCB40' ? 12 : 0 }));
+const fold = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+const poSearch = async (q: string) => { const words = fold(q).split(/\s+/).filter(Boolean); return PO_CATALOG.filter(i => words.every(w => fold(`${i.name} ${i.sku}`).includes(w))).slice(0, 20); };
+const PO_VENDORS = [{ id: 'v-hp', name: 'Công ty CP Thép Hòa Phát', taxCode: '0900189284', recentOrders: 12 }, { id: 'v-hpdn', name: 'Thép Hòa Phát Dung Quất', taxCode: '4300381300', recentOrders: 2 }];
+const poCommand = (): AssistantCommand => ({
+  id: `cmd-po-${Date.now()}`, kind: 'purchase_order', status: 'prepared', title: 'Đơn mua Hòa Phát · SMB-2026',
+  payload: { projectId: 'smb', projectCode: 'SMB-2026', projectName: 'Nhà máy SMB', warehouseId: 'wh-smb', vendorQuery: 'Hòa Phát',
+    vendorOptions: PO_VENDORS.map(({ recentOrders: _r, ...v }) => v), vat: 8, deliveryDate: '2026-10-25', note: 'Báo giá BG-1810',
+    // Ống PVC: báo giá ghi thành tiền 19.000.000 nhưng 20 × 95.000 = 1.900.000 (lệch 10 lần, công cụ không tự sửa) → thẻ cảnh báo trên dòng.
+    lines: [{ name: 'Xi măng PCB40', qty: 10, unit: 'tấn', price: 1650000 }, { name: 'Thép XD D16', qty: 50, unit: 'cây', price: 280000 }, { name: 'Ống PVC', qty: 20, unit: 'cây', price: 95000, amount: 19000000 }] },
+  preview: { lineCount: 3 }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+const poForm: PoFormActions = {
+  load: async command => {
+    await sleep(80);
+    aiCalls.push({ poForm: 'load' });
+    const lines = (command.payload.lines as Array<{ name: string; qty: number; unit: string; price: number; amount?: number }>).map(l => ({ name: l.name, spec: null, qty: l.qty, unit: l.unit, price: l.price, amount: l.amount ?? null }));
+    return { warehouses: [{ id: 'wh-smb', name: 'Kho Sơn Miền Bắc' }], approvers: AI === 'po-noapprover' ? [] : [{ id: 'u-chuan', name: 'Hà Đức Chuẩn' }, { id: 'u-tam', name: 'Bùi Thị Tâm' }],
+      rows: await buildRows(lines, poSearch) };
+  },
+  searchItems: async (_p, q) => poSearch(q),
+  searchVendors: async q => PO_VENDORS.filter(v => fold(v.name).includes(fold(q))),
+  submit: async (command, input) => {
+    aiCalls.push({ poForm: 'submit', mode: input.mode, vendorId: input.vendor.id, warehouseId: input.warehouseId, vat: input.vat, reasonCode: input.reasonCode,
+      overBoqReason: input.overBoqReason, approverId: input.approverId, deliveryDate: input.deliveryDate,
+      lines: input.rows.filter(r => r.item).map(r => ({ item: r.item!.name, qty: r.stockQty, price: r.price })) });
+    await sleep(120);
+    const done: AssistantCommand = { ...command, status: 'done', confirmedAt: new Date(NOW).toISOString(),
+      result: { code: 'PO-2026-0712', id: 'po-712', submitted: input.mode === 'send', approvers: input.approverName ? [input.approverName] : [], total: 20_520_000 } };
+    saveCommand(done);
+    return done;
+  },
+};
+// T2d: báo cáo Zalo dán vào → thẻ nhật ký. Cây hạng mục thật DA29 + kết quả AI thật (tin 3 ngày 13–15/10), như bộ test màn Nhật ký.
+const dlCommand = (text: string): AssistantCommand => ({
+  id: `cmd-dl-${Date.now()}`, kind: 'daily_log', status: 'prepared', title: 'Nhật ký từ báo cáo Zalo · DA29',
+  payload: { projectId: 'da29', projectCode: 'DA29', projectName: 'Nhà xưởng XinHai', siteId: 'site-da29', reportDate: '2026-10-15', text },
+  preview: { chars: text.length }, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+const dailyLog: DailyLogFormActions = {
+  tasks: async () => DL_DATA.tasks as unknown as ProjectTask[],
+  hooks: {
+    read: async input => {
+      aiCalls.push({ dailyLog: 'read', reportDate: input.reportDate, taskLines: input.tasks.split('\n').length });
+      await sleep(400);
+      if (AI === 'dl-fail' && !aiCalls.some(c => c.dailyLog === 'failed')) { aiCalls.push({ dailyLog: 'failed' }); return { code: 'AI_FAILED', error: 'AI_HTTP_502' }; }
+      return { code: 'OK', runId: 'run-dl', result: DL_DATA.read as unknown as ReportRead, model: 'claude-sonnet-5-5', provider: 'openai_compatible', usage: { tokensIn: 14198, tokensOut: 3110, costUsd: null, durationMs: 29630 } };
+    },
+    feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+    memory: async () => [],
+    learn: async (_p, _s, pairs) => { aiCalls.push({ dailyLog: 'learn', pairs: pairs.length }); },
+    recentAreas: async () => [{ code: 'NX1', name: 'Nhà xưởng' }, { code: 'NHA-NGHI-CA', name: 'Nhà Nghỉ ca' }, { code: 'NVP', name: 'Nhà văn phòng' }],
+    knownCrews: async () => ['Tổ Đỗ Duy Ích', 'Tổ công nhật Đỗ Hiệp Đoàn'],
+    createDraft: async ({ slip }) => {
+      await sleep(60);
+      aiCalls.push({ dailyLog: 'create', date: slip.date, area: slip.areaCode, works: slip.works.length });
+      if (slip.date === '2026-10-13' && slip.areaCode === 'NX1') return { slip, status: 'exists', contributionId: 'existing-nx1-1310', message: 'Đã có phiếu của mũi này trong ngày — mở để bổ sung.' };
+      return { slip, status: 'created', contributionId: `c-${slip.date}-${slip.areaCode}` };
+    },
+  },
+  finish: async (command, result) => {
+    const done: AssistantCommand = { ...command, status: 'done', result, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+// Model được cấp (?models=1: chỉ một model → không có menu chọn).
+const MODELS = [
+  { id: 'c-claude', name: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5', blurb: 'Hiểu sâu, đọc ảnh / PDF scan — hợp báo giá, phân tích', icon: '🧠', vision: true, isDefault: true },
+  { id: 'c-deepseek', name: 'DeepSeek Flash', model: 'deepseek-v4.1-flash', blurb: 'Nhanh, rẻ — câu hỏi thường, tra cứu nhanh', icon: '⚡', vision: false, isDefault: false },
+];
+// 19/10: tìm ngay trong ô hỏi — hồ sơ giả theo cụm từ (như search_global_v1), ghi lại lời gọi để kiểm.
+const INSTANT_RECORDS = [
+  { kind: 'employee' as const, id: 'emp-thanh', code: 'TT006974', title: 'Nguyễn Văn Thanh', subtitle: 'Trưởng nhóm TLĐ', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: { jobTitle: 'Trưởng nhóm TLĐ', phone: '0912000000' } },
+  { kind: 'employee' as const, id: 'emp-huong', code: 'TT004431', title: 'Nguyễn Thị Hương', subtitle: 'Trưởng phòng TCKT', status: 'đang làm việc', date: null, projectId: null, siteId: null, rank: 60, extra: {} },
+  { kind: 'purchase_order' as const, id: 'po-272', code: 'PO-272', title: 'Thép D8 CB240 · Hòa Phát', subtitle: 'SMB-2026 · đang giao', status: 'in_transit', date: '2026-10-14', projectId: 'p-smb', siteId: null, rank: 100, extra: {} },
+];
+const instantSearch: NonNullable<AssistantHooks['search']> = async (terms, kinds, limit) => {
+  aiCalls.push({ search: terms.map(g => g[0]).join(' '), kinds: kinds.length, limit });
+  await sleep(40);
+  const fold = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const records = INSTANT_RECORDS.filter(r => kinds.includes(r.kind) && terms.every(group => group.some(alt => fold(`${r.code} ${r.title}`).includes(alt))))
+    .map(r => ({ ...r, rank: terms.some(g => g.some(alt => alt === fold(r.code))) ? 100 : r.rank }));
+  return { records: records.slice(0, limit), failed: [] };
+};
+
+// Trang + thao tác cho tầng tìm ngay (như ô Tìm kiếm): vài màn người này mở được.
+const LOCAL_INDEX = buildLocalIndex(
+  [{ key: 'procurement', label: 'Mua hàng', route: '/procurement' }, { key: 'hrm', label: 'Nhân sự', route: '/hrm' }],
+  key => (key === 'procurement' ? [{ to: '/procurement', label: 'Mua hàng' }, { to: '/procurement?mode=orders', label: 'Đơn hàng' }] : [{ to: '/hrm/leave', label: 'Nghỉ phép' }]),
+  route => !DENIED_ROUTES.has(route.split('?')[0]) && !route.startsWith('/finance'));
+window.addEventListener(OPEN_MODAL_EVENT, event => { aiCalls.push({ modal: (event as CustomEvent<{ modal?: string }>).detail?.modal }); });
+
+// Vioo Work (PR-3): thẻ giao việc — người giao được + Giao (ghi lại để kiểm, không gọi máy chủ).
+const workPeople = { canAssignOthers: true, people: [
+  { userId: 'me', name: 'Phan Quốc Bảo', title: null, unit: { id: 'u1', code: 'BLĐ', name: 'Ban lãnh đạo' }, myTeam: false, sameUnit: false, isMe: true, canReceive: true, load: 0, aliases: [] },
+  { userId: 'do', name: 'Vương Thành Đô', title: null, unit: { id: 'u2', code: 'QLDA', name: 'Phòng QLDA' }, myTeam: true, sameUnit: false, isMe: false, canReceive: true, load: 5, aliases: [] },
+  { userId: 'ha', name: 'Đặng Thu Hà', title: null, unit: { id: 'u3', code: 'KH', name: 'Phòng KH' }, myTeam: true, sameUnit: false, isMe: false, canReceive: true, load: 2, aliases: [] },
+] };
+const workTask: WorkTaskCardActions = {
+  people: async () => workPeople,
+  give: async (command, input) => {
+    aiCalls.push({ workTask: 'give', assigneeId: input.assigneeId, level: input.level, deadline: input.deadline.toISOString(), title: input.title });
+    await sleep(200);
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'VW-2026-000301', taskId: 't301', route: '/work/tasks/VW-2026-000301', assigneeName: input.assigneeName, deadlineAt: input.deadline.toISOString() }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
+
 const assistantHooks: AssistantHooks = {
-  status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI === 'gemini')), 40)),
-  ask: (question, facts, context) => new Promise(resolve => setTimeout(() => {
-    aiCalls.push({ skill: 'center_question', question, factLines: facts.split('\n').length, context });
-    const keys = facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
-    resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 60, costUsd: null, durationMs: 640 },
-      result: { answer: `Bạn có 7 việc trễ trên tiến độ SMB-2026 và 4 đề xuất vật tư chờ Phòng vật tư duyệt; PO-116 đã quá hạn 2 ngày. (giả lập cho "${question}")`, sources: keys } });
-  }, 120)),
+  workTask,
+  search: instantSearch,
+  poForm,
+  memory,
+  // Trung tâm AI: ?access=none → chưa được cấp Trợ lý; ?access=cap → trần 30 câu/ngày, đã dùng 27.
+  access: async () => ({ models: params.get('models') === '1' ? [MODELS[0]] : MODELS, ...(params.get('access') === 'none'
+    ? { assistant: false, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }
+    : params.get('access') === 'cap'
+      ? { assistant: true, dailyQuestionCap: 30, monthlyCostCapUsd: 3, usedToday: 27, monthCostUsd: 0.4, admin: 'Admin Hoàng' }
+      : { assistant: true, dailyQuestionCap: null, monthlyCostCapUsd: null, usedToday: 0, monthCostUsd: 0, admin: 'Admin Hoàng' }) }),
+  dailyLog,
+  ...(params.get('mrform') === '0' ? {} : { mrForm }),
+  status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI !== 'off')), 40)),
   narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
     aiCalls.push({ skill: 'morning_brief', factLines: facts.split('\n').length, context });
     resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 90, costUsd: null, durationMs: 700 },
       result: { brief: 'Sáng nay bạn có 11 việc chờ, trong đó PO-116 quá hạn 2 ngày và MR-2026-2688 cần duyệt trước 13h. Tiến độ SMB-2026 đạt 81% nhưng 7 việc đã trễ; 4 đề xuất vật tư đang chờ Phòng vật tư. Bạn chưa chấm công hôm nay.' } });
   }, 120)),
-  feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+  feedback: (runId, accepted, detail) => { aiCalls.push({ feedback: { runId, accepted, ...(detail?.reason ? { reason: detail.reason, note: detail.note || null } : {}) } }); },
+  listThreads: async () => { await sleep(30); return loadThreads().sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(({ messages, ...t }) => ({ ...t, messageCount: messages.length })); },
+  getThread: async id => {
+    await sleep(30);
+    const t = loadThreads().find(x => x.id === id);
+    if (!t) throw new Error('AI_THREAD_NOT_FOUND');
+    return { ...t, messageCount: t.messages.length, messages: t.messages.map(m => ({ ...m, commands: m.commands || [] })) };
+  },
+  // T2a: Xác nhận lệnh nháp. ?ai=leave-fail lần gửi đầu báo lỗi (trùng ngày); trạng thái thẻ lưu cùng hội thoại (tải lại vẫn thấy).
+  runCommand: async (command, edits) => {
+    aiCalls.push({ command: 'run', id: command.id, reason: edits.reason });
+    await sleep(80);
+    if (AI === 'leave-fail' && !aiCalls.some(c => c.command === 'failed')) { aiCalls.push({ command: 'failed' }); throw new Error('Ngày 21/10 đã có đơn nghỉ khác.'); }
+    const done: AssistantCommand = { ...command, status: 'done', result: { code: 'NP-2026-0099', id: 'lr-1', route: '/hrm/leave' }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+  cancelCommand: async command => {
+    aiCalls.push({ command: 'cancel', id: command.id });
+    const cancelled: AssistantCommand = { ...command, status: 'cancelled' };
+    saveCommand(cancelled);
+    return cancelled;
+  },
+  chat: async (input, handlers, signal) => {
+    const runId = `run-${aiCalls.length + 1}`;
+    const prior = input.threadId ? loadThreads().find(t => t.id === input.threadId)?.messages.length || 0 : 0;
+    aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context,
+      ...(input.hits?.length ? { hits: input.hits.map(h => h.code || h.id) } : {}),
+      ...(input.images?.length || input.files?.length ? { images: input.images?.length || 0, files: (input.files || []).map(f => ({ name: f.name, head: f.text.split('\n').slice(0, 5).join('\n') })) } : {}) });
+    await sleep(60);
+    if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };
+    if (AI === 'busy') return { code: 'AI_QUOTA', reason: 'busy' };
+    if (AI === 'rate') return { code: 'AI_QUOTA', reason: 'minute' };
+    handlers.onStart?.({ runId, model: 'gemini-2.5-pro' });
+    const keys = input.facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
+    // ?ai=refuse: lời lẽ khiếm nhã → AI mở đầu bằng nhãn từ chối (màn hình phải ẩn), máy chủ trả câu đã bỏ nhãn.
+    const refused = AI === 'refuse' ? '[[tu_choi:khiem_nha]] Em mong anh dùng từ ngữ lịch sự hơn ạ. Anh cần xem việc nào hôm nay?' : null;
+    // T1: câu hỏi cần tra (tồn kho, PO) → giả lập Trợ lý gọi công cụ rồi dẫn hồ sơ [[h1]] (nguồn dạng hồ sơ, màn hình tự mở đúng màn).
+    const lookup = /tồn|PO-6/i.test(input.question) && !refused && !prior ? (/tồn/i.test(input.question)
+      ? { tool: { name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }, text: 'Thép CB400 D16 còn **42,4 tấn**: Kho SMB 12,4 tấn, Kho tổng Hưng Yên 30 tấn [[h1]].',
+        record: { kind: 'item', id: 'it-1', code: 'THEP-D16', title: 'Thép CB400 D16', subtitle: 'tấn · Thép', extra: { unit: 'tấn' } } }
+      : { tool: { name: 'chi_tiet_don_mua', label: 'Chi tiết đơn mua', query: 'PO-646' }, text: 'PO-646 còn phải giao **8 tấn** thép D16, còn nợ NCC 280.000.000đ [[h1]].',
+        record: { kind: 'purchase_order', id: 'po-1', code: 'PO-646', title: 'Kết cấu thép 568', projectId: 'smb' } }) : null;
+    if (lookup) { await sleep(150); handlers.onTool?.(lookup.tool); await sleep(250); }
+    // Gợi ý bấm: "xin nghỉ" chưa rõ loại → hỏi lại kèm phương án (màn hình thành nút; bấm là gửi đúng câu đó).
+    // T3: chỉ gửi tệp (không gõ gì) → Trợ lý tóm tắt tệp, hỏi lại cần làm gì bằng gợi ý bấm.
+    if (input.question === 'Xem tệp đính kèm.' && (input.images?.length || input.files?.length)) {
+      const text = `Tệp có **3 dòng thép** (D16, D20, D8) kèm đơn giá — giống một báo giá. Anh muốn làm gì? [[goi_y:Lập đơn mua theo báo giá này]] [[goi_y:Đề xuất vật tư theo danh sách này]]`;
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      return { code: 'OK', runId, threadId: input.threadId || '0d4c2f1e-8a5b-4c3d-9e2f-0000000000f1', messageId: `msg-${aiCalls.length}`, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // T4b: "nhớ giúp …" → thẻ ghi nhớ (người dùng tự bấm Lưu).
+    const wantsNote = /nhớ giúp|ghi nhớ/i.test(input.question) && !refused && !lookup;
+    if (wantsNote) {
+      const note = memoryCommand('Phụ trách SMB-2026 và DA29; báo cáo ngắn gọn, số liệu trước');
+      await sleep(120);
+      handlers.onTool?.({ name: 'chuan_bi_ghi_nho', label: 'Chuẩn bị ghi nhớ', query: '' });
+      await sleep(100);
+      handlers.onCommand?.(note);
+      const text = 'Em đã chuẩn bị ghi nhớ — anh kiểm chữ rồi bấm **Lưu ghi nhớ** trên thẻ.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(20); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [note] });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Vioo Work (PR-3): "giao cho … " → thẻ giao việc (người dùng tự bấm Giao).
+    if (/^giao (cho|việc)/i.test(input.question) && !refused) {
+      const command: AssistantCommand = { id: `cmd-work-${Date.now()}`, kind: 'work_task', status: 'prepared', title: 'Giao việc: Rà soát hồ sơ thanh toán đợt 3 SMB',
+        payload: { title: 'Rà soát hồ sơ thanh toán đợt 3 SMB', assigneeUserId: 'do', assigneeName: 'Vương Thành Đô', deadlineDate: '2099-10-23', deadlineTime: '17:00', level: 'A',
+          description: 'Đối chiếu hồ sơ với hợp đồng, nộp bảng chênh lệch.', checklist: ['Gom hồ sơ', 'Đối chiếu khối lượng', 'Lập bảng chênh lệch'], runId },
+        preview: {}, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null };
+      await sleep(120);
+      handlers.onTool?.({ name: 'chuan_bi_giao_viec', label: 'Chuẩn bị giao việc', query: '' });
+      await sleep(100);
+      handlers.onCommand?.(command);
+      const text = 'Em đã chuẩn bị việc cho **Vương Thành Đô**, mức A, hạn T6 23/10 — anh kiểm rồi bấm **Giao** trên thẻ.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [command] });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Báo cáo A1 (20/10): "thống kê phiếu quy trình…" → bao_cao → thẻ biểu đồ có cột 3 chuỗi + tròn theo mẫu.
+    if (/phiếu quy trình/i.test(input.question) && /thống kê|báo cáo|biểu đồ/i.test(input.question) && !refused) {
+      await sleep(120);
+      handlers.onTool?.({ name: 'bao_cao', label: 'Báo cáo', query: '' });
+      await sleep(150);
+      const built = workflowReport({ buckets: [{ start: '2026-08-01', created: 30, completed: 25, returned: 3 }, { start: '2026-09-01', created: 40, completed: 35, returned: 2 }, { start: '2026-10-01', created: 49, completed: 20, returned: 1 }],
+        byTemplate: [{ name: 'Đề nghị tạm ứng', count: 60 }, { name: 'Đề nghị thanh toán', count: 40 }, { name: 'Xin nghỉ phép', count: 19 }], byStatus: { RUNNING: 63, COMPLETED: 50 }, total: 119, runningNow: 63, runningStale: 12 },
+        { from: '2026-08-01', to: '2026-10-07', group: 'month' })!;
+      const chart = { ref: 'b1', type: 'chart' as const, chart: parseChart(built.chart)! };
+      const parsed = parseSources([chart]);
+      if (parsed[0]) handlers.onChart?.(parsed[0] as never);
+      const text = 'Từ 01/08 đến 07/10 có **119 phiếu** tạo mới, 80 hoàn thành, 6 trả lại / hủy; tháng 10 tạo nhiều nhất (49). Mẫu nhiều nhất là Đề nghị tạm ứng (60 phiếu). Đang xử lý 63 phiếu, trong đó 12 phiếu quá 7 ngày chưa động — anh xem Quy trình để đôn đốc.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `m-${thread.messages.length + 2}`;
+      thread.messages.push({ id: `m-${thread.messages.length + 1}`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [chart], runId, accepted: null, createdAt: at });
+      thread.lastMessageAt = at; saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [chart], model: 'gemini-2.5-pro', saved: true };
+    }
+    // Biểu đồ biến động nhân sự (19/10): công cụ bien_dong_nhan_su → thẻ biểu đồ (số giống prod 19/10). ?ai=hc-denied: không có quyền Xem tổ chức.
+    if (/biến động nhân sự|biểu đồ nhân sự/i.test(input.question) && !refused) {
+      await sleep(120);
+      handlers.onTool?.({ name: 'bien_dong_nhan_su', label: 'Biến động nhân sự', query: '' });
+      await sleep(200);
+      const months = [61, 61, 61, 63, 65, 68].map((headcount, i) => ({ month: `2026-0${i + 1}`, endDate: `2026-0${i + 1}-28`, hired: [0, 0, 0, 2, 2, 3][i], left: 0, headcount }));
+      const chart = AI === 'hc-denied' ? null : { ref: 'b1', type: 'chart' as const, chart: headcountChart({ opening: 61, months, activeNow: 91, activeNoStartDate: 8, resignedNoExitDate: 3, resignedWithExitDate: 0 })!.chart };
+      const parsed = chart ? parseSources([chart]) : [];
+      if (parsed[0]) handlers.onChart?.(parsed[0] as never);
+      const text = chart
+        ? 'Nửa đầu năm 2026 quân số tăng **7 người**, từ 61 lên 68; người mới vào dồn vào tháng 4–6, tháng 6 nhiều nhất (3 người). Số nghỉ việc chưa có vì 3 người đã nghỉ chưa được ghi ngày nghỉ — anh nhờ HR bổ sung để biểu đồ đủ.'
+        : 'Số liệu nhân sự toàn công ty nằm ngoài phạm vi anh được xem (cần quyền Xem tổ chức). Anh nhờ Quản trị hệ thống cấp nếu cần.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: parsed, runId, accepted: null, createdAt: at });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: parsed, model: 'gemini-2.5-pro', saved: true };
+    }
+    const asksType = /^xin nghỉ\.?$/i.test(input.question.trim()) && !refused;
+    const wantsDl = /^(BC|báo cáo) ngày/i.test(input.question.trim()) && !refused && !lookup;
+    const wantsPo = /báo giá|đơn mua|đặt hàng/i.test(input.question) && !refused && !lookup && !wantsDl;
+    const wantsMr = /đề xuất|xi măng/i.test(input.question) && !refused && !lookup && !wantsPo && !wantsDl;
+    const wantsLeave = /nghỉ|phép/i.test(input.question) && !refused && !lookup && !asksType && !wantsMr && !wantsDl;
+    const command = wantsDl ? dlCommand(input.question) : wantsPo ? poCommand() : wantsMr ? mrCommand() : wantsLeave ? leaveCommand() : null;
+    if (command) {
+      await sleep(120);
+      handlers.onTool?.(wantsDl ? { name: 'chuan_bi_nhat_ky', label: 'Chuẩn bị nhật ký', query: '' } : wantsPo ? { name: 'chuan_bi_don_mua', label: 'Chuẩn bị đơn mua', query: '' }
+        : wantsMr ? { name: 'chuan_bi_de_xuat_vat_tu', label: 'Chuẩn bị đề xuất vật tư', query: '' } : { name: 'chuan_bi_don_nghi_phep', label: 'Chuẩn bị đơn nghỉ phép', query: '' });
+      await sleep(150);
+      handlers.onCommand?.(command);
+    }
+    const answer = refused ?? lookup?.text
+      ?? (asksType ? 'Anh nghỉ loại nào? [[goi_y:Phép năm]] [[goi_y:Ốm đau (BHXH)]] [[goi_y:Việc riêng không lương]]' : null)
+      ?? (wantsDl ? 'Em đã nhận báo cáo **DA29**. Thẻ bên dưới đang đọc ngày, mũi, hạng mục — anh kiểm rồi bấm **Tạo phiếu nháp**.' : null)
+      ?? (wantsPo ? 'Em đã chuẩn bị **đơn mua Hòa Phát · SMB-2026** gồm 3 dòng theo báo giá, VAT 8%. NCC có 2 công ty gần giống — anh bấm chọn, kiểm mã, chọn lý do và người duyệt rồi bấm **Gửi duyệt** trên thẻ.' : null)
+      ?? (wantsMr ? 'Em đã chuẩn bị **đề xuất vật tư SMB-2026** gồm 4 dòng; dây thép buộc chưa có số lượng. Anh chọn mã, kiểm số lượng, chọn người duyệt rồi bấm **Gửi duyệt** ngay trên thẻ.' : null)
+      ?? (command ? 'Em đã chuẩn bị **đơn phép năm 21/10** (1 ngày). Anh xem thẻ bên dưới rồi bấm Gửi đơn.' : null) ?? (prior
+      ? `Tiếp câu trước (em nhớ ${prior / 2} lượt): **PO-116** vẫn quá hạn 2 ngày [[${keys[2] || ''}]], anh nên gọi NCC hôm nay.`
+      : `Anh có 7 việc trễ trên tiến độ SMB-2026 [[${keys[0] || ''}]]. Gấp nhất:\n- **PO-116** đã quá hạn 2 ngày [[${keys[2] || ''}]]\n- 4 đề xuất vật tư chờ Phòng vật tư duyệt [[${keys[1] || ''}]]`);
+    let sent = '';
+    for (const chunk of answer.match(/[\s\S]{1,9}/g) || []) {
+      if (signal?.aborted) return { code: 'AI_FAILED', runId, error: 'AI_ABORTED', partial: sent };
+      if (AI === 'fail' && sent.length > 30) return { code: 'AI_FAILED', runId, error: 'AI_HTTP_502', partial: sent };
+      await sleep(25);
+      sent += chunk;
+      handlers.onDelta(chunk);
+    }
+    const all = loadThreads();
+    // Giờ giả lập của fixture (NOW) + vài phút mỗi lượt: hội thoại vừa hỏi là "hôm nay" với màn hình.
+    const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+    let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+    if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+    const messageId = `msg-${aiCalls.length}`;
+    thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+      { id: messageId, role: 'assistant', content: answer, sources: lookup || command || asksType ? [] : keys, runId, accepted: null, createdAt: at, commands: command ? [command] : [] });
+    thread.lastMessageAt = at;
+    saveThreads(all);
+    const sources = refused || command || asksType ? [] : lookup ? [{ ref: 'h1', type: 'record' as const, record: { ...lookup.record, status: null, date: null, siteId: null, projectId: (lookup.record as { projectId?: string }).projectId || null, rank: 100, extra: (lookup.record as { extra?: Record<string, unknown> }).extra || {}, subtitle: (lookup.record as { subtitle?: string }).subtitle || null } as never }] : keys;
+    return { code: 'OK', runId, threadId: thread.id, messageId, answer: answer.replace(/\[\[tu_choi:[a-z_]+\]\]\s*/, ''), sources, model: 'gemini-2.5-pro', saved: true };
+  },
 };
 
 const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone: () => void }> = ({ modal, onClose, onDone }) => (
@@ -358,6 +799,7 @@ const Fixture: React.FC = () => {
             onLogout={() => setLastRoute('logout')}
             mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
+            searchLocal={LOCAL_INDEX}
             onNavigate={setLastRoute}
             now={params.get('defaults') === '1' ? undefined : NOW}
             // ?loader=app: như app thật — không truyền loadWorkItems (dùng nguồn mặc định).

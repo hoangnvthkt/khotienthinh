@@ -63,6 +63,7 @@ import {
     type WorkBoqImportPreview,
 } from '../../lib/projectMaterialTabUtils';
 import { useProjectMaterialAccess } from '../../hooks/project/material/useProjectMaterialAccess';
+import { finishCommand, getCommand, mrView, notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 
 const WorkPlanTab = React.lazy(() => import('./WorkPlanTab'));
 const ProjectRoomSubmissionDialog = React.lazy(() => import('../../components/project/ProjectRoomSubmissionDialog'));
@@ -294,6 +295,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
     const [requestModalInitialAction, setRequestModalInitialAction] = useState<'createFulfillmentBatch' | undefined>(undefined);
     const [requestModalInitialDraft, setRequestModalInitialDraft] = useState<MaterialRequestInitialDraft | null>(null);
+    // Thẻ nháp của Trợ lý đang mở thành form (T2b): lưu / gửi xong thì ghi biên nhận vào lệnh.
+    const assistantCommandRef = useRef<AssistantCommand | null>(null);
+    const assistantDraftHandled = useRef<string | null>(null);
     const [selectedMaterialGroupKeys, setSelectedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
@@ -576,6 +580,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [constructionSiteId, materialAccess.boq.canView, materialAccess.dashboard.canView, projectId]);
 
     const closeRequestModal = () => {
+        assistantCommandRef.current = null;
         setReqModalOpen(false);
         setSelectedRequest(undefined);
         setRequestModalInitialAction(undefined);
@@ -2137,10 +2142,56 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setSelectedMaterialGroupKeys(new Set());
     }, []);
 
-    const handleMaterialRequestSaved = useCallback(() => {
+    const handleMaterialRequestSaved = useCallback((saved: MaterialRequest, meta?: { submitted: boolean }) => {
+        const command = assistantCommandRef.current;
+        if (command) {
+            assistantCommandRef.current = null;
+            const result = { code: saved.code, id: saved.id, submitted: meta?.submitted === true };
+            void finishCommand(command.id, 'done', result)
+                .then(done => notifyCommandChanged(done || { ...command, status: 'done', result }))
+                .catch(err => console.warn('Không ghi được biên nhận lệnh Trợ lý', err));
+        }
         if (!requestModalInitialDraft) return;
         clearMaterialGroupSelection();
     }, [clearMaterialGroupSelection, requestModalInitialDraft]);
+
+    // Trợ lý (T2b): thẻ "Mở form đề xuất" → ?assistantDraft=<lệnh>: mở form Đề xuất của dự án, Gõ nhanh điền sẵn các dòng Trợ lý tách.
+    // Đợi quyền dự án tải xong; lệnh phải của chính người dùng (máy chủ kiểm), đúng dự án, chưa xử lý.
+    const assistantDraftId = useMemo(() => new URLSearchParams(location.search).get('assistantDraft'), [location.search]);
+    useEffect(() => {
+        if (!assistantDraftId || !boqPbacLoaded || assistantDraftHandled.current === assistantDraftId) return;
+        assistantDraftHandled.current = assistantDraftId;
+        const dropParam = () => {
+            const params = new URLSearchParams(location.search);
+            params.delete('assistantDraft');
+            navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+        };
+        if (!canCreateMaterialRequest) {
+            toast.warning('Chưa mở được đề xuất', 'Bạn chưa được lập đề xuất vật tư ở dự án này.');
+            dropParam();
+            return;
+        }
+        getCommand(assistantDraftId).then(command => {
+            if (!command || command.kind !== 'material_request' || mrView(command).projectId !== projectId) {
+                toast.warning('Chưa mở được đề xuất', 'Thẻ nháp không thuộc dự án này.');
+            } else if (command.status === 'done' || command.status === 'cancelled') {
+                toast.info('Thẻ nháp đã xử lý', command.status === 'done' ? 'Đề xuất từ thẻ này đã được lập.' : 'Thẻ nháp đã bỏ.');
+            } else {
+                const v = mrView(command);
+                assistantCommandRef.current = command;
+                setSelectedRequest(undefined);
+                setRequestModalInitialAction(undefined);
+                setRequestModalInitialDraft({
+                    title: v.title || undefined,
+                    neededDate: v.neededDate || undefined,
+                    lines: [],
+                    quick: { lines: v.lines, purpose: v.purpose || null, neededDate: v.neededDate },
+                });
+                setReqModalOpen(true);
+            }
+        }).catch(() => toast.error('Chưa mở được đề xuất', 'Không đọc được thẻ nháp của Trợ lý. Thử lại.')).finally(dropParam);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [assistantDraftId, boqPbacLoaded, canCreateMaterialRequest, projectId]);
 
     useEffect(() => {
         const existingRowKeys = new Set(materialAggregateSummaryRows.map(row => row.key));

@@ -12,7 +12,10 @@ export const DailyLogEngineerWorkspace: React.FC<{
   projectId: string; constructionSiteId: string | null; date: string;
   onDateChange(date: string): void; onClose(): void; onSubmitted(): void;
   onUploadPhoto(file: File): Promise<DailyLogPhoto>;
-}> = ({ bundle, loading, error, projectId, constructionSiteId, date, onDateChange, onClose, onSubmitted, onUploadPhoto }) => {
+  /** Mở ngay phiếu này khi danh sách tải xong (VD phiếu nháp vừa tạo từ báo cáo Zalo). */
+  initialContributionId?: string | null;
+  onInitialOpened?(): void;
+}> = ({ bundle, loading, error, projectId, constructionSiteId, date, onDateChange, onClose, onSubmitted, onUploadPhoto, initialContributionId, onInitialOpened }) => {
   const [document, setDocument] = useState<DailyLogDocumentBundle | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [recentAreas, setRecentAreas] = useState<DailyLogRecentArea[]>([]);
@@ -63,6 +66,12 @@ export const DailyLogEngineerWorkspace: React.FC<{
     }
     finally { flight.current = false; setBusy(false); }
   };
+  useEffect(() => {
+    if (!initialContributionId || !bundle || document) return;
+    onInitialOpened?.();
+    void choose([initialContributionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialContributionId, bundle]);
   const reloadDocument = (id: string) => { setBusy(true); load(id).then(setDocument).catch(caught => setLocalError(caught.message)).finally(() => setBusy(false)); };
   const deleted = (areaName: string) => {
     generation.current += 1; setDocument(null); setSelected([]); setNotice(`Đã xóa phiếu nháp "${areaName}".`); onSubmitted();

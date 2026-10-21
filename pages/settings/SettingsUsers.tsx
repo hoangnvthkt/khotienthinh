@@ -58,7 +58,6 @@ const MODULE_BADGE_MAP: Record<string, { label: string; bg: string; text: string
   TENDER_AI: { label: 'Dự toán AI', bg: 'bg-fuchsia-50 border-fuchsia-200', text: 'text-fuchsia-600', icon: Bot },
   CHAT: { label: 'Tin nhắn nội bộ', bg: 'bg-pink-50 border-pink-200', text: 'text-pink-600', icon: MessageCircle },
   SETTINGS: { label: 'Cài đặt hệ thống', bg: 'bg-slate-100 border-slate-300', text: 'text-slate-700', icon: SettingsIcon },
-  CHIBIBOT: { label: 'Trợ lý AI ChibiBot', bg: 'bg-purple-50 border-purple-200', text: 'text-purple-600', icon: Bot },
 };
 
 const SettingsUsers: React.FC<SettingsUsersProps> = ({

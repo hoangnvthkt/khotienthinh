@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { OPEN_SEARCH_EVENT } from '../lib/search/openGlobalSearch';
+import { OPEN_MODAL_EVENT, OPEN_SEARCH_EVENT } from '../lib/search/openGlobalSearch';
 import type { SearchEntry } from '../lib/search/searchTypes';
 
 // Tìm kiếm toàn hệ thống (Ctrl/⌘ K, nút Tìm kiếm ở thanh bên / đầu trang điện thoại / nút nổi).
@@ -26,13 +26,20 @@ const CommandPalette: React.FC = () => {
       const query = (event as CustomEvent<{ query?: string }>).detail?.query;
       setOpen({ query: typeof query === 'string' ? query : '' });
     };
+    // Ô hỏi Trợ lý (19/10) mở thẳng thao tác Xin nghỉ phép / Tạo đề xuất.
+    const onModal = (event: Event) => {
+      const modal = (event as CustomEvent<{ modal?: Modal }>).detail?.modal;
+      if (modal === 'leave' || modal === 'request') { setOpen(null); setModal(modal); }
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener(OPEN_SEARCH_EVENT, onOpen);
+    window.addEventListener(OPEN_MODAL_EVENT, onModal);
     // Nạp sẵn hộp tìm kiếm khi trình duyệt rảnh để lần bấm đầu mở ngay.
     const warm = window.setTimeout(() => { void loadDialog().catch(() => undefined); }, 4000);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener(OPEN_SEARCH_EVENT, onOpen);
+      window.removeEventListener(OPEN_MODAL_EVENT, onModal);
       window.clearTimeout(warm);
     };
   }, []);

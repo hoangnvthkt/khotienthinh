@@ -7,14 +7,6 @@ type PermissionUser = Parameters<typeof canPerform>[0];
 const can = (user: PermissionUser, permissionCode: string): boolean =>
   canPerform(user, permissionCode, GLOBAL_SCOPE);
 
-export const getAiAssistantCapabilities = (user: PermissionUser) => {
-  const canUse = can(user, 'ai.assistant.use');
-  return {
-    canView: canViewRoute(user, '/ai', GLOBAL_SCOPE) || canUse,
-    canUse,
-  };
-};
-
 export const getAiExecutiveCapabilities = (user: PermissionUser) => {
   const canView = can(user, 'ai.executive.view');
   return {

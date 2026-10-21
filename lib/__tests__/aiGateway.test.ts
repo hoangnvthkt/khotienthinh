@@ -43,6 +43,9 @@ describe('aiGateway (client)', () => {
     const nd = await aiGateway.run('text_summary', { text: 'abc' });
     expect(nd).toMatchObject({ code: 'AI_NOT_CONFIGURED', error: 'AI_NOT_DEPLOYED' });
     expect(aiErrorMessage(nd as { code: 'AI_NOT_CONFIGURED'; error: string })).toBe('Hàm ai-gateway chưa triển khai.');
+    // Chống spam (18/10): còn câu đang trả lời / gửi quá nhanh trong một phút.
+    expect(aiErrorMessage({ code: 'AI_QUOTA', reason: 'busy' })).toBe('Trợ lý đang trả lời câu trước — đợi xong rồi hỏi tiếp.');
+    expect(aiErrorMessage({ code: 'AI_QUOTA', reason: 'minute' })).toBe('Bạn gửi hơi nhanh — đợi vài giây rồi hỏi tiếp.');
   });
 
   it('overview: ép số, giữ chi phí chưa rõ là null; setSkill / setSettings gọi đúng RPC', async () => {

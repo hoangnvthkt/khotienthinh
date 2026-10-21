@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { THINKING_HEADROOM, emptyReplyError, envEntries, isSafeEndpoint, outputTokenCap, parseJsonLoose, probe, readBalance, targetFromConnection } from '../../supabase/functions/_shared/aiTargets';
+import { THINKING_HEADROOM, emptyReplyError, envEntries, isSafeEndpoint, outputTokenCap, parseJsonLoose, priceOf, probe, readBalance, runCostUsd, stripThinkTags, targetFromConnection, thinkTagFilter } from '../../supabase/functions/_shared/aiTargets';
 
 const reply = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const clock = () => { let t = 1000; return () => (t += 210); };
@@ -58,6 +58,28 @@ describe('aiTargets — thử kết nối', () => {
     expect(targetFromConnection({ kind: 'gemini', apiKey: '' }, 'fast')).toBeNull();
   });
 
+  it('giá theo kết nối: có giá lượt, hoặc đủ cả vào và ra, mới dùng; thiếu → null (dùng giá trong Secrets)', () => {
+    const row = { id: 'c2', kind: 'openai_compatible', name: 'RevidAPI', baseUrl: 'https://revidapi.com/v1', model: 'claude-sonnet-5-5', apiKey: 'sk' };
+    expect(targetFromConnection({ ...row, priceInPerM: '0.3275', priceOutPerM: 1.6378 }, 'reasoning')?.price).toEqual({ inPerM: 0.3275, outPerM: 1.6378, perCall: null });
+    expect(targetFromConnection({ ...row, priceInPerM: 0.33, priceOutPerM: null }, 'reasoning')?.price).toBeNull();
+    expect(targetFromConnection({ ...row, priceOutPerM: '1.6378', pricePerCall: '0.008' }, 'reasoning')?.price).toEqual({ inPerM: null, outPerM: 1.6378, perCall: 0.008 });
+    expect(targetFromConnection(row, 'reasoning')?.price).toBeNull();
+    expect(priceOf(-1, 2)).toBeNull();
+    expect(priceOf(0, 0)).toEqual({ inPerM: 0, outPerM: 0, perCall: null });
+  });
+
+  it('chi phí một lượt AI: theo lượt gọi + token ra (bỏ token vào cổng báo sai); không giá lượt thì theo token (18/10)', () => {
+    const revid = { inPerM: 0.3275, outPerM: 1.6378, perCall: 0.008 };
+    // Câu có tra cứu: 3 lượt gọi, 120 token ra; token vào cổng báo 300.000 không ảnh hưởng.
+    expect(runCostUsd({ tokensIn: 300_000, tokensOut: 120 }, revid, 3)).toBe(0.0242);
+    // Câu soạn văn bản dài: 1 lượt, 2.000 token ra → cộng thêm theo độ dài.
+    expect(runCostUsd({ tokensIn: null, tokensOut: 2000 }, revid, 1)).toBe(0.01128);
+    expect(runCostUsd({ tokensIn: 1000, tokensOut: 100 }, { inPerM: null, outPerM: null, perCall: 0.008 }, 0)).toBe(0.008);
+    expect(runCostUsd({ tokensIn: 2200, tokensOut: 180 }, { inPerM: 0.3275, outPerM: 1.6378 })).toBe(0.00102);
+    expect(runCostUsd({ tokensIn: null, tokensOut: 180 }, { inPerM: 0.3275, outPerM: 1.6378 })).toBeNull();
+    expect(runCostUsd({ tokensIn: 1, tokensOut: 1 }, null)).toBeNull();
+  });
+
   it('RevidAPI: danh sách model công khai → kiểm thêm /v1/credits; khóa sai báo BAD_KEY, khóa đúng hiện số credit', async () => {
     const models = { object: 'list', data: [{ id: 'claude-sonnet-5' }, { id: 'claude-haiku-4-5' }] };
     const target = { kind: 'openai_compatible' as const, baseUrl: 'https://revidapi.com/v1', apiKey: 'sk_x', model: 'claude-sonnet-5' };
@@ -83,11 +105,27 @@ describe('aiTargets — thử kết nối', () => {
     expect(() => parseJsonLoose('{ hỏng')).toThrow('AI_BAD_JSON');
   });
 
+  it('thẻ <think> / <thinking> trong chữ trả lời (DeepSeek-R1, Qwen qua vLLM…): bỏ phần trong thẻ, chịu thẻ cắt giữa mảnh, thẻ không đóng', () => {
+    expect(stripThinkTags('<think>\nUser asks stock. Let me answer.\n</think>\n\nCòn 12.400 kg [[h1]].')).toBe('Còn 12.400 kg [[h1]].');
+    expect(stripThinkTags('Còn 12.400 kg.<THINKING>kiểm lại</THINKING> Kho SMB.')).toBe('Còn 12.400 kg.Kho SMB.');
+    expect(stripThinkTags('<think>hết token giữa chừng')).toBe('');
+    expect(stripThinkTags('Tồn < 5 tấn, giá <1 triệu, <thẻ> lạ <t')).toBe('Tồn < 5 tấn, giá <1 triệu, <thẻ> lạ <t');
+    const f = thinkTagFilter();
+    const pieces = ['<thi', 'nk>Người dùng hỏi', ' tồn kho.</th', 'ink>', '\n\n', 'Còn ', '12.400 kg <', 'b>D16</b>'];
+    expect(pieces.map(p => f.push(p)).join('') + f.flush()).toBe('Còn 12.400 kg <b>D16</b>');
+    const g = thinkTagFilter();
+    expect(g.push('Giá <')).toBe('Giá ');
+    expect(g.push('1 triệu')).toBe('<1 triệu');
+    expect(g.push(' <thin')).toBe(' ');
+    expect(g.flush()).toBe('<thin');
+  });
+
   it('model suy nghĩ trước (deepseek-v4.1-flash 16/10: 600/600 token suy nghĩ, nội dung rỗng): chừa chỗ suy nghĩ, rỗng vì hết token → AI_TRUNCATED', () => {
     expect(outputTokenCap('openai_compatible', 600)).toBe(600 + THINKING_HEADROOM);
     expect(outputTokenCap('gemini', 600)).toBe(600 + THINKING_HEADROOM);
     expect(outputTokenCap('openai', 120)).toBe(120 + THINKING_HEADROOM);
-    expect(outputTokenCap('anthropic', 600)).toBe(600);
+    // 21/10: Claude đời 5 mặc định tự suy nghĩ → chừa chỗ như các nhà khác.
+    expect(outputTokenCap('anthropic', 600)).toBe(600 + THINKING_HEADROOM);
     expect(emptyReplyError('length')).toBe('AI_TRUNCATED');
     expect(emptyReplyError('MAX_TOKENS')).toBe('AI_TRUNCATED');
     expect(emptyReplyError('stop')).toBe('AI_EMPTY');

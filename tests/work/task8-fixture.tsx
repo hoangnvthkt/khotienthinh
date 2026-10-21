@@ -3,6 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { WorkWorkspace } from "../../pages/work/WorkPage";
+import { createWorkAi } from "../../lib/work/workAi";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
 import {
@@ -60,10 +61,13 @@ const summary = (id: string, title: string): WorkTaskSummary => ({
   assignment_count: 2,
   acknowledged_count: 1,
   progress_percent: id === "1" ? 65 : 25,
+  last_progress_at: "2026-09-09T01:15:00Z",
 });
 const people = [
   { id: "actor", name: "Lê Minh An", kind: "user" },
   { id: "second", name: "Nguyễn Thu Hà", kind: "user" },
+  { id: "third", name: "Lý Thị Hà", kind: "user" },
+  { id: "fourth", name: "Vương Thành Đô", kind: "user" },
 ];
 let taskStatus = query.get("state") || "in_progress";
 let taskVersion = 1;
@@ -97,9 +101,240 @@ const comment = (id: string, text: string) => ({
   mentionedUserIds: [],
   can_edit: role !== "watcher",
 });
+// Đợt 1: dòng cập nhật + tóm tắt + người giao được (bật bằng ?updates=1, ?origin=claim|directive, ?quick=false).
+const fixtureUpdates: any[] = query.get("updates") === "1" ? [
+  { id: "u2", at: "2026-09-09T01:15:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Đối chiếu xong biên bản trục A–D.", doing: "Ký nháy biên bản trục E–H.",
+    next: "Nộp hồ sơ cho tư vấn giám sát 10/9.", blocked: "Thiếu chữ ký chỉ huy trưởng.", progressBefore: 40, progressAfter: 65, ai: true,
+    files: [{ id: "f1", name: "BB-nghiem-thu-A-D.pdf", mime: "application/pdf", evidenceType: null }] },
+  { id: "u1", at: "2026-09-08T09:30:00Z", authorId: "actor", authorName: "Lê Minh An", done: "Gom đủ 12 biên bản.", next: "Đối chiếu trục A–D.",
+    progressBefore: 10, progressAfter: 40, ai: false, files: [] },
+] : [];
+// Việc của tôi (mockup v1): bảng giả theo giờ máy; ?board=empty | error. Lệnh trên việc "b-*" đổi trạng thái việc đó.
+const bDay = (offset: number, h = 17) => { const d = new Date(); d.setHours(h, 0, 0, 0); d.setDate(d.getDate() + offset); return d.toISOString(); };
+const bIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const bMonday = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+const bAdd = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const toSaturday = (6 - new Date().getDay() + 7) % 7;
+const canOf = (t: any) => {
+  const live = !["completed", "cancelled", "awaiting_review"].includes(t.status);
+  return { acknowledge: live && !t.acknowledged, start: live && t.acknowledged && ["not_started", "changes_requested"].includes(t.status),
+    block: live && t.acknowledged && t.status === "in_progress", unblock: live && t.acknowledged && t.status === "blocked",
+    submit: live && t.acknowledged && ["in_progress", "changes_requested"].includes(t.status) };
+};
+const bTask = (id: string, x: any) => ({ id, code: `VW-2026-0002${id.slice(2)}`, labels: [], lockVersion: 1, blockedReason: null, completedAt: null,
+  createdAt: bDay(-6, 9), lastProgressAt: bDay(-1, 10), acknowledged: true, needsReview: true, createdBy: { id: "head", name: "Vương Thành Đô" },
+  createdByMe: false, createdByHead: true, checklist: { done: 0, total: 0 }, origin: null, progressPercent: 0, status: "in_progress", ...x });
+const boardTasks: any[] = query.get("board") === "empty" ? [] : [
+  bTask("b-01", { title: "Bóc khối lượng phát sinh móng PĐ3 – XinHai", level: "A", deadlineAt: bDay(-3), progressPercent: 60, lastProgressAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    labels: ["XinHai", "Khối lượng"], checklist: { done: 3, total: 5 }, createdByHead: false, createdBy: { id: "tgd", name: "Tổng giám đốc" },
+    origin: { origin: "directive", claimStatus: "not_needed", giver: { id: "tgd", name: "BLĐ" }, meeting: { title: "Giao ban 12/10", heldOn: "2026-10-12" } } }),
+  bTask("b-02", { title: "Gửi biên bản nghiệm thu cột trục A–D cho CĐT – SMB", level: "B", deadlineAt: bDay(0, 23), progressPercent: 80, lastProgressAt: new Date(Date.now() - 18 * 3_600_000).toISOString(), labels: ["SMB", "Nghiệm thu"] }),
+  bTask("b-03", { title: "Cập nhật ảnh tiến độ tuần vào Nhật ký SMB", level: "C", deadlineAt: bDay(0, 23), status: "not_started", createdByMe: true, createdByHead: false, needsReview: false,
+    lastProgressAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), labels: ["SMB", "Nhật ký"] }),
+  bTask("b-04", { title: "Đối chiếu đơn giá cốp pha với 3 nhà cung cấp", level: "B", deadlineAt: bDay(Math.max(1, toSaturday)), status: "blocked", blockedReason: "Chờ phòng Mua hàng gửi báo giá thứ 3",
+    progressPercent: 40, lastProgressAt: new Date(Date.now() - 60 * 3_600_000).toISOString(), labels: ["Mua hàng"] }),
+  bTask("b-05", { title: "Lập kế hoạch vật tư tuần 44 cho XinHai", level: "A", deadlineAt: bDay(Math.max(1, toSaturday) + 3), status: "pending_acknowledgement", acknowledged: false, lastProgressAt: bDay(-1, 9), labels: ["XinHai"] }),
+  bTask("b-06", { title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", deadlineAt: bDay(Math.max(1, toSaturday)), createdByMe: true, createdByHead: false, needsReview: true,
+    origin: { origin: "oral_claim", claimStatus: "pending", giver: { id: "ptgd", name: "Phó TGĐ" }, meeting: null } }),
+  bTask("b-07", { title: "Rà soát hồ sơ thanh toán đợt 2 SMB", level: "B", deadlineAt: bDay(-1), status: "completed", completedAt: bDay(-1, 15), progressPercent: 100 }),
+  bTask("b-08", { title: "Nghiệm thu cốp pha sàn tầng 3 – SMB", level: "B", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 20, lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString() }),
+  bTask("b-09", { title: "Chốt khối lượng thép tháng 10 – XinHai", level: "C", deadlineAt: bDay(Math.max(1, toSaturday) + 5), progressPercent: 50, lastProgressAt: new Date(Date.now() - 6 * 3_600_000).toISOString() }),
+  bTask("b-10", { title: "Báo cáo tuần 42 cho Trưởng phòng", level: "C", deadlineAt: bDay(-6), status: "completed", completedAt: bDay(-6, 11), progressPercent: 100 }),
+  bTask("b-11", { title: "Cập nhật danh bạ nhà cung cấp", level: "C", deadlineAt: null, progressPercent: 10, lastProgressAt: new Date(Date.now() - 20 * 3_600_000).toISOString() }),
+];
+for (const t of boardTasks) t.can = canOf(t);
+
+// Phòng tôi / Toàn công ty / Sổ chỉ đạo (PR-4): ?access=staff → không có tab; ?access=head → chỉ Phòng tôi.
+const bLastWeek = bIso(bAdd(bMonday, -7));
+const member = (userId: string, name: string, title: string, x: any) => ({ userId, name, title, orgUnitId: "u-qlda", isHead: false,
+  active: 3, levels: { A: 1, B: 1, C: 1 }, load: 6, overdue: 0, stale: 0, unack: 0, due: 3, ontime: 3, ...x });
+const teamMembers = (prev: boolean) => [
+  member("fourth", "Vương Thành Đô", "Trưởng phòng", { isHead: true, active: 2, levels: { A: 1, B: 1, C: 0 }, load: 5, due: 2, ontime: 2 }),
+  member("actor", "Lê Minh An", "Kỹ sư dự án", { active: 6, levels: { A: 2, B: 3, C: 1 }, load: 13, overdue: 1, stale: 1, due: 7, ontime: prev ? 5 : 6 }),
+  member("second", "Nguyễn Thu Hà", "Kỹ sư kế hoạch", { active: 4, levels: { A: 1, B: 2, C: 1 }, load: 8, unack: 1, due: 4, ontime: prev ? 4 : 3 }),
+  member("khoi", "Tạ Minh Khôi", "Kỹ sư hiện trường", { active: 5, levels: { A: 2, B: 1, C: 2 }, load: 10, overdue: 2, stale: 2, due: 5, ontime: 2 }),
+  member("bao", "Phan Quốc Bảo", "Chuyên viên hồ sơ", { active: 1, levels: { A: 0, B: 0, C: 1 }, load: 1, due: 0, ontime: 0 }),
+];
+const unit = (id: string, code: string, name: string, parent: string, x: any) => ({ id, code, name, type: "department",
+  parent: { id: `p-${parent}`, code: null, name: parent }, people: 6, hasHead: true, active: 12, overdue: 0, stale: 0, due: 8, ontime: 7,
+  directives: { open: 1, late: 0, doneThisMonth: 2 }, claimsPending: 0, ...x });
+const companyUnits = (prev: boolean) => [
+  unit("u-qlda", "QLDA", "Phòng Quản lý dự án", "Khối Văn phòng", { people: 5, due: 18, ontime: prev ? 14 : 15, overdue: 3, stale: 3, directives: { open: 3, late: 1, doneThisMonth: 2 } }),
+  unit("u-tckt", "TCKT", "Phòng Tài chính kế toán", "Khối Văn phòng", { people: 7, due: 12, ontime: 11 }),
+  unit("u-hcns", "HCNS", "Phòng Hành chính nhân sự", "Khối Văn phòng", { people: 6, due: 9, ontime: prev ? 8 : 6, overdue: 2, directives: { open: 2, late: 1, doneThisMonth: 1 } }),
+  unit("u-tktl", "TKTL", "Thư ký – Trợ lý", "Khối Văn phòng", { people: 3, due: 2, ontime: 2, hasHead: false, directives: { open: 0, late: 0, doneThisMonth: 0 } }),
+  unit("u-smb", "BCH SMB", "Ban chỉ huy SMB", "Khối Công trường", { people: 9, due: 14, ontime: 9, overdue: 4, stale: 5, directives: { open: 2, late: 1, doneThisMonth: 0 } }),
+  unit("u-xh", "XINHAI", "Ban chỉ huy XinHai", "Khối Công trường", { people: 8, due: 10, ontime: 9 }),
+  unit("u-nm", "VPNM", "Văn phòng nhà máy", "Khối Nhà máy", { people: 4, due: 0, ontime: 0, hasHead: false, directives: { open: 0, late: 0, doneThisMonth: 0 } }),
+];
+const directiveRows: any[] = [
+  { id: "d-1", code: "VW-2026-000301", title: "Rà soát hồ sơ thanh toán đợt 3 SMB", level: "A", status: "in_progress", deadlineAt: bDay(-2), progressPercent: 60, completedAt: null,
+    createdAt: bDay(-8, 9), lastProgressAt: new Date(Date.now() - 70 * 3_600_000).toISOString(), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 42", heldOn: "2026-10-12" }, assignees: [{ name: "Lê Minh An", unit: "QLDA" }], canDecide: false, bucket: "late" },
+  { id: "d-2", code: "VW-2026-000302", title: "Chốt kế hoạch dòng tiền tháng 11", level: "A", status: "in_progress", deadlineAt: bDay(4), progressPercent: 40, completedAt: null,
+    createdAt: bDay(-6, 9), lastProgressAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 43", heldOn: "2026-10-19" }, assignees: [{ name: "Trịnh Thị Hương", unit: "TCKT" }], canDecide: false, bucket: "doing" },
+  { id: "d-3", code: "VW-2026-000303", title: "Lập kế hoạch vật tư tuần 44 cho XinHai", level: "B", status: "not_started", deadlineAt: bDay(6), progressPercent: 0, completedAt: null,
+    createdAt: bDay(-1, 9), lastProgressAt: bDay(-1, 9), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 43", heldOn: "2026-10-19" }, assignees: [{ name: "Tạ Minh Khôi", unit: "QLDA" }], canDecide: false, bucket: "doing" },
+  { id: "d-4", code: "VW-2026-000304", title: "Đề xuất phương án tăng ca lắp dựng kèo – SMB", level: "A", status: "not_started", deadlineAt: bDay(4), progressPercent: 0, completedAt: null,
+    createdAt: bDay(-1, 10), lastProgressAt: bDay(-1, 10), origin: "oral_claim", claimStatus: "pending",
+    giver: { id: "actor", name: "Lê Minh An" }, meeting: null, assignees: [{ name: "Nguyễn Thu Hà", unit: "QLDA" }], canDecide: true, bucket: "confirm" },
+  { id: "d-5", code: "VW-2026-000305", title: "Nghiệm thu móng PĐ1 – XinHai", level: "A", status: "completed", deadlineAt: bDay(-5), progressPercent: 100, completedAt: bDay(-6, 15),
+    createdAt: bDay(-15, 9), lastProgressAt: bDay(-6, 15), origin: "directive", claimStatus: "not_needed",
+    giver: { id: "tgd", name: "TGĐ" }, meeting: { title: "Giao ban tuần 41", heldOn: "2026-10-05" }, assignees: [{ name: "Tạ Minh Khôi", unit: "QLDA" }], canDecide: false, bucket: "done" },
+];
+const reviewRows: any[] = [
+  { id: "r-1", code: "VW-2026-000311", title: "Bảng so sánh giá cốp pha 3 nhà cung cấp", level: "B", deadlineAt: bDay(1), lockVersion: 4, progressPercent: 100,
+    assignees: ["Tạ Minh Khôi"], iteration: 1, submittedAt: bDay(0, 9), result: "Đã so sánh 3 NCC, đề xuất chọn nhà cung cấp B vì giá thấp hơn 4%", files: 2 },
+  { id: "r-2", code: "VW-2026-000312", title: "Biên bản nghiệm thu cốt thép sàn tầng 3", level: "A", deadlineAt: bDay(-1), lockVersion: 6, progressPercent: 100,
+    assignees: ["Lê Minh An"], iteration: 2, submittedAt: bDay(0, 8), result: "Bổ sung chữ ký tư vấn giám sát theo góp ý lần 1", files: 1 },
+];
+const overviewItem = (t: any) => ({ id: t.id, code: t.code, title: t.title, status: t.status, level: t.level, deadlineAt: t.deadlineAt, progressPercent: t.progressPercent,
+  lastProgressAt: t.lastProgressAt, overdue: false, restricted: false, createdByName: "Vương Thành Đô", assignees: [{ userId: "actor", name: "Lê Minh An" }] });
+
+const periodScale = (p: any) => (p ? Math.max(1, Math.round((Date.parse(p.to) - Date.parse(p.from)) / 86_400_000 / 7)) : 1);
+const periodOf = (p: any) => (p ? { from: p.from, to: p.to, prevFrom: p.prevFrom, prevTo: p.prevTo }
+  : { from: bLastWeek, to: bIso(bAdd(bMonday, -1)), prevFrom: bIso(bAdd(bMonday, -14)), prevTo: bIso(bAdd(bMonday, -8)) });
+
+const board = {
+  async boardAccess() {
+    log("boardAccess");
+    const a = query.get("access");
+    return { myUnits: a === "staff" ? [] : [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }], company: !a,
+      reviewsWaitingMe: reviewRows.length, claimsWaitingMe: directiveRows.filter((d) => d.bucket === "confirm").length };
+  },
+  // Kỳ (PR-5): kỳ dài hơn tuần thì nhân số; prevDue / prevOntime lấy từ bộ "kỳ trước".
+  async teamBoard(unitId: string | null, period: any = null) {
+    log("teamBoard", unitId, period);
+    await wait(80);
+    const k = periodScale(period);
+    const prev = teamMembers(true);
+    return { unit: { id: unitId || "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }, myUnits: [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }],
+      weekStart: bLastWeek, canViewAll: true, reviewWaiting: reviewRows.length, period: periodOf(period),
+      members: teamMembers(false).map((m, i) => ({ ...m, due: m.due * k, ontime: m.ontime * k, prevDue: prev[i].due * k, prevOntime: prev[i].ontime * k })) };
+  },
+  async companyBoard(period: any = null) {
+    log("companyBoard", period);
+    await wait(80);
+    const k = periodScale(period);
+    const prev = companyUnits(true);
+    return { weekStart: bLastWeek, period: periodOf(period), claimsWaitingMe: 1,
+      units: companyUnits(false).map((u, i) => ({ ...u, due: u.due * k, ontime: u.ontime * k, prevDue: prev[i].due * k, prevOntime: prev[i].ontime * k,
+        directives: { ...u.directives, doneInPeriod: u.directives.doneThisMonth * k } })) };
+  },
+  async reviewQueue() { log("reviewQueue"); return reviewRows.slice(); },
+  async directives(orgUnitId: string | null = null, period: any = null) {
+    log("directives", orgUnitId, period);
+    return orgUnitId ? directiveRows.filter((d) => d.assignees.some((a: any) => a.unit === "QLDA")) : directiveRows.slice();
+  },
+  async tasksOverview(input: any) {
+    log("tasksOverview", input);
+    await wait(60);
+    if (input.state === "due") {
+      const due = boardTasks.filter((t) => t.deadlineAt).map((t) => ({ ...overviewItem(t), completedAt: t.completedAt || null,
+        ontime: t.status === "completed" ? Date.parse(t.completedAt) <= Date.parse(t.deadlineAt) : null }));
+      return { unit: null, total: due.length, overdue: 0, stale: 0, items: due };
+    }
+    const items = boardTasks.filter((t) => t.status !== "completed").map(overviewItem)
+      .filter((t) => input.state !== "overdue" || (t.deadlineAt && Date.parse(t.deadlineAt) < Date.now()))
+      .filter((t) => input.state !== "unack" || t.status === "pending_acknowledgement");
+    return { unit: null, total: items.length, overdue: 0, stale: 0, items };
+  },
+  async decideClaimV2(taskId: string, decision: string, note: string | null, deadlineAt: string | null) {
+    log("decideClaimV2", taskId, decision, note, deadlineAt);
+    const d = directiveRows.find((x) => x.id === taskId);
+    if (d) { d.claimStatus = decision === "confirm" ? "confirmed" : "rejected"; d.canDecide = false; d.bucket = decision === "confirm" ? "doing" : "gone";
+      if (deadlineAt) d.deadlineAt = deadlineAt; if (decision !== "confirm") directiveRows.splice(directiveRows.indexOf(d), 1); }
+    return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected", deadlineAt };
+  },
+  async myBoard(period: any = null) {
+    log("myBoard", period);
+    await wait(150);
+    if (query.get("board") === "error") throw new Error("network");
+    const load = boardTasks.filter((t) => !["completed", "cancelled"].includes(t.status)).reduce((n, t) => n + ({ A: 3, B: 2, C: 1 } as any)[t.level], 0);
+    return { me: { userId: "actor", name: "Lê Minh An", title: "Kỹ sư dự án", unit: { id: "u", code: "QLDA", name: "Phòng Quản lý dự án" } },
+      today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), doneSince: bIso(bAdd(bMonday, -35)), tasks: boardTasks.map((t) => ({ ...t })),
+      weeks: [7, 14, 21, 28].map((n, i) => ({ weekStart: bIso(bAdd(bMonday, -n)), due: [7, 6, 5, 4][i], ontime: [6, 5, 4, 3][i] })),
+      review: { reviewed: 5, firstPass: 4 }, load,
+      period: { ...periodOf(period), due: 7 * periodScale(period), ontime: 6 * periodScale(period), prevDue: 6 * periodScale(period), prevOntime: 5 * periodScale(period) } };
+  },
+  async assignablePeople() {
+    log("assignablePeople");
+    return { canAssignOthers: true, people: [
+      { userId: "actor", name: "Lê Minh An", title: "Kỹ sư", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: false, sameUnit: true, isMe: true, canReceive: true, load: 4, aliases: [] },
+      { userId: "second", name: "Nguyễn Thu Hà", title: "Kỹ sư kế hoạch", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: true, sameUnit: true, isMe: false, canReceive: true, load: 3, aliases: [] },
+      { userId: "third", name: "Lý Thị Hà", title: "Kế toán", unit: { id: "u2", code: "TCKT", name: "Phòng TCKT" }, myTeam: false, sameUnit: false, isMe: false, canReceive: true, load: 1, aliases: [] },
+      { userId: "fourth", name: "Vương Thành Đô", title: "Trưởng phòng", unit: { id: "u", code: "QLDA", name: "Phòng QLDA" }, myTeam: false, sameUnit: true, isMe: false, canReceive: true, load: 9, aliases: [] },
+    ] };
+  },
+  async linkAi(taskId: string, runId: string, kind: string) { log("linkAi", taskId, runId, kind); return { taskId, runId, kind }; },
+  async learnPersonAlias(taskId: string, alias: string) { log("learnPersonAlias", taskId, alias); return { saved: 1 }; },
+  async createMeeting(title: string, heldOn: string) { log("createMeeting", title, heldOn); return { meetingId: "meeting-1", title, heldOn }; },
+  async setOrigin(taskId: string, origin: string, meetingId: string | null, giverUserId: string | null) {
+    log("setOrigin", taskId, origin, meetingId, giverUserId);
+    return { taskId, origin, claimStatus: "not_needed" };
+  },
+  async taskBrief(taskId: string) {
+    log("taskBrief", taskId);
+    const origin = query.get("origin");
+    return { task: { lastProgressAt: fixtureUpdates[0]?.at || "2026-09-07T00:10:00Z" },
+      origin: origin === "claim" ? { origin: "oral_claim", claimStatus: "pending", decidedAt: null, giver: { id: "actor", name: "Lê Minh An" }, meeting: null }
+        : origin === "directive" ? { origin: "directive", claimStatus: "not_needed", decidedAt: null, giver: null, meeting: { id: "m", title: "Giao ban 07/09", heldOn: "2026-09-07" } }
+        : null,
+      updates: fixtureUpdates.slice(0, 5), assignees: [], checklist: { done: 0, total: 0 }, children: { open: 0, total: 0 }, events: [] } as any;
+  },
+  async listUpdates(taskId: string) {
+    log("listUpdates", taskId);
+    return { items: fixtureUpdates.slice(), nextBefore: null };
+  },
+  async decideClaim(taskId: string, decision: string, note: string | null) {
+    log("decideClaim", taskId, decision, note);
+    return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected" };
+  },
+};
+// Đợt 1 PR-3: AI giả (không gọi cổng AI). ?ai=off → tắt nút AI; ?ai=fail → cổng báo hết lượt.
+const aiResults: Record<string, (input: any) => any> = {
+  work_period_review: (input: any) => ({
+    overall: { assessment: "Đúng hạn 72%, giảm so với kỳ trước; còn 3 việc quá hạn ở hiện trường.", solution: "Khôi chốt lại kế hoạch cốp pha trong tuần tới." },
+    goals: (input.goals || []).map((g: any, i: number) => ({ id: g.id, assessment: i === 0 ? "Thu được 3,2/5 tỷ, chậm do hồ sơ thanh toán đợt 3 bị trả lại." : "Đúng tiến độ.",
+      solution: i === 0 ? "Lê Minh An bổ sung chữ ký TVGS, nộp lại hồ sơ trước thứ 4." : null })),
+  }),
+  work_task_draft: (input) => /Hà/.test(input.text)
+    ? { title: "Bóc khối lượng mái khu B", assignee: "Hà", assigneeName: null, dueText: "thứ 6", dueDate: null, dueTime: null, level: "B", description: "", checklist: [], tags: ["XinHai"], evidence: { photo: false, file: true }, warnings: [] }
+    : { title: "Rà soát hồ sơ thanh toán đợt 3 SMB", assignee: "anh Đô", assigneeName: "Vương Thành Đô", dueText: "mai 9h", dueDate: null, dueTime: "09:00", level: "A",
+        description: "Đối chiếu hồ sơ với hợp đồng, ghi chênh lệch.", checklist: ["Đối chiếu khối lượng", "Đối chiếu đơn giá"], tags: ["SMB"], evidence: { photo: false, file: true }, warnings: [] },
+  work_task_writer: () => ({ description: "Rà soát toàn bộ hồ sơ đợt 3, nộp bảng chênh lệch so với hợp đồng [số hợp đồng].", checklist: ["Gom hồ sơ", "Đối chiếu khối lượng", "Lập bảng chênh lệch"], evidence: { photo: false, file: true } }),
+  work_meeting_tasks: () => ({ meetingTitle: "Giao ban tuần 43", heldOn: "2026-09-07", chairman: "Nguyễn Thu Hà", warnings: ["Ý 5 chưa rõ người làm."], tasks: [
+    { title: "Rà soát hồ sơ thanh toán đợt 3 SMB", assignee: "anh Đô", assigneeName: "Vương Thành Đô", dueText: "thứ 6", dueDate: null, dueTime: null, level: "A", note: null, quote: "Anh Đô rà soát lại hồ sơ thanh toán đợt 3 SMB, xong trước thứ 6. Gấp." },
+    { title: "Chốt kế hoạch dòng tiền tháng 11", assignee: "Hà", assigneeName: null, dueText: "cuối tuần", dueDate: null, dueTime: null, level: "B", note: "Gửi BLĐ", quote: "Hà chốt KH dòng tiền T11." },
+    { title: "Liên hệ CĐT xin lịch nghiệm thu móng M4", assignee: null, assigneeName: null, dueText: "mai", dueDate: null, dueTime: null, level: null, note: null, quote: "Cần một người liên hệ CĐT." },
+  ] }),
+  work_update_draft: () => ({ done: "Bóc xong khối lượng móng M1–M3", doing: "Bóc dầm tầng 2", next: "Mai đối chiếu dự toán", blocked: "Chờ CĐT duyệt bản vẽ kết cấu", percent: 80, warnings: [] }),
+  work_task_brief: () => ({ brief: "Việc đang ở 65%, còn vướng chữ ký chỉ huy trưởng. Đang kịp hạn theo đánh giá của máy." }),
+};
+const fakeAiRun = async (skill: string, input: Record<string, unknown>, context: Record<string, unknown>) => {
+  log("ai", skill, input, context);
+  await wait(250);
+  if (query.get("ai") === "fail") return { code: "AI_QUOTA", reason: "user_day", dailyLimit: 20 } as any;
+  return { code: "OK", runId: `run-${skill}`, result: aiResults[skill](input), model: "fixture", provider: "anthropic", usage: { tokensIn: 1, tokensOut: 1, costUsd: 0, durationMs: 250 } } as any;
+};
+const fixtureAi = query.get("ai") === "off" ? null : createWorkAi(fakeAiRun as any, (runId: string, accepted: boolean) => log("aiFeedback", runId, accepted));
 const service: WorkTaskService = {
   async command(input) {
     log("command", structuredClone(input));
+    const rv = reviewRows.find((r) => r.id === input.taskId);
+    if (rv && input.command === "review") { reviewRows.splice(reviewRows.indexOf(rv), 1); return { taskId: rv.id, taskCode: rv.code, lockVersion: rv.lockVersion + 1, status: "completed" } as any; }
+    const bt = boardTasks.find((t) => t.id === input.taskId);
+    if (bt) {
+      await wait(80);
+      if (input.command === "acknowledge") { bt.acknowledged = true; bt.status = "not_started"; }
+      else if (input.command === "start" || input.command === "unblock") bt.status = "in_progress";
+      else if (input.command === "block") { bt.status = "blocked"; bt.blockedReason = (input.payload as any).reason; }
+      else if (input.command === "submit") { bt.status = bt.needsReview ? "awaiting_review" : "completed"; if (!bt.needsReview) bt.completedAt = new Date().toISOString(); }
+      bt.lockVersion++; bt.lastProgressAt = new Date().toISOString(); bt.can = canOf(bt);
+      return { taskId: bt.id, taskCode: bt.code, lockVersion: bt.lockVersion, status: bt.status } as any;
+    }
     commandAttempts++;
     if (commandResults.has(input.idempotencyKey))
       return commandResults.get(input.idempotencyKey);
@@ -170,6 +405,14 @@ const service: WorkTaskService = {
     if (input.command === "result_draft_update") {
       resultDraftDocument = input.payload.content;
       taskVersion++;
+    }
+    if (input.command === "progress_report") {
+      const payload = input.payload;
+      fixtureUpdates.unshift({ id: `u${fixtureUpdates.length + 1}`, at: new Date().toISOString(), authorId: "actor", authorName: "Lê Minh An",
+        ...payload, progressBefore: progressPercent, progressAfter: payload.progressPercent, ai: false,
+        files: (payload.attachmentIds || []).map((id: string) => ({ id, name: `${id}.jpg`, mime: "image/jpeg", evidenceType: null })) });
+      progressPercent = payload.progressPercent;
+      if (taskStatus === "not_started") taskStatus = "in_progress";
     }
     if (input.command === "progress_update") {
       progressPercent = input.payload.progressPercent;
@@ -609,6 +852,78 @@ const attachments: ReturnType<typeof createWorkAttachmentService> = {
     throw new Error("not used");
   },
 };
+// Đợt 2 PR-6: mục tiêu / chốt kỳ / lịch chốt (bộ nhớ trên máy; ?goals=empty → chưa có mục tiêu).
+const gIso = (d: Date) => d.toISOString().slice(0, 10);
+const gToday = gIso(new Date(Date.now() + 7 * 3_600_000));
+const gMonth = `${gToday.slice(0, 8)}01`;
+const gQuarter = `${gToday.slice(0, 5)}${String(Math.floor((Number(gToday.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, "0")}-01`;
+const gMonthEnd = gIso(new Date(Date.UTC(Number(gToday.slice(0, 4)), Number(gToday.slice(5, 7)), 0)));
+const gQuarterEnd = gIso(new Date(Date.UTC(Number(gQuarter.slice(0, 4)), Number(gQuarter.slice(5, 7)) + 2, 0)));
+const goalOf = (x: any) => ({ orgUnitId: "u-qlda", unit: { id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }, periodKind: "month", periodStart: gMonth, periodEnd: gMonthEnd,
+  label: `Tháng ${Number(gMonth.slice(5, 7))}/${gMonth.slice(0, 4)}`, parentGoalId: null, criteria: null, measure: null, higherIsBetter: true, actualValue: null,
+  owner: null, assessment: null, solution: null, lockVersion: 1, updatedAt: new Date().toISOString(), tasks: { total: 0, done: 0, ontime: 0, late: 0, overdue: 0 },
+  achievedPercent: null, status: "on_track", ...x });
+const goalRows: any[] = query.get("goals") === "empty" ? [] : [
+  goalOf({ id: "g-q", periodKind: "quarter", periodStart: gQuarter, periodEnd: gQuarterEnd, label: `Quý ${Math.floor((Number(gQuarter.slice(5, 7)) - 1) / 3) + 1}/${gQuarter.slice(0, 4)}`,
+    title: "Thu tiền dự án SMB", targetValue: 15, measure: "tỷ", actualValue: 8.2, achievedPercent: 55, owner: { id: "actor", name: "Lê Minh An" },
+    tasks: { total: 6, done: 3, ontime: 2, late: 1, overdue: 1 }, status: "at_risk" }),
+  goalOf({ id: "g-m", parentGoalId: "g-q", title: "Thu tiền dự án SMB", targetValue: 5, measure: "tỷ", actualValue: 3.2, achievedPercent: 64, owner: { id: "actor", name: "Lê Minh An" },
+    tasks: { total: 3, done: 1, ontime: 1, late: 0, overdue: 1 }, status: "at_risk" }),
+  goalOf({ id: "g-2", title: "Hồ sơ nghiệm thu đúng hạn", targetValue: 95, measure: "%", actualValue: 96, achievedPercent: 101, owner: { id: "khoi", name: "Tạ Minh Khôi" },
+    tasks: { total: 4, done: 4, ontime: 4, late: 0, overdue: 0 }, status: "met" }),
+];
+const companyGoalRows: any[] = [goalOf({ id: "g-c", orgUnitId: null, unit: null, title: "Doanh thu toàn công ty", targetValue: 40, measure: "tỷ", actualValue: 31, achievedPercent: 78,
+  tasks: { total: 5, done: 3, ontime: 3, late: 0, overdue: 0 }, status: "on_track" })];
+let periodSetting: any = { orgUnitId: null, cadence: "week", closeDow: 6, closeTime: "17:00", reportDow: 1, reportTime: "08:00", updatedAt: null, updatedBy: null };
+const unitSettings: any[] = [];
+const closes: any[] = [];
+const goalsService = {
+  async settings() { log("goals.settings"); await wait(60); return { company: periodSetting, overrides: unitSettings.slice(), canEditCompany: !query.get("access"),
+    editableUnits: [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }],
+    reopens: closes.flatMap((c) => c.history.filter((h: any) => h.action === "reopen").map((h: any) => ({ ...h, closeId: c.id, unit: c.orgUnitId ? { id: c.orgUnitId, code: "QLDA", name: "Phòng Quản lý dự án" } : null, from: c.from, to: c.to, label: c.label }))) }; },
+  async saveSetting(orgUnitId: string | null, x: any) { log("goals.saveSetting", orgUnitId, x);
+    const row = { orgUnitId, ...x, updatedAt: new Date().toISOString(), updatedBy: "Lê Minh An" };
+    if (!orgUnitId) periodSetting = row; else { const i = unitSettings.findIndex((u) => u.orgUnitId === orgUnitId); if (i >= 0) unitSettings[i] = row; else unitSettings.push({ ...row, unit: { id: orgUnitId, code: "QLDA", name: "Phòng Quản lý dự án" } }); }
+    return row; },
+  async resetSetting(orgUnitId: string) { log("goals.resetSetting", orgUnitId); unitSettings.splice(unitSettings.findIndex((u) => u.orgUnitId === orgUnitId), 1); return periodSetting; },
+  async status(orgUnitId: string | null, from: string, to: string) { log("goals.status", orgUnitId, from, to); await wait(50);
+    const all = closes.filter((c) => c.orgUnitId === orgUnitId && c.from === from && c.to === to);
+    const c = all.find((x) => x.status === "closed");
+    return { orgUnitId, setting: unitSettings.find((u) => u.orgUnitId === orgUnitId) || periodSetting, settingSource: "company", canClose: true,
+      close: c ? { id: c.id, from, to, label: c.label, note: c.note, closedAt: c.closedAt, closedBy: "Vương Thành Đô" } : null,
+      history: all.flatMap((x) => x.history) }; },
+  async close(input: any) { log("goals.close", input); await wait(120);
+    const id = `close-${closes.length + 1}`;
+    const rows = input.orgUnitId ? goalRows : companyGoalRows;
+    for (const r of input.reviews) { const g = rows.find((x) => x.id === r.goalId); if (g) Object.assign(g, { actualValue: r.actualValue, assessment: r.assessment, solution: r.solution }); }
+    const b = input.orgUnitId ? await board.teamBoard(input.orgUnitId, input) : await board.companyBoard(input);
+    closes.push({ id, orgUnitId: input.orgUnitId, from: input.from, to: input.to, label: input.label, note: input.note, status: "closed", closedAt: new Date().toISOString(),
+      snapshot: { version: 1, scope: { orgUnitId: input.orgUnitId, code: input.orgUnitId ? "QLDA" : null, name: input.orgUnitId ? "Phòng Quản lý dự án" : null }, from: input.from, to: input.to,
+        label: input.label, board: b, directives: [], goals: structuredClone(rows), note: input.note, closedAt: new Date().toISOString(), closedBy: { id: "fourth", name: "Vương Thành Đô" } },
+      history: [{ closeId: id, action: "close", at: new Date().toISOString(), actor: "Vương Thành Đô", reason: null }] });
+    return { closeId: id, closedAt: new Date().toISOString() }; },
+  async reopen(closeId: string, reason: string) { log("goals.reopen", closeId, reason); const c = closes.find((x) => x.id === closeId)!;
+    c.status = "reopened"; c.history.unshift({ closeId, action: "reopen", at: new Date().toISOString(), actor: "Vương Thành Đô", reason }); return { closeId, status: "reopened" }; },
+  async closeDetail(closeId: string) { log("goals.closeDetail", closeId); await wait(60); const c = closes.find((x) => x.id === closeId)!;
+    return { id: c.id, orgUnitId: c.orgUnitId, from: c.from, to: c.to, label: c.label, status: c.status, note: c.note, closedAt: c.closedAt, closedBy: "Vương Thành Đô",
+      reopenedAt: null, reopenedBy: null, reopenReason: null, snapshot: c.snapshot, history: c.history }; },
+  async goals(orgUnitId: string | null, from: string, to: string) { log("goals.list", orgUnitId, from, to); await wait(70);
+    return { canEdit: query.get("access") !== "staff", goals: structuredClone(orgUnitId ? goalRows : companyGoalRows) }; },
+  async saveGoal(g: any) { log("goals.save", g); await wait(80);
+    if (g.id) { const x = goalRows.find((r) => r.id === g.id) || companyGoalRows.find((r) => r.id === g.id); Object.assign(x, { title: g.title, targetValue: g.targetValue, measure: g.measure,
+      actualValue: g.actualValue, higherIsBetter: g.higherIsBetter, lockVersion: x.lockVersion + 1 }); return x; }
+    const x = goalOf({ id: `g-new-${goalRows.length}`, orgUnitId: g.orgUnitId, periodKind: g.periodKind, periodStart: g.periodStart, title: g.title, targetValue: g.targetValue,
+      measure: g.measure, actualValue: g.actualValue, higherIsBetter: g.higherIsBetter, status: "on_track" });
+    (g.orgUnitId ? goalRows : companyGoalRows).push(x); return x; },
+  async splitGoal(id: string) { log("goals.split", id); return { goals: goalRows.filter((g) => g.parentGoalId === id) }; },
+  async deleteGoal(id: string, v: number) { log("goals.delete", id, v); const i = goalRows.findIndex((g) => g.id === id); if (i >= 0) goalRows.splice(i, 1); return { id }; },
+  async setGoalTasks(id: string, add: string[], remove: string[]) { log("goals.setTasks", id, add, remove); return { total: add.length }; },
+  async goalTasks(id: string) { log("goals.tasks", id); await wait(50);
+    return { items: boardTasks.slice(0, 3).map((t) => ({ id: t.id, code: t.code, title: t.title, status: t.status, level: t.level, deadlineAt: t.deadlineAt,
+      progressPercent: t.progressPercent, completedAt: t.completedAt || null, ontime: t.completedAt ? true : null, overdue: false, lastProgressAt: t.lastProgressAt,
+      assignees: [{ userId: "actor", name: "Lê Minh An" }], restricted: false })) }; },
+};
+
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <Routes>
@@ -618,6 +933,11 @@ createRoot(document.getElementById("root")!).render(
           <WorkWorkspace
             actorId="actor"
             service={service}
+            board={board as any}
+            actorName="Lê Minh An"
+            canQuickAssign={query.get("quick") !== "false"}
+            ai={fixtureAi}
+            goals={goalsService as any}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
@@ -629,6 +949,11 @@ createRoot(document.getElementById("root")!).render(
           <WorkWorkspace
             actorId="actor"
             service={service}
+            board={board as any}
+            actorName="Lê Minh An"
+            canQuickAssign={query.get("quick") !== "false"}
+            ai={fixtureAi}
+            goals={goalsService as any}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />

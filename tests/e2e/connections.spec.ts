@@ -40,6 +40,9 @@ const server = (page: Page) => {
           if (p.id) {
             const c = state.connections.find(x => x.id === p.id)!;
             Object.assign(c, { kind: p.kind, name: p.name, baseUrl: String(p.baseUrl).replace(/\/+$/, ''), model: p.model, enabled: p.enabled !== false });
+            // Giá USD / 1 triệu token (18/10): chuỗi rỗng = xóa giá.
+            Object.assign(c, { priceInPerM: p.priceInPerM ? Number(p.priceInPerM) : null, priceOutPerM: p.priceOutPerM ? Number(p.priceOutPerM) : null,
+              pricePerCall: p.pricePerCall ? Number(p.pricePerCall) : null });
             if (key) { state.keys[c.id] = key; c.keyHint = key.slice(-4); c.status = 'untested'; }
             return json(route, c);
           }
@@ -147,10 +150,25 @@ test('sửa: khóa để trống = giữ khóa cũ; đổi endpoint thì bắt n
   await expect(drawer.getByRole('button', { name: 'Lưu' })).toBeDisabled();
   await drawer.getByLabel('Endpoint').fill('https://generativelanguage.googleapis.com');
   await drawer.getByLabel('Tên kết nối').fill('Gemini công ty');
+  await drawer.getByLabel('Giá vào (USD / 1 triệu token)').fill('0,33');
+  await drawer.getByLabel('Giá ra (USD / 1 triệu token)').fill('1,64');
   await drawer.getByRole('button', { name: 'Lưu' }).click();
   await expect(drawer).toHaveCount(0);
-  expect((s.state.calls.filter(c => c.fn === 'save_integration_connection_v1').at(-1)!.body.p as Record<string, unknown>).apiKey).toBeNull();
+  const saved = s.state.calls.filter(c => c.fn === 'save_integration_connection_v1').at(-1)!.body.p as Record<string, unknown>;
+  expect(saved.apiKey).toBeNull();
+  expect(saved).toMatchObject({ priceInPerM: '0.33', priceOutPerM: '1.64', pricePerCall: '' });
   await expect(rowOf(page, 'Gemini công ty')).toBeVisible();
+  await expect(rowOf(page, 'Gemini công ty')).toContainText('0,33 / 1,64 $');
+  // Giá mỗi lượt gọi (cổng báo token vào không ổn định): hiện "$/lượt + ra …", bỏ giá vào.
+  await page.getByRole('button', { name: 'Sửa Gemini công ty' }).click();
+  const again = page.getByRole('dialog', { name: 'Sửa kết nối Gemini công ty' });
+  await expect(again.getByLabel('Giá vào (USD / 1 triệu token)')).toHaveValue('0,33');
+  await again.getByLabel('Giá mỗi lượt gọi (USD)').fill('0,008');
+  await again.getByRole('button', { name: 'Lưu' }).click();
+  await expect(again).toHaveCount(0);
+  await expect(rowOf(page, 'Gemini công ty')).toContainText('0,008 $/lượt + ra 1,64');
+  // Trợ lý · hội thoại chưa gán thì dùng như model suy luận.
+  await expect(page.getByLabel('Trợ lý · hội thoại').locator('option').first()).toHaveText('Như Trợ lý · model suy luận');
 
   await page.getByLabel('Trợ lý · model suy luận').selectOption('c1');
   await expect.poll(() => s.state.assignments['ai.reasoning']).toBe('c1');

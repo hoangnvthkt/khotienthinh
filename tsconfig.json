@@ -38,6 +38,7 @@
     "dist",
     "build",
     "supabase/functions",
+    "scripts/assistant-evals",
     "stitch-skills-main"
   ]
 }
