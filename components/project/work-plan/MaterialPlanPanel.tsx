@@ -211,7 +211,10 @@ const MaterialPlanPanel: React.FC<{
     }
     if (action === 'delete' && !(await confirm({ title: 'Xóa bản nháp kế hoạch vật tư?', targetName: periodLabel, warningText: 'Có thể lập lại từ kế hoạch thi công.', actionLabel: 'Xóa nháp', intent: 'danger' }))) return;
     if (action === 'approve' && !(await confirm({ title: 'Duyệt kế hoạch vật tư?', targetName: periodLabel,
-      warningText: `${plan.lines.filter(l => l.requestedQty > 0).length} vật tư có SL đề nghị sẽ thành nhu cầu chính thức của kỳ.`, actionLabel: 'Duyệt', intent: 'success' }))) return;
+      warningText: periodType === 'week'
+        ? `${plan.lines.filter(l => l.requestedQty > 0).length} vật tư có SL đề nghị sẽ chuyển sang Mua hàng để đặt.`
+        : `${plan.lines.filter(l => l.requestedQty > 0).length} vật tư thành dự báo của tháng, không gửi Mua hàng. Muốn đặt hàng, lập kế hoạch vật tư tuần.`,
+      actionLabel: 'Duyệt', intent: 'success' }))) return;
     await projectMaterialPlanService.transition({ planId: plan.id, expectedRowVersion: plan.rowVersion, action, reason });
     toast.success({ approve: 'Đã duyệt kế hoạch vật tư', return: 'Đã trả lại người lập', withdraw: 'Đã rút về để sửa', delete: 'Đã xóa bản nháp', keep: 'Đã giữ nguyên kế hoạch vật tư' }[action], periodLabel);
     await load();
@@ -327,6 +330,9 @@ const MaterialPlanPanel: React.FC<{
   };
 
   return <div className="space-y-4">
+    {periodType === 'week'
+      ? <p title="CHT duyệt xong, vật tư có SL đề nghị chuyển sang Mua hàng → Cần mua." className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200"><Package size={13} />Tuần · đề nghị mua, duyệt xong sang Mua hàng</p>
+      : <p title="Dự báo để công trường và Mua hàng chuẩn bị trước. Muốn đặt hàng, lập kế hoạch vật tư theo tuần." className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><Package size={13} />Tháng · dự báo, không gửi Mua hàng</p>}
     {open && planSection(open, ['draft', 'returned'].includes(open.status) && permissions?.canEdit ? 'edit' : 'review')}
     {approved && planSection(approved, 'approved')}
     {!shown && <section className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
