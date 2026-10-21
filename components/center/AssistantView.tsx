@@ -16,6 +16,7 @@ import {
 import { recordTarget } from '../../lib/search/recordPresentation';
 import { executeCommand, finishCommand, type AssistantCommand } from '../../lib/assistantCommands';
 import AssistantCommandCard, { type CommandActions } from './AssistantCommandCard';
+import { defaultIssueActions, type IssueActions } from '../../lib/assistantIssue';
 import { defaultWorkTaskCardActions, type WorkTaskCardActions } from '../../lib/assistantWorkTask';
 import AssistantChartCard from './AssistantChartCard';
 import type { MrFormActions } from '../../lib/assistantMrForm';
@@ -57,6 +58,8 @@ export interface AssistantHooks {
   memory?: MemoryActions;
   /** Vioo Work (Đợt 1 PR-3): thẻ giao việc. */
   workTask?: WorkTaskCardActions;
+  /** B2 (21/10): thẻ phiếu sự cố → Gửi Admin (Góp ý). */
+  issue?: IssueActions;
   /** Trung tâm AI: người dùng đã được cấp Trợ lý chưa, trần câu / ngày. Không có → coi như được dùng (bản cũ). */
   access?: () => Promise<MyAiAccess>;
 }
@@ -66,6 +69,7 @@ export const defaultAssistantHooks: AssistantHooks = {
   poForm: createPoFormActions(),
   dailyLog: defaultDailyLogFormActions,
   workTask: defaultWorkTaskCardActions,
+  issue: defaultIssueActions,
   status: () => aiGateway.status(),
   narrate: (facts, context) => aiGateway.run<{ brief: string }>('morning_brief', { facts }, context),
   feedback: (runId, accepted, detail) => aiGateway.feedback(runId, accepted, detail),
@@ -448,6 +452,7 @@ const AssistantView: React.FC<{
     memory: hooks.memory,
     openMemory: hooks.memory ? () => setMemoryOpen(true) : undefined,
     workTask: hooks.workTask,
+    issue: hooks.issue,
   };
 
   const askQuick = (id: string, text: string) => {
@@ -675,7 +680,7 @@ const AssistantView: React.FC<{
                     )}
                     {message.commands && message.commands.length > 0 && (
                       <div className="vcc-cmds">
-                        {message.commands.map(command => <AssistantCommandCard key={command.id} command={command} now={now} you={you} actions={commandActions} />)}
+                        {message.commands.map(command => <AssistantCommandCard key={command.id} command={command} now={now} you={you} actions={commandActions} attachments={message.attachments} />)}
                       </div>
                     )}
                     {message.state === 'done' && message.id === messages[messages.length - 1]?.id && (() => {

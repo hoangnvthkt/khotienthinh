@@ -17,7 +17,7 @@ import { CHAT_MAX_OUTPUT_TOKENS, CHAT_SKILL, attachmentNote, buildChatPrompt, fo
 import { KIND_LABEL as RECORD_KIND_LABEL } from './tools.ts';
 import { SKILLS } from './skills.ts';
 import { skillCatalog } from './catalog.ts';
-import { actualIntentOf, askJev, buildIntentRequest, decisionLog } from './jev.ts';
+import { actualIntentOf, askJev, askJevIssue, buildIntentRequest, buildIssueRequest, decisionLog, issueDecisionLog } from './jev.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
@@ -91,6 +91,20 @@ Deno.serve(async request => {
       ? askJev(jevTarget, buildIntentRequest(redact(input.question).text, prevAssistant ? redact(prevAssistant).text : null, jevTarget.model), fetch)
         .then(answer => ({ ok: true as const, answer }), (e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : 'JEV_FAILED' }))
       : null;
+    // B2: Jev phân loại phiếu sự cố cho công cụ chuan_bi_su_co (chữ đã che SĐT / CCCD); ghi so sánh với lựa chọn của model vào ai_decisions.
+    const issueClassifier = jevTarget
+      ? async (input: { title: string; description: string; screen: string | null; modelType: string; modelPriority: string }) => {
+        const actual = { type: input.modelType, priority: input.modelPriority };
+        try {
+          const answer = await askJevIssue(jevTarget, buildIssueRequest(redact(input.title).text, redact(input.description).text, input.screen, jevTarget.model), fetch);
+          user.rpc('ai_decision_log_v1', { p_run_id: runId, p: issueDecisionLog({ ok: true, answer }, actual, jevTarget.model) }).then(r => { if (r.error) console.error('ai-gateway issue log failed', r.error.message); }, () => null);
+          return { type: answer.type, typeConfidence: answer.typeConfidence, priority: answer.priority, priorityConfidence: answer.priorityConfidence, model: answer.model, ms: answer.ms };
+        } catch (e) {
+          user.rpc('ai_decision_log_v1', { p_run_id: runId, p: issueDecisionLog({ ok: false, error: e instanceof Error ? e.message : 'JEV_FAILED' }, actual, jevTarget.model) }).then(() => null, () => null);
+          return null;
+        }
+      }
+      : undefined;
     const logShadow = async (used: string[], refusal: string | null) => {
       if (!shadow || !jevTarget) return;
       try {
@@ -122,7 +136,7 @@ Deno.serve(async request => {
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
               system: prompt.system, turns: prompt.messages, images: input.images, book, used, started, runId,
               projectId: typeof context.projectId === 'string' ? context.projectId : null, question: reportTextOf(input.question, history),
-              forceTool: isDailyReportTurn(input.question, history) ? 'chuan_bi_nhat_ky' : undefined })
+              forceTool: isDailyReportTurn(input.question, history) ? 'chuan_bi_nhat_ky' : undefined, issueClassifier })
             : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
               delta => send(sseEvent({ type: 'delta', text: delta })));
           if (!out.text.trim()) throw new Error('AI_EMPTY');

@@ -69,40 +69,17 @@ import {
   FeedbackStatus,
   FeedbackType,
   feedbackService,
+  FEEDBACK_TYPE_LABELS,
+  FEEDBACK_MODULE_LABELS,
+  FEEDBACK_PRIORITY_LABELS,
+  captureFeedbackContext,
 } from '../lib/feedbackService';
 import { feedbackNotificationService } from '../lib/feedbackNotificationService';
 import { Role, User } from '../types';
 
-const TYPE_LABELS: Record<FeedbackType, string> = {
-  bug: 'Báo lỗi',
-  ui: 'Giao diện',
-  feature: 'Tính năng',
-  workflow: 'Quy trình',
-  performance: 'Hiệu năng',
-  permission: 'Phân quyền',
-  data: 'Dữ liệu',
-  other: 'Khác',
-};
-
-const MODULE_LABELS: Record<FeedbackModule, string> = {
-  material: 'Vật tư',
-  boq: 'BOQ',
-  warehouse: 'Kho',
-  project: 'Dự án',
-  dashboard: 'Dashboard',
-  acceptance: 'Nghiệm thu',
-  cost_library: 'Thư viện giá',
-  auth: 'Tài khoản',
-  mobile: 'Mobile',
-  other: 'Khác',
-};
-
-const PRIORITY_LABELS: Record<FeedbackPriority, string> = {
-  low: 'Thấp',
-  medium: 'Vừa',
-  high: 'Cao',
-  urgent: 'Khẩn',
-};
+const TYPE_LABELS = FEEDBACK_TYPE_LABELS;
+const MODULE_LABELS = FEEDBACK_MODULE_LABELS;
+const PRIORITY_LABELS = FEEDBACK_PRIORITY_LABELS;
 
 const STATUS_LABELS: Record<FeedbackStatus, string> = {
   new: 'Mới',
@@ -192,25 +169,9 @@ const notifySafely = (operation: Promise<unknown>) => {
   });
 };
 
-const captureDeviceInfo = () => ({
-  userAgent: navigator.userAgent,
-  platform: navigator.platform,
-  language: navigator.language,
-  viewport: `${window.innerWidth}x${window.innerHeight}`,
-  touchPoints: navigator.maxTouchPoints || 0,
-});
-
-const getCurrentRoute = () => {
-  const hashPath = window.location.hash.replace(/^#/, '');
-  return hashPath || `${window.location.pathname}${window.location.search}`;
-};
-
-const getAppVersion = () => (
-  import.meta.env.VITE_APP_VERSION
-  || import.meta.env.VITE_VERSION
-  || import.meta.env.VITE_COMMIT_SHA
-  || 'local'
-);
+const captureDeviceInfo = () => captureFeedbackContext().deviceInfo;
+const getCurrentRoute = () => captureFeedbackContext().route;
+const getAppVersion = () => captureFeedbackContext().version;
 
 const Badge: React.FC<{ children: React.ReactNode; className: string }> = ({ children, className }) => (
   <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-black ${className}`}>

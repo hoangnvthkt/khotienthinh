@@ -19,6 +19,7 @@
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
 //   chuan_bi_nhat_ky         assistant_daily_log_projects_v1 → lệnh nháp daily_log (thẻ đọc báo cáo bằng bộ của màn Nhật ký, tạo phiếu nháp)
 //   chuan_bi_ghi_nho         → lệnh nháp memory_note (T4b: thẻ sửa chữ, người dùng bấm Lưu ghi nhớ)
+//   chuan_bi_su_co                → lệnh nháp issue_report (B2 21/10: phiếu sự cố → người dùng bấm Gửi Admin → Góp ý; Jev chọn loại + mức khẩn)
 //   viec_giao · tom_tat_viec · chuan_bi_giao_viec  Vioo Work (workTools.ts) — lệnh nháp work_task (thẻ form giao việc, người dùng bấm Giao)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
@@ -33,7 +34,17 @@ export interface ToolContext {
   rpc: Rpc; book: SourceBook; runId?: string; emit?: (event: Record<string, unknown>) => void; projectId?: string | null;
   /** Nguyên văn tin người dùng vừa gửi (báo cáo Zalo dán vào) — công cụ nhật ký lưu nguyên văn, không bắt model chép lại. */
   question?: string;
+  /** B2: Jev phân loại phiếu sự cố (loại + mức khẩn) khi Admin đã gán kết nối "điều hướng Jev"; null = không có / lỗi (giữ của model). */
+  issueClassifier?: (input: IssueClassInput) => Promise<IssueClass | null>;
 }
+export interface IssueClassInput { title: string; description: string; screen: string | null; modelType: string; modelPriority: string }
+export interface IssueClass { type: string; typeConfidence: number; priority: string; priorityConfidence: number; model: string; ms: number }
+export const ISSUE_TYPES = ['bug', 'ui', 'feature', 'workflow', 'performance', 'permission', 'data', 'other'] as const;
+export const ISSUE_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+/** Module của Góp ý (feedback_items.module) — danh sách cũ của module Góp ý, giữ nguyên để Admin lọc như trước. */
+export const ISSUE_MODULES = ['material', 'boq', 'warehouse', 'project', 'dashboard', 'acceptance', 'cost_library', 'auth', 'mobile', 'other'] as const;
+/** Jev tự tin tới mức này thì lấy loại / mức khẩn của Jev thay cho model (J0: conf ≥ 0,85 đúng 100 %). */
+export const ISSUE_JEV_AUTO = 0.85;
 
 export const KIND_LABEL: Record<string, string> = {
   project: 'Dự án', employee: 'Nhân viên', item: 'Vật tư', wms_tx: 'Phiếu kho', material_code: 'Đề xuất cấp mã', purchase_order: 'Đơn hàng',
@@ -46,7 +57,7 @@ const KINDS = Object.keys(KIND_LABEL);
 export const TOOL_LABEL: Record<string, string> = {
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   bien_dong_nhan_su: 'Biến động nhân sự', bao_cao: 'Báo cáo',
-  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ',
+  chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ', chuan_bi_su_co: 'Chuẩn bị phiếu sự cố',
   ...WORK_TOOL_LABEL,
 };
 
@@ -69,6 +80,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
   chuan_bi_don_mua: { kind: 'chuan_bi', rpcs: ['list_procurement_proactive_options_v1', 'list_procurement_vendors_v1', 'assistant_command_create_v1'], permission: 'Quản lý Mua hàng (lập đơn chủ động)', result: 'Form đơn mua trong chat → Lưu nháp / Gửi duyệt', commandKind: 'purchase_order' },
   chuan_bi_nhat_ky: { kind: 'chuan_bi', rpcs: ['assistant_daily_log_projects_v1', 'assistant_command_create_v1'], permission: 'Dự án người hỏi được ghi Nhật ký', result: 'Thẻ đọc báo cáo → Tạo phiếu nháp', commandKind: 'daily_log' },
   chuan_bi_ghi_nho: { kind: 'chuan_bi', rpcs: ['assistant_command_create_v1'], permission: 'Chỉ ghi nhớ của chính người hỏi', result: 'Thẻ ghi nhớ → Lưu ghi nhớ', commandKind: 'memory_note' },
+  chuan_bi_su_co: { kind: 'chuan_bi', rpcs: ['assistant_command_create_v1'], permission: 'Ai cũng gửi được; phiếu vào Góp ý (feedback_items) bằng phiên người gửi, Admin nhận thông báo; Jev chọn loại + mức khẩn (ghi ai_decisions ở index.ts)', result: 'Thẻ phiếu sự cố (loại, mức khẩn, ảnh) → Gửi Admin', commandKind: 'issue_report' },
   ...WORK_TOOL_INFO,
 };
 
@@ -218,6 +230,19 @@ export const TOOLS: ToolSpec[] = [
     description: 'CHUẨN BỊ một ghi nhớ cá nhân khi người dùng bảo nhớ giúp / ghi nhớ / từ nay hãy… (sở thích, thông tin nền về công việc của họ). Chỉ hiện thẻ; người dùng tự bấm Lưu ghi nhớ. Không dùng cho mật khẩu, số tài khoản, CCCD.',
     parameters: { type: 'object', additionalProperties: false, required: ['noi_dung'], properties: {
       noi_dung: { type: 'string', description: 'Nội dung ghi nhớ, một câu gọn, rõ nghĩa khi đọc riêng (3–300 ký tự).' },
+    } },
+  },
+  // B2 (chủ SP 21/10): sự cố / góp ý → thẻ phiếu, người dùng bấm Gửi Admin (vào module Góp ý). Jev chọn loại + mức khẩn khi được gán.
+  {
+    name: 'chuan_bi_su_co',
+    description: 'CHUẨN BỊ phiếu báo sự cố / góp ý gửi Admin khi người dùng kể phần mềm báo lỗi, không làm được thao tác, số liệu sai, thiếu quyền, chậm, hoặc muốn góp ý tính năng — thường kèm ảnh chụp màn hình. Chỉ hiện thẻ; người dùng sửa rồi tự bấm Gửi Admin. Không dùng khi người dùng chỉ hỏi cách làm mà trợ lý trả lời được, hoặc khi chỉ là câu hỏi số liệu.',
+    parameters: { type: 'object', additionalProperties: false, required: ['tieu_de', 'mo_ta', 'loai', 'muc_khan'], properties: {
+      tieu_de: { type: 'string', description: 'Một dòng ≤ 120 ký tự: màn hình + việc không làm được. VD "Xuất kho SMB báo lỗi khi lưu phiếu".' },
+      mo_ta: { type: 'string', description: 'Mô tả theo lời người dùng và điều thấy trên ảnh: làm gì, ở màn nào, phần mềm báo gì (chép nguyên câu báo lỗi nếu có), từ khi nào. 2–6 câu, không bịa chi tiết.' },
+      man_hinh: { type: 'string', description: 'Màn hình / module liên quan theo lời kể hoặc ảnh, VD "Kho · Xuất kho", "Mua hàng · Lập đơn", "Nhân sự · Chấm công". Không rõ thì bỏ trống.' },
+      loai: { type: 'string', enum: [...ISSUE_TYPES], description: 'bug lỗi phần mềm · ui hiển thị · feature muốn thêm tính năng · workflow luồng duyệt · performance chậm / treo · permission thiếu quyền · data số liệu sai · other khác.' },
+      muc_khan: { type: 'string', enum: [...ISSUE_PRIORITIES], description: 'urgent chặn nhiều người hôm nay · high chặn việc quan trọng của người báo · medium có cách khác nhưng phiền · low góp ý nhỏ.' },
+      module: { type: 'string', enum: [...ISSUE_MODULES], description: 'warehouse kho · material vật tư / mua hàng · project dự án / nhật ký · auth đăng nhập / quyền · mobile điện thoại · dashboard trung tâm / báo cáo · other.' },
     } },
   },
   // Vioo Work (Đợt 1 PR-3): việc theo người / đơn vị, tóm tắt một việc, chuẩn bị giao việc.
@@ -488,6 +513,29 @@ async function prepareOrder(args: Record<string, unknown>, ctx: ToolContext): Pr
     so_dong: lines.length, dong_chua_co_gia: lines.filter(l => l.price == null).length || null, doi_chieu: checks.length ? checks : null,
     ghi_chu: 'Thẻ đơn mua nháp (form gọn) đã hiện ngay trong chat: người dùng chọn mã, NCC, lý do mua chủ động, người duyệt rồi tự bấm Lưu nháp hoặc Gửi duyệt. Không nói là đã lập hay đã gửi đơn.',
   }));
+}
+
+async function prepareIssueReport(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  if (!ctx.runId || !ctx.emit) return JSON.stringify({ loi: 'Chưa chuẩn bị được phiếu ở đây.' });
+  const title = (str(args.tieu_de, 120) || '').replace(/\s+/g, ' ');
+  const description = (str(args.mo_ta, 2000) || '').trim();
+  if (title.length < 5 || description.length < 10) return JSON.stringify({ loi: 'Chưa đủ để lập phiếu. Hỏi lại người dùng một câu: làm gì, ở màn nào, phần mềm báo gì.' });
+  const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T => ((allowed as readonly string[]).includes(String(v)) ? String(v) as T : fallback);
+  const modelType = pick(args.loai, ISSUE_TYPES, 'bug');
+  const modelPriority = pick(args.muc_khan, ISSUE_PRIORITIES, 'medium');
+  const module = pick(args.module, ISSUE_MODULES, 'other');
+  const screen = str(args.man_hinh, 120);
+  // Jev (khi gán): loại / mức khẩn tự tin ≥ 0,85 thì dùng, không thì giữ của model; cả hai ghi vào payload để Admin đối chiếu.
+  const jev = ctx.issueClassifier ? await ctx.issueClassifier({ title, description, screen, modelType, modelPriority }).catch(() => null) : null;
+  const type = jev && jev.typeConfidence >= ISSUE_JEV_AUTO ? pick(jev.type, ISSUE_TYPES, modelType) : modelType;
+  const priority = jev && jev.priorityConfidence >= ISSUE_JEV_AUTO ? pick(jev.priority, ISSUE_PRIORITIES, modelPriority) : modelPriority;
+  const payload = compact({ title, description, type, priority, module, screen, modelType, modelPriority,
+    jev: jev ? { type: jev.type, typeConfidence: jev.typeConfidence, priority: jev.priority, priorityConfidence: jev.priorityConfidence, model: jev.model } : null });
+  const created = await ctx.rpc('assistant_command_create_v1', { p_run_id: ctx.runId, p_kind: 'issue_report', p_title: `Sự cố: ${title}`, p_payload: payload, p_preview: {} });
+  if (created.error) return JSON.stringify({ loi: /TOO_MANY/.test(created.error.message || '') ? 'Đã chuẩn bị đủ lệnh cho câu này.' : 'Chưa chuẩn bị được phiếu, thử lại sau.' });
+  ctx.emit({ type: 'command', command: created.data });
+  return JSON.stringify({ da_hien_the: true, tieu_de: title, loai: type, muc_khan: priority, ...(jev ? { jev_chon: jev.typeConfidence >= ISSUE_JEV_AUTO } : {}),
+    ghi_chu: 'Thẻ phiếu sự cố đã hiện kèm ảnh người dùng gửi: họ sửa rồi tự bấm Gửi Admin. Chỉ nói 1–2 câu: đã chuẩn bị phiếu, nhắc bấm Gửi Admin; không nói là đã gửi, không hứa khi nào sửa xong. Nếu là thiếu quyền (permission), nói thêm Admin cấp quyền là dùng được.' });
 }
 
 async function prepareMemoryNote(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
@@ -972,6 +1020,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   if (name === 'chuan_bi_don_mua') return prepareOrder(args, ctx);
   if (name === 'chuan_bi_nhat_ky') return prepareDailyLog(args, ctx);
   if (name === 'chuan_bi_ghi_nho') return prepareMemoryNote(args, ctx);
+  if (name === 'chuan_bi_su_co') return prepareIssueReport(args, ctx);
 
   const work = await runWorkTool(name, args, ctx, refBook);
   if (work != null) return work;

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, Brain, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Brain, Bug, CalendarDays, CheckCircle2, Loader2, Package, RotateCcw, Send, X } from 'lucide-react';
 import type { MemoryActions } from '../../lib/aiMemory';
-import { dailyLogSlipRoute, dailyLogView, isCommandExpired, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
+import { dailyLogSlipRoute, dailyLogView, isCommandExpired, issueView, leaveRangeLabel, leaveView, mrDraftRoute, mrRequestRoute, mrView, onCommandChanged, poRoute, poView, type AssistantCommand } from '../../lib/assistantCommands';
+import type { IssueActions } from '../../lib/assistantIssue';
+import type { ChatAttachment, ImageAttachment } from '../../lib/assistantFiles';
+import { FEEDBACK_MODULES, FEEDBACK_MODULE_LABELS, FEEDBACK_PRIORITIES, FEEDBACK_PRIORITY_LABELS, FEEDBACK_TYPES, FEEDBACK_TYPE_LABELS, type FeedbackModule, type FeedbackPriority, type FeedbackType } from '../../lib/feedbackService';
 import type { DailyLogFormActions } from '../../lib/assistantDailyLogForm';
 import AssistantDailyLogForm, { type DailyLogReceiptSlip } from './AssistantDailyLogForm';
 import type { MrFormActions } from '../../lib/assistantMrForm';
@@ -32,11 +35,13 @@ export interface CommandActions {
   openMemory?: () => void;
   /** Vioo Work (Đợt 1 PR-3): thẻ giao việc — người làm, hạn, mức rồi Giao bằng lệnh của Giao nhanh. */
   workTask?: WorkTaskCardActions;
+  /** B2 (21/10): thẻ phiếu sự cố — sửa tiêu đề / loại / mức khẩn rồi Gửi Admin (vào Góp ý, kèm ảnh đã gửi trong chat). */
+  issue?: IssueActions;
 }
 
 const days = (n: number | null) => (n == null ? null : `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} ngày`);
 
-type CardProps = { command: AssistantCommand; now: Date; you: string; actions: CommandActions };
+type CardProps = { command: AssistantCommand; now: Date; you: string; actions: CommandActions; /** Tệp người dùng gửi kèm câu tạo ra thẻ (ảnh cho phiếu sự cố). */ attachments?: ChatAttachment[] };
 
 const LeaveCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
   const v = leaveView(command);
@@ -295,6 +300,82 @@ const DailyLogCard: React.FC<CardProps> = ({ command, now, you, actions }) => {
 };
 
 /** T4b: Trợ lý chuẩn bị một ghi nhớ khi người dùng bảo "nhớ giúp" — sửa chữ rồi bấm Lưu ghi nhớ; chưa bấm thì chưa nhớ gì. */
+// B2 — phiếu sự cố: người dùng thấy ngay tiêu đề, loại, mức khẩn, ảnh; sửa nếu cần rồi một nút Gửi Admin. Không gửi gì tới khi bấm.
+const IssueReportCard: React.FC<CardProps> = ({ command, now, actions, attachments }) => {
+  const v = issueView(command);
+  const [title, setTitle] = useState(v.title);
+  const [description, setDescription] = useState(v.description);
+  const [type, setType] = useState<FeedbackType>((FEEDBACK_TYPES as readonly string[]).includes(v.type) ? v.type as FeedbackType : 'bug');
+  const [priority, setPriority] = useState<FeedbackPriority>((FEEDBACK_PRIORITIES as readonly string[]).includes(v.priority) ? v.priority as FeedbackPriority : 'medium');
+  const [module, setModule] = useState<FeedbackModule>((FEEDBACK_MODULES as readonly string[]).includes(v.module) ? v.module as FeedbackModule : 'other');
+  const [busy, setBusy] = useState<null | 'send' | 'cancel'>(null);
+  const [error, setError] = useState<string | null>(command.status === 'failed' ? command.error : null);
+  const [current, setCurrent] = useState(command);
+  const expired = isCommandExpired(current, now);
+  const images = (attachments || []).filter((a): a is ImageAttachment => a.kind === 'image').slice(0, 4);
+  const result = current.result;
+  const route = typeof result.route === 'string' ? result.route : null;
+
+  if (current.status === 'done') {
+    const photos = typeof result.photos === 'number' ? result.photos : 0;
+    return (
+      <div className="vcc-cmd" data-state="done" data-testid="command" role="group" aria-label="Phiếu sự cố">
+        <p className="vcc-cmd-done"><CheckCircle2 size={15} aria-hidden="true" /> Đã gửi Admin phiếu sự cố “{typeof result.title === 'string' ? result.title : title}”{photos ? ` kèm ${photos} ảnh` : ''}. Admin nhận thông báo và trả lời trong Góp ý.</p>
+        {route && <button type="button" className="vcc-chip" onClick={() => actions.openRoute(route, 'Góp ý')}><ArrowUpRight size={12} /> Mở phiếu trong Góp ý</button>}
+      </div>
+    );
+  }
+  if (current.status === 'cancelled') return <div className="vcc-cmd" data-state="cancelled" data-testid="command" role="group" aria-label="Phiếu sự cố"><p className="vcc-cmd-muted">Đã bỏ phiếu sự cố.</p></div>;
+  const send = async () => {
+    if (title.trim().length < 5) { setError('Tiêu đề cần ít nhất 5 ký tự.'); return; }
+    if (description.trim().length < 10) { setError('Mô tả cần ít nhất 10 ký tự — kể làm gì, ở màn nào, phần mềm báo gì.'); return; }
+    if (!actions.issue) { setError('Bản app đang mở chưa gửi được phiếu — tải lại trang.'); return; }
+    setBusy('send'); setError(null);
+    try { setCurrent(await actions.issue.send(current, { title, description, type, priority, module }, images)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa gửi được.'); } finally { setBusy(null); }
+  };
+  const cancel = async () => {
+    setBusy('cancel'); setError(null);
+    try { setCurrent(await actions.cancel(current)); } catch (e) { setError(e instanceof Error ? e.message : 'Chưa bỏ được.'); } finally { setBusy(null); }
+  };
+  const disabled = Boolean(busy) || expired;
+  return (
+    <div className="vcc-cmd" data-state={expired ? 'expired' : current.status} data-testid="command" role="group" aria-label="Phiếu sự cố">
+      <div className="vcc-cmd-head">
+        <span className="vcc-cmd-icon" aria-hidden="true"><Bug size={15} /></span>
+        <p className="vcc-cmd-title">Phiếu sự cố gửi Admin</p>
+        <span className="vcc-cmd-tag">Nháp · chưa gửi</span>
+      </div>
+      <label className="vcc-cmd-field">
+        <span>Tiêu đề</span>
+        <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Tiêu đề sự cố" disabled={disabled} />
+      </label>
+      <label className="vcc-cmd-field">
+        <span>Mô tả (Admin đọc để tái hiện)</span>
+        <textarea value={description} onChange={e => setDescription(e.target.value)} maxLength={2000} rows={3} aria-label="Mô tả sự cố" disabled={disabled} />
+      </label>
+      <div className="vcc-cmd-row">
+        <label className="vcc-cmd-field"><span>Loại</span>
+          <select value={type} onChange={e => setType(e.target.value as FeedbackType)} aria-label="Loại sự cố" disabled={disabled}>{FEEDBACK_TYPES.map(t => <option key={t} value={t}>{FEEDBACK_TYPE_LABELS[t]}</option>)}</select></label>
+        <label className="vcc-cmd-field"><span>Mức khẩn</span>
+          <select value={priority} onChange={e => setPriority(e.target.value as FeedbackPriority)} aria-label="Mức khẩn" disabled={disabled}>{FEEDBACK_PRIORITIES.map(p => <option key={p} value={p}>{FEEDBACK_PRIORITY_LABELS[p]}</option>)}</select></label>
+        <label className="vcc-cmd-field"><span>Phân hệ</span>
+          <select value={module} onChange={e => setModule(e.target.value as FeedbackModule)} aria-label="Phân hệ" disabled={disabled}>{FEEDBACK_MODULES.map(m => <option key={m} value={m}>{FEEDBACK_MODULE_LABELS[m]}</option>)}</select></label>
+      </div>
+      {(v.screen || v.jev) && <p className="vcc-cmd-muted">{v.screen ? `Màn hình: ${v.screen}` : ''}{v.screen && v.jev ? ' · ' : ''}{v.jev ? `Jev xếp: ${FEEDBACK_TYPE_LABELS[v.jev.type as FeedbackType] || v.jev.type} ${Math.round(v.jev.typeConfidence * 100)} %` : ''}</p>}
+      {images.length > 0
+        ? <div className="vcc-cmd-thumbs" aria-label={`${images.length} ảnh gửi kèm`}>{images.map(img => <img key={img.id} src={img.previewUrl} alt={img.name} />)}</div>
+        : <p className="vcc-cmd-muted">Không có ảnh kèm — muốn gửi ảnh thì đính ảnh vào câu kể sự cố.</p>}
+      {error && <p className="vcc-cmd-warn" role="alert"><AlertTriangle size={14} aria-hidden="true" /> {error}</p>}
+      {expired ? <p className="vcc-cmd-muted">Thẻ đã cũ — kể lại sự cố để chuẩn bị phiếu mới.</p> : (
+        <div className="vcc-cmd-actions">
+          <button type="button" className="vcc-btn" data-pri="true" onClick={() => void send()} disabled={disabled}>{busy === 'send' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Send size={14} aria-hidden="true" />} Gửi Admin</button>
+          <button type="button" className="vcc-btn" onClick={() => void cancel()} disabled={disabled}><X size={14} aria-hidden="true" /> Bỏ</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MemoryNoteCard: React.FC<CardProps> = ({ command, now, actions }) => {
   const [text, setText] = useState(typeof command.payload.text === 'string' ? command.payload.text : '');
   const [busy, setBusy] = useState<null | 'save' | 'cancel'>(null);
@@ -361,6 +442,7 @@ const AssistantCommandCard: React.FC<CardProps> = props =>
     : props.command.kind === 'purchase_order' ? <PurchaseOrderCard {...props} />
       : props.command.kind === 'daily_log' ? <DailyLogCard {...props} />
         : props.command.kind === 'memory_note' ? <MemoryNoteCard {...props} />
+        : props.command.kind === 'issue_report' ? <IssueReportCard {...props} />
           : props.command.kind === 'work_task' ? <AssistantWorkTaskCard {...props} /> : <LeaveCard {...props} />;
 
 export default AssistantCommandCard;

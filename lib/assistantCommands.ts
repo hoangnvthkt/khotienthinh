@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 import { leaveService, type LeaveSession } from './leaveService';
 
 /** 'unknown': loại lệnh mới hơn bản app đang mở (trang mở từ trước khi cập nhật) — thẻ nhắc tải lại trang thay vì biến mất. */
-export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'memory_note' | 'work_task' | 'unknown';
+export type CommandKind = 'leave_request' | 'material_request' | 'purchase_order' | 'daily_log' | 'memory_note' | 'work_task' | 'issue_report' | 'unknown';
 export type CommandStatus = 'prepared' | 'done' | 'cancelled' | 'failed';
 
 export interface AssistantCommand {
@@ -25,7 +25,7 @@ export interface AssistantCommand {
 /** Thẻ nháp cũ hơn 24 giờ thì không gửi từ thẻ nữa (số liệu có thể đã đổi) — hỏi lại Trợ lý để chuẩn bị lại. */
 export const COMMAND_TTL_MS = 24 * 3_600_000;
 
-const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log', 'memory_note', 'work_task']);
+const KINDS: ReadonlySet<string> = new Set(['leave_request', 'material_request', 'purchase_order', 'daily_log', 'memory_note', 'work_task', 'issue_report']);
 const STATUSES: ReadonlySet<string> = new Set(['prepared', 'done', 'cancelled', 'failed']);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -183,6 +183,22 @@ export const finishCommand = async (id: string, status: Exclude<CommandStatus, '
   const { data, error: rpcError } = await supabase.rpc('assistant_command_finish_v1', { p_id: id, p_status: status, p_result: result, p_error: error });
   if (rpcError) throw rpcError;
   return parseCommand(data);
+};
+
+// ── Phiếu sự cố (B2, 21/10) ───────────────────────────────────────────────────────────────────────────────────────
+export interface IssueCommandView {
+  title: string; description: string; type: string; priority: string; module: string; screen: string | null;
+  modelType: string; modelPriority: string;
+  jev: { type: string; typeConfidence: number; priority: string; priorityConfidence: number } | null;
+}
+export const issueView = (command: AssistantCommand): IssueCommandView => {
+  const p = command.payload; const j = p.jev && typeof p.jev === 'object' ? p.jev as Record<string, unknown> : null;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    title: str(p.title), description: str(p.description), type: str(p.type) || 'bug', priority: str(p.priority) || 'medium', module: str(p.module) || 'other',
+    screen: str(p.screen) || null, modelType: str(p.modelType) || str(p.type) || 'bug', modelPriority: str(p.modelPriority) || str(p.priority) || 'medium',
+    jev: j && str(j.type) ? { type: str(j.type), typeConfidence: n(j.typeConfidence), priority: str(j.priority), priorityConfidence: n(j.priorityConfidence) } : null,
+  };
 };
 
 // ── Vioo Work · giao việc (Đợt 1 PR-3) ────────────────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 // đưa model. Bước model truyền vào (`step`) nên vitest chạy được với model giả; cổng truyền agentStep thật.
 import type { ImagePart } from './images.ts';
 import { MAX_AGENT_STEPS, MAX_TOOL_CALLS, type AgentMsg, type SourceBook, type ToolCall, type ToolSpec } from './agent.ts';
-import { TOOLS, TOOL_LABEL, runTool, type Rpc } from './tools.ts';
+import { TOOLS, TOOL_LABEL, runTool, type Rpc, type ToolContext } from './tools.ts';
 
 export interface StepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none' | { name: string }; maxTokens: number; noThinking?: boolean }
 export interface StepResult { text: string; toolCalls: ToolCall[]; usage: { tokensIn: number | null; tokensOut: number | null } }
@@ -27,6 +27,8 @@ export interface ConverseDeps {
   question?: string;
   /** Bước đầu buộc gọi công cụ này (máy chủ nhận ra loại tin chắc chắn — VD báo cáo thi công dán vào). */
   forceTool?: string;
+  /** B2: Jev phân loại phiếu sự cố cho công cụ chuan_bi_su_co (khi Admin đã gán kết nối). */
+  issueClassifier?: ToolContext['issueClassifier'];
   started: number;
   now?: () => number;
   maxTokens?: number;
@@ -72,7 +74,7 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
       const query = String(call.args.tu_khoa ?? call.args.vat_tu ?? call.args.ma ?? call.args.ten ?? '').slice(0, 60);
       d.emit({ type: 'tool', name: call.name, label: TOOL_LABEL[call.name] || call.name, query });
       let content: string;
-      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit, projectId: d.projectId, question: d.question }, refBook); } catch (e) {
+      try { content = await runTool(call.name, call.args, { rpc: d.rpc, book: d.book, runId: d.runId, emit: d.emit, projectId: d.projectId, question: d.question, issueClassifier: d.issueClassifier }, refBook); } catch (e) {
         console.error('ai-gateway tool failed', call.name, e instanceof Error ? e.message : e);
         content = JSON.stringify({ loi: 'Chưa tra được, thử lại sau.' });
       }

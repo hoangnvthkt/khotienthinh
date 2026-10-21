@@ -12,6 +12,30 @@ export const FEEDBACK_ATTACHMENT_BUCKET = 'feedback-attachments';
 export const MAX_FEEDBACK_ATTACHMENTS = 5;
 export const MAX_FEEDBACK_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
+// Nhãn dùng chung cho Trung tâm góp ý và thẻ phiếu sự cố của Trợ lý (B2, 21/10/2026).
+export const FEEDBACK_TYPE_LABELS: Record<FeedbackType, string> = {
+  bug: 'Báo lỗi', ui: 'Giao diện', feature: 'Tính năng', workflow: 'Quy trình', performance: 'Hiệu năng', permission: 'Phân quyền', data: 'Dữ liệu', other: 'Khác',
+};
+export const FEEDBACK_MODULE_LABELS: Record<FeedbackModule, string> = {
+  material: 'Vật tư', boq: 'BOQ', warehouse: 'Kho', project: 'Dự án', dashboard: 'Dashboard', acceptance: 'Nghiệm thu', cost_library: 'Thư viện giá', auth: 'Tài khoản', mobile: 'Mobile', other: 'Khác',
+};
+export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = { low: 'Thấp', medium: 'Vừa', high: 'Cao', urgent: 'Khẩn' };
+
+/** Ngữ cảnh máy người gửi (màn hình đang mở, bản app, thiết bị) — đính vào góp ý để đội phát triển tái hiện. */
+export const captureFeedbackContext = () => {
+  const hashPath = typeof window === 'undefined' ? '' : window.location.hash.replace(/^#/, '');
+  const route = hashPath || (typeof window === 'undefined' ? '' : `${window.location.pathname}${window.location.search}`);
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
+  return {
+    route,
+    version: env.VITE_APP_VERSION || env.VITE_VERSION || env.VITE_COMMIT_SHA || 'local',
+    deviceInfo: typeof navigator === 'undefined' ? {} : {
+      userAgent: navigator.userAgent, platform: navigator.platform, language: navigator.language,
+      viewport: typeof window === 'undefined' ? '' : `${window.innerWidth}x${window.innerHeight}`, touchPoints: navigator.maxTouchPoints || 0,
+    },
+  };
+};
+
 export type FeedbackType = typeof FEEDBACK_TYPES[number];
 export type FeedbackModule = typeof FEEDBACK_MODULES[number];
 export type FeedbackPriority = typeof FEEDBACK_PRIORITIES[number];
@@ -139,6 +163,9 @@ export interface CreateFeedbackInput {
   relatedRoute?: string | null;
   deviceInfo?: Record<string, any>;
   appVersion?: string | null;
+  /** B2: phiếu từ Trợ lý — mức ưu tiên đề xuất (mặc định medium) + nguồn / ngữ cảnh kỹ thuật. */
+  priority?: FeedbackPriority;
+  metadata?: Record<string, any>;
 }
 
 export interface CreateFeedbackCommentInput {
@@ -553,7 +580,7 @@ export const feedbackService = {
       type: input.type,
       module: input.module,
       impact_level: input.impactLevel,
-      priority: 'medium',
+      priority: input.priority || 'medium',
       status: 'new',
       visibility: input.visibility || 'public',
       created_by: actorUserId,
@@ -562,7 +589,7 @@ export const feedbackService = {
       device_info: input.deviceInfo || {},
       app_version: input.appVersion || null,
       rejected_reason: null,
-      metadata: {},
+      metadata: safeJsonObject(input.metadata),
     };
 
     if (!isSupabaseConfigured) {

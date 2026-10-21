@@ -178,7 +178,8 @@ test("AI đứt giữa chừng: bỏ nửa câu, báo lý do + Thử lại; hế
   await ask(page, "Việc gì gấp?");
   const turn = chat(page).getByTestId("turn");
   await expect(turn).toHaveAttribute("data-state", "error");
-  await expect(turn.getByRole("alert")).toContainText("AI chưa trả lời được.");
+  // B1 (21/10): lời báo theo mã lỗi máy chủ (cổng giả trả AI_HTTP_502) thay cho "AI chưa trả lời được".
+  await expect(turn.getByRole("alert")).toContainText("Nhà cung cấp AI lỗi (502) — thử lại sau ít phút.");
   await expect(turn.locator(".vcc-msg-a")).toHaveCount(0);
   await turn.getByRole("button", { name: "Thử lại" }).click();
   await expect(chat(page).getByTestId("turn")).toHaveCount(1);
@@ -442,6 +443,31 @@ test("T4a chưa đúng có lý do: bấm Chưa đúng → chọn lý do một ch
   expect(feedback[1].runId).toBe(feedback[0].runId);
   expect(feedback[3].runId).toBe(feedback[2].runId);
   expect(feedback[2].runId).not.toBe(feedback[0].runId);
+});
+
+test("B2 báo sự cố: kể lỗi kèm ảnh → thẻ phiếu (loại, mức khẩn, ảnh) → Gửi Admin; không gửi gì trước khi bấm; điện thoại không tràn", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  await page.locator('input[type="file"]').setInputFiles([{ name: "loi-xuat-kho.jpg", mimeType: "image/jpeg", buffer: readFileSync("tests/center/files/bao-gia-hanaka.jpg") }]);
+  await expect(page.getByRole("group", { name: "Tệp đính kèm" }).getByText("loi-xuat-kho.jpg")).toBeVisible();
+  await ask(page, "Chị Phương xuất kho ở SMB bấm Lưu thì báo \"Không lưu được phiếu\", em lập phiếu báo Admin giúp anh");
+  const card = chat(page).getByRole("group", { name: "Phiếu sự cố" });
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card).toContainText("Nháp · chưa gửi");
+  await expect(card.getByLabel("Tiêu đề sự cố")).toHaveValue("Xuất kho SMB báo lỗi khi lưu phiếu");
+  await expect(card.getByLabel("Loại sự cố")).toHaveValue("bug");
+  await expect(card.getByLabel("Mức khẩn")).toHaveValue("high");
+  await expect(card.getByLabel("Phân hệ")).toHaveValue("warehouse");
+  await expect(card).toContainText("Màn hình: Kho · Xuất kho · Jev xếp: Báo lỗi 91 %");
+  await expect(card.getByRole("img")).toHaveCount(1);
+  expect((await aiCalls(page)).filter(call => call.issue)).toEqual([]);
+  if (isMobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await card.getByLabel("Mức khẩn").selectOption("urgent");
+  await card.getByRole("button", { name: "Gửi Admin" }).click();
+  await expect(card).toHaveAttribute("data-state", "done");
+  await expect(card).toContainText("Đã gửi Admin phiếu sự cố “Xuất kho SMB báo lỗi khi lưu phiếu” kèm 1 ảnh");
+  await expect(card.getByRole("button", { name: "Mở phiếu trong Góp ý" })).toBeVisible();
+  expect((await aiCalls(page)).filter(call => call.issue)).toEqual([{ issue: "send", title: "Xuất kho SMB báo lỗi khi lưu phiếu", type: "bug", priority: "urgent", module: "warehouse", photos: 1 }]);
 });
 
 test("T4b nhớ giúp: Trợ lý chỉ chuẩn bị thẻ, người dùng sửa rồi Lưu ghi nhớ; Trí nhớ hiện ghi nhớ, thêm, Quên", async ({ page, isMobile }) => {

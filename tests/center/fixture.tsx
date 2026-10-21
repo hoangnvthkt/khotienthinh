@@ -12,6 +12,7 @@ import { buildLocalIndex } from '../../lib/search/instantSearch';
 import { OPEN_MODAL_EVENT } from '../../lib/search/openGlobalSearch';
 import { notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 import type { MrFormActions } from '../../lib/assistantMrForm';
+import type { IssueActions } from '../../lib/assistantIssue';
 import { habitKey, rememberedIds, type MemoryActions, type PersonalMemory, type SharedGroup } from '../../lib/aiMemory';
 import { buildRows, type PoFormActions } from '../../lib/assistantPoForm';
 import type { ProcurementCatalogItem } from '../../lib/procurementInboxService';
@@ -324,6 +325,23 @@ const memory: MemoryActions = {
     return done;
   },
 };
+// B2: phiếu sự cố (thẻ issue_report) — Gửi Admin giả lập: ghi aiCalls, không tạo góp ý thật.
+const issueCommand = (): AssistantCommand => ({
+  id: `cmd-issue-${Date.now()}`, kind: 'issue_report', status: 'prepared', title: 'Sự cố: Xuất kho SMB báo lỗi khi lưu phiếu',
+  payload: { title: 'Xuất kho SMB báo lỗi khi lưu phiếu', description: 'Chị Phương bấm Lưu ở Xuất kho SMB, phần mềm báo "Không lưu được phiếu, thử lại sau", làm 3 lần vẫn vậy.',
+    type: 'bug', priority: 'high', module: 'warehouse', screen: 'Kho · Xuất kho', modelType: 'bug', modelPriority: 'high',
+    jev: { type: 'bug', typeConfidence: 0.91, priority: 'high', priorityConfidence: 0.72 } },
+  preview: {}, result: {}, error: null, createdAt: new Date(NOW).toISOString(), confirmedAt: null,
+});
+const issue: IssueActions = {
+  send: async (command, edits, images) => {
+    aiCalls.push({ issue: 'send', title: edits.title, type: edits.type, priority: edits.priority, module: edits.module, photos: images.length });
+    await sleep(60);
+    const done: AssistantCommand = { ...command, status: 'done', result: { feedbackId: 'fb-1', title: edits.title, photos: images.length, route: '/feedback?feedbackId=fb-1' }, confirmedAt: new Date(NOW).toISOString() };
+    saveCommand(done);
+    return done;
+  },
+};
 const memoryCommand = (text: string): AssistantCommand => ({
   id: `cmd-mem-${Date.now()}`, kind: 'memory_note', status: 'prepared', title: 'Ghi nhớ', payload: { text }, preview: {}, result: {}, error: null,
   createdAt: new Date(NOW).toISOString(), confirmedAt: null,
@@ -475,6 +493,7 @@ const workTask: WorkTaskCardActions = {
 
 const assistantHooks: AssistantHooks = {
   workTask,
+  issue,
   search: instantSearch,
   poForm,
   memory,
@@ -542,6 +561,26 @@ const assistantHooks: AssistantHooks = {
       const text = `Tệp có **3 dòng thép** (D16, D20, D8) kèm đơn giá — giống một báo giá. Anh muốn làm gì? [[goi_y:Lập đơn mua theo báo giá này]] [[goi_y:Đề xuất vật tư theo danh sách này]]`;
       for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(15); handlers.onDelta(chunk); }
       return { code: 'OK', runId, threadId: input.threadId || '0d4c2f1e-8a5b-4c3d-9e2f-0000000000f1', messageId: `msg-${aiCalls.length}`, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
+    }
+    // B2: kể lỗi phần mềm (thường kèm ảnh) → thẻ phiếu sự cố (người dùng tự bấm Gửi Admin).
+    if (/báo lỗi|sự cố|không lưu được/i.test(input.question) && !refused && !lookup) {
+      const card = issueCommand();
+      await sleep(120);
+      handlers.onTool?.({ name: 'chuan_bi_su_co', label: 'Chuẩn bị phiếu sự cố', query: '' });
+      await sleep(100);
+      handlers.onCommand?.(card);
+      const text = 'Em đã chuẩn bị phiếu sự cố **Xuất kho SMB báo lỗi khi lưu phiếu** (lỗi phần mềm, mức cao) kèm ảnh anh gửi — anh kiểm rồi bấm **Gửi Admin** trên thẻ.';
+      for (const chunk of text.match(/[\s\S]{1,9}/g) || []) { await sleep(20); handlers.onDelta(chunk); }
+      const all = loadThreads();
+      const at = new Date(NOW.getTime() + aiCalls.length * 60_000).toISOString();
+      let thread = input.threadId ? all.find(t => t.id === input.threadId) : undefined;
+      if (!thread) { thread = { id: `0d4c2f1e-8a5b-4c3d-9e2f-${String(all.length + 1).padStart(12, '0')}`, title: input.question.slice(0, 80), lastMessageAt: at, messages: [] }; all.push(thread); }
+      const messageId = `msg-${aiCalls.length}`;
+      thread.messages.push({ id: `${messageId}-q`, role: 'user', content: input.question, sources: [], runId: null, accepted: null, createdAt: at },
+        { id: messageId, role: 'assistant', content: text, sources: [], runId, accepted: null, createdAt: at, commands: [card] });
+      thread.lastMessageAt = at;
+      saveThreads(all);
+      return { code: 'OK', runId, threadId: thread.id, messageId, answer: text, sources: [], model: 'gemini-2.5-pro', saved: true };
     }
     // T4b: "nhớ giúp …" → thẻ ghi nhớ (người dùng tự bấm Lưu).
     const wantsNote = /nhớ giúp|ghi nhớ/i.test(input.question) && !refused && !lookup;
