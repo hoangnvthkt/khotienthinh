@@ -55,7 +55,7 @@ describe('realtimeService: tab ẩn quá lâu thì tạm ngắt, hiện lại th
     realtimeService.onStatusChange(status => statuses.push(status));
     realtimeService.onResume(onResume);
 
-    realtimeService.connect(['items', 'warehouses']);
+    realtimeService.connect(['requests', 'warehouses']);
     mocks.channels[0].statusCb('SUBSCRIBED');
     expect(realtimeService.status).toBe('connected');
     expect(mocks.channels[0].on).toHaveBeenCalledTimes(2);
@@ -75,7 +75,7 @@ describe('realtimeService: tab ẩn quá lâu thì tạm ngắt, hiện lại th
     expect(realtimeService.isSuspended).toBe(false);
     expect(mocks.channel).toHaveBeenCalledTimes(2);
     const tables = mocks.channels[1].on.mock.calls.map((call: any[]) => call[1].table).sort();
-    expect(tables).toEqual(['items', 'warehouses']);
+    expect(tables).toEqual(['requests', 'warehouses']);
     expect(onResume).toHaveBeenCalledTimes(1);
     mocks.channels[1].statusCb('SUBSCRIBED');
     expect(realtimeService.status).toBe('connected');
@@ -87,7 +87,7 @@ describe('realtimeService: tab ẩn quá lâu thì tạm ngắt, hiện lại th
   it('tab hiện lại trước 5 phút thì không ngắt gì', () => {
     const onResume = vi.fn();
     realtimeService.onResume(onResume);
-    realtimeService.connect(['items']);
+    realtimeService.connect(['warehouses']);
     mocks.channels[0].statusCb('SUBSCRIBED');
 
     setVisibility('hidden');
@@ -103,13 +103,13 @@ describe('realtimeService: tab ẩn quá lâu thì tạm ngắt, hiện lại th
   it('đổi bảng khi đang tạm ngắt thì connect mới thắng, không báo onResume', () => {
     const onResume = vi.fn();
     realtimeService.onResume(onResume);
-    realtimeService.connect(['items']);
+    realtimeService.connect(['warehouses']);
     mocks.channels[0].statusCb('SUBSCRIBED');
     setVisibility('hidden');
     vi.advanceTimersByTime(REALTIME_IDLE_SUSPEND_MS);
     expect(realtimeService.isSuspended).toBe(true);
 
-    realtimeService.connect(['items', 'requests']);
+    realtimeService.connect(['warehouses', 'requests']);
     expect(realtimeService.isSuspended).toBe(false);
     setVisibility('visible');
     expect(onResume).not.toHaveBeenCalled();
