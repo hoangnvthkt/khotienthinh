@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Copy, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, Copy, Trash2 } from 'lucide-react';
 import type { DailyLogCrewContract, DailyLogEntryMode, DailyLogPhoto, DailyLogSourceItemV2 } from '../../../types';
 import { dailyLogWbsService, type DailyLogDocumentBundle, type SubmitDailyLogSourceInput } from '../../../lib/dailyLogWbsService';
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
@@ -11,6 +11,7 @@ import { DailyLogResourceEditor } from './DailyLogResourceEditor';
 import { DailyLogSlipRows } from './DailyLogSlipRows';
 import { copyFromArea, defaultEntryMode, defaultForecast, forecastProblem } from '../../../lib/dailyLogSlipRules';
 import { DailyLogEngineerWorkTable, type DailyLogEngineerRow } from './DailyLogWorkItemTable';
+import { ganttBackfillNote, ganttBackfillTasks } from '../../../lib/dailyLogGanttBackfill';
 import type { DailyLogContributionWorkEditorProps } from './DailyLogContributionWorkEditor';
 import './daily-log-engineer.css';
 
@@ -204,6 +205,11 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
       ...(item.forecastFinishDate ? { forecastFinishDate: item.forecastFinishDate, forecastChangeReason: item.forecastChangeReason } : {}) })));
     setLabor(copied.labor); setMachines(copied.machines);
   };
+  // Gantt đã ghi xong thực tế mà nhật ký chưa đủ 100%: thêm các việc đó với lũy kế 100% để CHT duyệt như phiếu thường.
+  const backfill = ganttBackfillTasks(bundle.tasks, rows.map(row => row.taskId), source.date);
+  const addBackfill = () => setRows(current => [...current, ...ganttBackfillTasks(bundle.tasks, current.map(row => row.taskId), source.date)
+    .map(item => ({ ...newRow(bundle, item.taskId, crypto.randomUUID(), source.date), entryMode: 'percent' as DailyLogEntryMode, enteredValue: '100',
+      note: ganttBackfillNote(item.actualEndDate) }))]);
   const machineSuggestions = (recentAreas || []).flatMap(area => area.machines.map(line => ({ machineType: line.machineType, provider: line.provider })));
   const people = labor.reduce((sum, line) => sum + Number(line.peopleCount || 0), 0);
   const photoCount = photos.length + rows.reduce((sum, row) => sum + (row.attachments?.length || 0), 0);
@@ -261,6 +267,12 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
               {lastArea.lastAuthorName ? <> ({lastArea.lastAuthorName})</> : null} · <b className="text-leaf-700 dark:text-leaf-300">{lastArea.items.length}</b> hạng mục. Chép hạng mục, tổ đội và máy sang phiếu này rồi chỉ sửa số?</span>
             <button type="button" disabled={frozen || permissionDenied} onClick={copyLast}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold hover:bg-muted"><Copy size={15} aria-hidden />Chép từ phiếu {formatDailyLogDate(lastArea.lastDate!).slice(0, 5)}</button>
+          </div>}
+          {!frozen && !permissionDenied && backfill.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+            <span>Gantt ghi <b>{backfill.length}</b> việc đã xong thực tế nhưng nhật ký chưa đủ 100%:{' '}
+              <span className="font-mono text-xs">{backfill.slice(0, 5).map(item => item.wbsCode).join(', ')}{backfill.length > 5 ? ', …' : ''}</span></span>
+            <button type="button" onClick={addBackfill} title={backfill.map(item => `${item.wbsCode} ${item.name} · đang ${item.progress}%`).join('\n')}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700"><CalendarCheck size={15} aria-hidden />Ghi bù theo Gantt ({backfill.length})</button>
           </div>}
           {!rows.length && <p className="dl-slip-empty">Chưa có công việc. Gõ mã hoặc tên hạng mục ở ô dưới để thêm; nhân công, máy, ảnh ghi ngay trên dòng.</p>}
           <DailyLogSlipRows rows={rows} labor={labor} machines={machines} tasks={bundle.tasks} workBoqItems={bundle.workBoqItems} slipDate={source.date}

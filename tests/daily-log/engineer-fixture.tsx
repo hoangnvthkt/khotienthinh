@@ -10,6 +10,10 @@ function Fixture() {
   const [saved, setSaved] = useState('');
   const blank = new URLSearchParams(location.search).has('blank');
   const submitted = new URLSearchParams(location.search).has('submitted');
+  // ?backfill: Gantt có việc đã xong thực tế mà nhật ký chưa đủ 100% → nút Ghi bù theo Gantt.
+  const tasks = new URLSearchParams(location.search).has('backfill') ? [...engineerBundle.tasks,
+    { id: 'task-2', name: 'Cốt thép tường móng', wbsCode: '2.1.8', provisionalQuantity: 40, fallbackUnit: 'kg', endDate: '2026-09-20', actualEndDate: '2026-09-20', progress: 0 } as any,
+    { id: 'task-3', name: 'Đổ BT giằng tường móng', wbsCode: '2.1.9', provisionalQuantity: 12, fallbackUnit: 'm³', endDate: '2026-09-21', actualEndDate: '2026-09-22', progress: 30 } as any] : engineerBundle.tasks;
   if(new URLSearchParams(location.search).has('workspace')) return <DailyLogEngineerWorkspace
     bundle={{...engineerBundle,contribution:null,myContributions:[engineerBundle.contribution!]}}
     projectId="project-1" constructionSiteId={null} date="2026-09-27" onDateChange={() => {}}
@@ -22,7 +26,7 @@ function Fixture() {
   return <main style={{maxWidth:1280, margin:'auto'}}>
     <button onClick={() => setArea(area === 'A' ? 'B' : 'A')}>Đổi phiếu A/B</button>
     <p role="status">{saved}</p>
-    <DailyLogContributionWorkEditor bundle={{ ...engineerBundle, contribution,
+    <DailyLogContributionWorkEditor bundle={{ ...engineerBundle, tasks, contribution,
       workItems:[{id:'old-work',taskId:'task-1',contributionId:`source-${area}`,ownerType:'contribution',unit:'m³',plannedQuantity:100,
         cumulativeQuantityDone:30,dailyQuantityDone:30,cumulativeProgressPercent:30} as any] }} onClose={() => setSaved('Đóng')}
       onSaved={() => setSaved('Đã lưu')} onSubmitted={() => setSaved('Đã gửi')} />
