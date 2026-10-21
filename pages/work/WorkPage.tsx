@@ -182,8 +182,15 @@ export function WorkWorkspace({
     return () => { live = false; };
   }, [board, workspaceContextId, accessTick]);
   const requestedSpace = params.get("space");
+  // Link bản tin kỳ (PR-7): ?space=…&from=…&to=…&report=1[&unit=…] — chỉ đọc lúc mở bảng.
+  const boardLink = useMemo(() => (params.get("from") || params.get("report")
+    ? { from: params.get("from"), to: params.get("to"), report: params.get("report") === "1", unit: params.get("unit") } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [requestedSpace]);
   const space = !taskCode && !workspaceContextId && access
-    ? (requestedSpace === "team" && access.myUnits.length ? "team" : requestedSpace === "company" && access.company ? "company" : null) : null;
+    // BLĐ không làm trưởng đơn vị nào vẫn mở được "Phòng tôi" của một đơn vị qua link (?space=team&unit=…): máy chủ cho BLĐ xem mọi đơn vị.
+    ? (requestedSpace === "team" && (access.myUnits.length || (access.company && params.get("unit"))) ? "team"
+      : requestedSpace === "company" && access.company ? "company" : null) : null;
   const [preset, setPreset] = useState<{ assigneeId?: string; meeting?: boolean; nonce: number } | null>(null);
   const boardMode = !space && !taskCode && !workspaceContextId && view === "assigned_to_me" && params.get("mode") !== "list"
     && Object.keys(filters).length === 0 && typeof board.myBoard === "function";
@@ -523,13 +530,13 @@ export function WorkWorkspace({
           </section>
         </div>
       ) : space === "team" && access ? (
-        <WorkTeamBoard board={board} service={service} goalsService={goals} ai={ai} access={access} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
+        <WorkTeamBoard board={board} service={service} goalsService={goals} ai={ai} access={access} link={boardLink} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
           onAssignTo={canQuickAssign ? (userId) => setPreset({ assigneeId: userId, nonce: Date.now() }) : undefined} key={`team-${boardTick}`}>
           {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
         </WorkTeamBoard>
       ) : space === "company" && access ? (
-        <WorkCompanyBoard board={board} goalsService={goals} ai={ai} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
+        <WorkCompanyBoard board={board} goalsService={goals} ai={ai} link={boardLink} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
           headerActions={canQuickAssign && ai && (
             <button className="work-secondary" onClick={() => setPreset({ meeting: true, nonce: Date.now() })}><MessageSquare size={17} /> Ghi chỉ đạo</button>
           )}>

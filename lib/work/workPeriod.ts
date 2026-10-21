@@ -49,11 +49,20 @@ export function customPeriod(from: string, to: string, today: string): WorkPerio
   return { preset: "custom", from: a, to: b };
 }
 
-/** Kỳ trước để so: tuần trước, tháng trước, quý trước; 2 tuần / tùy chọn thì cùng số ngày liền trước. */
+/** Hình dạng kỳ theo ngày (kể cả Tùy chọn / link bản tin): trọn tuần T2–CN, trọn tháng, trọn quý; không thì null. */
+export function periodShape(p: { from: string; to: string }): "week" | "month" | "quarter" | null {
+  if (monday(p.from) === p.from && daysBetween(p.from, p.to) === 6) return "week";
+  if (monthStart(p.from) === p.from && monthEnd(p.from) === p.to) return "month";
+  if (quarterStart(p.from) === p.from && quarterEnd(p.from) === p.to) return "quarter";
+  return null;
+}
+
+/** Kỳ trước để so: tuần trước, tháng trước, quý trước; còn lại cùng số ngày liền trước. */
 export function prevPeriod(p: WorkPeriod): { from: string; to: string } {
-  if (p.preset === "week" || p.preset === "last_week") return { from: addDays(p.from, -7), to: addDays(p.from, -1) };
-  if (p.preset === "month") { const end = addDays(p.from, -1); return { from: monthStart(end), to: end }; }
-  if (p.preset === "quarter") { const end = addDays(p.from, -1); return { from: quarterStart(end), to: end }; }
+  const shape = periodShape(p);
+  if (shape === "week") return { from: addDays(p.from, -7), to: addDays(p.from, -1) };
+  if (shape === "month") { const end = addDays(p.from, -1); return { from: monthStart(end), to: end }; }
+  if (shape === "quarter") { const end = addDays(p.from, -1); return { from: quarterStart(end), to: end }; }
   const len = daysBetween(p.from, p.to);
   return { from: addDays(p.from, -len - 1), to: addDays(p.from, -1) };
 }
@@ -66,26 +75,39 @@ export function periodQuery(p: WorkPeriod, today: string): WorkPeriodQuery {
 
 /** Tên kỳ: "Tuần 43 · 19–25/10", "Tháng 10/2026", "Quý 4/2026", "06/10 – 21/10". */
 export function periodLabel(p: { preset: WorkPeriodPreset; from: string; to: string }): string {
-  if ((p.preset === "week" || p.preset === "last_week") && daysBetween(p.from, p.to) === 6) return `Tuần ${isoWeek(p.from)} · ${p.from.slice(8, 10)}–${ddmm(p.to)}`;
-  if (p.preset === "month") return `Tháng ${Number(p.from.slice(5, 7))}/${p.from.slice(0, 4)}`;
-  if (p.preset === "quarter") return `Quý ${quarterOf(p.from)}/${p.from.slice(0, 4)}`;
+  const shape = periodShape(p);
+  if (shape === "week") return `Tuần ${isoWeek(p.from)} · ${p.from.slice(8, 10)}–${ddmm(p.to)}`;
+  if (shape === "month") return `Tháng ${Number(p.from.slice(5, 7))}/${p.from.slice(0, 4)}`;
+  if (shape === "quarter") return `Quý ${quarterOf(p.from)}/${p.from.slice(0, 4)}`;
   return p.from === p.to ? ddmm(p.from) : `${ddmm(p.from)} – ${ddmm(p.to)}${p.from.slice(0, 4) !== p.to.slice(0, 4) ? `/${p.to.slice(0, 4)}` : ""}`;
 }
 /** Nhãn ngắn cho ô số: "tuần 43", "tháng 10", "quý 4", "2 tuần", "06/10–21/10". */
 export function periodShort(p: WorkPeriod): string {
-  if (p.preset === "week" || p.preset === "last_week") return `tuần ${isoWeek(p.from)}`;
-  if (p.preset === "month") return `tháng ${Number(p.from.slice(5, 7))}`;
-  if (p.preset === "quarter") return `quý ${quarterOf(p.from)}`;
+  const shape = periodShape(p);
+  if (shape === "week") return `tuần ${isoWeek(p.from)}`;
+  if (shape === "month") return `tháng ${Number(p.from.slice(5, 7))}`;
+  if (shape === "quarter") return `quý ${quarterOf(p.from)}`;
   if (p.preset === "2weeks") return "2 tuần";
   return p.from === p.to ? ddmm(p.from) : `${ddmm(p.from)}–${ddmm(p.to)}`;
 }
 /** "so với tuần 42" / "so với tháng 9" / "so với quý 3" / "so với kỳ trước". */
 export function prevShort(p: WorkPeriod): string {
-  const prev = prevPeriod(p);
-  if (p.preset === "week" || p.preset === "last_week") return `tuần ${isoWeek(prev.from)}`;
-  if (p.preset === "month") return `tháng ${Number(prev.from.slice(5, 7))}`;
-  if (p.preset === "quarter") return `quý ${quarterOf(prev.from)}`;
+  const prev = prevPeriod(p); const shape = periodShape(p);
+  if (shape === "week") return `tuần ${isoWeek(prev.from)}`;
+  if (shape === "month") return `tháng ${Number(prev.from.slice(5, 7))}`;
+  if (shape === "quarter") return `quý ${quarterOf(prev.from)}`;
   return "kỳ trước";
+}
+
+/** Kỳ từ link (bản tin): trùng kỳ có sẵn thì dùng kỳ đó, không thì Tùy chọn; sai thì null. */
+export function periodFromRange(from: string | null, to: string | null, today: string): WorkPeriod | null {
+  if (!from || !to) return null;
+  for (const x of WORK_PERIOD_PRESETS) {
+    if (x.id === "custom") continue;
+    const p = presetPeriod(x.id, today);
+    if (p.from === from && p.to === to) return p;
+  }
+  return customPeriod(from, to, today);
 }
 
 /** Đọc kỳ đã nhớ (dùng chung Việc của tôi / Phòng tôi / Toàn công ty); kỳ có sẵn luôn tính lại theo hôm nay. */

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CalendarClock, Check, History, Loader2, Lock, LockOpen, Settings2, Sparkles } from "lucide-react";
+import { CalendarClock, Check, History, Loader2, Lock, LockOpen, Presentation, Settings2, Sparkles } from "lucide-react";
 import type { WorkBoardService, WorkCompanyBoard, WorkTeamBoard } from "../../lib/work/workBoardService";
 import { ontimeRate } from "../../lib/work/workBoardService";
 import { companyTotals, teamTotals } from "../../lib/work/workBoards";
@@ -30,9 +30,11 @@ export interface PeriodScope {
 }
 
 /** Dải trạng thái kỳ dưới đầu màn: đang mở (hạn chốt + Chốt kỳ) / đã chốt (ai, khi nào + Xem bản chốt + Mở lại). */
-export function WorkPeriodBar({ goalsService, scope, reloadKey, onCloseClick, onOpen, onSettings }: {
+export function WorkPeriodBar({ goalsService, scope, reloadKey, onCloseClick, onOpen, onSettings, onReport }: {
   goalsService: WorkGoalService; scope: PeriodScope; reloadKey: unknown;
   onCloseClick: (status: WorkPeriodStatus) => void; onOpen: (closeId: string, canClose: boolean) => void; onSettings: () => void;
+  /** PR-7: mở báo cáo kỳ (trình chiếu / PDF). */
+  onReport?: () => void;
 }) {
   const [status, setStatus] = useState<WorkPeriodStatus | null>(null);
   const [error, setError] = useState(false);
@@ -55,6 +57,7 @@ export function WorkPeriodBar({ goalsService, scope, reloadKey, onCloseClick, on
         <span><b>Đã chốt</b> {when(status.close.closedAt)} · {status.close.closedBy}</span>
         {reopens > 0 && <span className="work-pill tone-amber" title="Số lần mở lại kỳ này">Mở lại {reopens} lần</span>}
         <span className="work-pbar-acts">
+          {onReport && <button type="button" className="work-primary work-sm" onClick={onReport}><Presentation size={14} /> Báo cáo</button>}
           <button type="button" className="work-secondary work-sm" onClick={() => onOpen(status.close!.id, status.canClose)}>Xem bản chốt</button>
           <button type="button" className="work-icon-button" aria-label="Lịch chốt" title="Lịch chốt" onClick={onSettings}><Settings2 size={16} /></button>
         </span>
@@ -67,6 +70,7 @@ export function WorkPeriodBar({ goalsService, scope, reloadKey, onCloseClick, on
       <span><b>Kỳ đang mở</b>{due && <> · hạn chốt {closeDueLabel(due)}</>}</span>
       {reopens > 0 && <span className="work-pill tone-amber">Đã mở lại {reopens} lần</span>}
       <span className="work-pbar-acts">
+        {onReport && <button type="button" className="work-secondary work-sm" onClick={onReport} title="Số tạm tính — chốt kỳ để cố định"><Presentation size={14} /> Báo cáo</button>}
         {status.canClose && scope.period.from <= today && (
           <button type="button" className={late ? "work-primary work-sm" : "work-secondary work-sm"} onClick={() => onCloseClick(status)}><Lock size={14} /> Chốt kỳ</button>
         )}
