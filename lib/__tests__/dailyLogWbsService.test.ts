@@ -225,7 +225,7 @@ describe('dailyLogWbsService', () => {
     ['SOURCE_CHANGED', 'nguồn đã thay đổi'],
     ['SOURCE_RETURNED', 'đã bị trả lại'],
     ['PERIOD_LOCKED', 'đã khóa'],
-    ['STALE_PROGRESS_BASELINE', 'tải lại bản tổng hợp'],
+    ['STALE_PROGRESS_BASELINE', 'Trả phiếu cho kỹ sư'],
     ['FORECAST_CHANGE_REASON_REQUIRED', 'bổ sung lý do'],
     ['CATALOG_PROVIDER_NOT_ACTIVE', 'không còn hoạt động'],
   ])('maps %s to an actionable Vietnamese error', async (code, message) => {

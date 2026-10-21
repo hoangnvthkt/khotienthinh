@@ -53,7 +53,7 @@ describe('Daily Log today board rules', () => {
       .toMatchObject({ action: 'summarize', title: '1/2 mũi đã gửi phiếu, chờ tổng hợp' });
     expect(buildMyTask(board(), { ...roles, canSubmit: true })).toMatchObject({ action: 'create', actionLabel: 'Ghi phiếu hôm nay' });
     expect(buildMyTask(board({ slips: [slip({ id: 'r', authorUserId: 'eng', status: 'returned', returnReason: 'Đo lại' })] }), { ...roles, canSubmit: true }))
-      .toMatchObject({ action: 'fixReturned', detail: 'Đo lại' });
+      .toMatchObject({ action: 'fixReturned', detail: 'Đo lại', slipId: 'r' });
   });
 
   it('guards the board read with Room view and keeps drafts private', () => {

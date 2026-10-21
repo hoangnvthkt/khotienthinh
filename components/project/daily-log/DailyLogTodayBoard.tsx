@@ -25,6 +25,8 @@ interface Props {
   /** Changes whenever the tab reloads its records, so the board follows. */
   refreshKey: unknown;
   onCreate: (date: string) => void;
+  /** Mở đúng phiếu bị trả của người đang xem để sửa. */
+  onFixReturned?: (date: string, contributionId: string) => void;
   onSummarize: (date: string) => void;
   onReview: (dailyLogId: string) => void;
   onOpenPhotos: (photos: Array<{ url: string; name: string }>, index: number) => void;
@@ -429,6 +431,7 @@ export function DailyLogTodayBoard(props: Props) {
     const action = derived?.task.action;
     if (action === 'review' && board?.summary) props.onReview(board.summary.id);
     else if (action === 'summarize') props.onSummarize(date);
+    else if (action === 'fixReturned' && derived?.task.slipId && props.onFixReturned) props.onFixReturned(date, derived.task.slipId);
     else if (action === 'create' || action === 'fixReturned') props.onCreate(date);
   };
   const steps = derived && board ? [
@@ -460,12 +463,13 @@ export function DailyLogTodayBoard(props: Props) {
 
       {board && derived && (
         <div className={`space-y-4 ${loading ? 'opacity-60' : ''}`}>
-          {!props.fixedDate && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-mint-200 bg-mint-50 px-4 py-3 dark:border-mint-900 dark:bg-mint-950/30">
+          {/* Mở từ ô lịch: nút thao tác ở đầu ngăn; riêng phiếu của mình bị trả thì nhắc sửa ngay tại đây. */}
+          {(!props.fixedDate || derived.task.action === 'fixReturned') && <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${derived.task.action === 'fixReturned' ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30' : 'border-mint-200 bg-mint-50 dark:border-mint-900 dark:bg-mint-950/30'}`}>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">{derived.task.title}</p>
               <p className="text-sm text-muted-foreground">{derived.task.detail}</p>
             </div>
-            {derived.task.action && <button type="button" onClick={runTask} className="inline-flex items-center gap-1.5 rounded-lg bg-leaf-600 px-4 py-2 text-sm font-semibold text-white hover:bg-leaf-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf-600">{derived.task.actionLabel}</button>}
+            {derived.task.action && <button type="button" onClick={runTask} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white ${derived.task.action === 'fixReturned' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-leaf-600 hover:bg-leaf-700'} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf-600`}>{derived.task.actionLabel}</button>}
           </div>}
 
           <ol className="grid grid-cols-2 gap-2 md:grid-cols-4" aria-label="Tiến trình trong ngày">
@@ -482,7 +486,10 @@ export function DailyLogTodayBoard(props: Props) {
             })}
           </ol>
 
-          <DayReportBody board={board} onOpenPhotos={props.onOpenPhotos} />
+          <DayReportBody board={board} onOpenPhotos={props.onOpenPhotos} renderSlipExtra={slip => slip.status !== 'returned' ? null
+            : props.userId && slip.authorUserId === props.userId && props.canSubmit && props.onFixReturned
+              ? <button type="button" onClick={() => props.onFixReturned!(date, slip.id)} className="inline-flex min-h-[32px] items-center rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-700">Sửa phiếu</button>
+              : <span className="text-xs text-muted-foreground">Chờ KS <span className={ENT}>{slip.authorName || 'người lập'}</span> sửa và gửi lại</span>} />
 
           {!props.fixedDate && <div>
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">7 ngày gần đây · nhân công</h4>
