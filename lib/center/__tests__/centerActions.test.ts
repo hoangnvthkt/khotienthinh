@@ -51,6 +51,8 @@ describe('quick actions (kế hoạch 07 mục 5)', () => {
     expect(by('hrm', 'leave').target).toEqual({ kind: 'modal', modal: 'leave', title: 'Xin nghỉ phép' });
     expect(by('work', 'request').target).toEqual({ kind: 'modal', modal: 'request', title: 'Tạo đề xuất' });
     expect(by('work', 'task').target).toMatchObject({ kind: 'route', path: '/work/my?create=1' });
+    // Đợt 2 PR-8: Giao việc mở thẳng ô Giao nhanh, cùng cờ quyền tạo việc.
+    expect(by('work', 'assign')).toMatchObject({ label: 'Giao việc', enabled: true, target: { kind: 'route', path: '/work/my?assign=1', title: 'Vioo Work' } });
     expect(by('supply', 'hot').target).toMatchObject({ kind: 'tab', renderer: 'procurement', props: { initialMode: 'hot' } });
     expect(by('project', 'work_plan').target).toMatchObject({ kind: 'route', path: '/da?projectId=smb&tab=work_plan&period=week&start=2026-10-05' });
     expect(by('hrm', 'makeup').target).toMatchObject({ kind: 'route', path: '/hrm/attendance?tab=proposals' });

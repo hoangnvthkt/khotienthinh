@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, Car, ClipboardCheck, ClipboardList,
   EyeOff, MoreHorizontal, FileBarChart, FileText, Flame, GitBranch, IdCard, Inbox, LineChart, ListChecks, Lock, Mail, MapPin, NotebookPen, Package, PackageCheck,
-  LayoutGrid, Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet, X,
+  LayoutGrid, Plus, Receipt, RotateCcw, Send, ShoppingCart, Truck, Users, Wallet, X,
 } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
@@ -75,6 +75,7 @@ export const ACTION_STYLES: Record<string, { icon: LucideIcon; gradient: string;
   workflow: { icon: GitBranch, gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
   po: { icon: ShoppingCart, gradient: 'from-emerald-600 to-teal-700', shadow: 'shadow-emerald-600/25' },
   task: { icon: ClipboardList, gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
+  assign: { icon: Send, gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/25' },
   booking: { icon: Car, gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25' },
   compose: { icon: FileText, gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   incoming: { icon: Mail, gradient: 'from-cyan-600 to-teal-700', shadow: 'shadow-cyan-600/25' },
