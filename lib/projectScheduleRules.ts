@@ -134,6 +134,8 @@ export const deriveProjectTaskProgress = (
 
   const taskById = new Map(tasks.map(task => [task.id, task]));
   const calculated = new Map<string, ProjectTask>();
+  // Tổng trọng số / % có trọng số của mọi việc lá bên dưới mỗi nút (trọng số = số ngày kế hoạch, như calculateProjectProgress).
+  const leafTotals = new Map<string, { weight: number; weighted: number; allDone: boolean }>();
 
   const getDerived = (taskId: string): ProjectTask => {
     if (calculated.has(taskId)) return calculated.get(taskId)!;
@@ -147,11 +149,13 @@ export const deriveProjectTaskProgress = (
     next.dependencies = (source.dependencies || []).map(dep => ({ taskId: dep.taskId, type: dep.type }));
 
     if (children.length > 0) {
-      const allChildrenWeighted = children.every(child => Number(child.provisionalQuantity || 0) > 0);
-      const nextProgress = allChildrenWeighted
-        ? Math.round(children.reduce((sum, child) => sum + clampProgress(child.progress) * Number(child.provisionalQuantity || 0), 0) /
-            children.reduce((sum, child) => sum + Number(child.provisionalQuantity || 0), 0))
-        : Math.round(children.reduce((sum, child) => sum + clampProgress(child.progress), 0) / children.length);
+      // % cha = trung bình % các việc lá bên dưới theo số ngày kế hoạch (chủ SP chốt 21/10/2026); chỉ 100% khi mọi lá xong.
+      const totals = children.reduce((acc, child) => {
+        const own = leafTotals.get(child.id)!;
+        return { weight: acc.weight + own.weight, weighted: acc.weighted + own.weighted, allDone: acc.allDone && own.allDone };
+      }, { weight: 0, weighted: 0, allDone: true });
+      leafTotals.set(taskId, totals);
+      const nextProgress = totals.allDone ? 100 : Math.min(99, totals.weight > 0 ? Math.round(totals.weighted / totals.weight) : 0);
 
       next = {
         ...next,
@@ -186,6 +190,10 @@ export const deriveProjectTaskProgress = (
       }
     }
 
+    if (children.length === 0) {
+      const weight = getTaskProgressWeight(next);
+      leafTotals.set(taskId, { weight, weighted: clampProgress(next.progress) * weight, allDone: clampProgress(next.progress) >= 100 });
+    }
     calculated.set(taskId, next);
     return next;
   };

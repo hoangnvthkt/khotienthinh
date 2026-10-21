@@ -819,7 +819,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     );
 
     const getProgressHint = useCallback((task: ProjectTask, hasChildren: boolean) => {
-        if (hasChildren) return 'Tự tính từ các hạng mục con';
+        if (hasChildren) return 'Tự tính từ việc con, theo số ngày kế hoạch';
         if (progressFromDailyLog) return 'Theo Nhật ký đã duyệt — xem ở Tiến độ thực tế';
         if (task.progressMode === 'weekly_report') return 'Tự tính từ báo cáo tiến độ tuần';
         if (task.progressMode === 'daily_log') return (task.provisionalQuantity || 0) > 0 ? 'Tự tính từ nhật ký thi công đã xác nhận' : 'Chưa có KL tạm tính để tính từ nhật ký';
