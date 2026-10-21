@@ -4223,6 +4223,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     canApprove={dayRole.canApprove}
                     refreshKey={logs}
                     onCreate={openCreateForDate}
+                    onFixReturned={(date, contributionId) => { setEngineerOpenId(contributionId); openCreateForDate(date); }}
                     onSummarize={date => { openSummaryForDate(date).catch(console.error); }}
                     onReview={id => setViewLogId(id)}
                     onOpenPhotos={(photos, index) => { setGalleryAttachments(photos); setGalleryIndex(index); }}

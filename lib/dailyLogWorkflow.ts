@@ -16,7 +16,7 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   PERIOD_LOCKED_WITH_REOPEN_REQUIRED: 'Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.',
   REVISION_REASON_REQUIRED: 'Vui lòng nhập lý do tạo bản điều chỉnh.',
   SUMMARY_REVISION_ALREADY_EXISTS: 'Bản tổng hợp này đã có bản điều chỉnh mới hơn.',
-  STALE_PROGRESS_BASELINE: 'Mốc tiến độ nền đã thay đổi. Hãy tải lại bản tổng hợp và rà soát trước khi công bố.',
+  STALE_PROGRESS_BASELINE: 'Lũy kế trước ngày này đã đổi (nhật ký ngày trước vừa được duyệt sau khi kỹ sư lập phiếu). Trả phiếu cho kỹ sư để cập nhật lại lũy kế, rồi tổng hợp lại trước khi công bố.',
   BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
   FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
   SUMMARY_SOURCE_REVIEW_BLOCKED: 'Có phiếu nguồn đã thay đổi hoặc đang chờ sửa. Hãy xử lý card nguồn trước khi tiếp tục.',

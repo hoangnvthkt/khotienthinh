@@ -208,7 +208,7 @@ export const boardTotals = (board: DailyLogTodayBoard) => {
 };
 
 export type BoardAction = 'create' | 'fixReturned' | 'summarize' | 'review' | null;
-export interface MyTask { title: string; detail: string; action: BoardAction; actionLabel?: string }
+export interface MyTask { title: string; detail: string; action: BoardAction; actionLabel?: string; /** Phiếu bị trả cần mở (fixReturned). */ slipId?: string }
 
 export const buildMyTask = (board: DailyLogTodayBoard, input: {
   userId?: string | null; canSubmit: boolean; canSummarize: boolean; canApprove: boolean;
@@ -222,7 +222,7 @@ export const buildMyTask = (board: DailyLogTodayBoard, input: {
   const mine = board.slips.filter(slip => input.userId && slip.authorUserId === input.userId);
   const returned = mine.find(slip => slip.status === 'returned');
   if (input.canSubmit && returned) {
-    return { title: `Phiếu ${frontName(returned)} bị trả, cần sửa`, detail: returned.returnReason || 'Mở phiếu để xem yêu cầu sửa.', action: 'fixReturned', actionLabel: 'Sửa phiếu' };
+    return { title: `Phiếu ${frontName(returned)} bị trả, cần sửa`, detail: returned.returnReason || 'Mở phiếu để xem yêu cầu sửa.', action: 'fixReturned', actionLabel: 'Sửa phiếu', slipId: returned.id };
   }
   if (input.canSummarize && sent.length > 0 && (!summary || summary.status === 'draft' || summary.status === 'rejected')) {
     const missing = board.missingFronts.length;
