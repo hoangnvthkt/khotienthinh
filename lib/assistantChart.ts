@@ -4,7 +4,9 @@
 
 export interface ChartStat { label: string; value: number | null; hint: string | null }
 export interface ChartSeries { label: string; values: Array<number | null> }
-export interface ChartPanel { title: string; kind: 'line' | 'bar'; unit: string; series: ChartSeries[] }
+/** stacked = cột chồng (các chuỗi cộng thành tổng); donut = tròn theo nhãn riêng của khung (1 chuỗi). */
+export type ChartKind = 'line' | 'bar' | 'stacked' | 'donut';
+export interface ChartPanel { title: string; kind: ChartKind; unit: string; series: ChartSeries[]; /** Nhãn riêng (VD tên mẫu, NCC) — không có thì dùng nhãn chung theo kỳ. */ labels?: string[] }
 export interface ChartSpec {
   title: string;
   stats: ChartStat[];
@@ -16,7 +18,8 @@ export interface ChartSpec {
 }
 
 const MAX_POINTS = 24;
-const MAX_SERIES = 2;
+const MAX_SERIES = 4;
+const KINDS: ChartKind[] = ['line', 'bar', 'stacked', 'donut'];
 const obj = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {});
 const arr = (raw: unknown): unknown[] => (Array.isArray(raw) ? raw : []);
 const text = (v: unknown, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -28,11 +31,15 @@ export const parseChart = (raw: unknown): ChartSpec | null => {
   const labels = arr(o.labels).map(l => text(l, 16)).slice(0, MAX_POINTS);
   if (!labels.length) return null;
   const panels = arr(o.panels).map(obj).flatMap((p): ChartPanel[] => {
-    const series = arr(p.series).map(obj).slice(0, MAX_SERIES).map(s => ({
+    const kind = KINDS.includes(p.kind as ChartKind) ? (p.kind as ChartKind) : 'line';
+    const own = arr(p.labels).map(l => text(l, 40)).filter(Boolean).slice(0, 12);
+    const axis = own.length ? own : labels;
+    const series = arr(p.series).map(obj).slice(0, kind === 'donut' ? 1 : MAX_SERIES).map(s => ({
       label: text(s.label, 40) || 'Số liệu',
-      values: labels.map((_, i) => numOrNull(arr(s.values)[i])),
+      values: axis.map((_, i) => numOrNull(arr(s.values)[i])),
     }));
-    return series.length ? [{ title: text(p.title, 80), kind: p.kind === 'bar' ? 'bar' : 'line', unit: text(p.unit, 20), series }] : [];
+    if (!series.length) return [];
+    return [{ title: text(p.title, 80), kind, unit: text(p.unit, 20), series, ...(own.length ? { labels: own } : {}) }];
   }).slice(0, 3);
   if (!panels.length) return null;
   const link = obj(o.link);
@@ -49,7 +56,10 @@ export const parseChart = (raw: unknown): ChartSpec | null => {
 
 /** Bảng số của một khung (xem dạng bảng): mỗi nhãn một dòng; null giữ null để màn hình ghi "—". */
 export const panelRows = (spec: Pick<ChartSpec, 'labels'>, panel: ChartPanel) =>
-  spec.labels.map((label, i) => ({ label, values: panel.series.map(s => s.values[i] ?? null) }));
+  (panel.labels || spec.labels).map((label, i) => ({ label, values: panel.series.map(s => s.values[i] ?? null) }));
+
+/** Tổng của khung tròn (để ghi % trong chú giải); không có số thì null. */
+export const donutTotal = (panel: ChartPanel) => { const vals = (panel.series[0]?.values || []).filter((v): v is number => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) : null; };
 
 /** Khung có chuỗi nào chưa có số nào (VD nghỉ việc chưa ghi ngày) → nhãn chú thích "chưa có số". */
 export const seriesMissing = (series: ChartSeries) => series.values.every(v => v == null);

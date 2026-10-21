@@ -17,15 +17,25 @@ export interface RealtimeEvent {
 
 type RealtimeCallback = (event: RealtimeEvent) => void;
 type StatusCallback = (status: RealtimeStatus) => void;
+type ResumeCallback = () => void;
+
+// Tab ẩn quá lâu thì ngắt kênh realtime (audit 20/10/2026, mục H2): mỗi tab mở là một kết nối + một bộ
+// subscription mà Realtime phải đối chiếu RLS cho MỌI thay đổi; ở 200 người, phần lớn tab đang ẩn.
+// Khi tab hiện lại: nối lại và báo onResume để AppContext tải lại dữ liệu đã có (bù sự kiện bỏ lỡ).
+export const REALTIME_IDLE_SUSPEND_MS = 5 * 60 * 1000;
 
 class RealtimeService {
   private channels: RealtimeChannel[] = [];
   private callbacks: Map<string, RealtimeCallback[]> = new Map();
   private statusCallbacks: StatusCallback[] = [];
+  private resumeCallbacks: ResumeCallback[] = [];
   private _status: RealtimeStatus = 'disconnected';
   private _lastEventTime: number = 0;
   private _eventCount: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private suspendedTables: string[] | null = null;
+  private visibilityBound = false;
   private shouldReconnect = false;
   private activeTablesKey = '';
   private connectionId = 0;
@@ -42,6 +52,11 @@ class RealtimeService {
     return this._eventCount;
   }
 
+  /** Đang tạm ngắt vì tab ẩn; nối lại khi tab hiện. */
+  get isSuspended(): boolean {
+    return this.suspendedTables !== null;
+  }
+
   // Subscribe to status changes
   onStatusChange(callback: StatusCallback): () => void {
     this.statusCallbacks.push(callback);
@@ -49,6 +64,14 @@ class RealtimeService {
     callback(this._status);
     return () => {
       this.statusCallbacks = this.statusCallbacks.filter(cb => cb !== callback);
+    };
+  }
+
+  /** Gọi sau khi nối lại từ trạng thái tạm ngắt vì tab ẩn (dữ liệu đã tải có thể cũ). */
+  onResume(callback: ResumeCallback): () => void {
+    this.resumeCallbacks.push(callback);
+    return () => {
+      this.resumeCallbacks = this.resumeCallbacks.filter(cb => cb !== callback);
     };
   }
 
@@ -81,12 +104,65 @@ class RealtimeService {
     wildcardCbs.forEach(cb => cb(event));
   }
 
+  private bindVisibility() {
+    if (this.visibilityBound || typeof document === 'undefined') return;
+    this.visibilityBound = true;
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private handleVisibilityChange = () => {
+    if (typeof document === 'undefined') return;
+    if (document.visibilityState === 'hidden') {
+      this.scheduleIdleSuspend();
+      return;
+    }
+    this.clearIdleTimer();
+    this.resumeIfSuspended();
+  };
+
+  private scheduleIdleSuspend() {
+    if (this.idleTimer || this.suspendedTables !== null) return;
+    if (!this.activeTablesKey) return;
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.suspendForIdle();
+    }, REALTIME_IDLE_SUSPEND_MS);
+  }
+
+  private clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  /** Tab ẩn quá lâu: đóng kênh nhưng nhớ bảng đang nghe để nối lại. */
+  suspendForIdle() {
+    if (!this.activeTablesKey || this.suspendedTables !== null) return;
+    const tables = this.activeTablesKey.split('|').filter(Boolean);
+    this.disconnect();
+    this.suspendedTables = tables;
+    console.log('[Realtime] ⏸ Tab ẩn, tạm ngắt', tables.length, 'bảng');
+  }
+
+  /** Tab hiện lại: nối lại và báo onResume. */
+  resumeIfSuspended() {
+    const tables = this.suspendedTables;
+    if (tables === null) return;
+    this.suspendedTables = null;
+    this.connect(tables);
+    this.resumeCallbacks.forEach(cb => cb());
+  }
+
   // Start all realtime subscriptions
   connect(tables: string[]) {
     if (!isSupabaseConfigured) {
       this.setStatus('disconnected');
       return;
     }
+
+    this.bindVisibility();
+    this.suspendedTables = null;
 
     const nextTablesKey = [...tables].sort().join('|');
     if (this.activeTablesKey === nextTablesKey && (this._status === 'connected' || this._status === 'connecting')) {
@@ -139,6 +215,9 @@ class RealtimeService {
     });
 
     this.channels.push(channel);
+
+    // Đã ẩn sẵn khi nối (mở tab nền): đếm giờ tạm ngắt ngay.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') this.scheduleIdleSuspend();
   }
 
   private scheduleReconnect(tables: string[]) {
@@ -155,6 +234,7 @@ class RealtimeService {
     this.connectionId++;
     this.shouldReconnect = false;
     this.activeTablesKey = '';
+    this.clearIdleTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -169,8 +249,10 @@ class RealtimeService {
   // Reset all state
   reset() {
     this.disconnect();
+    this.suspendedTables = null;
     this.callbacks.clear();
     this.statusCallbacks = [];
+    this.resumeCallbacks = [];
     this._eventCount = 0;
     this._lastEventTime = 0;
   }

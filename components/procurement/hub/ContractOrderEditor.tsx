@@ -11,6 +11,7 @@ import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDes
 import { fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { SpecInput } from '../../material/SpecInput';
+import { VatPicker } from './OrderFormParts';
 
 // Gọi hàng theo HĐ nguyên tắc: giá lấy từ bảng giá HĐ theo ngày giao, không duyệt từng đơn.
 // Gửi xong thủ kho kho nhận thấy phiếu nhập như đơn PO; nhận xong chờ đối soát tháng (chưa ghi nợ).
@@ -21,6 +22,7 @@ const MODES: Array<[Mode, string, string]> = [
   ['DIRECT_CONSUMPTION', 'Nhập–xuất thẳng', 'Thủ kho nhận 1 lần → ghi nhập và dùng ngay, tồn kho không đổi'],
 ];
 // Một mã nhiều quy cách (chủ SP 09/10): mỗi dòng giá HĐ là một quy cách + một giá; gọi hàng chọn đúng dòng giá.
+// VAT: dòng giá HĐ theo bảng giá HĐ; dòng giá tạm theo VAT người lập chọn (manualVat).
 interface Row { key: string; lineId?: string; itemId: string; name: string; unit: string; spec: string; contractLineId: string | null;
   qty: string; price: string; contractPrice: number | null; vatRate: number }
 let rowSeq = 0;
@@ -53,6 +55,7 @@ export const ContractOrderEditor: React.FC<{
   const [mode, setMode] = useState<Mode>(order?.fulfillmentMode || 'RECEIVE_TO_STOCK');
   const [multiple, setMultiple] = useState(order?.purchaseMode === 'multiple');
   const [note, setNote] = useState(order?.note || '');
+  const [manualVat, setManualVat] = useState(String(order?.vatRate ?? 8));
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState('');
   const [found, setFound] = useState<Array<{ id: string; name: string; sku: string | null; unit: string | null }>>([]);
@@ -113,7 +116,10 @@ export const ContractOrderEditor: React.FC<{
   };
   const specProblems = useMemo(() => duplicateItemSpecProblems(rows.map(r => ({ key: r.key, itemId: r.itemId, specification: r.spec }))), [rows]);
   const patch = (i: number, p: Partial<Row>) => setRows(cur => cur.map((r, j) => j === i ? { ...r, ...p } : r));
-  const vats = Array.from(new Set(rows.map(r => r.vatRate)));
+  const manualVatNum = parseQty(manualVat);
+  const rowVat = (r: Row) => r.contractPrice != null ? r.vatRate : manualVatNum ?? 0;
+  const hasManual = rows.some(r => r.contractPrice == null);
+  const vats = Array.from(new Set(rows.map(rowVat)));
   const total = rows.reduce((s, r) => s + (parseQty(r.qty) || 0) * (parseQty(r.price) || 0), 0);
   const vat = vats.length === 1 ? vats[0] : null;
 
@@ -123,12 +129,14 @@ export const ContractOrderEditor: React.FC<{
     if (!rows.length) throw new Error('Thêm ít nhất một vật tư.');
     const bad = rows.find(r => !(parseQty(r.qty)! > 0) || !(parseQty(r.price)! > 0));
     if (bad) throw new Error(`Nhập số lượng${bad.contractPrice == null ? ' và giá tạm' : ''} cho ${bad.name}.`);
+    if (hasManual && (manualVatNum == null || manualVatNum < 0 || manualVatNum > 100)) throw new Error('VAT phải từ 0 đến 100%.');
     if (vats.length > 1) throw new Error('Các vật tư có VAT khác nhau — tách thành đơn riêng theo từng mức VAT.');
     if (specProblems.size) throw new Error('Có vật tư nhiều dòng chưa ghi quy cách khác nhau (ô viền đỏ).');
     const r = await procurementContractService.saveOrder({ purchaseOrderId: saved?.id, expectedRowVersion: saved?.rowVersion, contractId: c.id,
       targetWarehouseId: warehouseId, expectedDeliveryDate: date || null, fulfillmentMode: mode, purchaseMode: multiple ? 'multiple' : 'single',
       vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0, specification: x.spec.trim() || undefined,
-        contractLineId: x.contractPrice != null ? x.contractLineId : null, unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined })) });
+        contractLineId: x.contractPrice != null ? x.contractLineId : null, unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined,
+        vatRate: x.contractPrice == null ? manualVatNum ?? 0 : undefined })) });
     if (orderDateTouched) { await procurementInboxService.setOrderDate(r.purchaseOrderId, orderDate); setOrderDateTouched(false); }
     const next = { id: r.purchaseOrderId, rowVersion: r.rowVersion };
     setSaved(next);
@@ -212,9 +220,13 @@ export const ContractOrderEditor: React.FC<{
                 : <label className="flex items-center gap-1 text-amber-800 dark:text-amber-300">× giá tạm
                   <input aria-label={`Giá tạm ${r.name}`} inputMode="decimal" value={r.price} onChange={e => patch(i, { price: e.target.value })} className={`w-24 text-right tabular-nums ${inputCls}`} /></label>}
               <span className="w-28 text-right font-semibold tabular-nums text-leaf-700 dark:text-leaf-300">{money(qty * price)} đ</span>
-              <span className="text-xs text-muted-foreground">VAT {fmt(r.vatRate)}%</span>
+              <span className="text-xs text-muted-foreground" title={r.contractPrice != null ? 'VAT theo bảng giá HĐ' : undefined}>VAT {fmt(rowVat(r))}%</span>
               <button type="button" aria-label={`Bỏ ${r.name}`} onClick={() => setRows(cur => cur.filter((_, j) => j !== i))} className="rounded p-1 text-muted-foreground hover:bg-muted"><Trash2 size={14} /></button>
             </li>; })}</ul>
+          {hasManual && <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+            <VatPicker value={manualVat} onChange={setManualVat} />
+            <span className="pb-2 text-xs text-muted-foreground">{rows.some(r => r.contractPrice != null) ? 'Áp cho vật tư giá tạm · vật tư có giá HĐ giữ VAT theo HĐ' : 'Áp cho cả đơn'}</span>
+          </div>}
           {vats.length > 1 && <p className="text-sm text-amber-800 dark:text-amber-300">Các vật tư có VAT khác nhau — tách thành đơn riêng theo từng mức VAT.</p>}
           {rows.some(r => r.contractPrice == null) && <p className="text-xs text-amber-800 dark:text-amber-300">Vật tư chưa có giá trong HĐ: nhập giá tạm, Mua hàng chốt giá khi đối soát tháng.</p>}
         </section>

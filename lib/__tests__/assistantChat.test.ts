@@ -65,6 +65,16 @@ describe('Trợ lý T1 · màn hình — nguồn và công cụ', () => {
     expect(out[2]).toMatchObject({ ref: 'h2', type: 'work', item: { source: 'po', code: 'PO-655' } });
   });
 
+  it('sự kiện "reset" → onReset, phần đã nhận tính lại từ đầu', async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: 'jwt' } } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([sse({ type: 'start', runId: 'r1' }, { type: 'delta', text: 'Let me check ton_kho.' }, { type: 'reset' },
+      { type: 'tool', name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' }, { type: 'delta', text: 'Còn 12,4' }, { type: 'error', code: 'AI_FAILED', error: 'AI_HTTP_502' })])));
+    const onReset = vi.fn();
+    const result = await assistantChat.send(input, { onDelta: () => {}, onReset });
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ code: 'AI_FAILED', partial: 'Còn 12,4' });
+  });
+
   it('sự kiện "tool" → onTool (đang tra gì)', async () => {
     mocks.getSession.mockResolvedValue({ data: { session: { access_token: 'jwt' } } });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([sse({ type: 'start', runId: 'r1' }, { type: 'tool', name: 'ton_kho', label: 'Tồn kho', query: 'thép D16' },

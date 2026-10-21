@@ -126,18 +126,34 @@ export const tasksAfterDailyLog = (tasks: ProjectTask[], progressByTask: Map<str
     return { ...task, progress, actualEndDate: progress >= 100 ? task.actualEndDate || logDate : task.actualEndDate };
   });
 
-/** Dòng chọn lý do ban đầu: nháp của bản tổng hợp, nếu không có thì giữ lý do đã công bố gần nhất. */
+type DelayReasonDraft = Record<string, DelayReasonEntry & { kept?: boolean }>;
+
+/** Dòng chọn lý do ban đầu: nháp của bản tổng hợp; nếu không có thì giữ lý do đã công bố gần nhất trước ngày nhật ký,
+ *  không có nữa thì lấy lý do công bố sau ngày đó (duyệt bù phiếu cũ sau phiếu mới). */
 export const initialDelayReasonDraft = (
-  required: VarianceNode[], drafts: DelayReasonEntry[], latest: DelayReasonEntry[],
-): Record<string, DelayReasonEntry & { kept?: boolean }> => {
+  required: VarianceNode[], drafts: DelayReasonEntry[], latest: DelayReasonEntry[], later: DelayReasonEntry[] = [],
+): DelayReasonDraft => {
   const draftBy = new Map(drafts.map(entry => [entry.taskId, entry]));
   const latestBy = new Map(latest.map(entry => [entry.taskId, entry]));
-  const out: Record<string, DelayReasonEntry & { kept?: boolean }> = {};
+  const laterBy = new Map(later.map(entry => [entry.taskId, entry]));
+  const out: DelayReasonDraft = {};
   for (const node of required) {
     const draft = draftBy.get(node.id);
-    const previous = latestBy.get(node.id);
+    const previous = latestBy.get(node.id) || laterBy.get(node.id);
     if (draft) out[node.id] = { ...draft, kept: Boolean(previous && previous.reasonCode === draft.reasonCode && previous.responsibleParty === draft.responsibleParty) };
     else if (previous) out[node.id] = { ...previous, kept: true };
   }
   return out;
+};
+
+/** Chọn nhanh: gán một lý do cho nhiều việc; bên chịu trách nhiệm theo lý do, giữ ghi chú đã có (hoặc ghi chú kỹ sư). */
+export const applyDelayReasonToTasks = (
+  draft: DelayReasonDraft, taskIds: Iterable<string>, catalog: DelayReasonOption[], reasonCode: string, notes?: Map<string, string>,
+): DelayReasonDraft => {
+  const responsibleParty = partyOfReason(catalog, reasonCode);
+  const next = { ...draft };
+  for (const taskId of taskIds) {
+    next[taskId] = { ...draft[taskId], taskId, reasonCode, responsibleParty, note: draft[taskId]?.note ?? notes?.get(taskId) ?? null, kept: false };
+  }
+  return next;
 };

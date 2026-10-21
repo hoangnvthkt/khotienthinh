@@ -21,7 +21,7 @@ describe('Trung tâm AI · xem bên trong skill — danh mục từ mã cổng',
   });
 
   it('nguồn dữ liệu ghi cho công cụ đúng là lệnh máy chủ có trong mã cổng (không ghi bịa / cũ)', () => {
-    const source = readFileSync('supabase/functions/ai-gateway/tools.ts', 'utf8');
+    const source = ['tools.ts', 'workTools.ts'].map(f => readFileSync(`supabase/functions/ai-gateway/${f}`, 'utf8')).join('\n');
     for (const info of Object.values(TOOL_INFO)) for (const rpc of info.rpcs) expect(source.includes(`rpc('${rpc}'`), rpc).toBe(true);
   });
 

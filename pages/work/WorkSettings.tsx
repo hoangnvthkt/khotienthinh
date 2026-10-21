@@ -389,9 +389,9 @@ function SlaPreview({
                 setResult(null);
               }}
             >
-              <option value="normal">Bình thường</option>
-              <option value="important">Quan trọng</option>
-              <option value="urgent">Khẩn cấp</option>
+              <option value="normal">C · Thường</option>
+              <option value="important">B · Quan trọng</option>
+              <option value="urgent">A · Trọng điểm</option>
             </select>
           </label>
           <label className="work-label">

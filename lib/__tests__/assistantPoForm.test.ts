@@ -175,4 +175,25 @@ describe('Công cụ chuẩn bị đơn mua (lệnh máy chủ giả)', () => {
     const denied = ctxOf({ ...ok, list_procurement_proactive_options_v1: new Error('PROCUREMENT_MANAGE_DENIED') });
     expect(JSON.parse(await runTool('chuan_bi_don_mua', { du_an: 'smb', dong: LINES }, denied.ctx, new Map())).loi).toContain('chưa có quyền lập đơn mua');
   });
+
+  it('20/10 model ghép "Tên (MST …)": RPC tìm chuỗi con không thấy → tìm lại theo MST, rồi theo tên bỏ phần MST; chọn sẵn NCC', async () => {
+    // Như list_procurement_vendors_v1: chuỗi con trong "tên MST".
+    const search = (vendors: Array<{ id: string; name: string; taxCode: string | null }>) => {
+      const t = ctxOf(ok);
+      const base = t.ctx.rpc;
+      t.ctx.rpc = (async (fn: string, args: Record<string, unknown>) => fn === 'list_procurement_vendors_v1'
+        ? (t.calls.push([fn, args]), { data: vendors.filter(v => `${v.name} ${v.taxCode || ''}`.toLowerCase().includes(String(args.p_search).toLowerCase())), error: null })
+        : base(fn, args)) as Rpc;
+      return t;
+    };
+    const t = search([{ id: 'v-hk', name: 'CÔNG TY TNHH HANAKA VIỆT NAM', taxCode: '0101234567' }]);
+    await runTool('chuan_bi_don_mua', { du_an: 'SMB-2026', ncc: 'CÔNG TY TNHH HANAKA VIỆT NAM (MST 0101234567)', dong: LINES }, t.ctx, new Map());
+    expect(t.calls.filter(c => c[0] === 'list_procurement_vendors_v1').map(c => c[1].p_search)).toEqual(['CÔNG TY TNHH HANAKA VIỆT NAM (MST 0101234567)', '0101234567']);
+    expect(t.calls.at(-1)?.[1]).toMatchObject({ p_payload: { vendorId: 'v-hk', vendorName: 'CÔNG TY TNHH HANAKA VIỆT NAM' } });
+    // NCC chưa có MST trong danh mục → tìm theo tên bỏ phần MST.
+    const noTax = search([{ id: 'v-hk', name: 'CÔNG TY TNHH HANAKA VIỆT NAM', taxCode: null }]);
+    await runTool('chuan_bi_don_mua', { du_an: 'SMB-2026', ncc: 'CÔNG TY TNHH HANAKA VIỆT NAM - MST: 0101234567', dong: LINES }, noTax.ctx, new Map());
+    expect(noTax.calls.filter(c => c[0] === 'list_procurement_vendors_v1').map(c => c[1].p_search)).toEqual(['CÔNG TY TNHH HANAKA VIỆT NAM - MST: 0101234567', '0101234567', 'CÔNG TY TNHH HANAKA VIỆT NAM']);
+    expect(noTax.calls.at(-1)?.[1]).toMatchObject({ p_payload: { vendorId: 'v-hk' } });
+  });
 });
