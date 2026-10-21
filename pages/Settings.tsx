@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { Suspense, useMemo, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Warehouse, WarehouseType, WarehouseTypeConfig, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem, Project } from '../types';
@@ -13,27 +13,28 @@ import {
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
 import { Role, User } from '../types';
-import SettingsGeneral from './settings/SettingsGeneral';
-import SettingsWarehouses from './settings/SettingsWarehouses';
-import SettingsUsers from './settings/SettingsUsers';
-import SettingsAccount from './settings/SettingsAccount';
-import SettingsMaintenance from './settings/SettingsMaintenance';
+// Mỗi mục Cài đặt tải riêng khi mở (audit 20/10 H6): chunk Settings 609 KB → khung + mục đang mở.
+const SettingsGeneral = React.lazy(() => import('./settings/SettingsGeneral'));
+const SettingsWarehouses = React.lazy(() => import('./settings/SettingsWarehouses'));
+const SettingsUsers = React.lazy(() => import('./settings/SettingsUsers'));
+const SettingsAccount = React.lazy(() => import('./settings/SettingsAccount'));
+const SettingsMaintenance = React.lazy(() => import('./settings/SettingsMaintenance'));
 import SignaturePad from '../components/SignaturePad';
-import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
-import SettingsWorkGroups from './settings/SettingsWorkGroups';
-import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
-import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
-import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
-import SettingsAlerts from './settings/SettingsAlerts';
-import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
-import SettingsRoleTemplates from './settings/SettingsRoleTemplates';
-import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplates';
-import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTemplates';
-import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
-import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
-import SettingsSuggestionStats from './settings/SettingsSuggestionStats';
-import SettingsAiGateway from './settings/SettingsAiGateway';
-import SettingsConnections from './settings/SettingsConnections';
+const SettingsProjectMasterData = React.lazy(() => import('./settings/SettingsProjectMasterData'));
+const SettingsWorkGroups = React.lazy(() => import('./settings/SettingsWorkGroups'));
+const SettingsInspectionTemplates = React.lazy(() => import('./settings/SettingsInspectionTemplates'));
+const SettingsG8CostNormLibrary = React.lazy(() => import('./settings/SettingsG8CostNormLibrary'));
+const SettingsReleaseNotes = React.lazy(() => import('./settings/SettingsReleaseNotes'));
+const SettingsAlerts = React.lazy(() => import('./settings/SettingsAlerts'));
+const SettingsPermissionHealth = React.lazy(() => import('./settings/SettingsPermissionHealth'));
+const SettingsRoleTemplates = React.lazy(() => import('./settings/SettingsRoleTemplates'));
+const SettingsProjectRoomTemplates = React.lazy(() => import('./settings/SettingsProjectRoomTemplates'));
+const SettingsUserPermissionTemplates = React.lazy(() => import('./settings/SettingsUserPermissionTemplates'));
+const SettingsHrmSharedCatalog = React.lazy(() => import('./settings/SettingsHrmSharedCatalog'));
+const SettingsAttendanceLocations = React.lazy(() => import('./settings/SettingsAttendanceLocations'));
+const SettingsSuggestionStats = React.lazy(() => import('./settings/SettingsSuggestionStats'));
+const SettingsAiGateway = React.lazy(() => import('./settings/SettingsAiGateway'));
+const SettingsConnections = React.lazy(() => import('./settings/SettingsConnections'));
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -107,6 +108,9 @@ const emptyWarehouseTypeForm = (): WarehouseTypeForm => ({
   color: 'slate',
   isActive: true,
 });
+
+
+const SECTION_FALLBACK = <div className="rounded-2xl border border-slate-100 bg-white p-6 text-sm font-medium text-slate-400" role="status">Đang tải mục cài đặt…</div>;
 
 const Settings: React.FC = () => {
   const location = useLocation();
@@ -1284,6 +1288,7 @@ const Settings: React.FC = () => {
             </div>
           )}
           <fieldset disabled={activeFeatureReadOnly} aria-label="Nội dung mục Cài đặt">
+          <Suspense fallback={SECTION_FALLBACK}>
           {activeSettingsTab === 'general' && (
             <SettingsGeneral
               appName={appName} setAppName={setAppName}
@@ -2356,6 +2361,7 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'maintenance' && (
             <SettingsMaintenance triggerAction={triggerAction} clearAllData={clearAllData} />
           )}
+          </Suspense>
           </fieldset>
         </div>
       </div>
@@ -2435,6 +2441,7 @@ const Settings: React.FC = () => {
         </div>
       )}
 
+          <Suspense fallback={SECTION_FALLBACK}>
           {activeSettingsTab === 'suggestion-stats' && (
             <SettingsSuggestionStats />
           )}
@@ -2446,6 +2453,7 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'connections' && (
             <SettingsConnections />
           )}
+          </Suspense>
     </div>
   );
 };
