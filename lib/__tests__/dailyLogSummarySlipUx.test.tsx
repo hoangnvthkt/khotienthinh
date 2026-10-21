@@ -60,7 +60,8 @@ describe('source-slip-driven consolidation',()=>{
     expect(changed.editedItems[0]).toEqual(cards[0].editedItems[0]);
     expect(changed.source.adjustmentReason).toBe('Đã đo lại tường');
     expect(JSON.stringify(cards)).toBe(before);
-    expect(adjustSummaryCardProgress(cards[0],'work-A-1',35,'Đã đo lại móng').editedItems[0]).toMatchObject({cumulativeQuantityDone:null,dailyQuantityDone:null});
+    // Chưa chia khối lượng mũi: quy đổi theo khối lượng hạng mục như phiếu kỹ sư; chưa có mốc thì không suy ra khối lượng trong ngày.
+    expect(adjustSummaryCardProgress(cards[0],'work-A-1',35,'Đã đo lại móng').editedItems[0]).toMatchObject({cumulativeQuantityDone:35,dailyQuantityDone:null});
     expect(()=>adjustSummaryCardProgress(cards[0],'work-A-2',30,'')).toThrow(/lý do/i);
     expect(adjustSummaryCardProgress(cards[0],'work-A-2',Number.NaN,'Đang nhập').editedItems[1]).toMatchObject({cumulativeQuantityDone:null,dailyQuantityDone:null});
   });

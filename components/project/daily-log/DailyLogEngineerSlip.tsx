@@ -24,7 +24,8 @@ const hydrateRow = (bundle: DailyLogDocumentBundle, item: DailyLogSourceItemV2):
   const unit = readonly && snapshot ? snapshot.unit ?? null : work?.unit?.trim() || task?.fallbackUnit?.trim() || null;
   const context = bundle.quantityBaselines?.[item.taskId];
   // A qualified prior snapshot with a different conversion basis is still unknown.
-  const known = context?.state === 'known' && context.previousItem?.areaPlannedQuantitySnapshot === plan
+  const previousPlan = context?.previousItem ? context.previousItem.areaPlannedQuantitySnapshot ?? context.previousItem.plannedQuantitySnapshot ?? null : null;
+  const known = context?.state === 'known' && previousPlan != null && plan != null && Math.abs(previousPlan - plan) < 0.0001
     && context.previousItem?.unitSnapshot === unit;
   const state = readonly && snapshot ? snapshot.baselineQuantityDone == null ? 'unknown' : 'known'
     : context?.state === 'none' ? 'none' : known ? 'known' : 'unknown';
