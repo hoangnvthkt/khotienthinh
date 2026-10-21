@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectTask } from '../../types';
 import { computeScheduleVariance } from '../projectScheduleVariance';
 import {
-  delayPartyTally, delayReasonTargets, inheritedDelayReason, initialDelayReasonDraft, nodeDelayReasons, partyOfReason,
+  applyDelayReasonToTasks, delayPartyTally, delayReasonTargets, inheritedDelayReason, initialDelayReasonDraft, nodeDelayReasons, partyOfReason,
   tasksAfterDailyLog, type DelayReasonEntry,
 } from '../projectDelayReasons';
 
@@ -64,6 +64,27 @@ describe('lý do chậm ở Nhật ký', () => {
     expect(initialDelayReasonDraft(required, [], latest)).toEqual({ '4.1.1.1': { ...latest[0], kept: true } });
     const draft = [reason('4.1.1.1', 'labor', 'company')];
     expect(initialDelayReasonDraft(required, draft, latest)['4.1.1.1']).toMatchObject({ reasonCode: 'labor', kept: false });
+  });
+
+  it('duyệt bù phiếu cũ: chưa có lý do trước ngày đó thì lấy lý do công bố sau', () => {
+    const { required } = delayReasonTargets(result);
+    const later = [{ ...reason('4.1.1.1', 'labor', 'company'), logDate: '2026-10-20' }, { ...reason('4.2.1', 'site', 'owner'), logDate: '2026-10-20' }];
+    const before = [{ ...reason('4.1.1.1', 'design', 'owner'), logDate: '2026-10-12' }];
+    const out = initialDelayReasonDraft(required, [], before, later);
+    expect(out['4.1.1.1']).toMatchObject({ reasonCode: 'design', kept: true });
+    expect(out['4.2.1']).toMatchObject({ reasonCode: 'site', logDate: '2026-10-20', kept: true });
+  });
+
+  it('chọn nhanh một lý do cho nhiều việc: bên chịu trách nhiệm theo lý do, giữ ghi chú', () => {
+    const catalog = [{ code: 'material', label: 'Chậm do vật tư', defaultParty: 'vendor' }, { code: 'weather', label: 'Thời tiết', defaultParty: 'objective' }];
+    const draft = { a: { ...reason('a', 'labor', 'company'), note: 'thiếu thợ', kept: true } };
+    const out = applyDelayReasonToTasks(draft, ['a', 'b'], catalog, 'weather', new Map([['b', 'mưa 2 ngày']]));
+    expect(out).toEqual({
+      a: { taskId: 'a', reasonCode: 'weather', responsibleParty: 'objective', note: 'thiếu thợ', kept: false },
+      b: { taskId: 'b', reasonCode: 'weather', responsibleParty: 'objective', note: 'mưa 2 ngày', kept: false },
+    });
+    expect(applyDelayReasonToTasks({}, ['c'], catalog, 'material').c.responsibleParty).toBe('company');
+    expect(draft.a.reasonCode).toBe('labor');
   });
 
   it('tính theo % của bản tổng hợp sắp công bố; NCC tính Công ty', () => {

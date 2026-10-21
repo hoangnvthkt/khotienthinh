@@ -1,6 +1,6 @@
 -- Vioo Work Đợt 2 PR-8: nhắc chốt kỳ + nhắc chưa nhận việc / chờ duyệt lâu lúc 08:00. Chạy cùng migration trong một giao dịch rollback:
 -- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> \
---   --migration supabase/migrations/20261023180000_work_dot2_reminders.sql \
+--   --migration supabase/migrations/20261024120000_work_dot2_reminders.sql \
 --   --smoke supabase/tests/work_dot2_reminders_smoke.sql
 -- Vai (tên giả): head = Văn Thị Diệu (trưởng U1) · staff = Ông Đình Khải (U1) · head2 = Lâm Bảo Trâm (trưởng U2) · staff3 = Mạc Văn Hưng (U2)
 --   · head5 = Đàm Quốc Thái (trưởng U5, đơn vị không có việc) · bld = Giáp Thị Oanh (U3, xem toàn công ty) · outsider = Vi Văn Lộc (U3).
