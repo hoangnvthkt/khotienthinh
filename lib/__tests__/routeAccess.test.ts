@@ -368,3 +368,51 @@ describe('personnel profile route', () => {
     expect(canAccessRoute(user([]), '/ep/7f1d9a3e-1111-4222-8333-944455556666')).toBe(false);
   });
 });
+
+describe('WMS routes with warehouse-scoped grants', () => {
+  const warehouseUser = (grants: Array<[string, string, string?]>): User => ({
+    ...persona(Role.EMPLOYEE, []),
+    permissionGrants: grants.map(([permissionCode, scopeId, expiresAt]) => ({
+      userId: 'persona-1',
+      permissionCode,
+      scopeType: 'warehouse',
+      scopeId,
+      isActive: true,
+      expiresAt,
+    })),
+  });
+
+  it('opens Báo cáo kho, Nhập xuất and Danh mục vật tư for a one-warehouse accountant', () => {
+    const accountant = warehouseUser([
+      ['wms.inventory.view', 'wh-site'],
+      ['wms.transaction.view', 'wh-site'],
+      ['wms.request.view', 'wh-site'],
+    ]);
+
+    expect(canAccessRoute(accountant, '/inventory')).toBe(true);
+    expect(canAccessRoute(accountant, '/reports')).toBe(true);
+    expect(canAccessRoute(accountant, '/operations')).toBe(true);
+    expect(canAccessRoute(accountant, '/material-code-requests')).toBe(true);
+  });
+
+  it('opens only the screens whose view permission the person holds', () => {
+    const requestOnly = warehouseUser([['wms.request.view', 'wh-site']]);
+
+    expect(canAccessRoute(requestOnly, '/material-code-requests')).toBe(true);
+    expect(canAccessRoute(requestOnly, '/reports')).toBe(false);
+    expect(canAccessRoute(requestOnly, '/operations')).toBe(false);
+  });
+
+  it('keeps WMS routes closed without a grant or after the warehouse grant expires', () => {
+    const expired = warehouseUser([['wms.transaction.view', 'wh-site', '2020-01-01T00:00:00.000Z']]);
+
+    expect(canAccessRoute(user(), '/reports')).toBe(false);
+    expect(canAccessRoute(expired, '/reports')).toBe(false);
+  });
+
+  it('does not widen warehouse grants for non-WMS modules', () => {
+    const assetWarehouseOnly = warehouseUser([['asset.catalog.view', 'wh-site']]);
+
+    expect(canAccessRoute(assetWarehouseOnly, '/ts/catalog')).toBe(false);
+  });
+});
