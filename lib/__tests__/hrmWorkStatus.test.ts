@@ -98,7 +98,7 @@ describe('hrmWorkStatusService', () => {
 });
 
 describe('work status migration', () => {
-  const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261020150000_hrm_work_status_events.sql'), 'utf8');
+  const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261024140000_hrm_work_status_events.sql'), 'utf8');
 
   it('writes the event and the status in one command, with the profile edit permission', () => {
     expect(sql).toContain("v_type := 'NGHI_VIEC'");

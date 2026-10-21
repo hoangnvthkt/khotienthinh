@@ -14,11 +14,18 @@ import { WorkDiscussion } from "./WorkDiscussion";
 import { WorkTaskChildren } from "./WorkTaskChildren";
 import { WorkTaskHeader } from "./WorkTaskHeader";
 import { WorkTaskPeople } from "./WorkTaskPeople";
-import { WorkTaskDescription, WorkTaskProgress, WorkTaskResult } from "./WorkTaskContent";
+import { WorkTaskDescription, WorkTaskResult } from "./WorkTaskContent";
+import { WorkAiBrief, WorkProgressComposer, WorkUpdateTimeline } from "./WorkProgressReport";
+import type { WorkAiService } from "../../lib/work/workAi";
+import type { WorkBoardService, WorkTaskBrief } from "../../lib/work/workBoardService";
 
-export function WorkDetail({ detail, service, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
+export function WorkDetail({ detail, service, board, ai, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
   detail: WorkTaskDetail;
   service: WorkTaskService;
+  /** Đợt 1: tóm tắt việc, dòng cập nhật, xác nhận việc giao miệng. */
+  board: Pick<WorkBoardService, "taskBrief" | "listUpdates" | "decideClaim">;
+  /** Đợt 1 PR-3: Viết giúp cập nhật, Tóm tắt việc. */
+  ai?: WorkAiService;
   attachments: ReturnType<typeof createWorkAttachmentService>;
   actorId: string;
   session: WorkMutationSession;
@@ -39,6 +46,9 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
   const [notice, setNotice] = useState("");
   const [completed, setCompleted] = useState({ command: "", seq: 0 });
   const [metadata, setMetadata] = useState(false);
+  const [brief, setBrief] = useState<WorkTaskBrief | null>(null);
+  const [claimNote, setClaimNote] = useState<string | null>(null);
+  const [claimBusy, setClaimBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const alive = useRef(true);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -69,6 +79,12 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
     }).catch((caught) => live && setContextError(caught));
     return () => { live = false; };
   }, [task.id, service, JSON.stringify(ids), contextRetry]);
+  // Tóm tắt (nguồn giao, lần cập nhật gần nhất) tải lại sau mỗi lần chi tiết đổi; lỗi không chặn trang.
+  useEffect(() => {
+    let live = true;
+    board.taskBrief(task.id).then((value) => live && setBrief(value)).catch(() => live && setBrief(null));
+    return () => { live = false; };
+  }, [task.id, board, detail]);
   useEffect(() => {
     if (!session.pending) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -111,6 +127,19 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
   const name = (id: string | null) => id ? context.names[id] || "Người tham gia" : "Chưa chỉ định";
   const mine = detail.assignments.find((assignment) => assignment.user_id === actorId && !assignment.ended_at);
   const lead = detail.assignments.find((assignment) => !assignment.ended_at);
+  const accepted = !!mine?.acknowledged_at;
+  const canReport = accepted && (!!caps.canUpdateProgress || !!caps.canStart || !!caps.canUnblock);
+  const lastUpdateAt = brief?.updates[0]?.at || null;
+  const claimPending = brief?.origin?.origin === "oral_claim" && brief.origin.claimStatus === "pending" && brief.origin.giver?.id === actorId;
+  async function decideClaim(decision: "confirm" | "reject") {
+    setClaimBusy(true); setError(null);
+    try {
+      await board.decideClaim(task.id, decision, decision === "reject" ? claimNote : null);
+      setNotice(decision === "confirm" ? "Đã xác nhận bạn giao việc này." : "Đã báo người ghi là bạn không giao việc này.");
+      setClaimNote(null);
+      refresh();
+    } catch (caught) { setError(caught); } finally { setClaimBusy(false); }
+  }
   const people = <WorkTaskPeople detail={detail} service={service} actorId={actorId} names={context.names} busy={locked} run={collab} />;
 
   return (
@@ -132,7 +161,27 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
               actions={headerActions}
               assigneeName={lead ? name(lead.user_id) : null}
               assigneeState={lead ? workStatusLabels[lead.state as keyof typeof workStatusLabels] || "Đã chuyển" : null}
+              creatorName={context.names[task.created_by]}
+              reviewerName={task.reviewer_user_id ? context.names[task.reviewer_user_id] : undefined}
+              brief={brief}
             />
+            {claimPending && (
+              <div className="work-claim-bar" role="region" aria-label="Xác nhận việc giao trực tiếp">
+                <p><strong>{context.names[task.created_by] || "Người làm"}</strong> ghi là bạn đã giao việc này trực tiếp.</p>
+                {claimNote === null ? (
+                  <div className="work-claim-actions">
+                    <button className="work-primary" disabled={claimBusy} onClick={() => void decideClaim("confirm")}>Xác nhận đã giao</button>
+                    <button className="work-secondary" disabled={claimBusy} onClick={() => setClaimNote("")}>Không phải tôi giao</button>
+                  </div>
+                ) : (
+                  <div className="work-claim-actions">
+                    <input className="work-input" autoFocus maxLength={500} aria-label="Lý do" placeholder="Lý do (bắt buộc)" value={claimNote} onChange={(e) => setClaimNote(e.target.value)} />
+                    <button className="work-primary" disabled={claimBusy || !claimNote.trim()} onClick={() => void decideClaim("reject")}>Gửi</button>
+                    <button className="work-secondary" disabled={claimBusy} onClick={() => setClaimNote(null)}>Hủy</button>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="work-preferences">
               {caps.canSetPreferences && <>
                 <button className="work-secondary" disabled={locked} aria-pressed={detail.preferences.pinned} onClick={() => void collab({ command: "set_pin", payload: { pinned: !detail.preferences.pinned } })}>{detail.preferences.pinned ? <PinOff size={16} /> : <Pin size={16} />} {detail.preferences.pinned ? "Bỏ ghim" : "Ghim"}</button>
@@ -144,10 +193,16 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
             {mine && !mine.acknowledged_at && <p className="work-notice">Bạn chưa xác nhận nhận việc. Hạn xác nhận: {workWhen(mine.acknowledgement_due_at)}.</p>}
             {task.blocked_reason && <p className="work-notice">Đang bị chặn: {task.blocked_reason}</p>}
 
-            <WorkTaskProgress task={task} canUpdate={!!caps.canUpdateProgress} busy={locked} run={collab} />
+            {canReport && (
+              <WorkProgressComposer task={task} attachments={detail.attachments} actorId={actorId} lastUpdateAt={lastUpdateAt} busy={locked} run={collab}
+                onBlock={(reason) => run("lifecycle", { command: "block", payload: { reason } })} ai={ai} brief={brief} />
+            )}
+            {ai && <WorkAiBrief brief={brief} taskId={task.id} ai={ai} />}
+            <WorkUpdateTimeline taskId={task.id} board={board} refreshKey={detail} />
             <WorkTaskDescription task={task} canUpdate={!!caps.canUpdateDescription} busy={locked} run={collab} />
             <WorkChecklist items={detail.checklist} assignments={detail.assignments} names={context.names} canManage={caps.canManageChecklist} busy={locked} run={collab} completed={completed} error={error} />
             <WorkTaskResult task={task} currentSubmission={detail.currentSubmission} canUpdate={!!caps.canUpdateResultDraft} busy={locked} run={collab} submitterName={name} />
+            <div id="work-attachments" className="work-anchor" />
             <WorkAttachments taskId={task.id} files={detail.attachments} caps={caps} service={attachments} onChanged={refresh} uploads={uploads} locked={locked} />
             {!task.parent_task_id && <WorkTaskChildren detail={detail} service={service} attachments={attachments} scopeLabel={context.scopeName} revision={revision} onCreated={() => refresh()} />}
             <WorkDiscussion taskId={task.id} service={service} canComment={caps.canComment} canHistory={caps.canViewHistory} names={context.names} requestNames={requestNames} revision={revision} run={collab} busy={locked} anchorId={anchorId} onAnchor={onAnchor} completed={completed} error={error} />

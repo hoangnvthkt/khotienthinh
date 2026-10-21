@@ -7,8 +7,8 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, FolderKanban,
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -19,12 +19,10 @@ import SettingsUsers from './settings/SettingsUsers';
 import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
-import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
-import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
@@ -55,6 +53,7 @@ import {
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { loadSignatureUrlForUser } from '../lib/signatureService';
 import { canPerform, canPerformHrmTemplatePermission } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
@@ -166,6 +165,14 @@ const Settings: React.FC = () => {
         : 'general',
   );
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  // Signed URL chữ ký hết hạn sau 10 phút: mở lại Cài đặt thì ký mới, không dùng URL cũ từ lúc đăng nhập.
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | undefined>(currentUser.signatureUrl);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser.signatureUrl) { setSignaturePreviewUrl(undefined); return; }
+    loadSignatureUrlForUser(currentUser.id).then(url => { if (!cancelled) setSignaturePreviewUrl(url || currentUser.signatureUrl); });
+    return () => { cancelled = true; };
+  }, [currentUser.id, currentUser.signatureUrl]);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -1139,8 +1146,6 @@ const Settings: React.FC = () => {
     { id: 'role-templates', label: 'Vai trò đặc biệt', icon: ShieldCheck, rolesOnly: true },
     { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
-    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
-    { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'connections', label: 'Kết nối', icon: Link2, adminOnly: true },
     { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
     { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
@@ -2222,10 +2227,10 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-6">
-                  {currentUser.signatureUrl ? (
+                  {signaturePreviewUrl ? (
                     <div className="flex items-center gap-6">
                       <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-center w-64 h-32">
-                        <img src={currentUser.signatureUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
+                        <img src={signaturePreviewUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
                       </div>
                       <div className="space-y-2">
                         <button onClick={() => setShowSignaturePad(true)}
@@ -2247,7 +2252,7 @@ const Settings: React.FC = () => {
 
               {showSignaturePad && (
                 <SignaturePad
-                  currentSignatureUrl={currentUser.signatureUrl}
+                  currentSignatureUrl={signaturePreviewUrl}
                   onSave={async (dataUrl) => { await saveSignature(currentUser.id, dataUrl); setShowSignaturePad(false); }}
                   onDelete={async () => { await deleteSignature(currentUser.id); setShowSignaturePad(false); }}
                   onClose={() => setShowSignaturePad(false)}
@@ -2429,14 +2434,6 @@ const Settings: React.FC = () => {
           </div>
         </div>
       )}
-
-          {activeSettingsTab === 'chibi-bot' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsChibiBot /></fieldset>
-          )}
-
-          {activeSettingsTab === 'ai-learning' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
-          )}
 
           {activeSettingsTab === 'suggestion-stats' && (
             <SettingsSuggestionStats />

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import {
-  getAiAssistantCapabilities,
   getAiReportCapabilities,
   getAnalyticsCapabilities,
   getKnowledgeBaseCapabilities,
@@ -26,14 +25,6 @@ const user = (permissionCodes: string[] = [], overrides: Partial<User> = {}): Us
 
 describe('Phase 4 global module permission capabilities', () => {
   it('separates AI route view from assistant use and report generation', () => {
-    expect(getAiAssistantCapabilities(user(['ai.assistant.view']))).toEqual({
-      canView: true,
-      canUse: false,
-    });
-    expect(getAiAssistantCapabilities(user(['ai.assistant.use']))).toEqual({
-      canView: true,
-      canUse: true,
-    });
     expect(getAiReportCapabilities(user(['ai.report.view']))).toEqual({
       canView: true,
       canGenerate: false,
@@ -85,7 +76,6 @@ describe('Phase 4 global module permission capabilities', () => {
       'storage.manage',
       'analytics.export',
     ], { role: Role.ADMIN });
-    expect(getAiAssistantCapabilities(admin).canUse).toBe(true);
     expect(getAiReportCapabilities(admin).canGenerate).toBe(true);
     expect(getKnowledgeBaseCapabilities(admin).canManage).toBe(true);
     expect(getStorageCapabilities(admin).canManage).toBe(true);

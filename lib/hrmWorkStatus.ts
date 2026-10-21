@@ -1,5 +1,5 @@
 // Ngày nghỉ việc / đi làm lại / vào làm (19/10/2026). Server rules live in
-// supabase/migrations/20261020150000_hrm_work_status_events.sql; these mirror them so HR sees the problem before saving.
+// supabase/migrations/20261024140000_hrm_work_status_events.sql; these mirror them so HR sees the problem before saving.
 import type { Employee } from '../types';
 import { vnToday } from './businessDate';
 import { supabase } from './supabase';

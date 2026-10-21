@@ -33,6 +33,9 @@ export interface ConverseDeps {
   budgetMs?: number;
 }
 
+/** Chữ đầu mỗi bước giữ lại tới chừng này ký tự rồi mới chạy dần ra màn hình: bước hóa ra có gọi công cụ thì bỏ hẳn. */
+export const HOLD_CHARS = 400;
+
 export async function converse(d: ConverseDeps): Promise<{ text: string; usage: { tokensIn: number | null; tokensOut: number | null; calls: number } }> {
   const now = d.now || Date.now;
   const messages: AgentMsg[] = d.turns.map((t, i) => (t.role === 'user' && i === d.turns.length - 1 && d.images?.length
@@ -42,17 +45,25 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
   const add = (a: number | null, b: number | null) => (a == null && b == null ? null : (a || 0) + (b || 0));
   for (let step = 0; step <= MAX_AGENT_STEPS; step++) {
     const last = step === MAX_AGENT_STEPS || calls >= MAX_TOOL_CALLS || now() - d.started > (d.budgetMs ?? 80_000);
-    let fresh = true;
+    // Câu trả lời = chữ của bước cuối (không gọi công cụ). Chữ của bước có gọi công cụ là ghi chú lập kế hoạch của model
+    // ("Let me try tim_ho_so…", 20/10/2026) — chỉ giữ trong lịch sử gửi model, không hiện cho người dùng.
+    let stepText = ''; let shown = false;
     const out = await d.step({
       system: last ? `${d.system}\nĐã tra đủ: trả lời ngay từ dữ liệu đã có, không gọi thêm công cụ.` : d.system,
       messages, tools: TOOLS, toolChoice: last ? 'none' : step === 0 && d.forceTool ? { name: d.forceTool } : 'auto', maxTokens: d.maxTokens ?? 1200, noThinking: true,
     }, delta => {
-      // Chữ của bước sau nối xuống dòng mới (VD câu dẫn trước khi tra rồi câu trả lời).
-      const chunk = fresh && text && !text.endsWith('\n') ? `\n\n${delta}` : delta;
-      fresh = false; text += chunk; d.emit({ type: 'delta', text: chunk });
+      stepText += delta;
+      if (shown) d.emit({ type: 'delta', text: delta });
+      else if (stepText.length >= HOLD_CHARS) { shown = true; d.emit({ type: 'delta', text: stepText }); }
     });
     tokensIn = add(tokensIn, out.usage.tokensIn); tokensOut = add(tokensOut, out.usage.tokensOut); steps++;
-    if (!out.toolCalls.length || last) break;
+    if (!out.toolCalls.length || last) {
+      if (!shown && stepText) d.emit({ type: 'delta', text: stepText });
+      text = stepText;
+      break;
+    }
+    // Bước dài đã lỡ chạy ra màn hình rồi mới gọi công cụ: màn hình xóa chữ đang hiện.
+    if (shown) d.emit({ type: 'reset' });
     messages.push({ role: 'assistant', content: out.text, toolCalls: out.toolCalls });
     const results: Array<{ id: string; name: string; content: string }> = [];
     for (const call of out.toolCalls) {

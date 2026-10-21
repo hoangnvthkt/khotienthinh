@@ -6,6 +6,8 @@ import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { ENT, Kpi } from '../components/finance/financeUi';
 import AiActivityPanel from '../components/aiCenter/AiActivityPanel';
+import AiSkillsPanel from '../components/aiCenter/AiSkillsPanel';
+import { aiSkillCatalogService, type AiSkillCatalogService } from '../lib/aiSkillCatalog';
 import {
   aiAdminService, modelLabel, usd, usedPct, type AiAdminOverview, type AiConnectionRow, type AiAdminService, type AiGrant, type AiGrantValues, type AiPerson, type AiTemplate, type SkillAccess,
 } from '../lib/aiAdmin';
@@ -301,7 +303,7 @@ const ModelCard: React.FC<{ model: AiConnectionRow; service: AiAdminService; onS
 };
 
 // ── Trang ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminService }) => {
+const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatalogService }> = ({ service = aiAdminService, skillService = aiSkillCatalogService }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -469,28 +471,7 @@ const AiCenter: React.FC<{ service?: AiAdminService }> = ({ service = aiAdminSer
         </section>
       )}
 
-      {tab === 'skills' && (
-        <section role="tabpanel" aria-label="Skill" className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <ul className="divide-y divide-border">
-            {data.skills.map(s => (
-              <li key={s.code} className="flex flex-wrap items-center gap-3 px-4 py-3" aria-label={s.name}>
-                <div className="w-full min-w-0 sm:w-auto sm:flex-1">
-                  <p className="font-semibold text-foreground">{s.name}{!s.enabled && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">Đang tắt</span>}</p>
-                  <p className="text-xs text-muted-foreground">{s.code} · tối đa {s.dailyLimit} lượt / người / ngày</p>
-                </div>
-                <div className="inline-flex rounded-lg border border-border p-0.5" role="radiogroup" aria-label={`Ai được dùng ${s.name}`}>
-                  {(['everyone', 'granted'] as const).map(a => (
-                    <button key={a} type="button" role="radio" aria-checked={s.access === a} disabled={busy === s.code}
-                      onClick={() => { if (s.access !== a) void setAccess(s.code, s.name, a); }}
-                      className={`rounded-md px-2.5 py-1 text-xs font-semibold ${s.access === a ? 'bg-leaf-600 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
-                      {a === 'everyone' ? 'Mọi người' : 'Chỉ người được cấp'}</button>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {tab === 'skills' && <AiSkillsPanel skills={data.skills} busy={busy} onSetAccess={(code, name, access) => void setAccess(code, name, access)} service={skillService} />}
 
       {grantDrawer && <GrantDrawer data={data} service={service} editing={grantDrawer.editing} onClose={() => setGrantDrawer(null)} onSaved={() => { setGrantDrawer(null); load(); }} />}
       {templateDrawer && <TemplateDrawer data={data} service={service} editing={templateDrawer.editing} onClose={() => setTemplateDrawer(null)} onSaved={() => { setTemplateDrawer(null); load(); }} />}

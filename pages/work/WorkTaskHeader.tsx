@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState, type ReactNode } from "react";
-import { CalendarDays, Clock3, Flag, Layers3 } from "lucide-react";
+import { Clock3, MessagesSquare, PenLine } from "lucide-react";
 import type {
   WorkCollaborationCommand,
   WorkTaskDetail,
 } from "../../lib/work/workTypes";
 import { localDeadline, validateWorkSchedule, workError } from "../../lib/work/workForm";
-import { workStatusLabels, workWhen } from "../../lib/work/workPresentation";
+import { workDayLabel, workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdateInfo, workWhen } from "../../lib/work/workPresentation";
+import type { WorkTaskBrief } from "../../lib/work/workBoardService";
 
 export function WorkTaskHeader({
   detail,
@@ -16,6 +17,9 @@ export function WorkTaskHeader({
   actions,
   assigneeName,
   assigneeState,
+  creatorName,
+  reviewerName,
+  brief,
 }: {
   detail: WorkTaskDetail;
   scopeName: string;
@@ -25,6 +29,10 @@ export function WorkTaskHeader({
   actions?: ReactNode;
   assigneeName: string | null;
   assigneeState: string | null;
+  /** Đợt 1: dải "người giao → người làm · người duyệt · hạn". */
+  creatorName?: string;
+  reviewerName?: string;
+  brief?: WorkTaskBrief | null;
 }) {
   const { task } = detail;
   const [editing, setEditing] = useState(false);
@@ -59,25 +67,33 @@ export function WorkTaskHeader({
     }
   }
 
-  const priority = {
-    normal: "Bình thường",
-    important: "Quan trọng",
-    urgent: "Khẩn cấp",
-  }[task.priority];
+  const level = workLevelOf(task.priority);
+  const due = workDueInfo(task.deadline_at, task.status);
+  const update = workUpdateInfo(brief?.task.lastProgressAt, task.status);
+  const origin = brief?.origin;
+  const initial = (name: string | null | undefined) => (name || "?").trim().split(/\s+/).at(-1)?.[0] || "?";
 
   return (
     <header className="work-task-header">
       <div className="work-task-hero-top">
         <div className="work-task-kicker">
-          <span className={`work-detail-priority priority-${task.priority}`}>
-            <Flag size={14} aria-hidden="true" /> {priority}
-          </span>
+          <span className={`work-level-chip level-${level}`} title={workLevelLabels[task.priority]}>{level}</span>
+          <span className="work-level-text">{workLevelLabels[task.priority].slice(4)}</span>
           <span className={`work-status status-${task.status}`}>
             {workStatusLabels[task.status]}
           </span>
           {task.labels.map((label) => (
-            <span className="work-task-label" key={label}>{label}</span>
+            <span className="work-task-label" key={label}>#{label}</span>
           ))}
+          {origin?.origin === "directive" && (
+            <span className="work-origin-chip"><MessagesSquare size={13} aria-hidden="true" /> Chỉ đạo{origin.meeting ? ` · ${origin.meeting.title}` : ""}</span>
+          )}
+          {origin?.origin === "oral_claim" && (
+            <span className={`work-origin-chip is-${origin.claimStatus}`}>
+              <PenLine size={13} aria-hidden="true" /> Giao trực tiếp{origin.giver ? ` · ${origin.giver.name}` : ""}
+              {origin.claimStatus === "pending" ? " · chờ xác nhận" : origin.claimStatus === "confirmed" ? " · đã xác nhận" : origin.claimStatus === "rejected" ? " · không xác nhận" : ""}
+            </span>
+          )}
         </div>
         <div className="work-task-tools">
           <span className="work-task-code">{task.task_code}</span>
@@ -85,35 +101,37 @@ export function WorkTaskHeader({
         </div>
       </div>
       <h2>{task.title}</h2>
-      <div className="work-task-facts">
-        <div className="work-task-fact">
-          <span className="work-task-fact-label"><Layers3 size={16} aria-hidden="true" /> Workspace / Nhóm việc</span>
-          <span className="work-task-fact-value"><strong>{scopeName || "Đang tải…"}</strong>{bucketName && <><span className="work-fact-separator">/</span><span className="work-task-label">{bucketName}</span></>}</span>
+      <div className="work-flow" aria-label="Giao và hạn">
+        <div className="work-flow-p">
+          <span className="work-avatar" aria-hidden="true">{initial(creatorName)}</span>
+          <span><small>Người giao</small><strong>{creatorName || "Đang tải…"}</strong></span>
         </div>
-        <div className="work-task-fact">
-          <span className="work-task-fact-label"><CalendarDays size={16} aria-hidden="true" /> Lịch công việc</span>
-          <span className="work-task-fact-value work-task-date-range">
-            <span><small>Ngày bắt đầu</small><strong>{workWhen(task.planned_start_at || null)}</strong></span>
-            <span className="work-fact-arrow">→</span>
-            <span><small>Ngày kết thúc</small><strong>{workWhen(task.deadline_at)}</strong></span>
-          </span>
+        <span className="work-flow-arrow" aria-hidden="true">→</span>
+        <div className="work-flow-p">
+          <span className="work-avatar" aria-hidden="true">{initial(assigneeName)}</span>
+          <span><small>Người làm</small><strong>{assigneeName || "Chưa có"}</strong>{assigneeState && <em>{assigneeState}</em>}</span>
+        </div>
+        <div className="work-flow-p work-flow-reviewer">
+          <span className="work-avatar" aria-hidden="true">{task.review_policy === "auto_complete" ? "✓" : initial(reviewerName)}</span>
+          <span><small>Người duyệt</small><strong>{task.review_policy === "auto_complete" ? "Tự hoàn thành" : reviewerName || "Người giao"}</strong></span>
+        </div>
+        <div className={`work-flow-p work-flow-due tone-${due.tone}`}>
+          <span className="work-flow-clock" aria-hidden="true"><Clock3 size={16} /></span>
+          <span><small>Hạn</small><strong>{task.deadline_at ? workDayLabel(task.deadline_at) : "Chưa có"}</strong>{task.deadline_at && <em>{due.text}</em>}</span>
           {detail.capabilities.canManageSchedule && (
-            <button className="work-text-button" disabled={busy} onClick={() => setEditing(true)}>Chỉnh sửa</button>
+            <button className="work-text-button" disabled={busy} onClick={() => setEditing(true)}>Đổi hạn</button>
           )}
         </div>
-        <div className="work-task-fact">
-          <span className="work-task-fact-label"><Clock3 size={16} aria-hidden="true" /> Hoàn thành thực tế</span>
-          <span className="work-task-fact-value"><strong>{task.completed_at ? workWhen(task.completed_at) : task.started_at ? `Đã bắt đầu ${workWhen(task.started_at)}` : "Chưa hoàn thành"}</strong></span>
-        </div>
       </div>
-      <div className="work-task-assignment-line">
-        <span className={`work-status status-${task.status}`}>{workStatusLabels[task.status]}</span>
-        {assigneeName && (
-          <span className="work-task-assignee">
-            <span className="work-avatar" aria-hidden="true">{assigneeName.trim().split(/\s+/).at(-1)?.[0]}</span>
-            <span><strong>{assigneeName}</strong><small>Người thực hiện{assigneeState ? ` · ${assigneeState}` : ""}</small></span>
-          </span>
-        )}
+      <div className="work-flow-progress">
+        <span className="work-flow-bar" aria-hidden="true"><i style={{ width: `${task.progress_percent}%` }} /></span>
+        <b>{task.progress_percent}%</b>
+        {update && <span className={update.stale ? "work-stale" : "work-hint"}>{update.text}</span>}
+        <span className="work-flow-sub">
+          {scopeName || "Đang tải…"}{bucketName ? ` / ${bucketName}` : ""}
+          {task.planned_start_at ? ` · bắt đầu ${workWhen(task.planned_start_at)}` : ""}
+          {task.completed_at ? ` · hoàn thành ${workWhen(task.completed_at)}` : task.started_at ? ` · đang làm từ ${workWhen(task.started_at)}` : ""}
+        </span>
       </div>
       {editing && (
         <dialog ref={dialog} className="work-action-dialog" aria-labelledby="work-schedule-title" onCancel={(e) => { e.preventDefault(); if (!busy) setEditing(false); }}>

@@ -606,6 +606,10 @@ test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý 
   const rows = form.getByRole("list", { name: "Dòng đơn mua" }).locator(":scope > li");
   await expect(rows.nth(0)).toContainText("Vượt BOQ");
   await expect(rows.nth(1)).toContainText("Ngoài BOQ");
+  // 19/10: thành tiền báo giá (19.000.000) khác SL × đơn giá (1.900.000) → cảnh báo cam ngay trên dòng, chỉ dòng đó.
+  await expect(rows.nth(2)).toContainText("Lệch thành tiền");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toContainText("Báo giá ghi 19.000.000đ, tính ra 1.900.000đ — kiểm SL / đơn giá.");
+  await expect(rows.nth(0).getByTestId("po-amount-gap")).toHaveCount(0);
   await expect(form.getByLabel("Tiền đơn")).toContainText("Tạm tính 32.400.000đ");
   await expect(form.getByLabel("Tiền đơn")).toContainText("Tổng 34.992.000đ");
   await form.getByRole("button", { name: "Gửi duyệt" }).click();
@@ -613,12 +617,22 @@ test("T2c đơn mua trong chat: báo giá → khớp mã, NCC bấm chọn, lý 
   await expect(form.getByRole("alert")).toContainText("Chọn lý do mua chủ động.");
   await expect(form.getByRole("alert")).toContainText("ghi lý do mua vượt");
   await expect(form.getByRole("alert")).toContainText("Chọn người duyệt.");
+  await expect(form.getByRole("alert")).toContainText("Một dòng SL × đơn giá khác thành tiền báo giá");
+  // Sửa SL cho khớp thì hết cảnh báo; sửa lại thì cảnh báo trở lại; "Giữ số này" khi số đang nhập đúng.
+  await form.getByLabel("Số lượng Ống PVC").fill("200");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toHaveCount(0);
+  await form.getByLabel("Số lượng Ống PVC").fill("20");
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toBeVisible();
+  await rows.nth(2).getByRole("button", { name: "Giữ số này" }).click();
+  await expect(rows.nth(2).getByTestId("po-amount-gap")).toHaveCount(0);
+  await expect(rows.nth(2)).not.toContainText("Lệch thành tiền");
   await form.getByRole("group", { name: "Chọn nhà cung cấp" }).getByRole("button", { name: /Công ty CP Thép Hòa Phát/ }).click();
   await expect(form.getByRole("group", { name: "Nhà cung cấp đã chọn" })).toContainText("Công ty CP Thép Hòa Phát");
   await form.getByRole("group", { name: "Lý do mua chủ động" }).getByRole("button", { name: "Chốt giá tốt" }).click();
   await form.getByLabel("Lý do mua vượt BOQ").fill("Chốt giá trước tăng giá tháng 11");
   await form.getByRole("group", { name: "Chọn người duyệt" }).getByRole("button", { name: "Hà Đức Chuẩn" }).click();
   await form.getByRole("button", { name: "Gửi duyệt" }).click();
+  await expect(form.getByRole("alert")).toHaveCount(0);
   await expect(card).toHaveAttribute("data-state", "done");
   await expect(card).toContainText("Đã gửi đơn PO-2026-0712");
   await expect(card).toContainText("chờ Hà Đức Chuẩn duyệt");
@@ -692,6 +706,56 @@ test("19/10 ô hỏi hai tầng: gõ mã / tên → hồ sơ hiện ngay, Enter 
   const call = (await aiCalls(page)).filter(c => c.skill === "assistant_chat").pop() as { question: string; hits?: string[] };
   expect(call.question).toBe("nhân viên Hương còn bao nhiêu ngày phép năm");
   expect(call.hits).toEqual(["TT004431"]);
+});
+
+test("19/10 tầng tìm ngay có cả màn hình + thao tác: 'mua hàng' mở màn, 'tạo đề xuất' mở hộp thoại ngay; nghỉ phép là việc Trợ lý tự lo nên Enter đi AI", async ({ page, isMobile }) => {
+  test.skip(isMobile, "đo trên máy tính");
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, false);
+  const box = page.getByLabel("Câu hỏi", { exact: true });
+  const hits = chat(page).getByTestId("instant-hits");
+  await box.fill("mua hàng");
+  await expect(hits.getByRole("option").filter({ hasText: "Màn hình" }).first()).toContainText("Mua hàng");
+  await box.press("Enter");
+  await expect(workTabs(page).getByRole("tab", { name: /Mua hàng/ })).toHaveAttribute("aria-selected", "true");
+  await openAssistant(page, false);
+  await box.fill("tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Tạo đề xuất");
+  await expect(hits.getByRole("option").first()).toContainText("Thao tác");
+  await box.press("Enter");
+  await expect.poll(async () => (await aiCalls(page)).some(c => c.modal === "request")).toBe(true);
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(0);
+  // Nghỉ phép là việc Trợ lý tự lo trong chat (hỏi lại bằng nút): thao tác vẫn hiện để bấm, nhưng Enter đi AI.
+  await box.fill("Xin nghỉ");
+  await expect(hits.getByRole("option").first()).toContainText("Xin nghỉ phép");
+  await box.press("Enter");
+  await expect(chat(page).getByTestId("turn").last().locator(".vcc-msg-a")).toHaveText("Anh nghỉ loại nào?");
+  expect((await aiCalls(page)).filter(c => c.skill === "assistant_chat")).toHaveLength(1);
+  expect((await aiCalls(page)).filter(c => c.modal)).toHaveLength(1);
+});
+
+test("20/10 báo cáo A1: 'thống kê phiếu quy trình' → thẻ biểu đồ có ô số, cột theo tháng và vòng tròn theo mẫu kèm %; Bảng xem số; mở lại Lịch sử vẫn thấy", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  if (isMobile) { await page.getByLabel("Câu hỏi", { exact: true }).fill("Thống kê phiếu quy trình 3 tháng gần đây"); await chat(page).getByRole("button", { name: "Gửi", exact: true }).tap(); }
+  else await ask(page, "Thống kê phiếu quy trình 3 tháng gần đây");
+  const card = chat(page).getByTestId("chart-card");
+  await expect(card).toBeVisible();
+  await expect(card.locator(".vcc-cmd-title")).toHaveText("Phiếu quy trình 01/08/2026 – 07/10/2026");
+  await expect(card.locator(".vcc-chart-stats dd")).toHaveText(["119", "80", "6", "63"]);
+  await expect(card.locator(".vcc-chart-panel").first().locator("figcaption")).toContainText("Phiếu theo tháng");
+  const donut = card.locator(".vcc-chart-panel[data-kind=donut]");
+  await expect(donut.locator("figcaption")).toContainText("Theo mẫu quy trình");
+  await expect(donut.locator(".vcc-chart-donut-legend li").first()).toContainText("Đề nghị tạm ứng");
+  await expect(donut.locator(".vcc-chart-donut-legend li").first()).toContainText("60 phiếu · 50%");
+  await card.getByRole("button", { name: "Bảng" }).click();
+  await expect(card.locator("table").nth(1).locator("th").first()).toHaveText("Mục");
+  await expect(card.locator("table").nth(1).locator("tbody tr").first()).toContainText("Đề nghị tạm ứng");
+  // Không tràn ngang trên điện thoại.
+  if (isMobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.reload();
+  await openAssistant(page, isMobile);
+  await expect(chat(page).getByTestId("chart-card").locator(".vcc-chart-donut-legend li").first()).toContainText("Đề nghị tạm ứng");
 });
 
 test("T2c điện thoại: form đơn mua không tràn ngang, Lưu nháp được khi chưa có người duyệt", async ({ page, isMobile }) => {
@@ -960,4 +1024,30 @@ test("biểu đồ biến động nhân sự: thẻ ô số + 2 khung, nghỉ vi
   await ask(page, "Biểu đồ biến động nhân sự 6 tháng đầu năm");
   await expect(chat(page).getByTestId("turn").last()).toContainText("ngoài phạm vi anh được xem");
   await expect(chat(page).getByTestId("chart-card")).toHaveCount(0);
+});
+
+test("Vioo Work PR-3: \"giao cho …\" → thẻ Giao việc (người, hạn, mức sửa được); chỉ giao khi người dùng bấm Giao", async ({ page, isMobile }) => {
+  await page.goto(`${base}?ai=gemini`);
+  await openAssistant(page, isMobile);
+  await ask(page, "Giao cho anh Đô rà soát hồ sơ thanh toán đợt 3 SMB trước thứ 6, gấp");
+  const card = chat(page).getByRole("group", { name: "Giao việc" });
+  await expect(card).toHaveAttribute("data-state", "prepared");
+  await expect(card).toContainText("Nháp · chưa giao");
+  await expect(card.getByLabel("Người làm")).toHaveValue("do");
+  await expect(card.getByLabel("Ngày hạn")).toHaveValue("2099-10-23");
+  await expect(card.getByRole("button", { name: "A · Trọng điểm" })).toHaveAttribute("aria-pressed", "true");
+  await expect(card).toContainText("Checklist 3 mục");
+  // Chưa bấm thì chưa giao gì.
+  expect((await aiCalls(page)).filter(call => call.workTask)).toEqual([]);
+  await card.getByLabel("Người làm").selectOption("ha");
+  await card.getByRole("button", { name: "B · Quan trọng" }).click();
+  await card.getByRole("button", { name: "Giao", exact: true }).click();
+  const done = chat(page).getByTestId("command").filter({ hasText: "Đã giao VW-2026-000301" });
+  await expect(done).toHaveAttribute("data-state", "done");
+  await expect(done).toContainText("cho Đặng Thu Hà");
+  await expect(done.getByRole("button", { name: "Mở việc" })).toBeVisible();
+  const gave = (await aiCalls(page)).filter(call => call.workTask);
+  expect(gave).toHaveLength(1);
+  expect(gave[0]).toMatchObject({ workTask: "give", assigneeId: "ha", level: "B", title: "Rà soát hồ sơ thanh toán đợt 3 SMB" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
