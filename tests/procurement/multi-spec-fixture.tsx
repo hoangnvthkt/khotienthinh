@@ -55,7 +55,7 @@ const contract = {
   priceLines: [priceLine('pl-1', 'Tôn biên và tôn hồi 13 sóng', 94000), priceLine('pl-2', 'Tôn mái 11 sóng', 90000)],
 } as unknown as ContractDetail;
 procurementContractService.get = async () => structuredClone(contract);
-procurementContractService.searchItems = async () => [{ id: 'i-ton', name: 'Tôn sóng công nghiệp dày 0.45mm', sku: 'VT0001049', unit: 'm2' }];
+procurementContractService.searchItems = async () => [{ id: 'i-ton', name: 'Tôn sóng công nghiệp dày 0.45mm', sku: 'VT0001049', unit: 'm2' }, { id: 'i-ubot15', name: 'Hộp ubot H15+7', sku: 'VT0001190', unit: 'Cái' }];
 procurementContractService.saveOrder = async input => { log('saveContractOrder', input); return { purchaseOrderId: 'po-3', poNumber: 'PO-2026-0003', rowVersion: 1, totalAmount: 0, lines: input.items.length, manualPrices: 0 } as any; };
 const warehouses = [{ id: 'w1', name: 'Kho Sơn Miền Bắc', type: 'SITE', isArchived: false, projectId: 'p1' }] as unknown as Warehouse[];
 
