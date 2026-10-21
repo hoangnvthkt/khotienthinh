@@ -50,12 +50,9 @@ const getTaskDuration = (task: Pick<ProjectTask, 'duration' | 'startDate' | 'end
   return Math.max(1, daysBetweenDates(task.startDate, task.endDate));
 };
 
-export const getTaskProgressWeight = (task: ProjectTask): number => {
-  const duration = getTaskDuration(task);
-  const costWeight = (task.estimatedCostPerDay || 0) * duration;
-  if (costWeight > 0) return costWeight;
-  return duration * Math.max(1, task.resourceCount || 1);
-};
+/** Trọng số tiến độ = số ngày kế hoạch (chủ SP chốt 21/10/2026, bỏ hệ số số công nhân / chi phí ngày). */
+export const getTaskProgressWeight = (task: Pick<ProjectTask, 'duration' | 'startDate' | 'endDate' | 'isMilestone'>): number =>
+  getTaskDuration(task);
 
 export const calculateProjectProgress = (tasks: ProjectTask[]): ProjectProgressSummary => {
   const leafTasks = getLeafProjectTasks(tasks);

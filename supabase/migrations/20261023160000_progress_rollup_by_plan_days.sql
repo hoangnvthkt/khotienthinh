@@ -1,23 +1,17 @@
 -- % hạng mục cha = trung bình có trọng số của mọi việc lá bên dưới, trọng số = số ngày kế hoạch
 -- (chủ SP chốt 21/10/2026). Trước đây cha cộng theo khối lượng tạm tính khi mọi con có KL — lẫn đơn vị
 -- (kg + m2 + m3) nên việc có số kg lớn át hết — còn lại thì trung bình cộng con.
--- Trọng số giống calculateProjectProgress / get_project_task_progress_v1 để % dòng gốc khớp % dự án.
+-- Trọng số chỉ là số ngày kế hoạch — bỏ hệ số số công nhân / chi phí ngày (chủ SP 21/10; SMB có resource_count tới 778
+-- làm % dự án 82,9% thay vì 68,5%). Dùng chung cho calculateProjectProgress và get_project_task_progress_v1 để % dòng gốc khớp % dự án.
 -- Cha chỉ 100% khi mọi việc lá đạt 100%, còn lại tối đa 99%.
 
 create or replace function app_private.project_task_progress_weight_v1(task public.project_tasks)
 returns numeric language sql immutable set search_path = '' as $$
-  with d as (
-    select (case
-      when coalesce(task.is_milestone, false) then 1
-      when coalesce(task.duration, 0) > 0 then task.duration
-      else greatest(1, coalesce(nullif(task.end_date, '')::date - nullif(task.start_date, '')::date, 1))
-    end)::numeric as days
-  )
-  select case
-    when coalesce(task.estimated_cost_per_day, 0) * d.days > 0 then task.estimated_cost_per_day * d.days
-    else d.days * greatest(1, coalesce(nullif(task.resource_count, 0), 1))
-  end
-  from d;
+  select (case
+    when coalesce(task.is_milestone, false) then 1
+    when coalesce(task.duration, 0) > 0 then task.duration
+    else greatest(1, coalesce(nullif(task.end_date, '')::date - nullif(task.start_date, '')::date, 1))
+  end)::numeric;
 $$;
 revoke all on function app_private.project_task_progress_weight_v1(public.project_tasks) from public, anon, authenticated;
 
@@ -355,3 +349,46 @@ set progress = derived.progress
 from derived
 where task.id = derived.id
   and task.progress is distinct from derived.progress;
+
+-- % dự án trên danh sách (Trung tâm Điều hành) cùng trọng số số ngày kế hoạch.
+create or replace function public.get_project_task_progress_v1()
+returns table (construction_site_id text, progress_percent integer, leaf_task_count integer)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  with tasks as (
+    select task.id, task.parent_id, task.construction_site_id, task.progress, task.duration, task.is_milestone,
+      task.start_date, task.end_date
+    from public.project_tasks task
+    where task.construction_site_id is not null
+  ),
+  leaves as (
+    select tasks.* from tasks
+    where not exists (
+      select 1 from tasks child
+      where child.construction_site_id = tasks.construction_site_id and child.parent_id = tasks.id
+    )
+  ),
+  weights as (
+    select leaves.construction_site_id,
+      greatest(0, least(100, coalesce(leaves.progress, 0)))::numeric as pct,
+      case
+        when coalesce(leaves.is_milestone, false) then 1
+        when coalesce(leaves.duration, 0) > 0 then leaves.duration
+        else greatest(1, coalesce(nullif(leaves.end_date, '')::date - nullif(leaves.start_date, '')::date, 1))
+      end::numeric as weight
+    from leaves
+  )
+  select weights.construction_site_id,
+    case when sum(weights.weight) > 0 then round(sum(weights.pct * weights.weight) / sum(weights.weight))::integer else 0 end,
+    count(*)::integer
+  from weights
+  group by weights.construction_site_id;
+$$;
+
+revoke all on function public.get_project_task_progress_v1() from public, anon;
+grant execute on function public.get_project_task_progress_v1() to authenticated, service_role;
+
+notify pgrst, 'reload schema';

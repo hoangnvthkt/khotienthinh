@@ -24,7 +24,7 @@ describe('% hạng mục cha theo số ngày kế hoạch', () => {
   });
 
   it('dòng gốc khớp % dự án', () => {
-    const tasks = [task('1', undefined, 0, 0), task('1.1', '1', 10, 80), task('1.2', '1', 2, 0), task('1.3', '1', 5, 30, { resourceCount: 3 })];
+    const tasks = [task('1', undefined, 0, 0), task('1.1', '1', 10, 80), task('1.2', '1', 2, 0), task('1.3', '1', 5, 30, { resourceCount: 300 })];
     const derived = deriveProjectTaskProgress(tasks, [], '2026-10-21');
     expect(derived.find(item => item.id === '1')!.progress).toBe(calculateProjectProgress(derived).progressPercent);
   });
@@ -33,5 +33,12 @@ describe('% hạng mục cha theo số ngày kế hoạch', () => {
     const tasks = [task('9', undefined, 0, 0), ...Array.from({ length: 13 }, (_, index) => task(`9.${index + 1}`, '9', 50, 100)), task('9.14', '9', 1, 0)];
     expect(byId(tasks).get('9')).toBe(99); // 99,85% làm tròn ra 100 nhưng còn 9.14 chưa làm
     expect(byId(tasks.map(item => item.id === '9.14' ? { ...item, progress: 100 } : item)).get('9')).toBe(100);
+  });
+});
+
+describe('% dự án theo số ngày kế hoạch', () => {
+  it('bỏ hệ số số công nhân và chi phí ngày', () => {
+    const tasks = [task('1', undefined, 10, 100, { resourceCount: 778 }), task('2', undefined, 10, 0, { estimatedCostPerDay: 5_000_000 })];
+    expect(calculateProjectProgress(tasks).progressPercent).toBe(50);
   });
 });
