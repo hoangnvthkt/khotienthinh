@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Building, CheckCircle2, Crosshair, ExternalLink, HardHat, MapPin, RefreshCw, Save, X } from 'lucide-react';
+import { AlertTriangle, Building, CheckCircle2, Crosshair, ExternalLink, HardHat, MapPin, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
@@ -38,7 +38,7 @@ const SELECT = 'id,name,latitude,longitude,"checkInRadius","managerId"';
  * "chấm công bù" for the place (owner decision 6, 02/10/2026).
  */
 const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }) => {
-  const { users } = useApp();
+  const { users, addHrmItem } = useApp();
   const toast = useToast();
   const [locations, setLocations] = useState<AttendanceLocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +47,8 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
   const [draft, setDraft] = useState<Draft | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [newLocation, setNewLocation] = useState<{ table: LocationTable; name: string } | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const activeUsers = useMemo(
     () => users.filter(user => user.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, 'vi')),
@@ -158,6 +160,34 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
     }
   };
 
+  const create = async () => {
+    if (!newLocation) return;
+    const name = newLocation.name.trim();
+    if (!name) {
+      toast.error('Chưa có tên địa điểm', 'Nhập tên, ví dụ "Công trường Hương Liên".');
+      return;
+    }
+    const duplicate = locations.find(location => location.table === newLocation.table && location.name.trim().toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      toast.error('Địa điểm đã có', `"${duplicate.name}" đã có trong danh sách.`);
+      return;
+    }
+    const radius = KIND[newLocation.table].defaultRadius;
+    const created: AttendanceLocation = { id: crypto.randomUUID(), table: newLocation.table, name, lat: null, lng: null, radius, approverId: '' };
+    setCreating(true);
+    try {
+      await addHrmItem(newLocation.table, { id: created.id, name, checkInRadius: radius });
+      toast.success('Đã thêm địa điểm', `${name}. Thêm tọa độ để nhân viên chấm công được.`);
+      setNewLocation(null);
+      await load();
+      startEdit(created);
+    } catch (error) {
+      toast.error('Chưa thêm được địa điểm', getApiErrorMessage(error, 'Tài khoản cần quyền quản trị danh mục HRM.'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const missingCount = locations.filter(location => location.lat === null).length;
 
   return (
@@ -169,10 +199,51 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
             Nhân viên chỉ chấm được khi đứng trong bán kính của một địa điểm. Người duyệt nhận các đề xuất chấm công bù của địa điểm đó.
           </p>
         </div>
-        <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Tải lại
-        </button>
+        <div className="flex gap-2 self-start">
+          <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Tải lại
+          </button>
+          {canEdit && !newLocation && (
+            <button type="button" onClick={() => setNewLocation({ table: 'hrm_construction_sites', name: '' })} className="inline-flex items-center gap-2 rounded-xl bg-leaf-600 px-3 py-2 text-xs font-black text-white hover:bg-leaf-700">
+              <Plus size={14} /> Thêm địa điểm
+            </button>
+          )}
+        </div>
       </div>
+
+      {newLocation && (
+        <form
+          onSubmit={event => { event.preventDefault(); void create(); }}
+          className="flex flex-col gap-3 rounded-2xl border border-mint-200 bg-mint-50/60 p-4 dark:border-mint-900/50 dark:bg-mint-950/20 sm:flex-row sm:items-end"
+        >
+          <div className="flex shrink-0 gap-1 rounded-xl bg-white p-1 dark:bg-slate-900">
+            {(Object.keys(KIND) as LocationTable[]).map(table => {
+              const Icon = KIND[table].icon;
+              const active = newLocation.table === table;
+              return (
+                <button key={table} type="button" onClick={() => setNewLocation({ ...newLocation, table })}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black ${active ? 'bg-mint-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                  <Icon size={14} /> {table === 'hrm_offices' ? 'Văn phòng' : 'Công trường'}
+                </button>
+              );
+            })}
+          </div>
+          <label className="min-w-0 flex-1 text-xs font-bold text-slate-500">
+            Tên địa điểm
+            <input autoFocus value={newLocation.name} onChange={event => setNewLocation({ ...newLocation, name: event.target.value })}
+              placeholder={newLocation.table === 'hrm_offices' ? 'Ví dụ: Văn phòng Hải Phòng' : 'Ví dụ: Công trường Hương Liên'}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-slate-700 dark:bg-slate-900" />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setNewLocation(null)} className="inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-white dark:hover:bg-slate-900">
+              <X size={14} /> Hủy
+            </button>
+            <button type="submit" disabled={creating} className="inline-flex items-center gap-1 rounded-xl bg-leaf-600 px-4 py-2 text-xs font-black text-white hover:bg-leaf-700 disabled:opacity-50">
+              <Plus size={14} /> {creating ? 'Đang thêm…' : 'Thêm'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {missingCount > 0 && (
         <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
@@ -181,7 +252,7 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
         </div>
       )}
       {!canEdit && (
-        <p className="text-xs font-bold text-slate-500">Bạn đang xem. Chỉ HR Manage được sửa tọa độ, bán kính và người duyệt.</p>
+        <p className="text-xs font-bold text-slate-500">Bạn đang xem. Chỉ HR Manage được thêm địa điểm, sửa tọa độ, bán kính và người duyệt.</p>
       )}
       {loadError && <p className="text-sm font-bold text-rose-600">{loadError}</p>}
 
