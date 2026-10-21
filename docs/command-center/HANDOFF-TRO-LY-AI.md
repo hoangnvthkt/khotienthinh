@@ -65,6 +65,9 @@ ai-gateway (supabase/functions/ai-gateway)
              đối chiếu thanh_tien: lệch đúng 1.000 lần thì sửa SL), chuan_bi_nhat_ky (nguyên văn tin / noi_dung chép từ ảnh), chuan_bi_ghi_nho
              matchProjects / projectsMentioned (mã, tên, chủ đầu tư; cặp chữ liền "Xin Hai")
   agent.ts / providers.ts   định dạng OpenAI / Anthropic, ảnh base64, ToolChoice
+  _shared/aiComplete.ts (B1, 21/10) gọi MỘT lượt trả JSON dùng chung với wms-doc-reader: ảnh chờ 110 s (như hội thoại), đầu ra dài 100 s, chữ 55 s;
+             lỗi thoáng qua (rỗng / 429 / 5xx / không gọi được) thử lại đúng 1 lần trong quỹ 140 s (hết giờ KHÔNG thử lại); mã lỗi ổn định
+             AI_TIMEOUT / AI_UNREACHABLE / AI_HTTP_<mã> → lib/aiGateway.ts aiFailureMessage nói đúng chuyện ở mọi màn (Kho, Lập đơn, Đề xuất, Trợ lý)
   chat.ts    (19/10) parseChatHits / foundLines: hồ sơ ô tìm ngay gửi kèm → <du_lieu loai="tim_thay"> với mã hN (SourceBook) — AI dùng trước, không gọi tim_ho_so
   reports.ts (20/10) bao_cao: 3 RPC assistant_report_{workflow,inventory,procurement}_v1 (security invoker → theo quyền xem RLS) → thẻ biểu đồ cột / cột chồng / tròn (lib/assistantChart.ts kinds line|bar|stacked|donut, nhãn riêng từng khung)
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
@@ -154,6 +157,8 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 5. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
 6. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
 7. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
+8. **Trợ lý "sống trong phần mềm"** (chủ SP 21/10, doc `14-tro-ly-song-trong-phan-mem-2026-10-21.md`): B1 đường đọc ảnh chung — XONG (PR này);
+   tiếp B2 phiếu sự cố từ Trợ lý (ảnh + ngữ cảnh → `ai_issues` → Admin, Jev phân loại), A2 báo cáo, B3 sổ tay Vioo, B4 bản tin Admin tuần, B5 OCR hợp đồng / văn bản. Chờ 4 câu ở doc 14 mục 5.
 
 ## 9. Memory liên quan
 

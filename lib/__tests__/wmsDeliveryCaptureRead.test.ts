@@ -37,3 +37,19 @@ describe('AI đọc phiếu khi mất kết nối (16/10)', () => {
     await expect(p).resolves.toEqual({ code: 'AI_FAILED', error: 'Mất kết nối khi AI đang đọc — bấm Đọc lại.' });
   });
 });
+
+describe('lời báo khi cổng AI chậm / lỗi (B1, 21/10)', () => {
+  afterEach(() => { invoke.mockReset(); rpc.mockReset(); });
+
+  it('máy chủ trả AI_TIMEOUT → nói cổng chậm và bấm đọc lại, không nói "AI chưa đọc được"', async () => {
+    invoke.mockResolvedValue({ data: { code: 'AI_FAILED', error: 'AI_TIMEOUT' }, error: null });
+    await expect(svc.read(cap())).resolves.toEqual({ code: 'AI_FAILED', error: 'Máy chủ AI đang chậm — chưa trả lời sau 110 giây. Bấm đọc lại, không cần chụp lại.' });
+  });
+
+  it('AI_HTTP_502 → lời 5xx chung; AI_CONNECTION_LOST vẫn là lời riêng của Kho', async () => {
+    invoke.mockResolvedValue({ data: { code: 'AI_FAILED', error: 'AI_HTTP_502' }, error: null });
+    await expect(svc.read(cap())).resolves.toEqual({ code: 'AI_FAILED', error: 'Nhà cung cấp AI lỗi (502) — thử lại sau ít phút.' });
+    invoke.mockResolvedValue({ data: { code: 'AI_FAILED', error: 'AI_CONNECTION_LOST' }, error: null });
+    await expect(svc.read(cap())).resolves.toEqual({ code: 'AI_FAILED', error: 'Mất kết nối khi AI đang đọc — bấm Đọc lại.' });
+  });
+});

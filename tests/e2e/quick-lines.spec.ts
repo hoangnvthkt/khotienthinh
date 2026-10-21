@@ -70,7 +70,14 @@ test('AI đọc ảnh lỗi: báo rõ, gõ tay vẫn được', async ({ page })
   const camera = page.getByRole('dialog', { name: 'Chụp phiếu đề xuất' });
   await camera.locator('input[type=file][multiple]').setInputFiles({ name: 'phieu.jpg', mimeType: 'image/jpeg', buffer: JPEG });
   await camera.getByRole('button', { name: /Xong/ }).click();
-  await expect(page.getByTestId('quick-photo')).toContainText('Chụp lại hoặc gõ tay', { timeout: 10_000 });
+  // B1 (21/10): lời báo theo mã lỗi máy chủ (502 → "Nhà cung cấp AI lỗi"), có nút Đọc lại cùng ảnh, không bắt chụp lại.
+  const photo = page.getByTestId('quick-photo');
+  await expect(photo).toContainText('Nhà cung cấp AI lỗi (502)', { timeout: 10_000 });
+  await expect(photo).toContainText('Hoặc chụp lại / gõ tay');
+  await expect(photo.getByRole('button', { name: 'Đọc lại' })).toBeVisible();
+  await expect(photo.getByRole('button', { name: 'Chụp lại' })).toBeVisible();
+  await photo.getByRole('button', { name: 'Đọc lại' }).click();
+  await expect(photo).toContainText('Nhà cung cấp AI lỗi (502)', { timeout: 10_000 });
   await page.getByRole('textbox', { name: 'Danh sách vật tư', exact: true }).fill('cut pvc 110 15 cai');
   await expect(panel.getByText('1 dòng · 1 đã khớp mã')).toBeVisible();
 });

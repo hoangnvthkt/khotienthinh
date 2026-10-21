@@ -16,6 +16,36 @@ export const AI_GATEWAY_MESSAGES: Record<AiGatewayErrorCode, string> = {
   AI_REFUSED: 'AI từ chối nội dung này.',
   AI_FAILED: 'AI chưa trả lời được.',
 };
+/**
+ * Lời báo theo mã lỗi máy chủ trả về (B1, 21/10): nói đúng chuyện gì xảy ra thay vì "AI chưa trả lời được" — người dùng hiểu nhầm là
+ * AI không nhận diện được ảnh, trong khi thật ra cổng AI chậm / hết credit / sai khóa. Dùng chung cho Kho, Lập đơn, Đề xuất, Trợ lý.
+ */
+export const AI_FAILURE_MESSAGES: Record<string, string> = {
+  AI_TIMEOUT: 'Máy chủ AI đang chậm — chưa trả lời sau 110 giây. Bấm đọc lại, không cần chụp lại.',
+  AI_UNREACHABLE: 'Không gọi được nhà cung cấp AI — thử lại sau ít phút.',
+  AI_EMPTY: 'AI trả lời rỗng — thử lại.',
+  AI_TRUNCATED: 'AI trả lời bị cắt giữa chừng — thử lại hoặc chia nhỏ.',
+  AI_BAD_JSON: 'AI trả kết quả không đúng dạng — thử lại.',
+  AI_BAD_INPUT: 'Ảnh / dữ liệu gửi lên không hợp lệ — chụp lại.',
+  AI_PDF_UNSUPPORTED: 'Kết nối AI này chưa đọc PDF — chụp ảnh.',
+  AI_MODEL_REQUIRED: 'Kết nối AI chưa chọn model — kiểm tra ở Cài đặt → Kết nối.',
+  AI_KIND_UNSUPPORTED: 'Kết nối AI này không trả lời được (chỉ ra quyết định) — gán kết nối khác ở Cài đặt → Kết nối.',
+  AI_HTTP_400: 'Nhà cung cấp AI từ chối yêu cầu (400) — kiểm model ở Cài đặt → Kết nối.',
+  AI_HTTP_401: 'Sai khóa AI — kiểm tra ở Cài đặt → Kết nối.',
+  AI_HTTP_402: 'Hết credit nhà cung cấp AI.',
+  AI_HTTP_403: 'Khóa AI không có quyền — kiểm tra ở Cài đặt → Kết nối.',
+  AI_HTTP_404: 'Sai endpoint hoặc model — kiểm tra ở Cài đặt → Kết nối.',
+  AI_HTTP_413: 'Ảnh quá lớn với nhà cung cấp AI — chụp ít ảnh hơn.',
+  AI_HTTP_429: 'Nhà cung cấp AI đang giới hạn — thử lại sau.',
+};
+/** Lời theo mã AI_* (kể cả AI_HTTP_5xx); mã lạ → null để nơi gọi dùng lời mặc định của màn đó. */
+export const aiFailureMessage = (error: string | null | undefined): string | null => {
+  const code = (error || '').trim();
+  if (!code) return null;
+  if (AI_FAILURE_MESSAGES[code]) return AI_FAILURE_MESSAGES[code];
+  if (/^AI_HTTP_5\d\d$/.test(code)) return `Nhà cung cấp AI lỗi (${code.slice(8)}) — thử lại sau ít phút.`;
+  return null;
+};
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = { anthropic: 'Anthropic (Claude)', gemini: 'Google (Gemini)', openai: 'OpenAI', openai_compatible: 'Chuẩn OpenAI', typesafe: 'TypeSafe (Jev)' };
 /** Đích đang dùng cho một lớp model: kết nối ở Cài đặt → Kết nối, hoặc khóa trong Secrets. */
 export interface AiTargetInfo { source: 'connection' | 'secrets'; name: string; kind: AiProvider; label: string; model: string }
@@ -215,5 +245,6 @@ export const aiErrorMessage = (outcome: { code: AiGatewayErrorCode; reason?: AiQ
       : `Hết lượt AI hôm nay${outcome.dailyLimit ? ` (${outcome.usedToday ?? outcome.dailyLimit}/${outcome.dailyLimit})` : ''}.`;
   }
   if (outcome.code === 'AI_NOT_CONFIGURED' && outcome.error === 'AI_NOT_DEPLOYED') return 'Hàm ai-gateway chưa triển khai.';
+  if (outcome.code === 'AI_FAILED') return aiFailureMessage(outcome.error) || AI_GATEWAY_MESSAGES.AI_FAILED;
   return AI_GATEWAY_MESSAGES[outcome.code] || AI_GATEWAY_MESSAGES.AI_FAILED;
 };

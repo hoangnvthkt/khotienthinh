@@ -68,3 +68,15 @@ describe('aiGateway (client)', () => {
     expect(rpc).toHaveBeenLastCalledWith('set_ai_settings_v1', { p: { monthlyRunCap: 500 } });
   });
 });
+
+describe('lời báo theo mã lỗi máy chủ (B1, 21/10)', () => {
+  it('AI_FAILED kèm mã → nói đúng chuyện (hết giờ, 5xx, sai khóa); mã lạ → lời mặc định', async () => {
+    const { aiFailureMessage } = await import('../aiGateway');
+    expect(aiErrorMessage({ code: 'AI_FAILED', error: 'AI_TIMEOUT' })).toBe('Máy chủ AI đang chậm — chưa trả lời sau 110 giây. Bấm đọc lại, không cần chụp lại.');
+    expect(aiErrorMessage({ code: 'AI_FAILED', error: 'AI_HTTP_503' })).toBe('Nhà cung cấp AI lỗi (503) — thử lại sau ít phút.');
+    expect(aiErrorMessage({ code: 'AI_FAILED', error: 'AI_HTTP_401' })).toBe('Sai khóa AI — kiểm tra ở Cài đặt → Kết nối.');
+    expect(aiErrorMessage({ code: 'AI_FAILED', error: 'AI_FAILED' })).toBe('AI chưa trả lời được.');
+    expect(aiErrorMessage({ code: 'AI_FAILED' })).toBe('AI chưa trả lời được.');
+    expect(aiFailureMessage('Signal timed out.')).toBeNull();
+  });
+});
