@@ -11,7 +11,7 @@ export const CASH_SOURCE: Record<string, string> = {
   payment_request: 'Đề nghị chi', customer_receipt: 'Phiếu thu CĐT', advance_refund: 'NCC hoàn tạm ứng', external_payment: 'Chi ngoài', cash_movement: 'Thu khác', cash_transfer: 'Chuyển tiền',
 };
 export const EXPENSE_CATEGORIES: Record<string, string> = {
-  salary: 'Lương', tax: 'Thuế', insurance: 'Bảo hiểm', office: 'Chi phí văn phòng', utilities: 'Điện, nước', interest: 'Lãi vay', loan_repay: 'Trả nợ vay',
+  salary: 'Lương', tax: 'Thuế', insurance: 'Bảo hiểm', office: 'Chi phí văn phòng', office_supply_stock: 'Mua VPP nhập kho', utilities: 'Điện, nước', interest: 'Lãi vay', loan_repay: 'Trả nợ vay',
   staff_advance: 'Tạm ứng nhân viên', bank_fee: 'Phí ngân hàng', other: 'Chi khác',
 };
 export const RECEIPT_CATEGORIES: Record<string, string> = { loan: 'Vay ngân hàng', interest: 'Lãi tiền gửi', asset_sale: 'Thanh lý tài sản', staff_refund: 'Nhân viên hoàn ứng', other: 'Thu khác' };
