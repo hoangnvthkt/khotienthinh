@@ -46,6 +46,7 @@ import {
 } from '../lib/inventoryNxtReport';
 import { Kpi, shortMoney } from '../components/finance/financeUi';
 import { StateBox } from '../components/procurement/hub/hubUi';
+import { UnpricedReceiptsDrawer } from '../components/wms/UnpricedReceiptsDrawer';
 
 type ReportView = 'summary' | 'material_card' | 'warehouse_card' | 'history';
 
@@ -259,7 +260,9 @@ const Reports: React.FC = () => {
     search: debouncedSearch,
   }), [debouncedSearch, endDate, selectedMaterialId, selectedWh, startDate]);
   const { rows: nxtRows, loading: nxtLoading, error: nxtError, reload: reloadNxt } = useInventoryNxtReport(nxtFilters);
+  const nxtUnknown = Boolean(nxtError) || (nxtLoading && nxtRows.length === 0);
   const [missingPriceOnly, setMissingPriceOnly] = useState(false);
+  const [priceFixRow, setPriceFixRow] = useState<InventoryNxtRow | null>(null);
   const nxtTotals = useMemo(() => summarizeNxt(nxtRows), [nxtRows]);
   const visibleNxtRows = useMemo(
     () => missingPriceOnly ? nxtRows.filter(rowMissingPrice) : nxtRows,
@@ -509,7 +512,7 @@ const Reports: React.FC = () => {
               onClick={() => { setActiveView('summary'); setMissingPriceOnly(false); }}
               icon={card.icon}
               label={card.label}
-              value={nxtLoading || nxtError ? '—' : shortMoney(card.value)}
+              value={nxtUnknown ? '—' : shortMoney(card.value)}
               hint={nxtError ? 'chưa tải được' : card.hint}
               tone={card.tone}
             />
@@ -521,7 +524,7 @@ const Reports: React.FC = () => {
             onClick={() => { setActiveView('summary'); setMissingPriceOnly(value => !value); }}
             icon={AlertTriangle}
             label="Thiếu đơn giá"
-            value={nxtLoading || nxtError ? '—' : `${nxtTotals.missingPriceRows} dòng`}
+            value={nxtUnknown ? '—' : `${nxtTotals.missingPriceRows} dòng`}
             hint={nxtError ? 'chưa tải được' : missingPriceOnly ? 'bấm để xem tất cả' : 'giá trị tồn chưa đủ, bấm để lọc'}
             tone={nxtTotals.missingPriceRows > 0 ? 'text-amber-600' : 'text-slate-500'}
           />
@@ -554,11 +557,11 @@ const Reports: React.FC = () => {
           <div>
             {missingPriceOnly && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800">
-                <span className="inline-flex items-center gap-1.5"><AlertTriangle size={14} /> Đang xem {visibleNxtRows.length} dòng có số lượng nhưng phiếu nhập chưa có đơn giá.</span>
+                <span className="inline-flex items-center gap-1.5"><AlertTriangle size={14} /> {visibleNxtRows.length} dòng thiếu đơn giá — bấm "Bổ sung giá" ở từng dòng.</span>
                 <button type="button" onClick={() => setMissingPriceOnly(false)} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 hover:bg-amber-100">Xem tất cả</button>
               </div>
             )}
-            {nxtLoading ? (
+            {nxtLoading && nxtRows.length === 0 ? (
               <div className="p-4"><StateBox kind="loading" title="Đang tổng hợp nhập xuất tồn…" /></div>
             ) : nxtError ? (
               <div className="p-4"><StateBox kind="error" title="Chưa tải được báo cáo nhập xuất tồn" message={nxtError} onRetry={reloadNxt} /></div>
@@ -598,16 +601,25 @@ const Reports: React.FC = () => {
                               {row.itemMissing
                                 ? <span className="italic text-slate-400" title="Mã còn trên sổ kho nhưng đã bị xóa hoặc gộp trong Danh mục vật tư">{MISSING_ITEM_LABEL}</span>
                                 : <span className="line-clamp-2">{row.name}</span>}
+                              {rowMissingPrice(row) && (
+                                <button
+                                  type="button"
+                                  onClick={event => { event.stopPropagation(); setPriceFixRow(row); }}
+                                  className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
+                                >
+                                  <AlertTriangle size={11} /> Bổ sung giá
+                                </button>
+                              )}
                             </td>
                             <td className="border-r border-slate-100 px-2 py-2 text-slate-500">{row.unit || '—'}</td>
                             <NxtQty value={row.openingQty} />
-                            <NxtValue qty={row.openingQty} value={row.openingValue} />
+                            <NxtValue qty={row.openingQty} value={row.openingValue} onFix={() => setPriceFixRow(row)} />
                             <NxtQty value={row.inQty} />
-                            <NxtValue qty={row.inQty} value={row.inValue} />
+                            <NxtValue qty={row.inQty} value={row.inValue} onFix={() => setPriceFixRow(row)} />
                             <NxtQty value={row.outQty} />
-                            <NxtValue qty={row.outQty} value={row.outValue} />
+                            <NxtValue qty={row.outQty} value={row.outValue} onFix={() => setPriceFixRow(row)} />
                             <NxtQty value={row.closingQty} strong negative={negative} />
-                            <NxtValue qty={row.closingQty} value={row.closingValue} strong />
+                            <NxtValue qty={row.closingQty} value={row.closingValue} strong onFix={() => setPriceFixRow(row)} />
                             {showWarehouseColumn && <td className="px-3 py-2 text-xs font-semibold text-slate-600">{row.warehouseName}</td>}
                           </tr>
                         );
@@ -730,6 +742,18 @@ const Reports: React.FC = () => {
         )}
       </div>
 
+      {priceFixRow && (
+        <UnpricedReceiptsDrawer
+          warehouseId={priceFixRow.warehouseId}
+          warehouseName={priceFixRow.warehouseName}
+          materialId={priceFixRow.materialId}
+          sku={priceFixRow.sku}
+          name={priceFixRow.itemMissing ? MISSING_ITEM_LABEL : priceFixRow.name}
+          onClose={() => setPriceFixRow(null)}
+          onPosted={reloadNxt}
+        />
+      )}
+
       {traceEntry && (
         <div className="fixed inset-0 z-[80] bg-black/40 p-4 flex items-center justify-center">
           <div className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
@@ -794,10 +818,19 @@ const NxtQty: React.FC<{ value: number; strong?: boolean; negative?: boolean }> 
   </td>
 );
 
-const NxtValue: React.FC<{ qty: number; value: number; strong?: boolean }> = ({ qty, value, strong }) => (
+const NxtValue: React.FC<{ qty: number; value: number; strong?: boolean; onFix?: () => void }> = ({ qty, value, strong, onFix }) => (
   <td className={`border-r border-slate-100 px-3 py-2 text-right tabular-nums ${strong ? 'font-bold text-slate-900' : 'text-slate-600'}`}>
     {isValueMissing(qty, value)
-      ? <span className="whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700" title="Có số lượng nhưng phiếu chưa có đơn giá">Chưa có giá</span>
+      ? (
+        <button
+          type="button"
+          onClick={event => { event.stopPropagation(); onFix?.(); }}
+          className="whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
+          title="Có số lượng nhưng phiếu chưa có đơn giá — bấm để bổ sung"
+        >
+          Chưa có giá
+        </button>
+      )
       : Math.round(value) === 0 ? <span className="text-slate-300">–</span> : wholeMoney(value)}
   </td>
 );
