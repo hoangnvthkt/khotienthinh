@@ -2,15 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { CalendarRange, Check, ChevronDown } from "lucide-react";
 import { localIsoDate } from "../../lib/work/workAiText";
 import {
-  WORK_PERIOD_PRESETS, customPeriod, periodLabel, presetPeriod, restorePeriod, storePeriod, type WorkPeriod, type WorkPeriodPreset,
+  WORK_PERIOD_PRESETS, customPeriod, periodFromRange, periodLabel, presetPeriod, restorePeriod, storePeriod, type WorkPeriod, type WorkPeriodPreset,
 } from "../../lib/work/workPeriod";
 
 const KEY = "work.period";
 
-/** Kỳ đang xem, nhớ chung cho Việc của tôi / Phòng tôi / Toàn công ty. */
-export function useWorkPeriod(): [WorkPeriod, (p: WorkPeriod) => void, string] {
+/** Kỳ đang xem, nhớ chung cho Việc của tôi / Phòng tôi / Toàn công ty. Link bản tin (?from&to) thắng kỳ đã nhớ. */
+export function useWorkPeriod(link?: { from: string | null; to: string | null } | null): [WorkPeriod, (p: WorkPeriod) => void, string] {
   const today = localIsoDate(new Date());
   const [period, setPeriod] = useState<WorkPeriod>(() => {
+    const linked = link ? periodFromRange(link.from, link.to, today) : null;
+    if (linked) return linked;
     let raw: string | null = null;
     try { raw = localStorage.getItem(KEY); } catch { /* bỏ qua */ }
     return restorePeriod(raw, today);
