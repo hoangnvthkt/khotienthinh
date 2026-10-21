@@ -1,7 +1,7 @@
--- Vioo Work: việc đã xong tính theo người làm cuối cùng khi lọc theo người / đơn vị (20261023180000_work_done_last_assignee).
+-- Vioo Work: việc đã xong tính theo người làm cuối cùng khi lọc theo người / đơn vị (20261024130000_work_done_last_assignee).
 -- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> \
 --   --migration supabase/migrations/20261023150000_work_dot2_digest.sql \
---   --migration supabase/migrations/20261023180000_work_done_last_assignee.sql \
+--   --migration supabase/migrations/20261024130000_work_done_last_assignee.sql \
 --   --smoke supabase/tests/work_done_last_assignee_smoke.sql
 -- Vai (tên giả): a = Vương Thị Khuê (U1) · b = Lã Văn Đông (U2) · bld = Bế Thị Trang (U3, xem toàn công ty).
 -- Việc thử (kỳ = hôm nay − 7 → hôm nay + 7, giờ VN):

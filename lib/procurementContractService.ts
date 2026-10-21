@@ -163,7 +163,7 @@ export interface ContractInput {
 export interface ContractOrderInput {
   purchaseOrderId?: string; expectedRowVersion?: number; contractId: string; targetWarehouseId: string; expectedDeliveryDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; purchaseMode?: 'single' | 'multiple'; vatRate?: number; note?: string;
-  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; note?: string; specification?: string; contractLineId?: string | null }>;
+  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; vatRate?: number; note?: string; specification?: string; contractLineId?: string | null }>;
 }
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {

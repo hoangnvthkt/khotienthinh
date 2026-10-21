@@ -8,6 +8,7 @@ import type {
   InventoryLedgerWarehouseReportRow,
 } from '../types';
 import { getSupabaseProjection } from './supabaseProjections';
+import { mapNxtRow, type InventoryNxtRow } from './inventoryNxtReport';
 
 export type InventoryLedgerFilters = {
   warehouseId?: string;
@@ -131,6 +132,22 @@ const toEndOfDayIso = (value?: string) => {
 };
 
 export const inventoryLedgerService = {
+  /** Nhập – Xuất – Tồn theo kho × vật tư (Số lượng + Giá trị). Ngày 'YYYY-MM-DD' hiểu theo giờ Việt Nam. */
+  async getNxtReport(filters: Pick<InventoryLedgerFilters, 'warehouseId' | 'materialId' | 'dateFrom' | 'dateTo' | 'search'>): Promise<InventoryNxtRow[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase.rpc('get_inventory_nxt_report_v1', {
+      p_filters: {
+        warehouseId: filters.warehouseId,
+        materialId: filters.materialId,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        search: filters.search?.trim() || '',
+      },
+    });
+    if (error) throw error;
+    return ((data as any)?.rows || []).map(mapNxtRow);
+  },
+
   async getReport(filters: InventoryLedgerFilters = {}): Promise<InventoryLedgerReportResult> {
     if (!isSupabaseConfigured) {
       return {

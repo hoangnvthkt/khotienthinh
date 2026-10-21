@@ -249,6 +249,14 @@ export function WorkWorkspace({
       detailSeq.current++;
     };
   }, [actorId, service]);
+  // Trung tâm → "Giao việc" (?assign=1): cuộn tới ô Giao nhanh và đặt con trỏ vào tên việc, một lần.
+  const queryAssignOpened = useRef(false);
+  useEffect(() => {
+    if (params.get("assign") === "1" && canQuickAssign && !queryAssignOpened.current) {
+      queryAssignOpened.current = true;
+      setPreset({ nonce: Date.now() });
+    }
+  }, [params, canQuickAssign]);
   useEffect(() => {
     if (params.get("create") === "1" && scopes.length > 0 && !queryCreateOpened.current) {
       queryCreateOpened.current = true;
@@ -549,7 +557,7 @@ export function WorkWorkspace({
             <button className="work-secondary" onClick={() => setDrawer({})}><Plus size={18} /> Tạo công việc</button>
           )}>
           {canQuickAssign && !workspaceContextId && (
-            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName}
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); }} />
           )}
           <nav className="work-tabs" aria-label="Danh sách công việc">
@@ -570,7 +578,7 @@ export function WorkWorkspace({
       ) : (
         <>
           {canQuickAssign && !workspaceContextId && (
-            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName}
+            <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); }} />
           )}
           <nav className="work-tabs" aria-label="Danh sách công việc">

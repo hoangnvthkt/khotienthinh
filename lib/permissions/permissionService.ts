@@ -263,7 +263,10 @@ export const canViewRoute = (
   if (eligibleModules.length === 0) return false;
   return eligibleModules.some(module => module.actions.some(action =>
     (action.action.startsWith('view') || action.action === 'access') &&
-    canPerform(user, action.permissionCode, scope)
+    // Kho: quyền theo một kho vẫn mở màn; máy chủ chỉ trả dữ liệu kho người đó được xem.
+    (!scope && module.code.startsWith('wms.')
+      ? canPerformInAnyScope(user, action.permissionCode)
+      : canPerform(user, action.permissionCode, scope))
   ));
 };
 
