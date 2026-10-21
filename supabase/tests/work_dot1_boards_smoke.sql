@@ -146,6 +146,6 @@ end $$;
 do $$ declare r jsonb; begin
   perform pg_temp.as_('head'); r := public.work_tasks_overview_v1(null, 'WD1-U1', 'unack', null, 30);
   perform pg_temp.ok((r->>'total')::int = 2 and (r->'items')::text like '%PR4: chưa nhận việc%', 'chưa nhận việc trong U1: '||r::text);
-  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_directives_v1(uuid)', 'execute'), 'anon không đọc sổ');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_directives_v1(uuid, date, date)', 'execute'), 'anon không đọc sổ');
   perform pg_temp.ok(not has_function_privilege('anon', 'public.work_task_claim_decide_v2(uuid, text, text, timestamptz)', 'execute'), 'anon không xác nhận');
 end $$;

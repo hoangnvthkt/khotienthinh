@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { WorkAssignablePerson, WorkBoardService, WorkLevel, WorkMyBoard as Board, WorkMyTask } from "../../lib/work/workBoardService";
-import { WORK_LEVEL_LABELS } from "../../lib/work/workBoardService";
+import { WORK_LEVEL_LABELS, ontimeRate } from "../../lib/work/workBoardService";
 import { WorkCreateAttempt, workDocument, workError } from "../../lib/work/workForm";
 import { workDayLabel, workDueInfo, workUpdateInfo } from "../../lib/work/workPresentation";
 import { dateAt, quickTaskInput } from "../../lib/work/workQuick";
@@ -14,6 +14,8 @@ import {
   MY_GROUP_LABELS, MY_RANGE_LABELS, ddmm, myBoardGroups, myDay, myNoDue, myOntime, myRangeDays, myShiftAnchor, mySource, myWeekDays, myWeekLabel, saturdayOf,
   type MyGroupId, type MyRange,
 } from "../../lib/work/workMyBoard";
+import { periodLabel, periodQuery, periodShort, prevShort } from "../../lib/work/workPeriod";
+import { WorkPeriodPicker, useWorkPeriod } from "./WorkPeriodPicker";
 
 const CAP = 10;
 type Edit = { id: string; kind: "blocked" | "done"; text: string } | null;
@@ -41,6 +43,8 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
   /** Giao nhanh + tab danh sách (đặt giữa ô số và phần việc). */
   children?: React.ReactNode;
 }) {
+  const [period, setPeriod, localToday] = useWorkPeriod();
+  const query = periodQuery(period, localToday);
   const [data, setData] = useState<Board | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
@@ -59,9 +63,9 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
   useEffect(() => {
     let live = true;
     setError(null);
-    board.myBoard().then((b) => { if (live) setData(b); }, (e) => { if (live) setError(e); });
+    board.myBoard(query).then((b) => { if (live) setData(b); }, (e) => { if (live) setError(e); });
     return () => { live = false; };
-  }, [board, refreshKey, reload]);
+  }, [board, refreshKey, reload, query.from, query.to, query.prevFrom, query.prevTo]);
 
   const groups = useMemo(() => (data ? myBoardGroups(data.tasks, data.today, data.weekEnd, new Date(), data.weekStart) : null), [data]);
   const ontime = data ? myOntime(data.weeks) : null;
@@ -130,6 +134,12 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
     </button>
   );
   const live = data.tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
+  // Đúng hạn theo kỳ đang chọn; máy chủ cũ chưa trả period thì dùng tuần trước như trước.
+  const kpiOntime = data.period ? (() => {
+    const rate = ontimeRate(data.period.ontime, data.period.due);
+    const prev = data.period.prevDue == null ? null : ontimeRate(data.period.prevOntime || 0, data.period.prevDue);
+    return { rate, due: data.period.due, ontime: data.period.ontime, delta: rate != null && prev != null ? rate - prev : null };
+  })() : ontime;
   const attention = [...groups.over, ...groups.confirm];
   const canBack = !data.doneSince || span.from > data.doneSince;
   const stats = (
@@ -158,6 +168,7 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
           <p>{[data.me.name, data.me.title, myWeekLabel(data)].filter(Boolean).join(" · ")}</p>
         </div>
         <div className="work-my-actions">
+          <WorkPeriodPicker period={period} today={localToday} onChange={setPeriod} />
           {headerActions}
           <button type="button" className="work-primary" aria-expanded={composer} onClick={() => setComposer((v) => !v)}>
             <Plus size={18} /> Ghi việc được giao
@@ -170,14 +181,14 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
         {kpi("today", "amber", <Clock3 size={18} />, "Hôm nay", groups.today.length, `đến hạn ${ddmm(data.today)}`)}
         {kpi("week", "sky", <ClipboardList size={18} />, "Tuần này", groups.week.length, `đến ${ddmm(data.weekEnd)}`)}
         {kpi("confirm", "amber", <PenLine size={18} />, "Chờ xác nhận", groups.confirm.length, "việc giao miệng")}
-        <div className="work-kpi tone-ok">
+        <div className="work-kpi tone-ok" title={periodLabel(period)}>
           <span className="work-kpi-icon" aria-hidden="true"><Check size={18} /></span>
           <span>
-            <span className="work-kpi-label">Đúng hạn tuần {ontime.week ?? "trước"}</span>
-            <b className="work-kpi-value">{ontime.rate == null ? "—" : `${ontime.rate}%`}{ontime.due > 0 && <small> {ontime.ontime}/{ontime.due}</small>}</b>
-            <span className="work-kpi-sub">{ontime.rate == null ? "chưa có việc đến hạn"
-              : ontime.delta == null ? "tuần trước nữa chưa có số"
-              : <><span className={ontime.delta >= 0 ? "work-up" : "work-down"}>{ontime.delta >= 0 ? "+" : ""}{ontime.delta} điểm</span> so với tuần {ontime.prevWeek}</>}</span>
+            <span className="work-kpi-label">Đúng hạn {periodShort(period)}</span>
+            <b className="work-kpi-value">{kpiOntime.rate == null ? "—" : `${kpiOntime.rate}%`}{kpiOntime.due > 0 && <small> {kpiOntime.ontime}/{kpiOntime.due}</small>}</b>
+            <span className="work-kpi-sub">{kpiOntime.rate == null ? "chưa có việc đến hạn"
+              : kpiOntime.delta == null ? `${prevShort(period)} chưa có số`
+              : <><span className={kpiOntime.delta >= 0 ? "work-up" : "work-down"}>{kpiOntime.delta >= 0 ? "+" : ""}{kpiOntime.delta} điểm</span> so với {prevShort(period)}</>}</span>
           </span>
         </div>
       </div>

@@ -193,6 +193,10 @@ const reviewRows: any[] = [
 const overviewItem = (t: any) => ({ id: t.id, code: t.code, title: t.title, status: t.status, level: t.level, deadlineAt: t.deadlineAt, progressPercent: t.progressPercent,
   lastProgressAt: t.lastProgressAt, overdue: false, restricted: false, createdByName: "Vương Thành Đô", assignees: [{ userId: "actor", name: "Lê Minh An" }] });
 
+const periodScale = (p: any) => (p ? Math.max(1, Math.round((Date.parse(p.to) - Date.parse(p.from)) / 86_400_000 / 7)) : 1);
+const periodOf = (p: any) => (p ? { from: p.from, to: p.to, prevFrom: p.prevFrom, prevTo: p.prevTo }
+  : { from: bLastWeek, to: bIso(bAdd(bMonday, -1)), prevFrom: bIso(bAdd(bMonday, -14)), prevTo: bIso(bAdd(bMonday, -8)) });
+
 const board = {
   async boardAccess() {
     log("boardAccess");
@@ -200,26 +204,38 @@ const board = {
     return { myUnits: a === "staff" ? [] : [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }], company: !a,
       reviewsWaitingMe: reviewRows.length, claimsWaitingMe: directiveRows.filter((d) => d.bucket === "confirm").length };
   },
-  async teamBoard(unitId: string | null, weekStart: string | null = null) {
-    log("teamBoard", unitId, weekStart);
+  // Kỳ (PR-5): kỳ dài hơn tuần thì nhân số; prevDue / prevOntime lấy từ bộ "kỳ trước".
+  async teamBoard(unitId: string | null, period: any = null) {
+    log("teamBoard", unitId, period);
     await wait(80);
-    const prev = Boolean(weekStart && weekStart < bLastWeek);
+    const k = periodScale(period);
+    const prev = teamMembers(true);
     return { unit: { id: unitId || "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }, myUnits: [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }],
-      weekStart: weekStart || bLastWeek, canViewAll: true, reviewWaiting: reviewRows.length, members: teamMembers(prev) };
+      weekStart: bLastWeek, canViewAll: true, reviewWaiting: reviewRows.length, period: periodOf(period),
+      members: teamMembers(false).map((m, i) => ({ ...m, due: m.due * k, ontime: m.ontime * k, prevDue: prev[i].due * k, prevOntime: prev[i].ontime * k })) };
   },
-  async companyBoard(weekStart: string | null = null) {
-    log("companyBoard", weekStart);
+  async companyBoard(period: any = null) {
+    log("companyBoard", period);
     await wait(80);
-    return { weekStart: weekStart || bLastWeek, units: companyUnits(Boolean(weekStart && weekStart < bLastWeek)), claimsWaitingMe: 1 };
+    const k = periodScale(period);
+    const prev = companyUnits(true);
+    return { weekStart: bLastWeek, period: periodOf(period), claimsWaitingMe: 1,
+      units: companyUnits(false).map((u, i) => ({ ...u, due: u.due * k, ontime: u.ontime * k, prevDue: prev[i].due * k, prevOntime: prev[i].ontime * k,
+        directives: { ...u.directives, doneInPeriod: u.directives.doneThisMonth * k } })) };
   },
   async reviewQueue() { log("reviewQueue"); return reviewRows.slice(); },
-  async directives(orgUnitId: string | null = null) {
-    log("directives", orgUnitId);
+  async directives(orgUnitId: string | null = null, period: any = null) {
+    log("directives", orgUnitId, period);
     return orgUnitId ? directiveRows.filter((d) => d.assignees.some((a: any) => a.unit === "QLDA")) : directiveRows.slice();
   },
   async tasksOverview(input: any) {
     log("tasksOverview", input);
     await wait(60);
+    if (input.state === "due") {
+      const due = boardTasks.filter((t) => t.deadlineAt).map((t) => ({ ...overviewItem(t), completedAt: t.completedAt || null,
+        ontime: t.status === "completed" ? Date.parse(t.completedAt) <= Date.parse(t.deadlineAt) : null }));
+      return { unit: null, total: due.length, overdue: 0, stale: 0, items: due };
+    }
     const items = boardTasks.filter((t) => t.status !== "completed").map(overviewItem)
       .filter((t) => input.state !== "overdue" || (t.deadlineAt && Date.parse(t.deadlineAt) < Date.now()))
       .filter((t) => input.state !== "unack" || t.status === "pending_acknowledgement");
@@ -232,15 +248,16 @@ const board = {
       if (deadlineAt) d.deadlineAt = deadlineAt; if (decision !== "confirm") directiveRows.splice(directiveRows.indexOf(d), 1); }
     return { taskId, claimStatus: decision === "confirm" ? "confirmed" : "rejected", deadlineAt };
   },
-  async myBoard() {
-    log("myBoard");
+  async myBoard(period: any = null) {
+    log("myBoard", period);
     await wait(150);
     if (query.get("board") === "error") throw new Error("network");
     const load = boardTasks.filter((t) => !["completed", "cancelled"].includes(t.status)).reduce((n, t) => n + ({ A: 3, B: 2, C: 1 } as any)[t.level], 0);
     return { me: { userId: "actor", name: "Lê Minh An", title: "Kỹ sư dự án", unit: { id: "u", code: "QLDA", name: "Phòng Quản lý dự án" } },
       today: bIso(new Date()), weekStart: bIso(bMonday), weekEnd: bIso(bAdd(bMonday, 6)), doneSince: bIso(bAdd(bMonday, -35)), tasks: boardTasks.map((t) => ({ ...t })),
       weeks: [7, 14, 21, 28].map((n, i) => ({ weekStart: bIso(bAdd(bMonday, -n)), due: [7, 6, 5, 4][i], ontime: [6, 5, 4, 3][i] })),
-      review: { reviewed: 5, firstPass: 4 }, load };
+      review: { reviewed: 5, firstPass: 4 }, load,
+      period: { ...periodOf(period), due: 7 * periodScale(period), ontime: 6 * periodScale(period), prevDue: 6 * periodScale(period), prevOntime: 5 * periodScale(period) } };
   },
   async assignablePeople() {
     log("assignablePeople");

@@ -249,7 +249,7 @@ end $$;
 do $$ declare f text; begin
   foreach f in array array['public.work_meeting_create_v1(text,date,uuid)', 'public.work_task_set_origin_v1(uuid,text,uuid,uuid)',
     'public.work_task_claim_decide_v1(uuid,text,text)', 'public.work_ai_link_v1(uuid,uuid,text)', 'public.work_task_brief_v1(uuid)',
-    'public.work_team_board_v1(uuid,date)', 'public.work_company_board_v1(date)', 'public.work_assignable_people_v1(text,integer)',
+    'public.work_team_board_v1(uuid,date,date,date,date,date)', 'public.work_company_board_v1(date,date,date,date,date)', 'public.work_assignable_people_v1(text,integer)',
     'public.command_work_task_collaboration(uuid,text,jsonb,uuid)'] loop
     perform pg_temp.ok(has_function_privilege('authenticated', f, 'execute') and not has_function_privilege('anon', f, 'execute'), 'quyền thực thi '||f);
   end loop;

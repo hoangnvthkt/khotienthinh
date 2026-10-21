@@ -189,8 +189,8 @@ end $$;
 
 -- ── 5. Quyền gọi hàm ─────────────────────────────────────────────────────────────────────────────────────
 do $$ begin
-  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_tasks_overview_v1(uuid, text, text, date, integer)', 'execute'), 'anon không gọi được overview');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_tasks_overview_v1(uuid, text, text, date, integer, date)', 'execute'), 'anon không gọi được overview');
   perform pg_temp.ok(not has_function_privilege('anon', 'public.work_learn_person_alias_v1(uuid, text)', 'execute'), 'anon không học cách gọi');
-  perform pg_temp.ok(has_function_privilege('authenticated', 'public.work_tasks_overview_v1(uuid, text, text, date, integer)', 'execute'), 'authenticated gọi được');
+  perform pg_temp.ok(has_function_privilege('authenticated', 'public.work_tasks_overview_v1(uuid, text, text, date, integer, date)', 'execute'), 'authenticated gọi được');
   perform pg_temp.ok(not has_table_privilege('authenticated', 'public.ai_quota_groups', 'select'), 'bảng nhóm hạn mức đóng');
 end $$;
