@@ -92,7 +92,7 @@ export const QuickRequestLines: React.FC<{
   const [picker, setPicker] = useState<{ key: string; query: string } | null>(null);
   const [photoReady, setPhotoReady] = useState(false);
   const [camera, setCamera] = useState(false);
-  const [photo, setPhoto] = useState<{ urls: string[]; state: 'reading' | 'done' | 'error'; message?: string; warnings?: string[]; runId?: string } | null>(null);
+  const [photo, setPhoto] = useState<{ urls: string[]; files?: File[]; state: 'reading' | 'done' | 'error'; message?: string; warnings?: string[]; runId?: string } | null>(null);
   const [neededDate, setNeededDate] = useState<string | null>(null);
   // Chữ AI vừa đổ vào ô gõ: không tách lại bằng quy tắc (giữ dòng AI đọc) cho tới khi người dùng sửa.
   const aiTextRef = useRef<string | null>(null);
@@ -133,7 +133,8 @@ export const QuickRequestLines: React.FC<{
     if (!images.length) { setPhoto({ urls: [], state: 'error', message: files.length ? 'Chỉ đọc được ảnh (JPG, PNG) — chụp lại phiếu.' : 'Chưa chụp ảnh nào.' }); return; }
     const token = ++readToken.current;
     const prepared = await Promise.all(images.slice(0, 4).map(f => prepareCapturePhoto(f).catch(() => f)));
-    setPhoto({ urls: prepared.map(f => URL.createObjectURL(f)), state: 'reading' });
+    // Giữ ảnh đã thu nhỏ để "Đọc lại" khi cổng AI chậm / lỗi thoáng qua (B1, 21/10) — không bắt chụp lại.
+    setPhoto({ urls: prepared.map(f => URL.createObjectURL(f)), files: prepared, state: 'reading' });
     const r = await Promise.all(prepared.map(async f => ({ mime: f.type || 'image/jpeg', b64: await fileToB64(f) })))
       .then(imgs => hooks.readPhotos(imgs))
       .catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
@@ -147,7 +148,7 @@ export const QuickRequestLines: React.FC<{
       setNeededDate(r.result.neededDate);
       setPhoto(p => p && { ...p, state: 'done', warnings: r.result.warnings, runId: r.runId });
     } else {
-      setPhoto(p => p && { ...p, state: 'error', message: r.code === 'OK' ? 'AI không thấy dòng vật tư nào trên ảnh — chụp rõ hơn hoặc gõ tay.' : `${aiErrorMessage(r)} Chụp lại hoặc gõ tay.` });
+      setPhoto(p => p && { ...p, state: 'error', message: r.code === 'OK' ? 'AI không thấy dòng vật tư nào trên ảnh — chụp rõ hơn hoặc gõ tay.' : `${aiErrorMessage(r)} Hoặc chụp lại / gõ tay.` });
     }
   };
   const clearPhoto = () => { readToken.current += 1; setPhoto(null); };
@@ -213,6 +214,7 @@ export const QuickRequestLines: React.FC<{
         {neededDate && <span className="text-muted-foreground">Ngày cần trên phiếu <b className="text-foreground">{dmy(neededDate)}</b>
           <button type="button" onClick={() => setNeededDate(null)} className="ml-1 font-semibold text-indigo-700 hover:underline dark:text-indigo-300">Bỏ</button></span>}
         <span className="ml-auto flex gap-1">
+          {photo.state === 'error' && photo.files?.length ? <button type="button" onClick={() => void readPhotos(photo.files || [])} className="rounded-md px-2 py-1 font-semibold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300">Đọc lại</button> : null}
           {photo.state !== 'reading' && <button type="button" onClick={() => setCamera(true)} className="rounded-md px-2 py-1 font-semibold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300">Chụp lại</button>}
           <button type="button" onClick={clearPhoto} className="rounded-md px-2 py-1 font-semibold text-muted-foreground hover:bg-muted">{photo.state === 'reading' ? 'Hủy' : 'Bỏ ảnh'}</button>
         </span>

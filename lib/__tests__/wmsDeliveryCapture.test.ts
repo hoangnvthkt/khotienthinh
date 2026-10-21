@@ -90,7 +90,10 @@ describe('máy chủ: chụp trước, đơn sau', () => {
     // Cổng chuẩn OpenAI (RevidAPI) bọc JSON trong ```json — đọc lỏng, không JSON.parse thẳng.
     expect(fn).not.toContain("return JSON.parse(text)");
     expect(fn).toContain("integration_secret_v1");
-    expect(fn).toContain("fallbacks: 'default'");
+    // B1 (21/10): đọc qua đường chung với ai-gateway (110 s, thử lại một lần, mã lỗi AI_*), tắt suy nghĩ vì chỉ chép phiếu.
+    expect(fn).toContain("completeWithRetry(target, {");
+    expect(fn).toContain("noThinking: true");
+    expect(fn).not.toContain("client.beta.messages.create");
     expect(read('supabase/config.toml')).toContain('[functions.wms-doc-reader]');
   });
 });

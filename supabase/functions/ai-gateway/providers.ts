@@ -9,20 +9,13 @@ import { DEFAULT_BASE_URL, KIND_LABEL, emptyReplyError, outputTokenCap, runCostU
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
 export type { ModelClass };
-/** calls = số lượt gọi model trong lượt AI (vòng gọi công cụ nhiều bước); không ghi = 1. */
-export interface Usage { tokensIn: number | null; tokensOut: number | null; calls?: number }
-export interface Completion { text: string; usage: Usage }
+// Gọi một lượt (JSON) nằm ở _shared/aiComplete.ts — dùng chung với wms-doc-reader (B1, 21/10): một ngưỡng hết giờ, một chính sách thử lại.
+export { complete, completeWithRetry, type Completion, type CompletionRequest, type Usage } from '../_shared/aiComplete.ts';
+import type { Completion, Usage } from '../_shared/aiComplete.ts';
 import type { ImagePart } from './images.ts';
 import { readSse } from './chat.ts';
 import { accumulateToolDeltas, anthropicTools, finishToolCalls, openAITools, parseToolArgs, toAnthropicMessages, toOpenAIMessages, type AgentMsg, type ToolCall, type ToolSpec } from './agent.ts';
 export type { ImagePart };
-export interface CompletionRequest {
-  system: string; user: string; schema: Record<string, unknown>; maxTokens: number; images?: ImagePart[];
-  /** Skill chép lại chứng từ, không cần suy luận: cổng chuẩn OpenAI gửi reasoning_effort "none" (báo giá 41–61 s → 11 s, 17/10/2026). */
-  noThinking?: boolean;
-}
-/** Ảnh hoặc đầu ra dài (báo giá nhiều dòng, nhật ký nhiều ngày 40–60 s) — chờ tới 100 s; còn lại 55 s. Hàm Edge còn dư thời gian trước mốc cắt. */
-const timeoutMs = (req: CompletionRequest) => (req.images?.length || req.maxTokens >= 6000 ? 100_000 : 55_000);
 
 const DEFAULT_MODELS: Record<Provider, Record<ModelClass, string>> = {
   anthropic: { fast: 'claude-haiku-5-5', reasoning: 'claude-opus-5-5' },
@@ -65,66 +58,6 @@ export const costUsd = (usage: Usage, price: AiPrice | null | undefined) => runC
 export const envTarget = (config: GatewayConfig, modelClass: ModelClass): AiTarget | null => config.key
   ? { kind: config.provider, baseUrl: DEFAULT_BASE_URL[config.provider], apiKey: config.key, model: config.models[modelClass], source: 'secrets', name: `${KIND_LABEL[config.provider]} (Secrets)` }
   : null;
-
-async function withAnthropic(t: AiTarget, req: CompletionRequest): Promise<Completion> {
-  const client = new Anthropic({ apiKey: t.apiKey, baseURL: t.baseUrl });
-  const response = await client.messages.create({
-    model: t.model, max_tokens: outputTokenCap(t.kind, req.maxTokens), system: req.system,
-    messages: [{ role: 'user', content: req.images?.length
-      ? [...req.images.map(i => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: i.mime, data: i.b64 } })), { type: 'text' as const, text: req.user }]
-      : req.user }],
-  });
-  if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
-  const text = stripThinkTags(response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text || '');
-  if (!text) throw new Error(emptyReplyError(response.stop_reason));
-  return { text, usage: { tokensIn: response.usage?.input_tokens ?? null, tokensOut: response.usage?.output_tokens ?? null } };
-}
-
-async function withGemini(t: AiTarget, req: CompletionRequest): Promise<Completion> {
-  const res = await fetch(`${t.baseUrl}/v1beta/models/${encodeURIComponent(t.model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': t.apiKey }, signal: AbortSignal.timeout(timeoutMs(req)),
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: req.system }] },
-      contents: [{ role: 'user', parts: [...(req.images || []).map(i => ({ inline_data: { mime_type: i.mime, data: i.b64 } })), { text: req.user }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: outputTokenCap(t.kind, req.maxTokens), responseMimeType: 'application/json' },
-    }),
-  });
-  if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
-  const data = await res.json();
-  if (data?.promptFeedback?.blockReason) throw new Error('AI_REFUSED');
-  const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('');
-  if (!text) throw new Error(emptyReplyError(data?.candidates?.[0]?.finishReason));
-  return { text, usage: { tokensIn: data?.usageMetadata?.promptTokenCount ?? null, tokensOut: data?.usageMetadata?.candidatesTokenCount ?? null } };
-}
-
-async function withOpenAI(t: AiTarget, req: CompletionRequest): Promise<Completion> {
-  if (!t.model) throw new Error('AI_MODEL_REQUIRED');
-  // Cổng chuẩn OpenAI khác (9Router, OpenRouter…) thường chưa hỗ trợ json_schema strict / max_completion_tokens: dùng json_object + max_tokens.
-  const compatible = t.kind === 'openai_compatible';
-  const send = (noThinking: boolean) => fetch(`${t.baseUrl}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.apiKey}` }, signal: AbortSignal.timeout(timeoutMs(req)),
-    body: JSON.stringify({
-      model: t.model, ...(noThinking ? { reasoning_effort: 'none' } : {}), ...(compatible ? { max_tokens: outputTokenCap(t.kind, req.maxTokens) } : { max_completion_tokens: outputTokenCap(t.kind, req.maxTokens) }),
-      response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'skill_output', schema: req.schema, strict: true } },
-      messages: [{ role: 'system', content: req.system }, { role: 'user', content: req.images?.length
-        ? [...req.images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.b64}` } })), { type: 'text', text: req.user }]
-        : req.user }],
-    }),
-  });
-  const thinkingOff = compatible && Boolean(req.noThinking);
-  let res = await send(thinkingOff);
-  // Cổng không nhận reasoning_effort → gửi lại một lần như thường.
-  if (thinkingOff && res.status === 400) res = await send(false);
-  if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
-  const data = await res.json();
-  if (data?.choices?.[0]?.finish_reason === 'content_filter') throw new Error('AI_REFUSED');
-  const text = stripThinkTags(String(data?.choices?.[0]?.message?.content ?? ''));
-  if (!text) throw new Error(emptyReplyError(data?.choices?.[0]?.finish_reason));
-  return { text, usage: { tokensIn: data?.usage?.prompt_tokens ?? null, tokensOut: data?.usage?.completion_tokens ?? null } };
-}
-
-export const complete = (target: AiTarget, req: CompletionRequest): Promise<Completion> =>
-  target.kind === 'typesafe' ? Promise.reject(new Error('AI_KIND_UNSUPPORTED')) : target.kind === 'anthropic' ? withAnthropic(target, req) : target.kind === 'gemini' ? withGemini(target, req) : withOpenAI(target, req);
 
 // ── Trợ lý · hội thoại (T0): trả lời chạy dần. Chữ thường (không JSON), nhiều lượt. ─────────────────────────────────────────────
 export interface ChatRequest { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; maxTokens: number; noThinking?: boolean }

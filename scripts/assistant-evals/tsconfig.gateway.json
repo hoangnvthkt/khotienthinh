@@ -4,5 +4,5 @@
     "allowImportingTsExtensions": true, "types": ["node"], "lib": ["ES2022", "DOM", "DOM.Iterable"], "baseUrl": "../..",
     "paths": { "@supabase/supabase-js": ["node_modules/@supabase/supabase-js"], "@anthropic-ai/sdk": ["node_modules/@anthropic-ai/sdk"] }
   },
-  "files": ["../../supabase/functions/ai-gateway/index.ts", "./evals.ts", "./deno.d.ts"]
+  "files": ["../../supabase/functions/ai-gateway/index.ts", "../../supabase/functions/wms-doc-reader/index.ts", "./evals.ts", "./deno.d.ts"]
 }

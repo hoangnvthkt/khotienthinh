@@ -1,12 +1,13 @@
 import { supabase } from './supabase';
 import { WMS_ATTACHMENT_BUCKET } from './wmsTransactionAttachmentService';
 import { formatQuantityInput } from './quantityInput';
+import { aiFailureMessage } from './aiGateway';
 
 // Kho Đợt 1 — Chụp phiếu giao NCC: lưu ảnh + số liệu ngay ở cổng kho, AI (nếu bật) điền sẵn, khớp đơn mua rồi nhận theo xe.
 
 export interface CaptureLine { name: string; unit: string | null; qty: number | null; note?: string | null; confidence?: 'high' | 'low' }
 export interface CapturePhoto { path: string; name: string; size: number; mimeType: string }
-export interface CaptureAi { provider?: string; model?: string; readAt?: string; result?: { warnings?: string[]; lines?: CaptureLine[] }; error?: string }
+export interface CaptureAi { provider?: string; model?: string; ms?: number; retried?: boolean; readAt?: string; result?: { warnings?: string[]; lines?: CaptureLine[] }; error?: string }
 export interface DeliveryCapture {
   id: string; warehouseId: string; status: 'new' | 'read' | 'received' | 'discarded';
   supplierName: string | null; docNo: string | null; docDate: string | null; docTime: string | null; truckNo: string | null;
@@ -68,8 +69,11 @@ export const captureErrorMessage = (e: unknown, fallback = 'Chưa lưu được 
   const msg = (e as { message?: string })?.message || '';
   const over = msg.match(/CAPTURE_OVER_REMAINING: (.+)$/);
   if (over) return `Vượt phần đơn chưa giao: ${over[1]}.`;
+  // B1 (21/10): mã AI_* (hết giờ, 5xx, sai khóa…) nói cùng một lời ở mọi màn; lời riêng của Kho (mất kết nối…) giữ ở ERRORS.
   const code = Object.keys(ERRORS).find(k => msg.includes(k));
-  return code ? ERRORS[code] : msg || fallback;
+  if (code) return ERRORS[code];
+  const ai = msg.match(/AI_[A-Z0-9_]+/)?.[0];
+  return (ai && aiFailureMessage(ai)) || msg || fallback;
 };
 
 const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {

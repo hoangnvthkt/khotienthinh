@@ -6,15 +6,15 @@
 // Kết nối Admin gán cho "Kho · đọc ảnh phiếu giao" ở Cài đặt → Kết nối (khóa trong Vault) được ưu tiên hơn các biến trên.
 // Chưa cấu hình → trả { code: 'AI_NOT_CONFIGURED' } (màn Kho chuyển sang nhập tay). AI không ghi sổ: chỉ điền số liệu để người xem lại.
 import { createClient } from '@supabase/supabase-js';
-import Anthropic from '@anthropic-ai/sdk';
-import { DOC_PROMPT, DOC_SCHEMA, normalizeRead, type DocRead } from './prompt.ts';
+import { DOC_PROMPT, DOC_SCHEMA, normalizeRead } from './prompt.ts';
 import { DEFAULT_BASE_URL, parseJsonLoose, targetFromConnection, type AiTarget } from '../_shared/aiTargets.ts';
+import { completeWithRetry, type VisionPart } from '../_shared/aiComplete.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
 
 type Provider = 'anthropic' | 'gemini' | 'openai';
-interface Page { mime: string; b64: string }
+const PAGE_MIME: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
 const config = () => {
   const provider = (Deno.env.get('WMS_AI_PROVIDER') || 'anthropic').toLowerCase() as Provider;
@@ -31,62 +31,17 @@ const toB64 = (bytes: Uint8Array) => {
   return btoa(s);
 };
 
-async function readWithAnthropic({ apiKey: key, model, baseUrl }: AiTarget, pages: Page[]): Promise<unknown> {
-  const client = new Anthropic({ apiKey: key, baseURL: baseUrl });
-  const content: Anthropic.Beta.BetaContentBlockParam[] = [
-    ...pages.map(p => p.mime === 'application/pdf'
-      ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: p.b64 } }
-      : { type: 'image' as const, source: { type: 'base64' as const, media_type: p.mime as 'image/jpeg' | 'image/png' | 'image/webp', data: p.b64 } }),
-    { type: 'text', text: DOC_PROMPT },
-  ];
-  // Fallback phía máy chủ khi bị bộ lọc an toàn từ chối (mặc định nên bật); JSON theo lược đồ bằng structured outputs.
-  const response = await client.beta.messages.create({
-    model,
-    max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: DOC_SCHEMA } },
-    messages: [{ role: 'user', content }],
+/**
+ * B1 (21/10): đọc qua đường chung _shared/aiComplete (cùng ai-gateway): ảnh chờ 110 s, lỗi thoáng qua thử lại một lần, mã lỗi AI_*
+ * ổn định. Phiếu giao chỉ chép lại → tắt suy nghĩ (báo giá 41–61 s → 11 s ở cổng chuẩn OpenAI, 17/10).
+ */
+const readPages = async (target: AiTarget, pages: VisionPart[]) => {
+  const out = await completeWithRetry(target, {
+    system: DOC_PROMPT, user: `Đọc ${pages.length} trang chứng từ đính kèm, trả JSON đúng lược đồ.`, schema: DOC_SCHEMA as unknown as Record<string, unknown>,
+    maxTokens: 8000, images: pages, noThinking: true,
   });
-  if (response.stop_reason === 'refusal') throw new Error('AI_REFUSED');
-  const text = response.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text;
-  if (!text) throw new Error('AI_EMPTY');
-  return parseJsonLoose(text);
-}
-
-async function readWithGemini({ apiKey: key, model, baseUrl }: AiTarget, pages: Page[]): Promise<unknown> {
-  const res = await fetch(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [...pages.map(p => ({ inline_data: { mime_type: p.mime, data: p.b64 } })), { text: DOC_PROMPT }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json' },
-    }),
-  });
-  if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('');
-  if (!text) throw new Error('AI_EMPTY');
-  return parseJsonLoose(text);
-}
-
-async function readWithOpenAI({ apiKey: key, model, baseUrl, kind }: AiTarget, pages: Page[]): Promise<unknown> {
-  const compatible = kind === 'openai_compatible';
-  if (!model) throw new Error('AI_MODEL_REQUIRED');
-  if (pages.some(p => p.mime === 'application/pdf')) throw new Error('AI_PDF_UNSUPPORTED');
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      response_format: compatible ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'delivery_doc', schema: DOC_SCHEMA, strict: true } },
-      messages: [{ role: 'user', content: [...pages.map(p => ({ type: 'image_url', image_url: { url: `data:${p.mime};base64,${p.b64}` } })), { type: 'text', text: DOC_PROMPT }] }],
-    }),
-  });
-  if (!res.ok) throw new Error(`AI_HTTP_${res.status}`);
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('AI_EMPTY');
-  return parseJsonLoose(text);
-}
+  return { read: normalizeRead(parseJsonLoose(out.text)), retried: out.retried };
+};
 
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
@@ -122,20 +77,19 @@ Deno.serve(async request => {
   if (!photos.length) return json({ error: 'CAPTURE_NO_PHOTO' }, 400);
 
   try {
-    const pages: Page[] = [];
+    const pages: VisionPart[] = [];
     for (const p of photos) {
       if (!p.path) continue;
       const file = await user.storage.from('wms-transaction-attachments').download(p.path);
       if (file.error || !file.data) throw new Error('PHOTO_READ_FAILED');
       if (file.data.size > 8 * 1024 * 1024) throw new Error('PHOTO_TOO_LARGE');
-      pages.push({ mime: p.mimeType || file.data.type || 'image/jpeg', b64: toB64(new Uint8Array(await file.data.arrayBuffer())) });
+      const mime = p.mimeType || file.data.type || 'image/jpeg';
+      pages.push({ mime: (PAGE_MIME.has(mime) ? mime : 'image/jpeg') as VisionPart['mime'], b64: toB64(new Uint8Array(await file.data.arrayBuffer())) });
     }
     const started = Date.now();
-    const raw = provider === 'anthropic' ? await readWithAnthropic(target, pages)
-      : provider === 'gemini' ? await readWithGemini(target, pages) : await readWithOpenAI(target, pages);
-    const read: DocRead = normalizeRead(raw);
+    const { read, retried } = await readPages(target, pages);
     // Không ghi đè ô người đã nhập: chỉ điền ô còn trống; dòng hàng chỉ điền khi phiếu chưa có dòng.
-    const fill: Record<string, unknown> = { id: capture.id, ai: { provider, model, ms: Date.now() - started, readAt: new Date().toISOString(), result: read } };
+    const fill: Record<string, unknown> = { id: capture.id, ai: { provider, model, ms: Date.now() - started, retried, readAt: new Date().toISOString(), result: read } };
     if (!capture.supplier_name && read.supplierName) fill.supplierName = read.supplierName;
     if (!capture.supplier_tax_code && read.supplierTaxCode) fill.supplierTaxCode = read.supplierTaxCode;
     if (!capture.supplier_address && read.supplierAddress) fill.supplierAddress = read.supplierAddress;

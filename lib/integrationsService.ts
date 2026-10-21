@@ -36,7 +36,8 @@ export const FEATURES: Array<{ feature: ConnectionFeature; label: string; emptyL
   { feature: 'ai.reasoning', label: 'Trợ lý · model suy luận' },
   // Trợ lý v2 (17/10): hội thoại ở tab Trợ lý; chủ SP chọn claude-sonnet-5-5.
   { feature: 'ai.assistant', label: 'Trợ lý · hội thoại', emptyLabel: 'Như Trợ lý · model suy luận' },
-  { feature: 'wms.doc_reader', label: 'Đọc ảnh chứng từ · Kho, Đề xuất' },
+  // B1 (21/10): một kết nối cho mọi chỗ đọc ảnh chứng từ (phiếu giao ở Kho, báo giá ở Lập đơn, phiếu viết tay ở Đề xuất); chưa gán → model nhanh.
+  { feature: 'wms.doc_reader', label: 'Đọc ảnh chứng từ · Kho, Lập đơn, Đề xuất', emptyLabel: 'Như Trợ lý · model nhanh' },
   // J1 (18/10): Jev chạy bóng cạnh hội thoại — chỉ ghi so sánh vào ai_decisions, không đổi câu trả lời. Gán kết nối TypeSafe.
   { feature: 'ai.decisions', label: 'Trợ lý · điều hướng Jev (chạy bóng)', emptyLabel: 'Tắt — chưa ghi so sánh' },
 ];

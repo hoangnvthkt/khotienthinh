@@ -8,7 +8,7 @@
 // { skill, input, context? } → chạy skill.
 import { createClient } from '@supabase/supabase-js';
 import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
-import { agentStep, complete, costUsd, envTarget, readConfig, streamChat, supportsTools, type ImagePart } from './providers.ts';
+import { agentStep, completeWithRetry, costUsd, envTarget, readConfig, streamChat, supportsTools, type ImagePart } from './providers.ts';
 import { SourceBook, type SourceRef } from './agent.ts';
 import { converse } from './loop.ts';
 import type { Rpc } from './tools.ts';
@@ -212,11 +212,12 @@ Deno.serve(async request => {
   const inputChars = userText.length;
 
   try {
-    const out = await complete(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images, noThinking: def.noThinking });
+    // B1 (21/10): ảnh chờ tới 110 s như hội thoại; lỗi thoáng qua (rỗng, 429, 5xx) thử lại một lần; hết giờ → AI_TIMEOUT để màn báo đúng.
+    const out = await completeWithRetry(target, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens, images, noThinking: def.noThinking });
     const result = def.parseOutput(parseJsonLoose(out.text));
     const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
     const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, target.price ?? config.price), durationMs: Date.now() - started };
-    await finish({ status: 'ok', provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}` });
+    await finish({ status: 'ok', provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}${out.retried ? ' · thử lại 1 lần' : ''}` });
     return json({ code: 'OK', runId, result, model, provider: target.kind, usage });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'AI_FAILED';
