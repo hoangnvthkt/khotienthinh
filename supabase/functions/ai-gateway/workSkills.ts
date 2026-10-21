@@ -220,4 +220,71 @@ const workTaskBrief: SkillDef = {
   summary: (input, output) => `tóm tắt việc từ ${input.facts.split('\n').length} dòng → ${String(output.brief || '').length} ký tự`,
 };
 
-export const WORK_SKILLS: SkillDef[] = [workTaskDraft, workMeetingTasks, workUpdateDraft, workTaskWriter, workTaskBrief];
+// Đợt 2 PR-6: chốt kỳ — nháp Đánh giá + Giải pháp từng mục tiêu và nhận xét kỳ. Số liệu, trạng thái mục tiêu do máy tính sẵn (lib/work/workGoals.ts
+// periodReviewFacts); AI chỉ diễn đạt. parseOutput không có đầu vào (SkillDef) nên chỉ chuẩn hóa id; màn hình lọc goal theo id đã gửi.
+const GOAL_ID_MAX = 64;
+const oneLine = (v: unknown, max: number) => clampText(v, max * 2).replace(/\s+/g, ' ').trim().slice(0, max);
+const periodGoals = (raw: unknown) => {
+  const seen = new Set<string>();
+  const out: Array<{ id: string; title: string }> = [];
+  for (const g of (Array.isArray(raw) ? raw : []).map(asObject)) {
+    const id = typeof g.id === 'string' ? g.id.trim() : '';
+    const title = oneLine(g.title, 200);
+    if (!id || id.length > GOAL_ID_MAX || /[\s[\]]/.test(id) || !title || seen.has(id)) continue;
+    seen.add(id); out.push({ id, title });
+    if (out.length >= 30) break;
+  }
+  return out;
+};
+const workPeriodReview: SkillDef = {
+  code: 'work_period_review',
+  maxInputChars: 12000,
+  maxOutputTokens: 5000,
+  noThinking: true,
+  textUsesFast: true,
+  parseInput: raw => {
+    const o = asObject(raw);
+    const facts = clampText(o.facts, 12000).trim();
+    if (facts.length < 10) throw new Error('AI_BAD_INPUT');
+    return { facts, goals: periodGoals(o.goals).map(g => `[${g.id}] ${g.title}`).join('\n') };
+  },
+  system: [
+    'Soạn nháp phần Đánh giá + Giải pháp khi trưởng đơn vị / Ban lãnh đạo chốt kỳ giao việc trong công ty xây dựng, từ các dòng số liệu máy đã tính. Người chốt sẽ sửa rồi tự bấm Chốt.',
+    'Chỉ dùng số, tên người, tên việc, ngày có trong dữ liệu; không bịa số, không tự tính tỷ lệ mới, không khuyên chung chung ("cần cố gắng", "tăng cường phối hợp").',
+    'Trạng thái mỗi mục tiêu đã có ở "trạng thái máy tính" (Đạt / Chưa đạt / Có rủi ro / Đúng tiến độ / Chưa có số): dùng đúng trạng thái đó, không tự tính lại.',
+    'overall.assessment: 2–4 câu nêu tỷ lệ đúng hạn (so kỳ trước nếu có), số việc quá hạn, chỉ đạo BLĐ nếu có, bao nhiêu mục tiêu đạt / chưa đạt. overall.solution: 1–2 câu cụ thể khi kỳ có việc quá hạn / trễ hoặc mục tiêu chưa đạt, không thì null.',
+    'goals: mỗi mục tiêu trong danh sách một phần tử, id chép đúng chuỗi trong ngoặc vuông, không thêm mục tiêu khác. assessment: 1–3 câu: chỉ tiêu, thực tế, % đạt, việc xong / trễ theo dòng của mục tiêu.',
+    'solution: null khi Đạt hoặc Đúng tiến độ; Chưa có số thì null và assessment nói rõ chưa nhập thực tế. Chưa đạt / Có rủi ro: 1–2 câu cụ thể ai làm gì, đến khi nào, dựa đúng việc trễ / vướng / người phụ trách trong dữ liệu; dữ liệu không có người thì ghi "người phụ trách"; hạn dùng ngày có trong dữ liệu hoặc mốc tương đối ("trong tuần tới", "trước kỳ chốt sau"), không tự đặt ngày mới.',
+  ].join(' '),
+  user: input => [
+    wrapData('so_lieu_ky', input.facts),
+    input.goals ? wrapData('muc_tieu', input.goals) : 'Mục tiêu: không có — trả goals [].',
+    'Trả JSON: {"overall": {"assessment": "<2–4 câu>", "solution": null}, "goals": [{"id": "<id trong ngoặc vuông>", "assessment": "<1–3 câu>", "solution": null}]}',
+  ].join('\n'),
+  schema: {
+    type: 'object', additionalProperties: false, required: ['overall', 'goals'],
+    properties: {
+      overall: { type: 'object', additionalProperties: false, required: ['assessment', 'solution'], properties: { assessment: { type: 'string' }, solution: { type: ['string', 'null'] } } },
+      goals: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'assessment', 'solution'],
+        properties: { id: { type: 'string' }, assessment: { type: 'string' }, solution: { type: ['string', 'null'] } } } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(Array.isArray(raw) ? raw[0] : raw);
+    const overall = asObject(o.overall);
+    const seen = new Set<string>();
+    const goals: Array<{ id: string; assessment: string; solution: string | null }> = [];
+    for (const g of (Array.isArray(o.goals) ? o.goals : []).map(asObject)) {
+      const id = typeof g.id === 'string' ? g.id.trim().replace(/^\[(.*)\]$/, '$1').trim() : '';
+      if (!id || id.length > GOAL_ID_MAX || seen.has(id)) continue;
+      const item = { id, assessment: text(g.assessment, 600), solution: strOrNull(g.solution, 400) };
+      if (!item.assessment && !item.solution) continue;
+      seen.add(id); goals.push(item);
+      if (goals.length >= 30) break;
+    }
+    return { overall: { assessment: text(overall.assessment, 600), solution: strOrNull(overall.solution, 400) }, goals };
+  },
+  summary: (input, output) => `đánh giá kỳ từ ${input.facts.split('\n').length} dòng, ${input.goals ? input.goals.split('\n').length : 0} mục tiêu → ${(output.goals as unknown[]).length} nháp`,
+};
+
+export const WORK_SKILLS: SkillDef[] = [workTaskDraft, workMeetingTasks, workUpdateDraft, workTaskWriter, workTaskBrief, workPeriodReview];

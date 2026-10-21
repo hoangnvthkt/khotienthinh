@@ -6,6 +6,11 @@ import type { WorkAssignablePerson, WorkLevel } from "./workBoardService";
 import { localIsoDate, workPeopleLines, type AiImage, type AiMeeting, type AiTaskDraft, type AiTaskWriting, type AiUpdateDraft } from "./workAiText";
 export * from "./workAiText";
 
+export interface AiPeriodReview {
+  overall: { assessment: string; solution: string | null };
+  goals: Array<{ id: string; assessment: string; solution: string | null }>;
+}
+
 /** Ứng dụng tắt strict: cả hai nhánh đều khai đủ khóa để đọc r.message / r.result sau khi kiểm r.ok. */
 export type WorkAiResult<T> = { ok: true; runId: string; result: T; message?: undefined } | { ok: false; message: string; runId?: undefined; result?: undefined };
 
@@ -31,6 +36,9 @@ export function createWorkAi(run: typeof aiGateway.run = aiGateway.run.bind(aiGa
       unwrap(run<AiTaskWriting>("work_task_writer", { title, notes, level }, { screen: "work" })),
     briefTask: (facts: string, taskId: string) =>
       unwrap(run<{ brief: string }>("work_task_brief", { facts }, { screen: "work", taskId })),
+    /** Chốt kỳ: nháp Đánh giá + Giải pháp từng mục tiêu và nhận xét kỳ từ các dòng số liệu máy tính sẵn; người chốt sửa rồi bấm Chốt. */
+    periodReview: (facts: string, goals: Array<{ id: string; title: string }>) =>
+      unwrap(run<AiPeriodReview>("work_period_review", { facts, goals: goals.slice(0, 30) }, { screen: "work" })),
     /** 👍 / 👎 cho tóm tắt (nháp khác ghi "đã dùng" khi người dùng gửi thật qua work_ai_link_v1 / aiRunId). */
     feedback: (runId: string, accepted: boolean) => feedback(runId, accepted),
   };

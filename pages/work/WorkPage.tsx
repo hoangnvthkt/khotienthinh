@@ -46,6 +46,7 @@ import "./work.css";
 import "./workTaskDetail.css";
 import { workDueInfo, workLevelLabels, workLevelOf, workStatusLabels, workUpdateInfo } from "../../lib/work/workPresentation";
 import { createWorkBoardService, type WorkBoardService } from "../../lib/work/workBoardService";
+import { createWorkGoalService, type WorkGoalService } from "../../lib/work/workGoals";
 import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
 import { WorkQuickAssign } from "./WorkQuickAssign";
 import { WorkMyBoard } from "./WorkMyBoard";
@@ -59,7 +60,8 @@ import type { WorkUploadState } from "./WorkAttachments";
 import { workspaceTabRoute } from "./workspaceManagement";
 const taskService = createWorkTaskService(supabase),
   attachmentService = createWorkAttachmentService(supabase),
-  boardService = createWorkBoardService(supabase);
+  boardService = createWorkBoardService(supabase),
+  goalService = createWorkGoalService(supabase);
 const views: { id: WorkTaskView; label: string }[] = [
   { id: "assigned_to_me", label: "Được giao" },
   { id: "created_by_me", label: "Tôi đã giao" },
@@ -86,6 +88,8 @@ export interface WorkWorkspaceProps {
   canQuickAssign?: boolean;
   /** Đợt 1 PR-3: nháp AI (giao nhanh, biên bản, viết giúp cập nhật, tóm tắt). null = tắt. */
   ai?: WorkAiService | null;
+  /** Đợt 2 PR-6: mục tiêu, chốt kỳ, lịch chốt. */
+  goals?: WorkGoalService;
 }
 export function WorkWorkspace({
   actorId,
@@ -96,6 +100,7 @@ export function WorkWorkspace({
   actorName = "Bạn",
   canQuickAssign = false,
   ai = defaultWorkAi,
+  goals = goalService,
 }: WorkWorkspaceProps) {
   const { taskCode } = useParams();
   const routeLocation = useLocation();
@@ -518,13 +523,13 @@ export function WorkWorkspace({
           </section>
         </div>
       ) : space === "team" && access ? (
-        <WorkTeamBoard board={board} service={service} access={access} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
+        <WorkTeamBoard board={board} service={service} goalsService={goals} ai={ai} access={access} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }}
           onAssignTo={canQuickAssign ? (userId) => setPreset({ assigneeId: userId, nonce: Date.now() }) : undefined} key={`team-${boardTick}`}>
           {canQuickAssign && (<WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); setAccessTick((v) => v + 1); }} />)}
         </WorkTeamBoard>
       ) : space === "company" && access ? (
-        <WorkCompanyBoard board={board} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
+        <WorkCompanyBoard board={board} goalsService={goals} ai={ai} detailTo={detailTo} onNotice={(m) => { setNotice(m); setAccessTick((v) => v + 1); }} key={`company-${boardTick}`}
           headerActions={canQuickAssign && ai && (
             <button className="work-secondary" onClick={() => setPreset({ meeting: true, nonce: Date.now() })}><MessageSquare size={17} /> Ghi chỉ đạo</button>
           )}>

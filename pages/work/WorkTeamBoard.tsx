@@ -6,11 +6,18 @@ import { workError } from "../../lib/work/workForm";
 import { directiveCounts, rateDelta, teamTotals } from "../../lib/work/workBoards";
 import { periodLabel, periodQuery, periodShort, prevShort } from "../../lib/work/workPeriod";
 import { WorkPeriodPicker, useWorkPeriod } from "./WorkPeriodPicker";
+import type { WorkGoalService } from "../../lib/work/workGoals";
+import type { WorkAiService } from "../../lib/work/workAi";
+import { WorkGoalsCard } from "./WorkGoals";
+import { WorkPeriodBar, closeView, settingsView, snapshotView } from "./WorkPeriodClose";
 import { BoardDrawer, BoardKpi, DeltaText, DirectiveItem, MemberTable, ReviewItem, TaskListLoader, personView, rateText, type DrawerView } from "./WorkBoardsUi";
 
 /** Phòng tôi (trưởng đơn vị theo Sơ đồ tổ chức, Đợt 1 PR-4): 6 ô số, bảng người, chờ tôi duyệt, chỉ đạo BLĐ của đơn vị. */
-export function WorkTeamBoard({ board, service, access, detailTo, onNotice, onAssignTo, children }: {
-  board: Pick<WorkBoardService, "teamBoard" | "reviewQueue" | "directives" | "tasksOverview" | "decideClaimV2">;
+export function WorkTeamBoard({ board, service, goalsService, ai, access, detailTo, onNotice, onAssignTo, children }: {
+  board: Pick<WorkBoardService, "teamBoard" | "reviewQueue" | "directives" | "tasksOverview" | "decideClaimV2" | "assignablePeople">;
+  /** Đợt 2 PR-6: mục tiêu, chốt kỳ, lịch chốt; không truyền thì ẩn. */
+  goalsService?: WorkGoalService;
+  ai?: WorkAiService | null;
   service: Pick<WorkTaskService, "command">;
   access: WorkBoardAccess;
   detailTo: (code: string) => string;
@@ -29,6 +36,7 @@ export function WorkTeamBoard({ board, service, access, detailTo, onNotice, onAs
   const [error, setError] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [stack, setStack] = useState<DrawerView[]>([]);
+  const [periodTick, setPeriodTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -40,6 +48,11 @@ export function WorkTeamBoard({ board, service, access, detailTo, onNotice, onAs
   }, [board, unitId, reload, query.from, query.to, query.prevFrom, query.prevTo]);
 
   const open = useCallback((v: DrawerView) => setStack([v]), []);
+  const push = useCallback((v: DrawerView) => setStack((s) => [...s, v]), []);
+  /** Đổi mục tiêu / chốt / mở lại: báo, tải lại dải kỳ + mục tiêu; thay đổi nhỏ trong ngăn thì giữ ngăn. */
+  const periodChanged = useCallback((m: string, keepOpen?: boolean) => {
+    onNotice(m); setPeriodTick((v) => v + 1); if (!keepOpen) setStack([]);
+  }, [onNotice]);
 
   if (error && !team) return <section className="work-my"><p className="work-error" role="alert">{workError(error)} <button className="work-text-button" onClick={() => setReload((v) => v + 1)}>Thử lại</button></p></section>;
   if (!team) return <section className="work-my" aria-busy="true"><p className="work-hint" role="status"><Loader2 size={15} className="work-spin" /> Đang tải Phòng tôi…</p></section>;
@@ -88,6 +101,18 @@ export function WorkTeamBoard({ board, service, access, detailTo, onNotice, onAs
         </div>
       </header>
 
+      {goalsService && (
+        <WorkPeriodBar goalsService={goalsService} reloadKey={periodTick}
+          scope={{ orgUnitId: team.unit.id, scopeName: team.unit.name, period, query, label: periodLabel(period) }}
+          onSettings={() => open(settingsView({ goalsService, onSaved: (m) => periodChanged(m, true) }))}
+          onOpen={(id, canClose) => open(snapshotView({ goalsService, closeId: id, canReopen: canClose, onReopened: (m) => periodChanged(m) }))}
+          onCloseClick={() => open(closeView({ goalsService, board, ai: ai || null, unitCode: unitQuery,
+            scope: { orgUnitId: team.unit.id, scopeName: team.unit.name, period, query, label: periodLabel(period) },
+            facts: { due: tot.due, ontime: tot.ontime, overdue: tot.overdue, stale: tot.stale, prevRate: tot.prevRate,
+              directives: dirs ? { open: counts.late + counts.doing, late: counts.late, done: counts.done } : null },
+            onClosed: (m) => periodChanged(m) }))} />
+      )}
+
       <div className="work-kpis is-six">
         <BoardKpi tone="ok" icon={<Check size={18} />} label={`Đúng hạn ${periodShort(period)}`} title={periodLabel(period)}
           value={<>{rateText(tot.rate)}{tot.due > 0 && <small> {tot.ontime}/{tot.due}</small>}</>}
@@ -110,6 +135,8 @@ export function WorkTeamBoard({ board, service, access, detailTo, onNotice, onAs
 
       <div className="work-my-cols">
         <div className="work-my-main">
+          {goalsService && <WorkGoalsCard goalsService={goalsService} board={board} orgUnitId={team.unit.id} scopeName={team.unit.name}
+            from={query.from} to={period.to} reloadKey={periodTick} onOpen={open} onPush={push} onChanged={periodChanged} />}
           <section className="work-my-card">
             <header><h2>Nhân viên</h2><span>Bấm một người để xem việc</span></header>
             <MemberTable members={team.members} onPick={pickMember} />

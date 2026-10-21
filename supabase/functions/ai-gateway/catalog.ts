@@ -22,6 +22,7 @@ export const SKILL_INFO: Record<string, { where: string | null; result: string }
   work_update_draft: { where: 'Vioo Work → Chi tiết việc → Cập nhật tiến độ → ✨ Viết giúp', result: 'Đã làm, Đang làm, Sẽ làm, Vướng + % khi ghi chú nói rõ' },
   work_task_writer: { where: 'Vioo Work → Giao nhanh → Chi tiết → ✨ Viết yêu cầu', result: 'Yêu cầu 2–4 câu, checklist 3–6 bước, bằng chứng cần nộp' },
   work_task_brief: { where: 'Vioo Work → Chi tiết việc → ✨ Tóm tắt', result: '2–3 câu: đang ở đâu, vướng gì, có kịp hạn không' },
+  work_period_review: { where: 'Vioo Work → Phòng tôi / Toàn công ty → Chốt kỳ → ✨ AI soạn nháp', result: 'Nháp Đánh giá + Giải pháp từng mục tiêu và nhận xét kỳ' },
   [CHAT_SKILL]: { where: 'Trung tâm điều hành → tab Trợ lý (hội thoại)', result: 'Câu trả lời chữ + nút mở hồ sơ + thẻ nháp / thẻ biểu đồ từ công cụ' },
 };
 

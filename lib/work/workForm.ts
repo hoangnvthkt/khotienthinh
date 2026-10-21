@@ -278,6 +278,13 @@ export function workError(error: unknown): string {
     WORK_GIVER_INELIGIBLE: "Người giao đã chọn chưa dùng Vioo Work nên chưa xác nhận được.",
     WORK_ORIGIN_ALREADY_SET: "Việc này đã ghi nguồn giao trước đó.",
     WORK_CLAIM_ALREADY_DECIDED: "Việc này đã được xác nhận hoặc từ chối trước đó.",
+    WORK_INVALID_PERIOD: "Kỳ chưa hợp lệ: ngày đến phải sau ngày từ, tối đa 400 ngày và không ở tương lai.",
+    WORK_INVALID_SETTING: "Lịch chốt chưa hợp lệ. Kiểm tra chu kỳ, thứ và giờ.",
+    WORK_PERIOD_ALREADY_CLOSED: "Kỳ này đã được chốt. Tải lại để xem bản chốt.",
+    WORK_PERIOD_NOT_CLOSED: "Kỳ này đã được mở lại trước đó.",
+    WORK_REOPEN_REASON_REQUIRED: "Ghi lý do mở lại (ít nhất 5 ký tự).",
+    WORK_GOAL_INVALID: "Mục tiêu chưa hợp lệ. Kiểm tra tên, kỳ, chỉ tiêu và người phụ trách.",
+    WORK_GOAL_SOLUTION_REQUIRED: "Mục tiêu chưa đạt cần ghi Giải pháp trước khi chốt.",
   };
   return messages[code] || "Không thể hoàn tất yêu cầu. Vui lòng thử lại.";
 }
