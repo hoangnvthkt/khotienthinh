@@ -54,3 +54,21 @@ describe("Vioo Work Đợt 2 · kỳ xem số", () => {
     expect(restorePeriod(JSON.stringify({ preset: "year" }), today)).toEqual(presetPeriod("last_week", today));
   });
 });
+
+describe("Vioo Work PR-7 · kỳ theo hình dạng + link bản tin", () => {
+  it("tùy chọn trọn tháng / tuần / quý được gọi tên và so đúng kỳ trước", async () => {
+    const { periodShape, periodFromRange } = await import("../work/workPeriod");
+    const sep = { preset: "custom" as const, from: "2026-09-01", to: "2026-09-30" };
+    expect(periodShape(sep)).toBe("month");
+    expect(periodLabel(sep)).toBe("Tháng 9/2026");
+    expect(prevPeriod(sep)).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+    expect(prevShort(sep)).toBe("tháng 8");
+    expect(periodShape({ from: "2026-10-12", to: "2026-10-18" })).toBe("week");
+    expect(periodShape({ from: "2026-07-01", to: "2026-09-30" })).toBe("quarter");
+    expect(periodShape(presetPeriod("2weeks", today))).toBeNull();
+    expect(periodFromRange("2026-10-12", "2026-10-18", today)).toEqual(presetPeriod("last_week", today));
+    expect(periodFromRange("2026-09-01", "2026-09-30", today)).toEqual(sep);
+    expect(periodFromRange("2026-10-30", "2026-11-05", today)).toBeNull();
+    expect(periodFromRange(null, "2026-10-01", today)).toBeNull();
+  });
+});

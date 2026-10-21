@@ -30,6 +30,18 @@ const BRIEF_214 = {
   events: [],
 };
 
+// Bảng theo kỳ (tên đơn vị / người giả): QLDA trễ nhiều nhất; trong QLDA Tạ Minh Khôi trễ nhiều nhất.
+const LATE_UNITS = [
+  { id: 'u-QLDA', code: 'QLDA', name: 'Phòng Quản lý dự án', people: 6, due: 12, ontime: 7, overdue: 3, prevDue: 10, prevOntime: 8 },
+  { id: 'u-TCKT', code: 'TCKT', name: 'Phòng Tài chính kế toán', people: 4, due: 6, ontime: 6, overdue: 0, prevDue: 5, prevOntime: 5 },
+  { id: 'u-KH', code: 'KH', name: 'Phòng Kế hoạch', people: 3, due: 5, ontime: 3, overdue: 1, prevDue: 4, prevOntime: 4 },
+];
+const LATE_MEMBERS = [
+  { userId: 'khoi', name: 'Tạ Minh Khôi', due: 5, ontime: 1, overdue: 2, prevDue: 4, prevOntime: 3 },
+  { userId: 'an', name: 'Lê Minh An', due: 4, ontime: 3, overdue: 1, prevDue: 3, prevOntime: 3 },
+  { userId: 'huy', name: 'Ngô Gia Huy', due: 3, ontime: 3, overdue: 0, prevDue: 3, prevOntime: 2 },
+];
+
 /** Lệnh máy chủ giả cho công cụ Vioo Work; null = không phải lệnh của Vioo Work. Ghi tham số đọc việc để ca kiểm. */
 export const workFakeRpc = (fn: string, args: Record<string, unknown>, log: Array<{ p_kind: string; p_title: string; p_payload: Record<string, unknown> }>) => {
   if (fn === 'work_assignable_people_v1') return { data: { canAssignOthers: true, people: WORK_PEOPLE }, error: null };
@@ -41,6 +53,14 @@ export const workFakeRpc = (fn: string, args: Record<string, unknown>, log: Arra
     return { data: { unit: /qlda/i.test(String(args.p_unit_query || '')) ? { id: 'u-QLDA', code: 'QLDA', name: 'Phòng Quản lý dự án' } : null,
       total: pick.length, overdue: pick.filter(t => t.overdue).length, stale: state === 'stale' ? 1 : 0, items: pick }, error: null };
   }
+  // Đợt 2 PR-7 · tre_han_theo_don_vi: người hỏi là BLĐ (xem toàn công ty). Ghi tham số bảng để kiểm kỳ / đơn vị.
+  if (fn === 'work_company_board_v1' || fn === 'work_team_board_v1') {
+    log.push({ p_kind: 'rpc:work_board', p_title: fn, p_payload: args });
+    return fn === 'work_company_board_v1' ? { data: { units: LATE_UNITS }, error: null }
+      : args.p_org_unit_id === 'u-QLDA' ? { data: { unit: { id: 'u-QLDA', code: 'QLDA', name: 'Phòng Quản lý dự án' }, members: LATE_MEMBERS }, error: null }
+        : { data: null, error: { message: 'WORK_BOARD_DENIED', code: '42501' } };
+  }
+  if (fn === 'work_board_access_v1') return { data: { myUnits: [], company: true }, error: null };
   if (fn === 'work_task_brief_v1') return args.p_task_id === 't214' ? { data: BRIEF_214, error: null } : { data: null, error: { message: 'WORK_TASK_NOT_FOUND', code: '42501' } };
   if (fn === 'search_global_v1' && JSON.stringify(args.p_kinds) === '["work_task"]') {
     const terms = JSON.stringify(args.p_terms);
@@ -48,6 +68,27 @@ export const workFakeRpc = (fn: string, args: Record<string, unknown>, log: Arra
   }
   return null;
 };
+
+// ── Ca hội thoại Vioo Work (ghép vào CASES ở evals.ts) ────────────────────────────────────────────────────────────────────
+interface WorkChatOutcome { text: string; tools: string[]; created: Array<{ p_kind: string; p_title: string; p_payload: Record<string, unknown> }> }
+const boards = (o: WorkChatOutcome) => o.created.filter(x => x.p_kind === 'rpc:work_board');
+const dayMs = (d: unknown) => Date.parse(`${String(d)}T00:00:00Z`);
+/** Kỳ "tuần trước": 7 ngày từ thứ 2 đến chủ nhật (công cụ tự tính theo hôm nay, hoặc model gửi tu_ngay / den_ngay). */
+const isWeek = (a: Record<string, unknown> | undefined) => Boolean(a && new Date(dayMs(a.p_from)).getUTCDay() === 1 && dayMs(a.p_prev_to) === dayMs(a.p_from) - 86_400_000
+  && (dayMs(a.p_to) - dayMs(a.p_from)) / 86_400_000 <= 6);
+export const WORK_CHAT_CASES: Array<{ id: string; bug: string; q: string; check: (o: WorkChatOutcome) => string | null }> = [
+  { id: 'work-late-units', bug: 'PR-7: BLĐ hỏi "phòng nào trễ nhiều nhất tuần trước" → tre_han_theo_don_vi (bảng toàn công ty, kỳ tuần trước), nêu đúng QLDA, không bịa số',
+    q: 'Phòng nào trễ nhiều nhất tuần trước?',
+    check: o => { const b = boards(o); return first(fail(!o.tools.includes('Trễ hạn theo đơn vị'), `không gọi Trễ hạn theo đơn vị (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(b[0]?.p_title !== 'work_company_board_v1', `bảng: ${b.map(x => x.p_title).join(', ') || 'không'}`), fail(!isWeek(b[0]?.p_payload), `kỳ: ${JSON.stringify(b[0]?.p_payload)}`),
+      fail(!/QLDA|Quản lý dự án/i.test(o.text), 'không nêu QLDA'), fail((o.text.match(/\d+%/g) || []).some(n => !['70%', '89%', '58%', '80%', '100%', '60%'].includes(n)), `số lạ: ${(o.text.match(/\d+%/g) || []).join(', ')}`)); } },
+  { id: 'work-late-people', bug: 'PR-7: "trong phòng QLDA tháng này ai trễ nhiều nhất" → tre_han_theo_don_vi don_vi QLDA (bảng đơn vị, kỳ tháng), nêu đúng Tạ Minh Khôi',
+    q: 'Trong phòng QLDA tháng này ai trễ nhiều nhất?',
+    check: o => { const b = boards(o); const a = b[0]?.p_payload; return first(fail(!o.tools.includes('Trễ hạn theo đơn vị'), `không gọi Trễ hạn theo đơn vị (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(b[0]?.p_title !== 'work_team_board_v1' || a?.p_org_unit_id !== 'u-QLDA', `bảng: ${b.map(x => `${x.p_title}(${x.p_payload.p_org_unit_id ?? ''})`).join(', ') || 'không'}`),
+      fail(!/^\d{4}-\d{2}-01$/.test(String(a?.p_from)) || String(a?.p_to).slice(0, 7) !== String(a?.p_from).slice(0, 7), `kỳ: ${JSON.stringify(a)}`),
+      fail(!/Khôi/.test(o.text), 'không nêu Tạ Minh Khôi'), fail(/Vương Thành Đô|Ngô Gia Huy trễ nhiều/.test(o.text), 'nêu sai người')); } },
+];
 
 // ── Ca skill (model nhanh thật; ảnh qua kết nối đọc ảnh) ─────────────────────────────────────────────────────────────────
 interface SkillCase { id: string; bug: string; skill: string; input: Record<string, unknown>; image?: string; check: (out: Record<string, unknown>) => string | null }
