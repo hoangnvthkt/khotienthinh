@@ -383,7 +383,8 @@
     "20261024090000_inventory_nxt_report.sql",
     "20261024120000_work_dot2_reminders.sql",
     "20261024130000_work_done_last_assignee.sql",
-    "20261024140000_hrm_work_status_events.sql"
+    "20261024140000_hrm_work_status_events.sql",
+    "20261024160000_material_plan_week_to_procurement.sql"
   ],
   "forbidIncludeAll": true
 }
