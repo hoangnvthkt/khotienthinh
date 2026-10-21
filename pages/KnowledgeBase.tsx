@@ -8,6 +8,7 @@ import { canPerform } from '../lib/permissions/permissionService';
 import { hrmDocumentService } from '../lib/hrmDocumentService';
 import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
 import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
+import { startVisibleInterval } from '../lib/visibleInterval';
 
 interface RagDocument {
   id: string;
@@ -59,8 +60,7 @@ const KnowledgeBase: React.FC = () => {
   useEffect(() => {
     const hasProcessing = documents.some(d => d.status === 'processing');
     if (!hasProcessing) return;
-    const interval = setInterval(fetchDocuments, 15000);
-    return () => clearInterval(interval);
+    return startVisibleInterval(fetchDocuments, 15000);
   }, [documents, fetchDocuments]);
 
   const uploadFile = async (file: File) => {

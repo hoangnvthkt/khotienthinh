@@ -30,6 +30,7 @@ import type {
 import { useToast } from '../../context/ToastContext';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
+import { startVisibleInterval } from '../../lib/visibleInterval';
 
 type AssignmentReservation = {
   booking_id: string;
@@ -181,7 +182,8 @@ const DispatcherWorkbenchPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 15000);
+    // Realtime đã báo mọi thay đổi; poll chỉ là lưới an toàn, 60 s và chỉ khi tab hiện (audit 20/10 H6).
+    const stopPolling = startVisibleInterval(loadData, 60_000);
     const channel = supabase
       .channel('vehicle-booking-dispatch-workbench')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_bookings' }, loadData)
@@ -191,7 +193,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_unavailability_periods' }, loadData)
       .subscribe();
     return () => {
-      clearInterval(timer);
+      stopPolling();
       void supabase.removeChannel(channel);
     };
   }, []);
