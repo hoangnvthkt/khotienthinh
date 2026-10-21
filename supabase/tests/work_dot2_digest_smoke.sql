@@ -144,12 +144,12 @@ do $$ declare r jsonb; b jsonb; s jsonb; begin
   perform pg_temp.ok((r->>'due')::int = 4 and (r->>'ontime')::int = 2 and (r->>'rate')::int = 50 and (r->>'prevRate')::int = 67
     and (r->>'overdue')::int = 1 and (r->>'stale')::int = 0,
     'U1 + U1a: 4 đến hạn (không tính hủy / nháp / chưa đến hạn), 2 đúng hạn ⇒ 50%; kỳ trước 2/3 ⇒ 67%; 1 quá hạn: '||r::text);
-  perform pg_temp.ok(r->'directives' = '{"open":1,"late":1,"done":0}'::jsonb, 'chỉ đạo như Sổ chỉ đạo đơn vị: '||(r->'directives')::text);
+  perform pg_temp.ok(r->'directives' = '{"open":1,"late":1,"done":1}'::jsonb, 'chỉ đạo như Sổ chỉ đạo đơn vị (t1 xong trong kỳ tính cho người làm cuối): '||(r->'directives')::text);
   perform pg_temp.ok(r->'goals' = '{"total":2,"met":1,"missed":1,"atRisk":0}'::jsonb, 'mục tiêu tháng 8 + 9 giao với kỳ: '||(r->'goals')::text);
   perform pg_temp.ok(r->'worst' = jsonb_build_array(jsonb_build_object('id', pg_temp.p('staff'), 'name', 'Lục Thị Ngân', 'code', null,
       'overdue', 1, 'late', 2, 'rate', 33)), 'người trễ nhiều nhất, bỏ dòng = 0: '||(r->'worst')::text);
   perform pg_temp.ok(r->'lines' = jsonb_build_array('Đúng hạn 50% (2/4 việc đến hạn) · kỳ trước 67%', 'Đang quá hạn: 1 việc',
-      'Chỉ đạo: 1 đang mở · 1 trễ · 0 xong trong kỳ', 'Mục tiêu: 1/2 đạt · 1 chưa đạt', 'Cần chú ý: Lục Thị Ngân (1 quá hạn, 2 không đúng hạn)'),
+      'Chỉ đạo: 1 đang mở · 1 trễ · 1 xong trong kỳ', 'Mục tiêu: 1/2 đạt · 1 chưa đạt', 'Cần chú ý: Lục Thị Ngân (1 quá hạn, 2 không đúng hạn)'),
     'dòng chữ thông báo: '||(r->'lines')::text);
 
   -- Khớp bảng Phòng tôi cùng kỳ.
@@ -217,7 +217,7 @@ do $$ declare r jsonb; begin
   r := public.work_period_digest_v1(pg_temp.u('u1'), '2026-08-31', '2026-09-06', '2026-08-24', '2026-08-30');
   perform pg_temp.ok((r->>'closed')::boolean and r->>'closedBy' = 'Phùng Quang Vĩ' and (r->>'closedAt')::timestamptz = (select closed_at from wt_close)
     and (r->>'due')::int = 4 and (r->>'ontime')::int = 2 and (r->>'rate')::int = 50 and (r->>'prevRate')::int = 67
-    and r->'goals' = '{"total":2,"met":1,"missed":1,"atRisk":0}'::jsonb and r->'directives' = '{"open":1,"late":1,"done":0}'::jsonb
+    and r->'goals' = '{"total":2,"met":1,"missed":1,"atRisk":0}'::jsonb and r->'directives' = '{"open":1,"late":1,"done":1}'::jsonb
     and r->'worst'->0->>'id' = pg_temp.p('staff')::text and (r->'worst'->0->>'late')::int = 2 and r->>'statsTo' = '2026-09-06',
     'kỳ đã chốt lấy số ảnh chốt: '||r::text);
   -- Kỳ khác (không chốt) vẫn tính trực tiếp.

@@ -3088,6 +3088,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { error } = await supabase.from(table).insert(toDbItem(table, item));
       if (error) {
         console.error(`Error adding to ${table}:`, error);
+        setter((prev: any[]) => prev.filter((row: any) => row.id !== item.id));
         throw error;
       }
     }
