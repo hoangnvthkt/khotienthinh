@@ -32,6 +32,18 @@ describe('hrmEmployeeProfileService', () => {
     expect(payload).not.toHaveProperty('p_org_unit_id');
     expect(payload).not.toHaveProperty('p_position_id');
     expect(payload).not.toHaveProperty('p_salary_policy_id');
+    expect(payload).toMatchObject({ p_status_date: null, p_status_note: null, p_status_reference: null });
+  });
+
+  it('sends the exit date and reason with a status change in the same command', async () => {
+    rpc.mockResolvedValueOnce({ error: null });
+
+    await hrmEmployeeProfileService.update({ ...employee, status: 'Đã nghỉ việc' },
+      { date: '2026-10-15', note: ' Tự xin nghỉ ', reference: '' });
+
+    expect(rpc).toHaveBeenCalledWith('update_hrm_employee_core_profile', expect.objectContaining({
+      p_status: 'Đã nghỉ việc', p_status_date: '2026-10-15', p_status_note: 'Tự xin nghỉ', p_status_reference: null,
+    }));
   });
 
   it('uses a Vietnamese fallback database error', async () => {
