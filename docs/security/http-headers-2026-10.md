@@ -22,8 +22,8 @@ không khóa phiên bản, không SRI) và còn `importmap` trỏ `esm.sh` dù V
 ```
 default-src 'self';
 script-src 'self';
-style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-font-src 'self' data: https://fonts.gstatic.com;
+style-src 'self' 'unsafe-inline';
+font-src 'self' data:;
 img-src 'self' data: blob: https:;
 media-src 'self' blob: https://*.supabase.co;
 connect-src 'self' https://*.supabase.co wss://*.supabase.co;
@@ -32,7 +32,7 @@ frame-src 'self' blob: https://*.supabase.co https://drive.google.com https://ho
 manifest-src 'self'; form-action 'self'; upgrade-insecure-requests
 ```
 
-Nguồn đã kiểm kê trong mã client: Supabase (REST, Realtime, Storage, Edge Functions), Google Fonts, ảnh bản đồ
+Nguồn đã kiểm kê trong mã client: Supabase (REST, Realtime, Storage, Edge Functions), font Inter tự host (`fonts.css`, từ 21/10 — không còn Google Fonts), ảnh bản đồ
 `tile.openstreetmap.org` (trong `https:`), PDF xem bằng iframe `blob:`/URL ký Supabase, Kho dữ liệu nhúng Google Drive và
 Synology, worker pdf.js là asset nội bộ (`?url`), không còn script inline nào trong `index.html`. AI gọi qua Edge Function,
 không gọi thẳng từ trình duyệt.
