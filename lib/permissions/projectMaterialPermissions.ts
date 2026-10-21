@@ -91,6 +91,7 @@ export type ProjectMaterialCapability = {
   canApproveMaterialRequest: boolean;
   canConfirmFulfillment: boolean;
   canViewAvailableStock: boolean;
+  canManageWorkflow: boolean;
   canViewCustomMaterial: boolean;
   canCreateCustomMaterial: boolean;
   canApproveCustomMaterial: boolean;
@@ -159,6 +160,7 @@ export const getProjectMaterialCapabilities = (
     canApproveMaterialRequest: can('project.material_request.approve'),
     canConfirmFulfillment: can('project.material_request.confirm_fulfillment'),
     canViewAvailableStock: can('project.material_request.view_available_stock'),
+    canManageWorkflow: Boolean(options.isAdmin),
     canViewCustomMaterial: can('project.custom_material.view'),
     canCreateCustomMaterial: Boolean(options.isAdmin),
     canApproveCustomMaterial: Boolean(options.isAdmin),

@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { Employee } from '../../types';
-import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Table2 } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
@@ -20,6 +21,16 @@ import type { HrmSharedCatalogBundle, HrmStaffingRow } from '../../types/hrmShar
 import HrmPersonnelImportExportPanel from '../../components/hrm/HrmPersonnelImportExportPanel';
 import HrmProfileCompletenessPanel from '../../components/hrm/HrmProfileCompletenessPanel';
 import HrmWorkQueuePanel from '../../components/hrm/HrmWorkQueuePanel';
+import HrmRosterView from '../../components/hrm/roster/HrmRosterView';
+
+// HR opens Bảng nhân sự first; the card directory and profile tools stay one click away.
+const ViewSwitch: React.FC<{ view: 'roster' | 'directory'; onChange: (view: 'roster' | 'directory') => void }> = ({ view, onChange }) =>
+    <div className="inline-flex max-w-full self-start overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Cách xem hồ sơ nhân sự">
+        {([['roster', 'Bảng nhân sự', Table2], ['directory', 'Danh bạ & hồ sơ', LayoutGrid]] as const).map(([key, label, Icon]) =>
+            <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => onChange(key)}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition ${view === key ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+                <Icon size={15} />{label}</button>)}
+    </div>;
 
 const Employees: React.FC = () => {
     const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
@@ -27,6 +38,15 @@ const Employees: React.FC = () => {
     const isHr = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
     useModuleData('hrm');
     const toast = useToast();
+    const [searchParams, setSearchParams] = useSearchParams();
+    // Non-HR approvers (e.g. TGĐ at step 2) arrive here from a notification link with view=roster.
+    const pageView: 'roster' | 'directory' = (isHr && searchParams.get('view') !== 'directory') || searchParams.get('view') === 'roster' ? 'roster' : 'directory';
+    const setPageView = (view: 'roster' | 'directory') => setSearchParams(current => {
+        const next = new URLSearchParams(current);
+        next.set('view', view);
+        next.delete('tab'); next.delete('batch'); next.delete('person');
+        return next;
+    }, { replace: true });
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -212,8 +232,20 @@ const Employees: React.FC = () => {
         return orgUnits.find(u => u.id === deptId)?.name || null;
     };
 
+    if (pageView === 'roster') {
+        return (
+            <div className="flex h-full flex-col space-y-4">
+                {isHr && <ViewSwitch view="roster" onChange={setPageView} />}
+                <HrmRosterView embedded initialTab={searchParams.get('tab') === 'batches' ? 'batches' : 'roster'}
+                    initialBatchId={searchParams.get('batch')} initialPersonId={searchParams.get('person')}
+                    onDataChanged={() => loadModuleData('hrm', true)} />
+            </div>
+        );
+    }
+
     return (
         <div className="h-full flex flex-col space-y-4">
+            {isHr && <ViewSwitch view="directory" onChange={setPageView} />}
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-4">

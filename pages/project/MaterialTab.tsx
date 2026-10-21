@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Plus, Edit2, Trash2, Package,
     ChevronDown, ChevronRight,
     RefreshCcw, Download, Upload,
-    FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
+    FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen, ShoppingCart, Zap, ExternalLink
 } from 'lucide-react';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance, ProjectMaterialReconciliationRow, ProjectMaterialReconciliationSummary } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance } from '../../types';
 import { boqService, workBoqService, poService } from '../../lib/projectService';
 import { loadMaterialPlanningGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
@@ -27,16 +27,12 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService, projectMaterialPlanningService } from '../../lib/projectMaterialPlanningService';
 import { MaterialBoqFormModal } from '../../components/project/material/MaterialBoqFormModal';
-import { CustomMaterialRequestTab } from '../../components/project/material/CustomMaterialRequestTab';
 import { G8NormApplyModal } from '../../components/project/material/G8NormApplyModal';
 import { MaterialBoqImportPreviewModal } from '../../components/project/material/MaterialBoqImportPreviewModal';
-import { MaterialDashboardTab } from '../../components/project/material/MaterialDashboardTab';
 import ProjectOpeningBalanceModal from '../../components/project/ProjectOpeningBalanceModal';
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
 import { MaterialSummaryTab } from '../../components/project/material/MaterialSummaryTab';
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
-const HotPurchaseView = React.lazy(() => import('../../components/procurement/hotPurchase/HotPurchaseView'));
-import { MaterialWasteTab } from '../../components/project/material/MaterialWasteTab';
 import {
     aggregateMaterialWasteRows,
     calculateMaterialBudgetQty,
@@ -56,6 +52,7 @@ import {
     normalizeLookupText,
     parseVietnameseMoney,
     pickImportValue,
+    MATERIAL_TAB_ORDER,
     PROJECT_REQUEST_DATA_TABS,
     PROJECT_REQUEST_FULFILLMENT_TABS,
     rowHasAnyValue,
@@ -66,19 +63,18 @@ import {
     type WorkBoqImportPreview,
 } from '../../lib/projectMaterialTabUtils';
 import { useProjectMaterialAccess } from '../../hooks/project/material/useProjectMaterialAccess';
-import { buildProjectScheduleProjection } from '../../lib/projectScheduleProjection';
-import { projectMaterialReconciliationService } from '../../lib/projectMaterialReconciliationService';
-import { summarizeProjectMaterialReconciliation } from '../../lib/projectMaterialReconciliation';
+import { finishCommand, getCommand, mrView, notifyCommandChanged, type AssistantCommand } from '../../lib/assistantCommands';
 
-const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
-const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
-const BoqMaterialPlanningWorkspace = React.lazy(() => import('../../components/project/material/BoqMaterialPlanningWorkspace')
-    .then(module => ({ default: module.BoqMaterialPlanningWorkspace })));
+const WorkPlanTab = React.lazy(() => import('./WorkPlanTab'));
 const ProjectRoomSubmissionDialog = React.lazy(() => import('../../components/project/ProjectRoomSubmissionDialog'));
 const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/project/ProjectWorkflowActionDialog'));
 const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
-const BoqReconciliationPanel = React.lazy(() => import('../../components/project/BoqReconciliationPanel'));
 const RequestModal = React.lazy(() => import('../../components/RequestModal'));
+
+// Đơn hàng PO + Mua nóng chuyển sang Mua hàng (12/10/2026); quyền phòng giữ nguyên, chỉ không còn tab ở đây.
+const MOVED_TO_PROCUREMENT_TABS = new Set<ProjectMaterialTabKey>(['po', 'hot_purchase']);
+// Dọn tab Vật tư (P1, 12/10/2026): Hao hụt + Dashboard gộp vào Theo dõi; Phi tiêu chuẩn chưa từng có phiếu.
+const MERGED_MATERIAL_TABS: Partial<Record<ProjectMaterialTabKey, ProjectMaterialTabKey>> = { waste: 'summary', dashboard: 'summary', custom: 'request' };
 
 const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: string }) => (
     <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-100 bg-white text-xs font-bold text-slate-400 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
@@ -97,6 +93,10 @@ interface MaterialTabProps {
     siteWarehouseId?: string; // ID kho công trường
     canManageTab?: boolean;
     materialPermissions?: ProjectMaterialTabPermissionMap;
+    /** Menu cột của dự án hiện tab con: báo danh sách tab con được xem + tab đang mở. */
+    onSubNavChange?: (state: { tabs: ProjectMaterialTabKey[]; active: ProjectMaterialTabKey }) => void;
+    /** Màn rộng đã có tab con ở menu cột → ẩn thanh tab con (màn hẹp vẫn hiện). */
+    subTabsInSideNav?: boolean;
 }
 
 const MATERIAL_REQUEST_APPROVE_PERMISSION = 'project.material_request.approve';
@@ -117,11 +117,18 @@ const normalizeMaterialRequestPermissionCodes = (codes?: string[] | null): strin
     return [...new Set(normalized.length > 0 ? normalized : [MATERIAL_REQUEST_APPROVE_PERMISSION])];
 };
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions, onSubNavChange, subTabsInSideNav = false }) => {
     const location = useLocation();
+    const navigate = useNavigate();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
     const isAdmin = user?.role === 'ADMIN';
-    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
+    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges, refreshData: refreshWorkflowData } = useWorkflow();
+    // /da không còn nạp sẵn quy trình lúc mở trang: tab Vật tư cần mẫu + bước để xử lý phiếu yêu cầu.
+    useEffect(() => {
+        if (workflowTemplates.length > 0) return;
+        refreshWorkflowData().catch(err => console.warn('Failed to load workflow data for material requests:', err));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -141,6 +148,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canDeleteBoq,
         canApproveProjectRequest,
         canViewAvailableStock,
+        canManageRequestWorkflow,
         canCreateMaterialRequest,
         canEditOwnMaterialRequest,
         canDeleteMaterialRequest,
@@ -174,39 +182,71 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         user,
     });
 
+    // Đơn hàng PO + Mua nóng đã chuyển sang Mua hàng (12/10/2026): tab Vật tư chỉ còn liên kết.
+    const projectMaterialTabs = useMemo(
+        () => MATERIAL_TAB_ORDER
+            .map(key => visibleMaterialTabs.find(tab => tab.key === key))
+            .filter((tab): tab is (typeof visibleMaterialTabs)[number] => Boolean(tab)),
+        [visibleMaterialTabs],
+    );
+    const ordersLink = projectId ? `#/procurement?${new URLSearchParams({ mode: 'orders', project: projectId }).toString()}` : '#/procurement?mode=orders';
+    const hotPurchaseLink = '#/procurement?mode=hot';
+
     useEffect(() => {
-        if (visibleMaterialTabs.length > 0 && !materialAccess[activeSubTab].canView) {
-            setActiveSubTab(visibleMaterialTabs[0].key);
+        if (projectMaterialTabs.length > 0 && !projectMaterialTabs.some(tab => tab.key === activeSubTab)) {
+            setActiveSubTab(projectMaterialTabs[0].key);
         }
-    }, [activeSubTab, materialAccess, visibleMaterialTabs]);
-
-    // Màn cũ Vật tư → Kế hoạch đã ẩn (chủ SP 08/10/2026): liên kết cũ chuyển sang Kế hoạch → Vật tư (tuần).
-    useEffect(() => {
-        if (activeSubTab !== 'planning' || !projectId) return;
-        window.location.hash = `#/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'material', period: 'week' }).toString()}`;
-    }, [activeSubTab, constructionSiteId, projectId]);
+    }, [activeSubTab, materialAccess, projectMaterialTabs]);
 
     useEffect(() => {
-        const materialTab = getValidMaterialTab(new URLSearchParams(location.search).get('materialTab'));
+        const params = new URLSearchParams(location.search);
+        const materialTab = getValidMaterialTab(params.get('materialTab'));
+        // Link cũ (thông báo, Tài chính, Trung tâm) trỏ vào tab PO / Mua nóng của dự án → mở đúng chỗ ở Mua hàng.
+        if (materialTab === 'po' || params.get('poId')) {
+            const target = new URLSearchParams();
+            if (projectId) target.set('projectId', projectId);
+            if (constructionSiteId) target.set('siteId', constructionSiteId);
+            if (params.get('poId')) target.set('poId', params.get('poId')!);
+            navigate(`/procurement/project-po?${target.toString()}`, { replace: true });
+            return;
+        }
+        if (materialTab === 'hot_purchase') {
+            navigate(`/procurement?${new URLSearchParams({ mode: 'hot', ...(params.get('hp') ? { hp: params.get('hp')! } : {}) }).toString()}`, { replace: true });
+            return;
+        }
         if (!materialTab) return;
-        if (materialAccess[materialTab].canView) setActiveSubTab(materialTab);
-    }, [location.search, materialAccess]);
+        const target = MERGED_MATERIAL_TABS[materialTab] || materialTab;
+        if (materialAccess[target].canView) setActiveSubTab(target);
+    }, [constructionSiteId, location.search, materialAccess, navigate, projectId]);
+
+    // Menu cột của dự án: báo tab con được xem + tab đang mở; giữ ?materialTab= khớp tab đang mở
+    // để link/F5 mở đúng chỗ và menu tô đúng mục.
+    const subNavKey = projectMaterialTabs.map(tab => tab.key).join(',');
+    useEffect(() => {
+        if (!onSubNavChange || projectMaterialTabs.length === 0) return;
+        onSubNavChange({ tabs: projectMaterialTabs.map(tab => tab.key), active: activeSubTab });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSubTab, onSubNavChange, subNavKey]);
+    useEffect(() => {
+        if (!projectMaterialTabs.some(tab => tab.key === activeSubTab)) return;
+        const params = new URLSearchParams(location.search);
+        if (params.get('materialTab') === activeSubTab || params.get('poId')) return;
+        // Link cũ tới PO / Mua nóng đang được chuyển sang Mua hàng ở hiệu ứng trên — không ghi đè.
+        if (MOVED_TO_PROCUREMENT_TABS.has(params.get('materialTab') as ProjectMaterialTabKey)) return;
+        if (!params.get('tab')) return; // chỉ đồng bộ khi đang ở URL tab dự án
+        params.set('materialTab', activeSubTab);
+        navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSubTab, subNavKey]);
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
-    const [reconciliationReportDate, setReconciliationReportDate] = useState(() => new Date().toISOString().slice(0, 10));
-    const [reconciliationRows, setReconciliationRows] = useState<ProjectMaterialReconciliationRow[]>([]);
-    const [reconciliationSummary, setReconciliationSummary] = useState<ProjectMaterialReconciliationSummary>(() => summarizeProjectMaterialReconciliation([]));
-    const [reconciliationLoading, setReconciliationLoading] = useState(false);
-    const [reconciliationError, setReconciliationError] = useState<string | null>(null);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [planningRules, setPlanningRules] = useState<MaterialPlanningRule[]>([]);
     const [planningCurveTemplates, setPlanningCurveTemplates] = useState<PlanningCurveTemplate[]>([]);
     const [planningLoading, setPlanningLoading] = useState(false);
-    const [planningDraftPo, setPlanningDraftPo] = useState<MaterialPlanningDraftPo | null>(null);
-    const [planningDraftPoKey, setPlanningDraftPoKey] = useState(0);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
     const [syncingBoq, setSyncingBoq] = useState(false);
@@ -228,6 +268,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [workflowBoardSearch, setWorkflowBoardSearch] = useState('');
     const [hideEmptyWorkflowLanes, setHideEmptyWorkflowLanes] = useState(false);
     const [startWorkflowRequest, setStartWorkflowRequest] = useState<MaterialRequest | null>(null);
+    const [adminMoveTransition, setAdminMoveTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; targets: WorkflowNode[]; initialNodeId: string } | null>(null);
     const [workflowActionTransition, setWorkflowActionTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; nextNode: WorkflowNode } | null>(null);
     const [submissionTransition, setSubmissionTransition] = useState<{
         request: MaterialRequest;
@@ -254,6 +295,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
     const [requestModalInitialAction, setRequestModalInitialAction] = useState<'createFulfillmentBatch' | undefined>(undefined);
     const [requestModalInitialDraft, setRequestModalInitialDraft] = useState<MaterialRequestInitialDraft | null>(null);
+    // Thẻ nháp của Trợ lý đang mở thành form (T2b): lưu / gửi xong thì ghi biên nhận vào lệnh.
+    const assistantCommandRef = useRef<AssistantCommand | null>(null);
+    const assistantDraftHandled = useRef<string | null>(null);
     const [selectedMaterialGroupKeys, setSelectedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
@@ -536,6 +580,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [constructionSiteId, materialAccess.boq.canView, materialAccess.dashboard.canView, projectId]);
 
     const closeRequestModal = () => {
+        assistantCommandRef.current = null;
         setReqModalOpen(false);
         setSelectedRequest(undefined);
         setRequestModalInitialAction(undefined);
@@ -844,46 +889,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [activeSubTab, constructionSiteId, effectiveId, loadBoqData, materialAccess]);
 
     useEffect(() => {
-        if (activeSubTab !== 'planning' && activeSubTab !== 'summary') return;
-        if (activeSubTab === 'planning' && !materialAccess.planning.canView) return;
-        if (activeSubTab === 'summary' && !materialAccess.summary.canView) return;
-        void loadPlanningData();
-    }, [activeSubTab, loadPlanningData, materialAccess.planning.canView, materialAccess.summary.canView]);
-
-    const reconciliationPlannedProgress = useMemo(() => buildProjectScheduleProjection({
-        tasks,
-        todayIso: reconciliationReportDate,
-    }).plannedProgressPercent, [reconciliationReportDate, tasks]);
-
-    const loadReconciliation = useCallback(async () => {
-        if (!projectId || !materialAccess.summary.canView) {
-            setReconciliationRows([]);
-            setReconciliationSummary(summarizeProjectMaterialReconciliation([]));
-            return;
-        }
-        setReconciliationLoading(true);
-        setReconciliationError(null);
-        try {
-            const report = await projectMaterialReconciliationService.getReport({
-                projectId,
-                constructionSiteId: constructionSiteId || null,
-                reportDate: reconciliationReportDate,
-                plannedProgressPercent: reconciliationPlannedProgress,
-            });
-            setReconciliationRows(report.rows);
-            setReconciliationSummary(report.summary);
-        } catch (error) {
-            logApiError('MaterialTab.loadReconciliation', error);
-            setReconciliationError(getApiErrorMessage(error, 'Không thể tải đối chiếu BOQ vật tư.'));
-        } finally {
-            setReconciliationLoading(false);
-        }
-    }, [constructionSiteId, materialAccess.summary.canView, projectId, reconciliationPlannedProgress, reconciliationReportDate]);
-
-    useEffect(() => {
+        // Cột dự báo 7/30/90 ngày ở Theo dõi dùng quy tắc + đường cong; tab Kế hoạch vật tư tự tải dữ liệu riêng.
         if (activeSubTab !== 'summary' || !materialAccess.summary.canView) return;
-        void loadReconciliation();
-    }, [activeSubTab, loadReconciliation, materialAccess.summary.canView]);
+        void loadPlanningData();
+    }, [activeSubTab, loadPlanningData, materialAccess.summary.canView]);
 
     useEffect(() => {
         if (!needsRequestFulfillmentDetails) return;
@@ -1004,7 +1013,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         toast.warning('Cần duyệt vượt BOQ', 'Phiếu có vật tư vượt KL dự toán. Chỉ admin hoặc thủ kho tổng được duyệt qua bước tạo đợt cấp.');
     };
 
-    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
+    // Quyền Quản trị quy trình duyệt: thả phiếu vào cột bước bất kỳ, không cần là người đang xử lý.
+    const getAdminMoveOptions = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId) => {
+        if (!canManageRequestWorkflow || !toStage.startsWith('workflow:')) return null;
+        const subject = getRequestWorkflowSubject(request);
+        if (!subject || (subject.status !== 'RUNNING' && subject.status !== 'RETURNED')) return null;
+        const runtime = requestWorkflowRuntimeContexts[subject.id];
+        const targets = (runtime?.nodes || [])
+            .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END && node.templateNodeId)
+            .sort((a, b) => a.positionY - b.positionY)
+            .map(node => runtimeNodeToWorkflowNode(node))
+            .filter((node): node is WorkflowNode => Boolean(node));
+        const target = targets.find(node => getMaterialRequestWorkflowLaneId(node.label) === toStage);
+        return target ? { subject, targets, initialNodeId: target.id } : null;
+    };
+
+    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) =>
+        canMoveMaterialRequestNormally(request, toStage, fromStage) || Boolean(getAdminMoveOptions(request, toStage));
+
+    const canMoveMaterialRequestNormally = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
         const dynamicSubject = getRequestWorkflowSubject(request);
         if (toStage.startsWith('workflow:')) {
             if (fromStage === 'draft') {
@@ -1217,7 +1244,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const performDynamicRequestTransition = async (params: {
         request: MaterialRequest;
-        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED' | 'ROLLED_BACK';
+        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED' | 'ROLLED_BACK' | 'STEP_MOVED';
         target?: ProjectSubmissionTarget | null;
         note?: string | null;
         templateId?: string | null;
@@ -1261,6 +1288,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     requestId: params.request.id,
                     newAssigneeUserIds: targetUserIds,
                     comment: params.note || params.target.note || '',
+                });
+            } else if (params.action === 'STEP_MOVED') {
+                const targetTemplateNodeId = String(params.metadata?.targetTemplateNodeId || '');
+                if (!targetTemplateNodeId) throw new Error('Chưa chọn bước đích.');
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý ở bước đích.');
+                subject = await projectWorkflowService.moveMaterialRequestWorkflowStep({
+                    requestId: params.request.id,
+                    targetTemplateNodeId,
+                    assigneeUserIds: targetUserIds,
+                    comment: params.note || '',
                 });
             } else if (params.action === 'ROLLED_BACK') {
                 subject = await projectWorkflowService.rollbackCompletedMaterialRequestWorkflow({
@@ -1328,6 +1365,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (!canMoveMaterialRequest(request, toStage, fromStage)) {
             toast.warning('Không thể chuyển bước', 'Bạn không có quyền hoặc bước này không cho phép kéo thả.');
             return;
+        }
+        if (!canMoveMaterialRequestNormally(request, toStage, fromStage)) {
+            const adminMove = getAdminMoveOptions(request, toStage);
+            if (adminMove) {
+                setAdminMoveTransition({ request, ...adminMove });
+                return;
+            }
         }
         const dynamicSubject = getRequestWorkflowSubject(request);
         if (fromStage === 'draft' && toStage.startsWith('workflow:')) {
@@ -1543,6 +1587,34 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
         if (context.action === 'reassign' && !canReassignProjectWorkflow(request)) {
             toast.warning('Không thể đổi người xử lý', 'Bạn không phải người đang xử lý hoặc quản trị workflow này.');
+            return;
+        }
+        if (context.action === 'move_step') {
+            if (!canManageRequestWorkflow) {
+                toast.warning('Không thể chuyển bước', 'Bạn cần quyền Quản trị quy trình duyệt trong room Đề xuất vật tư.');
+                return;
+            }
+            const targetNode = context.nextNode;
+            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+            if (!targetNode) {
+                toast.warning('Không thể chuyển bước', 'Chưa chọn bước đích.');
+                return;
+            }
+            await performDynamicRequestTransition({
+                request,
+                action: 'STEP_MOVED',
+                target: {
+                    userId: assigneeUserIds[0] || '',
+                    userIds: assigneeUserIds,
+                    name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                    names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                    permissionCode: getWorkflowNodePermissionCodes(targetNode.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
+                    note: context.comment,
+                },
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', targetTemplateNodeId: targetNode.id },
+            });
+            closeWorkflowRequestModal();
             return;
         }
         if (context.action === 'rollback' && !canManageProjectWorkflow(request)) {
@@ -1808,7 +1880,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     // Compute actualQty from successful site receipts; legacy completed requests fall back to approvedQty.
-    const computedBoqItems = useMemo(() => {
+    // BOQ chia theo đầu mục (nhiều dòng cùng mã vật tư), phiếu yêu cầu gom theo mã. Dòng phiếu không gắn dòng BOQ
+    // chỉ được tính MỘT lần — vào dòng neo (dòng đầu) của mã — để không nhân số đề xuất lên N lần (lỗi "vượt ngân
+    // sách 199" ở DA29, 12/10/2026). Vượt ngân sách / tình trạng cung ứng đánh giá theo cả mã.
+    const boqGroupKeyOf = useCallback((line: Pick<MaterialBudgetItem, 'id' | 'inventoryItemId'>) =>
+        line.inventoryItemId ? `item:${line.inventoryItemId}` : `line:${line.id}`, []);
+    const boqGroupByLineId = useMemo(() => new Map(boqItems.map(line => [line.id, boqGroupKeyOf(line)])), [boqGroupKeyOf, boqItems]);
+    const boqAnchorLineIdByGroup = useMemo(() => {
+        const anchors = new Map<string, string>();
+        boqItems.forEach(line => { const key = boqGroupKeyOf(line); if (!anchors.has(key)) anchors.set(key, line.id); });
+        return anchors;
+    }, [boqGroupKeyOf, boqItems]);
+    const requestLineGroupKey = useCallback((line: any): string | null => {
+        if (line.materialBudgetItemId) return boqGroupByLineId.get(line.materialBudgetItemId) || null;
+        return line.itemId ? `item:${line.itemId}` : null;
+    }, [boqGroupByLineId]);
+
+    const rawBoqLines = useMemo(() => {
         return boqItems.map(b => {
             const linkedWorkItem = b.workBoqItemId ? workBoqItemById.get(b.workBoqItemId) : undefined;
             const formulaBudgetQty = linkedWorkItem && Number(linkedWorkItem.plannedQty || 0) > 0 && Number(b.wasteThreshold || 0) > 0
@@ -1826,9 +1914,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const summaryByLine = requestFulfillmentLineSummaries[r.id];
                 rItems.forEach((ri: any, index: number) => {
                     const sameBudgetLine = ri.materialBudgetItemId && ri.materialBudgetItemId === b.id;
-                    const legacySameItem = !!b.inventoryItemId && !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId;
+                    const legacySameItem = !!b.inventoryItemId && !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId
+                        && boqAnchorLineIdByGroup.get(boqGroupKeyOf(b)) === b.id;
                     if (sameBudgetLine || legacySameItem) {
-                        totalRequested += (ri.requestQty || 0);
+                        // Phiếu nháp chưa gửi: không tính là đã đề xuất.
+                        if (r.status !== RequestStatus.DRAFT) totalRequested += (ri.requestQty || 0);
                         const requestLineId = getRequestLineId(r, ri, index);
                         const lineSummary = summaryByLine?.get(requestLineId);
                         if (hasFulfillmentBatches && lineSummary) {
@@ -1840,10 +1930,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             });
             if (!materialAccess.request.canView) {
-                const aggregate = requestAggregateByBudgetOrItem.get(`budget:${b.id}`)
-                    || (b.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${b.inventoryItemId}`) : undefined);
-                totalRequested = aggregate?.requestedQty || 0;
-                totalReceived = aggregate?.receivedQty || 0;
+                const lineAggregate = requestAggregateByBudgetOrItem.get(`budget:${b.id}`);
+                const itemAggregate = b.inventoryItemId && boqAnchorLineIdByGroup.get(boqGroupKeyOf(b)) === b.id
+                    ? requestAggregateByBudgetOrItem.get(`item:${b.inventoryItemId}`) : undefined;
+                totalRequested = (lineAggregate?.requestedQty || 0) + (itemAggregate?.requestedQty || 0);
+                totalReceived = (lineAggregate?.receivedQty || 0) + (itemAggregate?.receivedQty || 0);
             }
             const actualQty = totalReceived;
             const wasteQty = actualQty - derivedBudgetQty;
@@ -1865,7 +1956,33 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wasteQty > 0 ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
+    }, [boqAnchorLineIdByGroup, boqGroupKeyOf, boqItems, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
+
+    // Tổng theo mã: ngân sách mọi dòng cùng mã so với tổng đề xuất / đã nhận của mã.
+    const boqGroupTotals = useMemo(() => {
+        const totals = new Map<string, { budgetQty: number; requestedQty: number; receivedQty: number }>();
+        rawBoqLines.forEach(line => {
+            const key = boqGroupKeyOf(line);
+            const current = totals.get(key) || { budgetQty: 0, requestedQty: 0, receivedQty: 0 };
+            current.budgetQty += Number(line.budgetQty || 0);
+            current.requestedQty += Number(line.cumulativeRequested || 0);
+            current.receivedQty += Number(line.actualQty || 0);
+            totals.set(key, current);
+        });
+        return totals;
+    }, [boqGroupKeyOf, rawBoqLines]);
+
+    const computedBoqItems = useMemo(() => rawBoqLines.map(line => {
+        const group = boqGroupTotals.get(boqGroupKeyOf(line));
+        if (!group || group.budgetQty <= 0) return line;
+        const overPercent = Math.max(0, Math.round(((group.requestedQty - group.budgetQty) / group.budgetQty) * 1000) / 10);
+        const groupWaste = group.receivedQty - group.budgetQty;
+        return {
+            ...line,
+            budgetOverPercent: overPercent,
+            autoAlert: overPercent > 0 ? 'Vượt ngân sách' : groupWaste > 0 ? 'Vượt định mức hao hụt' : undefined,
+        };
+    }), [boqGroupKeyOf, boqGroupTotals, rawBoqLines]);
 
     const materialAggregateSummaryRows = useMemo(
         () => projectMaterialPlanningService.buildAggregateSummary({
@@ -1973,10 +2090,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             if (!isCompleted && !isHolding) return;
             const summaryByLine = requestFulfillmentLineSummaries[request.id];
             (request.items || []).forEach((line: any, index: number) => {
-                const sameBudgetLine = line.materialBudgetItemId && line.materialBudgetItemId === material.id;
-                const legacySameItem = !!material.inventoryItemId && !line.materialBudgetItemId && line.itemId === material.inventoryItemId;
-                if (!sameBudgetLine && !legacySameItem) return;
-                requestedQty += Number(line.requestQty || 0);
+                // Theo cả mã vật tư: mỗi dòng phiếu đếm một lần cho mã của nó.
+                if (requestLineGroupKey(line) !== boqGroupKeyOf(material)) return;
+                if (request.status !== RequestStatus.DRAFT) requestedQty += Number(line.requestQty || 0);
                 const requestLineId = getRequestLineId(request, line, index);
                 const lineSummary = summaryByLine?.get(requestLineId);
                 const completedQty = Number(lineSummary?.receivedQty ?? line.receivedQty ?? line.issuedQty ?? line.approvedQty ?? line.requestQty ?? 0);
@@ -1989,14 +2105,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 }
             });
         });
+        const group = boqGroupTotals.get(boqGroupKeyOf(material));
         if (!materialAccess.request.canView) {
-            const aggregate = requestAggregateByBudgetOrItem.get(`budget:${material.id}`)
-                || (material.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${material.inventoryItemId}`) : undefined);
-            requestedQty = aggregate?.requestedQty || 0;
-            receivedQty = aggregate?.receivedQty || 0;
+            requestedQty = group?.requestedQty || 0;
+            receivedQty = group?.receivedQty || 0;
             reservedQty = requestedQty;
         }
-        const budgetQty = Number(material.budgetQty || 0);
+        // Ngân sách của cả mã (mọi dòng BOQ cùng mã) — cùng phạm vi với số đề xuất / đã nhận ở trên.
+        const budgetQty = group ? group.budgetQty : Number(material.budgetQty || 0);
         const availableQty = budgetQty - reservedQty;
         return {
             budgetQty,
@@ -2005,16 +2121,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             receivedQty,
             availableQty,
             requestableQty: Math.max(0, availableQty),
+            isOverBudget: budgetQty > 0 && requestedQty > budgetQty,
             inventoryItem: findBoqInventoryItem(material),
         };
-    }, [findBoqInventoryItem, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentLineSummaries, requests]);
+    }, [boqGroupKeyOf, boqGroupTotals, findBoqInventoryItem, materialAccess.request.canView, requestFulfillmentLineSummaries, requestLineGroupKey, requests]);
 
     const getWorkSupplyStatus = useCallback((materials: MaterialBudgetItem[]) => {
         if (materials.length === 0) return { label: 'Chưa kê khai', className: 'bg-slate-100 text-slate-500 border-slate-200' };
         const statsList = materials.map(getBoqMaterialRequestStats);
-        const hasOver = materials.some(material => (material.budgetOverPercent || 0) > 0) || statsList.some(stats => stats.availableQty < 0);
+        const hasOver = statsList.some(stats => stats.isOverBudget);
         if (hasOver) return { label: 'Vượt', className: 'bg-red-50 text-red-600 border-red-200' };
-        const allReceivedEnough = materials.every((material, index) => Number(material.budgetQty || 0) > 0 && statsList[index].receivedQty >= Number(material.budgetQty || 0));
+        const allReceivedEnough = statsList.every(stats => stats.budgetQty > 0 && stats.receivedQty >= stats.budgetQty);
         if (allReceivedEnough) return { label: 'Đủ', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
         const hasSupplyActivity = statsList.some(stats => stats.requestedQty > 0 || stats.receivedQty > 0);
         if (hasSupplyActivity) return { label: 'Đang cung ứng', className: 'bg-amber-50 text-amber-600 border-amber-200' };
@@ -2025,10 +2142,56 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setSelectedMaterialGroupKeys(new Set());
     }, []);
 
-    const handleMaterialRequestSaved = useCallback(() => {
+    const handleMaterialRequestSaved = useCallback((saved: MaterialRequest, meta?: { submitted: boolean }) => {
+        const command = assistantCommandRef.current;
+        if (command) {
+            assistantCommandRef.current = null;
+            const result = { code: saved.code, id: saved.id, submitted: meta?.submitted === true };
+            void finishCommand(command.id, 'done', result)
+                .then(done => notifyCommandChanged(done || { ...command, status: 'done', result }))
+                .catch(err => console.warn('Không ghi được biên nhận lệnh Trợ lý', err));
+        }
         if (!requestModalInitialDraft) return;
         clearMaterialGroupSelection();
     }, [clearMaterialGroupSelection, requestModalInitialDraft]);
+
+    // Trợ lý (T2b): thẻ "Mở form đề xuất" → ?assistantDraft=<lệnh>: mở form Đề xuất của dự án, Gõ nhanh điền sẵn các dòng Trợ lý tách.
+    // Đợi quyền dự án tải xong; lệnh phải của chính người dùng (máy chủ kiểm), đúng dự án, chưa xử lý.
+    const assistantDraftId = useMemo(() => new URLSearchParams(location.search).get('assistantDraft'), [location.search]);
+    useEffect(() => {
+        if (!assistantDraftId || !boqPbacLoaded || assistantDraftHandled.current === assistantDraftId) return;
+        assistantDraftHandled.current = assistantDraftId;
+        const dropParam = () => {
+            const params = new URLSearchParams(location.search);
+            params.delete('assistantDraft');
+            navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+        };
+        if (!canCreateMaterialRequest) {
+            toast.warning('Chưa mở được đề xuất', 'Bạn chưa được lập đề xuất vật tư ở dự án này.');
+            dropParam();
+            return;
+        }
+        getCommand(assistantDraftId).then(command => {
+            if (!command || command.kind !== 'material_request' || mrView(command).projectId !== projectId) {
+                toast.warning('Chưa mở được đề xuất', 'Thẻ nháp không thuộc dự án này.');
+            } else if (command.status === 'done' || command.status === 'cancelled') {
+                toast.info('Thẻ nháp đã xử lý', command.status === 'done' ? 'Đề xuất từ thẻ này đã được lập.' : 'Thẻ nháp đã bỏ.');
+            } else {
+                const v = mrView(command);
+                assistantCommandRef.current = command;
+                setSelectedRequest(undefined);
+                setRequestModalInitialAction(undefined);
+                setRequestModalInitialDraft({
+                    title: v.title || undefined,
+                    neededDate: v.neededDate || undefined,
+                    lines: [],
+                    quick: { lines: v.lines, purpose: v.purpose || null, neededDate: v.neededDate },
+                });
+                setReqModalOpen(true);
+            }
+        }).catch(() => toast.error('Chưa mở được đề xuất', 'Không đọc được thẻ nháp của Trợ lý. Thử lại.')).finally(dropParam);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [assistantDraftId, boqPbacLoaded, canCreateMaterialRequest, projectId]);
 
     useEffect(() => {
         const existingRowKeys = new Set(materialAggregateSummaryRows.map(row => row.key));
@@ -2121,8 +2284,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const aggregatedWasteBoqItems = useMemo(
-        () => aggregateMaterialWasteRows(computedBoqItems),
-        [computedBoqItems],
+        () => aggregateMaterialWasteRows(rawBoqLines),
+        [rawBoqLines],
     );
 
     const sortedWasteBoqItems = useMemo(
@@ -2577,20 +2740,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         });
     }, []);
 
-    const handleCreatePlanningDraftPo = useCallback((draft: MaterialPlanningDraftPo) => {
-        if (!materialAccess.po.canView || !canEditPo) {
-            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền Sửa trong Room Đơn hàng PO để tạo PO từ kế hoạch vật tư.');
-            return;
-        }
-        setPlanningDraftPo(draft);
-        setPlanningDraftPoKey(prev => prev + 1);
-        setActiveSubTab('po');
-    }, [canEditPo, materialAccess.po.canView, toast]);
+    // Lập đơn hàng ở Mua hàng; dự báo tham khảo không tạo PO (allowCreatePo={false}).
+    const handleCreatePlanningDraftPo = useCallback((_draft: MaterialPlanningDraftPo) => {
+        toast.info('Lập đơn ở Mua hàng', 'Đơn hàng lập tại Mua hàng → Cần mua, từ phiếu đề xuất hoặc kế hoạch vật tư đã duyệt.');
+    }, [toast]);
+
+    // "Cần chú ý" theo mã vật tư (gộp mọi dòng BOQ cùng mã), không theo từng dòng đầu mục.
+    const overBudgetItems = useMemo(() => aggregatedWasteBoqItems
+        .filter(item => (item.budgetOverPercent || 0) > 0)
+        .sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)), [aggregatedWasteBoqItems]);
+    const overWasteItems = useMemo(() => aggregatedWasteBoqItems
+        .filter(item => (item.wasteQty || 0) > 0)
+        .sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)), [aggregatedWasteBoqItems]);
 
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
-        summary: '🔗 Tổng hợp',
+        summary: '📊 Theo dõi',
         boq: '📋 BOQ',
-        planning: '🧭 Kế hoạch',
+        planning: '🧭 Kế hoạch vật tư',
         request: '📦 Yêu cầu',
         custom: '🧩 Phi tiêu chuẩn',
         po: '🛒 Đơn hàng (PO)',
@@ -2614,26 +2780,35 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     return (
         <div className="space-y-6">
             <MaterialTabHeader
-                constructionSiteId={constructionSiteId}
-                materialBoqStats={stats}
-                totalRequestCount={requests.length}
-                visibleMaterialTabs={visibleMaterialTabs}
+                hideTabsOnDesktop={subTabsInSideNav}
+                visibleMaterialTabs={projectMaterialTabs}
                 activeSubTab={activeSubTab}
                 tabLabels={materialTabLabels}
                 tabCounts={materialTabCounts}
-                formatMoneyShort={fmt}
                 onTabChange={setActiveSubTab}
-                actions={canManageOpeningBalance ? (
+                actions={<>
+                    {materialAccess.po.canView && <a href={ordersLink}
+                        title="Đơn hàng của dự án ở Mua hàng"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800">
+                        <ShoppingCart size={14} /> Đơn hàng <ExternalLink size={12} className="text-muted-foreground" />
+                    </a>}
+                    {materialAccess.hot_purchase.canView && <a href={hotPurchaseLink}
+                        title="Mua nóng ở Mua hàng"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800">
+                        <Zap size={14} /> Mua nóng <ExternalLink size={12} className="text-muted-foreground" />
+                    </a>}
+                    {canManageOpeningBalance && (
                     <button
                         type="button"
                         onClick={() => setOpeningBalanceOpen(true)}
                         disabled={!constructionSiteId}
                         title={!constructionSiteId ? 'Cần liên kết công trường trước khi nhập đầu kỳ' : 'Nhập dữ liệu đầu kỳ vật tư'}
-                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800 disabled:cursor-not-allowed disabled:text-slate-400"
                     >
                         <FileSpreadsheet size={14} /> Nhập đầu kỳ
                     </button>
-                ) : null}
+                    )}
+                </>}
             />
 
             {project && constructionSiteId && (
@@ -2648,7 +2823,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 />
             )}
 
-            {visibleMaterialTabs.length === 0 && (
+            {projectMaterialTabs.length === 0 && (
                 <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center shadow-sm">
                     <Package size={36} className="mx-auto mb-2 text-slate-200" />
                     <p className="text-sm font-bold text-slate-500">Tài khoản chưa được cấp quyền xem phần Vật tư</p>
@@ -2660,14 +2835,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {materialAccess.summary.canView && activeSubTab === 'summary' && (
                 <MaterialSummaryTab
                     materialRows={materialAggregateSummaryRows}
-                    reconciliationRows={reconciliationRows}
-                    reconciliationSummary={reconciliationSummary}
-                    reconciliationReportDate={reconciliationReportDate}
-                    reconciliationPlannedProgress={reconciliationPlannedProgress}
-                    reconciliationLoading={reconciliationLoading}
-                    reconciliationError={reconciliationError}
-                    onReconciliationReportDateChange={setReconciliationReportDate}
-                    onReloadReconciliation={() => { void loadReconciliation(); }}
+                    overBudgetItems={overBudgetItems}
+                    overWasteItems={overWasteItems}
+                    dashboardLink={projectId ? `#/center?${new URLSearchParams({ board: 'materials', project: projectId }).toString()}` : null}
                     selectedMaterialGroupKeys={selectedMaterialGroupKeys}
                     canCreateMaterialRequest={canCreateMaterialRequest}
                     onToggleMaterialGroup={toggleMaterialGroupSelection}
@@ -2682,22 +2852,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* BOQ Tab */}
             {materialAccess.boq.canView && activeSubTab === 'boq' && (
                 <div className="space-y-4">
-                    <details className="group border-y border-zinc-200 dark:border-zinc-800">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
-                            <div>
-                                <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                    <GitBranch size={16} className="text-teal-700 dark:text-teal-400" /> Đối chiếu BOQ hợp đồng tham khảo
-                                </h3>
-                                <p className="mt-1 text-[10px] font-medium text-zinc-400">Không còn là điều kiện tạo nghiệm thu/thanh toán; mở ra khi cần so sánh BOQ hợp đồng với BOQ triển khai.</p>
-                            </div>
-                            <ChevronDown size={16} className="shrink-0 text-zinc-400 transition-transform group-open:rotate-180" />
-                        </summary>
-                        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải đối chiếu BOQ..." />}>
-                                <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
-                            </React.Suspense>
-                        </div>
-                    </details>
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
                         <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div>
@@ -2890,8 +3044,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                     {childMaterials.map(material => {
                                                                         const materialStats = getBoqMaterialRequestStats(material);
                                                                         const hasInventory = Boolean(materialStats.inventoryItem);
-                                                                        const isOver = materialStats.availableQty < 0 || (material.budgetOverPercent || 0) > 0;
-                                                                        const isEnough = Number(material.budgetQty || 0) > 0 && materialStats.receivedQty >= Number(material.budgetQty || 0);
+                                                                        const isOver = materialStats.isOverBudget;
+                                                                        const isEnough = materialStats.budgetQty > 0 && materialStats.receivedQty >= materialStats.budgetQty;
                                                                         const lineStatus = !hasInventory
                                                                             ? { label: 'Chưa có mã kho', className: 'bg-red-50 text-[#DC2626] border-red-200' }
                                                                             : isOver
@@ -2986,59 +3140,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 </div>
             )}
 
-            {materialAccess.planning.canView && activeSubTab === 'planning' && (
-                <div className="space-y-6">
-                    {projectId && <a href={`#/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'material', period: 'week' }).toString()}`}
-                        className="flex flex-col gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950 transition-colors hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100 md:flex-row md:items-center md:justify-between">
-                        <span><strong>Kế hoạch vật tư tuần/tháng</strong> nay lập từ kế hoạch thi công đã duyệt, tự tính nhu cầu theo BOQ, đối chiếu tồn kho và gửi CHT duyệt.</span>
-                        <span className="shrink-0 font-semibold">Mở Kế hoạch → Vật tư ›</span>
-                    </a>}
-                    <React.Suspense fallback={<LazyPanelFallback label="Đang tải cân đối BOQ..." />}>
-                        <BoqMaterialPlanningWorkspace
-                            projectId={projectId || null}
-                            constructionSiteId={constructionSiteId || null}
-                            defaultDestination={siteName || ''}
-                            defaultSiteWarehouseId={defaultSiteWarehouseId}
-                            canManage={canEditPlanning}
-                            onOpenRequest={openMaterialPlanRequest}
-                        />
-                    </React.Suspense>
-                    <section aria-label="Dự báo tham khảo" className="space-y-3">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <h3 className="text-sm font-black text-slate-800">Dự báo tham khảo</h3>
-                            <p className="mt-1 text-[10px] font-bold text-slate-500">Quy tắc tiến độ và đường cong nhu cầu dùng để tham khảo; không thay thế cân đối BOQ và không tạo PO trực tiếp tại bước G3.</p>
-                        </div>
-                        {canViewPo ? (
-                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải dự báo vật tư..." />}>
-                                <MaterialPlanningPanel
-                                    projectId={projectId || null}
-                                    constructionSiteId={constructionSiteId || null}
-                                    scopeKey={planningScopeKey}
-                                    siteWarehouseId={defaultSiteWarehouseId}
-                                    canManage={canEditPlanning}
-                                    userId={user.id}
-                                    tasks={tasks}
-                                    workBoqItems={workBoqItems}
-                                    materialBudgetItems={computedBoqItems}
-                                    inventoryItems={inventoryItems}
-                                    purchaseOrders={purchaseOrders}
-                                    transactions={transactions}
-                                    rules={planningRules}
-                                    curveTemplates={planningCurveTemplates}
-                                    loading={planningLoading}
-                                    allowCreatePo={false}
-                                    onRefresh={loadPlanningData}
-                                    onRuleSaved={handlePlanningRuleSaved}
-                                    onCreateDraftPo={handleCreatePlanningDraftPo}
-                                />
-                            </React.Suspense>
-                        ) : (
-                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-xs font-bold text-slate-500">
-                                Dự báo tham khảo có dữ liệu giá nên chỉ hiển thị khi có quyền xem PO.
-                            </div>
-                        )}
-                    </section>
-                </div>
+            {materialAccess.planning.canView && activeSubTab === 'planning' && projectId && (
+                <React.Suspense fallback={<LazyPanelFallback label="Đang tải kế hoạch vật tư..." />}>
+                    <WorkPlanTab
+                        projectId={projectId}
+                        constructionSiteId={constructionSiteId || undefined}
+                        materialOnly
+                        onOpenWorkPlan={() => navigate(`/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'work' }).toString()}`)}
+                    />
+                </React.Suspense>
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
@@ -3082,77 +3192,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     onMoveMaterialRequest={handleMoveMaterialRequest}
                     onOpenRequest={openProjectRequestDetail}
                     onRequestsChanged={() => void loadProjectRequests()}
-                />
-            )}
-
-            {materialAccess.custom.canView && activeSubTab === 'custom' && (
-                <CustomMaterialRequestTab
-                    projectId={projectId}
-                    constructionSiteId={constructionSiteId}
-                    currentUserId={user.id}
-                    currentUserName={user.name || user.username}
-                    canCreate={isAdmin}
-                    canApprove={isAdmin}
-                />
-            )}
-
-            {materialAccess.po.canView && activeSubTab === 'po' && (
-                <React.Suspense fallback={<LazyPanelFallback label="Đang tải đơn hàng PO..." />}>
-                    <SupplyChainTab
-                        constructionSiteId={constructionSiteId}
-                        projectId={projectId}
-                        canManageTab={canEditPo || canSubmitPo || canApprovePo || canConfirmPo || canDeletePo || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
-                        poCapabilities={{
-                            canViewPo,
-                            canEditPo,
-                            canSubmitPo,
-                            canApprovePo,
-                            canConfirmPo,
-                            canDeletePo,
-                        }}
-                        directPurchaseCapabilities={{
-                            canViewDirectPurchase,
-                            canCreateDirectPurchase,
-                            canEditDirectPurchase,
-                            canDeleteDirectPurchase,
-                            canRecordDirectPurchaseAp,
-                        }}
-                        supplierDeliveryCapabilities={{
-                            canViewSupplierDelivery,
-                            canCreateSupplierDelivery,
-                            canEditSupplierDelivery,
-                            canDeleteSupplierDelivery,
-                            canRecordSupplierDelivery,
-                            canUnrecordSupplierDelivery,
-                            canReconcileSupplierDelivery,
-                        }}
-                        initialDraftPo={planningDraftPo}
-                        initialDraftPoKey={planningDraftPoKey}
-                        deepLinkPoId={activePurchaseOrderDeepLinkId}
-                        compact
-                    />
-                </React.Suspense>
-            )}
-
-            {materialAccess.hot_purchase.canView && activeSubTab === 'hot_purchase' && projectId && (
-                <React.Suspense fallback={<LazyPanelFallback label="Đang tải mua nóng..." />}>
-                    <HotPurchaseView
-                        items={inventoryItems}
-                        projectId={projectId}
-                        constructionSiteId={constructionSiteId || null}
-                        initialPurchaseId={new URLSearchParams(location.search).get('hp')}
-                    />
-                </React.Suspense>
-            )}
-
-            {/* Waste Comparison Tab */}
-            {materialAccess.waste.canView && activeSubTab === 'waste' && (
-                <MaterialWasteTab
-                    computedBoqItems={computedBoqItems}
-                    sortedWasteBoqItems={sortedWasteBoqItems}
-                    wasteChartData={wasteChartData}
-                    formatQuantity={formatQuantity}
-                    formatPercent={formatPercent}
                 />
             )}
 
@@ -3292,16 +3331,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* ===== DASHBOARD TAB ===== */}
-            {materialAccess.dashboard.canView && activeSubTab === 'dashboard' && (
-                <MaterialDashboardTab
-                    computedBoqItems={computedBoqItems}
-                    budgetCategoryChartData={budgetCategoryChartData}
-                    topBudgetValueChartData={topBudgetValueChartData}
-                    formatQuantity={formatQuantity}
-                    formatPercent={formatPercent}
-                    formatMoneyShort={fmt}
-                />
-            )}
 
             {/* Request Modal — Integrated from Inventory Module */}
             {isReqModalOpen && (
@@ -3327,6 +3356,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         initialAction={requestModalInitialAction}
                         canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                         canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
+                        canMoveWorkflowStep={canManageRequestWorkflow}
                         canEditProjectRequest={canEditOwnMaterialRequest}
                         canDeleteProjectRequest={canDeleteMaterialRequest}
                         canSubmitProjectRequest={canSubmitMaterialRequest}
@@ -3383,6 +3413,46 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 metadata: { source: 'kanban_start_dynamic' },
                             });
                             setStartWorkflowRequest(null);
+                        }}
+                    />
+                </React.Suspense>
+            )}
+
+            {adminMoveTransition && (
+                <React.Suspense fallback={<LazyPanelFallback label="Đang mở chuyển bước..." />}>
+                    <ProjectWorkflowActionDialog
+                        action="move_step"
+                        subject={adminMoveTransition.subject}
+                        users={users}
+                        employees={employees}
+                        orgUnits={orgUnits}
+                        currentNode={adminMoveTransition.subject.currentNode}
+                        moveTargets={adminMoveTransition.targets}
+                        initialMoveNodeId={adminMoveTransition.initialNodeId}
+                        requesterUserId={adminMoveTransition.request.requesterId}
+                        documentName={adminMoveTransition.request.code}
+                        recipientRoomCode="material_request"
+                        recipientAction="approve"
+                        onCancel={() => setAdminMoveTransition(null)}
+                        onConfirm={async context => {
+                            const targetNode = context.nextNode;
+                            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+                            if (!targetNode) throw new Error('Chưa chọn bước đích.');
+                            await performDynamicRequestTransition({
+                                request: adminMoveTransition.request,
+                                action: 'STEP_MOVED',
+                                target: {
+                                    userId: assigneeUserIds[0] || '',
+                                    userIds: assigneeUserIds,
+                                    name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                                    names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                    permissionCode: getWorkflowNodePermissionCodes(targetNode.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
+                                    note: context.comment,
+                                },
+                                note: context.comment,
+                                metadata: { source: 'kanban_admin_move', targetTemplateNodeId: targetNode.id },
+                            });
+                            setAdminMoveTransition(null);
                         }}
                     />
                 </React.Suspense>

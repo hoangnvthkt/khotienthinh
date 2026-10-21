@@ -1,22 +1,29 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, CheckCircle, Loader2, AlertTriangle, Paperclip, ExternalLink, Download } from 'lucide-react';
 import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachment } from '../types';
 import { useApp } from '../context/AppContext';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, canSetWmsDocumentDate, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
+import { canApproveWmsException, canApproveWmsTransaction, canReceiveWmsTransaction, canSetWmsDocumentDate, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
 import { catalogErrorMessage, wmsCatalogService } from '../lib/wmsCatalogService';
 import { backdateHint, vnToday } from '../lib/businessDate';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
-import { purchaseReceiptService } from '../lib/purchaseReceiptService';
+import { purchaseReceiptContextService, purchaseReceiptService, receiptErrorMessage } from '../lib/purchaseReceiptService';
+import { evaluateReceiptGuards, fmtQ, type ReceiptGuardResult } from '../lib/receiptGuards';
+import { clearReceiptDraft, readReceiptDraft, writeReceiptDraft } from '../lib/receiptDraftStore';
+import ReceiptConfirmDialog from './wms/ReceiptConfirmDialog';
+import { PurchaseReceiptProgress, ReceiptCorrectionDialog, type ReceiptContextState } from './wms/PurchaseReceiptProgress';
 import { buildPurchaseReceiptQualityPayloadFromTransaction, getPurchaseReceiptStep } from '../lib/purchaseReceiptWorkflow';
 import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
 import { buildActualReceiptItems, validateReceiptQuantityLines } from '../lib/poActualReceipt';
 import { wmsTransferService, type WmsTransferProgressLine } from '../lib/wmsTransferService';
+import { fetchTxSpecAllocations, lineSpecAllocations } from '../lib/wmsSpecStockService';
+import type { SpecAllocation } from '../lib/wmsCatalogService';
+import { SpecChips } from './wms/SpecStockSection';
 import {
   cleanupTransactionAttachmentPaths,
   getTransactionAttachmentUrl,
@@ -31,9 +38,13 @@ interface TransactionDetailModalProps {
   onUpdated?: (transaction: Transaction) => void;
   /** 'panel': hiện ngay trong cột phải của màn Nhập xuất kho thay vì hộp thoại nổi. */
   variant?: 'modal' | 'panel';
+  /** Nút thêm ở chân phiếu (vd. In / PDF ở màn Kho). */
+  footerExtra?: React.ReactNode;
 }
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated, variant = 'modal' }) => {
+const SHORT_PLAN_LABEL = { continue: 'NCC giao tiếp phần còn lại', close: 'Chốt thiếu — báo Mua hàng' } as const;
+
+const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated, variant = 'modal', footerExtra }) => {
   const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher, refreshWmsRecords } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
@@ -47,6 +58,13 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [docDateEdit, setDocDateEdit] = useState<{ date: string; reason: string } | null>(null);
   // Ngày nghiệp vụ: ngày hàng về thực tế khi nhận hàng theo đơn mua (phiếu kho, công nợ, kỳ đối soát theo ngày này).
   const [arrivalDate, setArrivalDate] = useState(vnToday);
+  // Nhận thiếu theo đợt giao: NCC còn giao tiếp (mở ngay đợt kế tiếp) hay chốt thiếu (Mua hàng kết thúc thiếu).
+  const [shortPlan, setShortPlan] = useState<'continue' | 'close' | null>(null);
+  // Tiến độ đơn của đợt giao + hộp kiểm lại trước khi ghi sổ + sửa số nhận nhầm.
+  const [receiptCtx, setReceiptCtx] = useState<ReceiptContextState>({ kind: 'loading' });
+  const [guardResult, setGuardResult] = useState<ReceiptGuardResult | null>(null);
+  const [fixOpen, setFixOpen] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [savingDocDate, setSavingDocDate] = useState(false);
   const [voucherNote, setVoucherNote] = useState('');
   const [savingVoucher, setSavingVoucher] = useState(false);
@@ -57,20 +75,62 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [transferReceiveDrafts, setTransferReceiveDrafts] = useState<Record<string, string>>({});
   const [transferProgressState, setTransferProgressState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const transferReceiveCommandRef = useRef<{ signature: string; key: string } | null>(null);
+  // Quy cách thực xuất của từng dòng (đọc sổ kho sau khi ghi sổ) — kể cả khi hệ thống tự lấy quy cách nhập trước.
+  const [lineSpecs, setLineSpecs] = useState<Array<SpecAllocation[] | null>>([]);
+  useEffect(() => {
+    let live = true;
+    setLineSpecs([]);
+    if (!isOpen || !transactionProp || transactionProp.status !== TransactionStatus.COMPLETED) return;
+    fetchTxSpecAllocations(transactionProp.id)
+      .then(ledger => { if (live) setLineSpecs(lineSpecAllocations(transactionProp.type === TransactionType.IMPORT, transactionProp.items, ledger)); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [isOpen, transactionProp]);
 
   useEffect(() => {
-    if (transactionProp) {
-      setLocalTransaction(transactionProp);
-      setQuantityDrafts(Object.fromEntries(
-        transactionProp.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])
-      ));
-      setVoucherDate(transactionProp.date.slice(0, 10));
-      setVoucherNote(transactionProp.note || '');
-      setAttachmentDrafts([]);
-      setAttachmentUrls({});
-      transferReceiveCommandRef.current = null;
-    }
+    if (transactionProp) setLocalTransaction(transactionProp);
   }, [transactionProp]);
+
+  // Chỉ đặt lại số đang nhập khi đổi sang phiếu khác / phiếu đổi trạng thái — không đặt lại khi cùng phiếu được tải lại
+  // (sửa ngày, ghi chú, realtime). Trước đây ô thực nhận bị trả về số phiếu lúc người dùng không để ý (PO-272, 13/10/2026).
+  const propTxId = transactionProp?.id;
+  const propTxStatus = transactionProp?.status;
+  const propTxLines = transactionProp?.items.length;
+  useEffect(() => {
+    if (!transactionProp) return;
+    const saved = readReceiptDraft(transactionProp);
+    setQuantityDrafts(saved?.quantities ?? Object.fromEntries(
+      transactionProp.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])
+    ));
+    setShortPlan(saved?.shortPlan ?? null);
+    if (saved?.arrivalDate) setArrivalDate(saved.arrivalDate);
+    setDraftRestored(!!saved);
+    setVoucherDate(transactionProp.date.slice(0, 10));
+    setVoucherNote(transactionProp.note || '');
+    setAttachmentDrafts([]);
+    setAttachmentUrls({});
+    transferReceiveCommandRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propTxId, propTxStatus, propTxLines]);
+
+  const poBatchId = transactionProp?.sourceType === 'po_delivery_batch' ? transactionProp.sourceId || '' : '';
+  const loadReceiptCtx = useCallback(async () => {
+    if (!poBatchId) return;
+    setReceiptCtx(prev => prev.kind === 'ready' ? prev : { kind: 'loading' });
+    try {
+      setReceiptCtx({ kind: 'ready', data: await purchaseReceiptContextService.get(poBatchId) });
+    } catch (err: any) {
+      setReceiptCtx({ kind: 'error', message: err?.message || 'lỗi kết nối' });
+    }
+  }, [poBatchId]);
+  useEffect(() => {
+    if (isOpen && poBatchId) void loadReceiptCtx();
+  }, [isOpen, poBatchId, propTxStatus, loadReceiptCtx]);
+  useEffect(() => {
+    if (!transactionProp || transactionProp.status !== TransactionStatus.PENDING || !poBatchId || Object.keys(quantityDrafts).length === 0) return;
+    writeReceiptDraft(transactionProp, { quantities: quantityDrafts, shortPlan, arrivalDate }, vnToday());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantityDrafts, shortPlan, arrivalDate]);
 
   useEffect(() => {
     if (!isOpen || transactionProp?.type !== TransactionType.TRANSFER
@@ -132,6 +192,11 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
       ? 'Đối tác'
       : 'Nhà cung cấp';
 
+  const anyShortDraft = transaction.items.some((ti, index) => {
+    const value = parseQuantityInput(quantityDrafts[index]?.quantity ?? formatQuantityInput(ti.quantity));
+    return Number.isFinite(value) && value < Number(ti.orderedQty ?? ti.quantity ?? 0);
+  });
+
   const updateQuantityDraft = (index: number, patch: Partial<{ quantity: string; reason: string }>) => {
     setQuantityDrafts(prev => ({
       ...prev,
@@ -158,7 +223,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     const lines = sourceTransaction.items.map((ti, index) => {
       const draft = drafts[index] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
       const quantity = parseQuantityInput(draft.quantity);
-      const reason = draft.reason.trim();
+      const short = isPoDeliveryTx && shortPlan && quantity < Number(ti.orderedQty ?? ti.quantity ?? 0);
+      const reason = draft.reason.trim() || (short ? SHORT_PLAN_LABEL[shortPlan] : '');
       return { index, quantity, reason };
     });
     validateReceiptQuantityLines(sourceTransaction, lines);
@@ -187,7 +253,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }
   };
 
-  const handlePrimaryAction = async () => {
+  const handlePrimaryAction = async (overLineIndexes: number[] = []) => {
     setProcessing(true);
     let uploadedPaths: string[] = [];
     const locallyAdvanced = transactionProp?.id === transaction.id && transaction.status !== transactionProp.status;
@@ -202,10 +268,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
         if (!deliveryBatchId) throw new Error('Phiếu WMS thiếu liên kết Đợt giao.');
 
         if (actionMode === 'approval') {
-          const receiptPayload = buildPurchaseReceiptQualityPayloadFromTransaction(
-            latestTransaction,
-            buildQuantityLines(latestTransaction),
-          );
+          const quantityLines = buildQuantityLines(latestTransaction);
+          const receivedShort = quantityLines.some(line => line.quantity < Number(latestTransaction.items[line.index]?.orderedQty ?? latestTransaction.items[line.index]?.quantity ?? 0));
+          if (receivedShort && !shortPlan) throw new Error('Nhận thiếu: chọn phần còn lại NCC giao tiếp hay chốt thiếu.');
+          const receiptPayload = buildPurchaseReceiptQualityPayloadFromTransaction(latestTransaction, quantityLines);
           let nextAttachments = previousAttachments;
           if (attachmentDrafts.length > 0) {
             const uploadResult = await uploadTransactionAttachments({
@@ -227,14 +293,26 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             wmsTransactionId: latestTransaction.id,
             actorUserId: user.id,
             qualityResult: receiptPayload.qualityResult,
-            lines: receiptPayload.lines,
+            // Dòng nhận vượt phần đơn còn lại: người nhận đã tích xác nhận NCC giao dư thật ở hộp kiểm lại.
+            lines: receiptPayload.lines.map((line, index) => overLineIndexes.includes(index) ? { ...line, overConfirmed: true } : line),
             attachments: nextAttachments,
           });
+          clearReceiptDraft(latestTransaction.id);
+          setGuardResult(null);
           await refreshWmsRecords({
             itemIds: receiptPayload.lines.map(line => line.itemId),
             transactionIds: [result.wmsTransactionId],
           });
           setAttachmentDrafts([]);
+          if (receivedShort && shortPlan === 'continue') {
+            try {
+              const next = await purchaseReceiptService.continueDelivery(deliveryBatchId);
+              await refreshWmsRecords({ transactionIds: next.wmsTransactionId ? [next.wmsTransactionId] : [] });
+              toast.info(`Đã mở đợt giao ${next.deliveryNo}`, 'Phần còn lại chờ nhận ở Việc cần làm.');
+            } catch (err: any) {
+              toast.warning('Chưa mở được đợt giao tiếp', getApiErrorMessage(err, 'Báo Mua hàng lập đợt giao bù.'));
+            }
+          }
           onClose();
           toast.success('Đã nhận hàng và nhập kho',
             `${receiptPayload.lines.length} dòng đã cộng tồn ${targetWh?.name || 'kho nhận'}; công nợ tạm tính ${Math.round(result.acceptedGrossAmount).toLocaleString('vi-VN')} đ đã chuyển kế toán.`);
@@ -347,9 +425,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
         }
       }
       logApiError('transactionDetail.primaryAction', err);
+      setGuardResult(null);
       toast.error(
         actionMode === 'receipt' ? 'Không thể xác nhận nhập kho' : 'Không thể phê duyệt phiếu',
-        getApiErrorMessage(err, 'Không thể cập nhật phiếu kho trên Supabase.'),
+        isPoDeliveryTx ? receiptErrorMessage(err, 'Không thể nhận hàng.') : getApiErrorMessage(err, 'Không thể cập nhật phiếu kho trên Supabase.'),
       );
     } finally {
       setProcessing(false);
@@ -357,7 +436,42 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   };
 
   // Nhận hàng / nhập kho làm thay đổi tồn và công nợ — hỏi lại một lần với nội dung cụ thể.
+  // Nhận hàng theo đơn: hộp kiểm lại hiện đúng số sẽ ghi + mọi tình huống bất thường (thay hộp xác nhận chung chung).
+  const buildReceiptGuards = (): ReceiptGuardResult => {
+    const ctx = receiptCtx.kind === 'ready' ? receiptCtx.data : null;
+    return evaluateReceiptGuards({
+      arrivalDate, today: vnToday(), documentDate: transaction.date, poCreatedAt: ctx?.poCreatedAt, shortPlan,
+      otherOpenBatches: ctx?.otherOpenBatches, contextUnavailable: !ctx,
+      lines: transaction.items.map((ti, index) => {
+        const item = items.find(i => i.id === ti.itemId);
+        const ctxLine = ctx?.lines.find(l => l.deliveryLineId === ti.purchaseOrderDeliveryLineId);
+        const planned = Number(ti.orderedQty ?? ti.quantity ?? 0);
+        const factor = planned > 0 && Number(ti.accountingQty) > 0 ? Number(ti.accountingQty) / planned : 1;
+        return {
+          name: ti.itemNameSnapshot || item?.name || ti.itemId, unit: item?.unit || ti.accountingUnit || '',
+          plannedQty: planned, actualQty: parseQuantityInput(quantityDrafts[index]?.quantity ?? formatQuantityInput(ti.quantity)),
+          purchasePerStock: factor, purchaseUnit: ti.accountingUnit || null,
+          ...(ctxLine ? { orderedQty: ctxLine.orderedQty, receivedQty: ctxLine.receivedQty, pendingOtherQty: ctxLine.pendingOtherQty, maxWithoutOver: ctxLine.maxWithoutOver } : {}),
+          outsideImports: (ctx?.outsideImports || []).flatMap(t => t.lines.filter(l => l.itemId === ti.itemId).map(l => ({ code: t.code, date: t.date, qty: l.qty }))),
+        };
+      }),
+    });
+  };
+
   const confirmPrimaryAction = async () => {
+    if (isPoDeliveryTx && actionMode === 'approval') {
+      const guards = buildReceiptGuards();
+      if (!guards.blocked) {
+        try {
+          buildQuantityLines(transaction);
+        } catch (err: any) {
+          toast.warning('Kiểm tra lại số thực nhận', err?.message || 'Số thực nhận chưa hợp lệ.');
+          return;
+        }
+      }
+      setGuardResult(guards);
+      return;
+    }
     const stocksIn = (isPoDeliveryTx && actionMode === 'approval') || mergesImportSteps || actionMode === 'receipt';
     if (stocksIn) {
       const ok = await confirm({ title: `${primaryActionLabel}?`, confirmText: primaryActionLabel, targetName: transaction.note || transaction.id,
@@ -426,6 +540,43 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     } finally {
       setSavingDocDate(false);
     }
+  };
+
+  const receiptCtxData = receiptCtx.kind === 'ready' ? receiptCtx.data : null;
+  const isPostedPoReceipt = isPoDeliveryTx && transaction.status === TransactionStatus.COMPLETED;
+  const canFixReceipt = isPostedPoReceipt && canApproveWmsException(user, transaction.targetWarehouseId);
+  const fixSelfBlocked = (receiptCtxData?.receiptApproverId || transaction.approverId) === user.id;
+  const canContinueDelivery = isPostedPoReceipt && canApproveWmsTransaction(user, { ...transaction, status: TransactionStatus.PENDING });
+  const itemNameOf = (itemId: string) => transaction.items.find(ti => ti.itemId === itemId)?.itemNameSnapshot || items.find(i => i.id === itemId)?.name || itemId;
+
+  const handleCorrectReceipt = async (input: { reason: string; lines: Array<{ deliveryLineId: string; correctQty: number; expectedQty: number }> }) => {
+    try {
+      const result = await purchaseReceiptContextService.correct({ deliveryBatchId: poBatchId, ...input });
+      setFixOpen(false);
+      await loadReceiptCtx();
+      void refreshWmsRecords({ itemIds: transaction.items.map(ti => ti.itemId), transactionIds: [result.transactionId] }).catch(() => undefined);
+      onUpdated?.(transaction);
+      toast.success('Đã sửa số nhận', `Ghi phiếu điều chỉnh kho; công nợ giảm ${Math.round(result.creditAmount).toLocaleString('vi-VN')} đ. Đơn mở lại phần thiếu.`);
+    } catch (err: any) {
+      toast.error('Chưa sửa được số nhận', err?.message || 'Không sửa được số nhận.');
+    }
+  };
+
+  const handleContinueDelivery = async () => {
+    try {
+      const next = await purchaseReceiptService.continueDelivery(poBatchId);
+      void refreshWmsRecords({ transactionIds: next.wmsTransactionId ? [next.wmsTransactionId] : [] }).catch(() => undefined);
+      toast.success(next.replayed ? `Đợt giao ${next.deliveryNo} đã mở trước đó` : `Đã mở đợt giao ${next.deliveryNo}`, 'Phần còn lại chờ nhận ở Việc cần làm.');
+    } catch (err: any) {
+      toast.error('Chưa mở được đợt giao tiếp', err?.message || 'Báo Mua hàng lập đợt giao bù.');
+    }
+  };
+
+  const resetDraftToVoucher = () => {
+    clearReceiptDraft(transaction.id);
+    setQuantityDrafts(Object.fromEntries(transaction.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])));
+    setShortPlan(null);
+    setDraftRestored(false);
   };
 
   const getStatusInfo = (status: TransactionStatus) => {
@@ -614,6 +765,13 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             </div>
           </div>
 
+          {isPoDeliveryTx && poBatchId && transaction.status !== TransactionStatus.CANCELLED && (
+            <PurchaseReceiptProgress state={receiptCtx} posted={isPostedPoReceipt} itemName={itemNameOf} onRetry={() => void loadReceiptCtx()}
+              onCorrect={canFixReceipt && receiptCtxData ? () => setFixOpen(true) : undefined}
+              correctDisabledReason={fixSelfBlocked ? 'Người đã duyệt nhận đợt này không tự sửa — nhờ người Duyệt ngoại lệ khác' : undefined}
+              onContinue={canContinueDelivery ? () => void handleContinueDelivery() : undefined} />
+          )}
+
           {transaction.type === TransactionType.TRANSFER && transaction.status === TransactionStatus.APPROVED && (
             <section className="rounded-xl border border-blue-200 bg-blue-50/70 p-4" aria-label="Tiến độ chuyển kho">
               <div className="flex items-start justify-between gap-3">
@@ -653,6 +811,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             </section>
           )}
 
+          {draftRestored && canAdjustQuantities && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800">
+              <span>Đã khôi phục số thực nhận bạn nhập dở.</span>
+              <button type="button" onClick={resetDraftToVoucher} className="underline">Dùng lại số trên phiếu</button>
+            </div>
+          )}
           {/* Items List */}
        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
@@ -676,20 +840,36 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                  const draftQty = parseQuantityInput(draft.quantity);
                  const orderedQty = Number(ti.orderedQty ?? ti.quantity ?? 0);
                  const hasVariance = Number.isFinite(draftQty) && draftQty !== orderedQty;
+                 // Phiếu đã ghi sổ: hiện số thực nhận, kèm số theo đợt giao khi lệch (trước đây chỉ hiện số theo đợt).
+                 const postedVariance = transaction.status === TransactionStatus.COMPLETED && Math.abs(Number(ti.quantity || 0) - orderedQty) > 1e-9;
                  // Phiếu giao của đơn mua: hiện thêm SL theo đơn vị mua (VD kg) cạnh SL kho (VD cây).
                  const purchaseUnit = ti.accountingUnit && ti.accountingUnit !== item?.unit ? ti.accountingUnit : null;
                  const purchasePerStock = purchaseUnit && orderedQty > 0 ? Number(ti.accountingQty || 0) / orderedQty : 0;
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
                       <td className="px-4 py-3">
-                        <div className="font-bold text-slate-700">{item?.name || 'Vật tư mới'}</div>
+                        {/* Tên + quy cách giữ đúng như dòng đơn gốc (một mã nhiều quy cách); mã vẫn là mã danh mục. */}
+                        <div className="font-bold text-slate-700">{ti.itemNameSnapshot || item?.name || 'Vật tư mới'}</div>
+                        {lineSpecs[idx] && transaction.type !== TransactionType.IMPORT
+                          ? <div className="text-[11px] font-semibold text-slate-600" title="Quy cách thực xuất theo sổ kho"><SpecChips allocations={lineSpecs[idx]} /></div>
+                          : ti.specification && <div className="mt-0.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{ti.specification}</div>}
                         <div className="text-[10px] text-slate-400 font-mono">{item?.sku || 'Đang chờ duyệt'}</div>
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">
-                         {orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                         {postedVariance
+                           ? <>{Number(ti.quantity || 0).toLocaleString('vi-VN')} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                             <div className={`text-[10px] font-bold ${Number(ti.quantity || 0) < orderedQty ? 'text-amber-600' : 'text-teal-700'}`}>
+                               theo đợt {orderedQty.toLocaleString('vi-VN')} · {Number(ti.quantity || 0) < orderedQty ? 'thiếu' : 'dư'} {Math.abs(orderedQty - Number(ti.quantity || 0)).toLocaleString('vi-VN')}</div>
+                             {ti.varianceReason && <div className="text-[10px] font-semibold text-slate-500">{ti.varianceReason}</div>}</>
+                           : <>{fmtQ(orderedQty)} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span></>}
                          {purchaseUnit && <div className="text-[10px] font-bold text-slate-500">= {Number(ti.accountingQty || 0).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
+                         {isPostedPoReceipt && (() => {
+                           const fixed = receiptCtxData?.lines.find(l => l.deliveryLineId === ti.purchaseOrderDeliveryLineId);
+                           return fixed && Math.abs(fixed.acceptedStockQty - Number(ti.quantity || 0)) > 1e-9
+                             ? <div className="text-[10px] font-bold text-amber-700">Đã sửa còn {fmtQ(fixed.acceptedStockQty)}</div> : null;
+                         })()}
                          {hasVariance && canAdjustQuantities && (
-                           <div className="text-[10px] font-bold text-amber-600">Lệch: {(Number.isFinite(draftQty) ? draftQty : 0) - orderedQty}</div>
+                           <div className="text-[10px] font-bold text-amber-600">{Number.isFinite(draftQty) ? `${draftQty < orderedQty ? 'Thiếu' : 'Dư'} ${fmtQ(Math.abs(draftQty - orderedQty))}` : 'Chưa nhập số'}</div>
                          )}
                       </td>
                       {canAdjustQuantities && (
@@ -705,6 +885,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                               />
                               <span className="w-8 text-left text-[10px] font-bold text-slate-400">{item?.unit}</span>
                             </div>
+                            {Number.isFinite(draftQty) && (draft.quantity.includes(',') || draftQty >= 1000) && (
+                              <div className="text-[10px] font-bold text-slate-500" aria-live="polite">Đọc là {fmtQ(draftQty)} {item?.unit}</div>
+                            )}
                             {purchaseUnit && Number.isFinite(draftQty) && <div className="text-[10px] font-bold text-slate-500">
                               ≈ {(Math.round(draftQty * purchasePerStock * 1000) / 1000).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                             {hasVariance && (
@@ -728,6 +911,20 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               </tbody>
             </table>
           </div>
+
+          {isPoDeliveryTx && canAdjustQuantities && anyShortDraft && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-2" role="group" aria-label="Phần thiếu">
+              <div className="text-sm font-black text-amber-900">Phần thiếu xử lý thế nào? *</div>
+              <div className="flex flex-wrap gap-2">
+                {(['continue', 'close'] as const).map(plan => (
+                  <button key={plan} type="button" onClick={() => setShortPlan(plan)} aria-pressed={shortPlan === plan} disabled={processing}
+                    title={plan === 'continue' ? 'Mở ngay đợt giao kế tiếp cho phần còn lại — xe sau đến là nhận được' : 'Đơn dừng ở Về một phần — Mua hàng kết thúc thiếu hoặc lập đợt bù'}
+                    className={`rounded-full border px-3 py-1.5 text-[13px] font-semibold ${shortPlan === plan ? 'border-teal-600 bg-teal-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                    {SHORT_PLAN_LABEL[plan]}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(transaction.attachments?.length || 0) > 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
@@ -824,11 +1021,27 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               </>
             )}
           </div>
-          <button onClick={onClose} className="px-8 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm">
-            {variant === 'panel' ? 'Bỏ chọn' : 'Đóng'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {footerExtra}
+            <button onClick={onClose} className="px-8 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm">
+              {variant === 'panel' ? 'Bỏ chọn' : 'Đóng'}
+            </button>
+          </div>
         </div>
       </div>
+      {guardResult && (
+        <ReceiptConfirmDialog
+          title="Kiểm lại trước khi nhập kho"
+          subtitle={<>{receiptCtxData?.poNumber ? `${receiptCtxData.poNumber} · đợt ${receiptCtxData.deliveryNo} · ` : ''}{targetWh?.name || 'Kho nhận'} · ngày hàng về {arrivalDate.split('-').reverse().join('/')}</>}
+          result={guardResult}
+          processing={processing}
+          onCancel={() => setGuardResult(null)}
+          onConfirm={() => void handlePrimaryAction(guardResult.overLineIndexes)}
+        />
+      )}
+      {fixOpen && receiptCtxData && (
+        <ReceiptCorrectionDialog context={receiptCtxData} itemName={itemNameOf} onCancel={() => setFixOpen(false)} onSubmit={handleCorrectReceipt} />
+      )}
     </div>
   );
 };

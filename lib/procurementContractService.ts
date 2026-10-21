@@ -22,6 +22,8 @@ export interface ContractPriceLine {
   id: string; lineNo: number; itemId: string; sku: string | null; name: string; unit: string | null;
   unitPrice: number; vatRate: number; quantityLimit: number | null; amountLimit: number | null;
   effectiveFrom: string | null; effectiveTo: string | null; note: string | null; used: boolean;
+  /** Quy cách của dòng giá — một mã nhiều quy cách, mỗi quy cách một giá. */
+  specification?: string | null;
 }
 
 export type PriceSource = 'statement' | 'contract' | 'note' | 'missing';
@@ -29,10 +31,13 @@ export type PriceSource = 'statement' | 'contract' | 'note' | 'missing';
 export type StockState = 'stock' | 'direct' | 'none' | 'pending';
 export interface ContractDeliveryLine {
   lineId: string; itemId: string; name: string; unit: string | null; qty: number; unitPrice: number | null; vatRate: number;
+  /** Quy cách của dòng (ảnh chụp từ dòng đơn / dòng giá HĐ). */
+  specification?: string | null;
   priceSource: PriceSource; amount: number | null; wmsReady: boolean; statementId: string | null; statementCode: string | null; statementStatus: string | null;
   stockState: StockState; warehouseName: string | null; contractPrice: number | null;
 }
-export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number }
+export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number;
+  specification?: string | null; contractLineId?: string | null }
 export interface ContractOrder {
   id: string; poNumber: string; status: string; totalAmount: number; vatRate: number; expectedDeliveryDate: string | null; orderDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; warehouseName: string | null; projectCode: string | null; rowVersion: number;
@@ -53,7 +58,9 @@ export interface ContractDetail extends Omit<ContractSummary, 'priceLines' | 'de
   orders: ContractOrder[];
   priceLines: ContractPriceLine[];
   usage: Array<{ itemId: string; name: string; unit: string | null; deliveredQty: number; deliveredValue: number; unpricedLines: number;
-    quantityLimit: number | null; amountLimit: number | null; currentPrice: number | null }>;
+    quantityLimit: number | null; amountLimit: number | null; currentPrice: number | null;
+    /** Cộng theo mã; từng quy cách vẫn đủ khối lượng + giá trị. */
+    specs?: Array<{ specification: string | null; qty: number; value: number | null }> }>;
   deliveries: Array<{ noteId: string; code: string; ticketNo: string | null; date: string; purchaseOrderNo: string | null; projectCode: string | null; scopeKey: string; lines: ContractDeliveryLine[] }>;
   statements: ContractStatement[];
 }
@@ -66,7 +73,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_CONTRACT_ITEM_INVALID: 'Vật tư không tồn tại trong danh mục.',
   PROCUREMENT_CONTRACT_LINE_INVALID: 'Dòng giá không còn. Tải lại.',
   PROCUREMENT_CONTRACT_DATE_INVALID: 'Ngày hết hiệu lực phải sau ngày bắt đầu.',
-  PROCUREMENT_CONTRACT_PRICE_OVERLAP: 'Có hai đơn giá của cùng vật tư cùng hiệu lực một ngày. Đặt ngày hết hiệu lực cho giá cũ.',
+  PROCUREMENT_CONTRACT_PRICE_OVERLAP: 'Có hai đơn giá của cùng vật tư, cùng quy cách, cùng hiệu lực một ngày. Ghi quy cách khác nhau hoặc đặt ngày hết hiệu lực cho giá cũ.',
   PROCUREMENT_PO_PRICE_INVALID: 'Đơn giá, VAT hoặc hạn mức không hợp lệ.',
   PROCUREMENT_PO_PRICE_MISSING: 'Còn dòng chưa có đơn giá — nhập đơn giá trước khi gửi / chốt.',
   PROCUREMENT_PO_SCOPE_MIXED: 'Một bảng đối soát chỉ gồm phiếu giao của cùng một dự án/công trường.',
@@ -79,6 +86,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_STATEMENT_SELF_POST: 'Người chốt bảng đối soát không tự ghi công nợ. Nhờ kế toán khác.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại.',
   PROCUREMENT_STATEMENT_PRICE_REASON: 'Có dòng giá khác giá HĐ — ghi lý do cho từng dòng đó.',
+  PROCUREMENT_STATEMENT_INVOICE_DENIED: 'Chỉ kế toán (Tài chính — Ghi nhận) được sửa tiền theo hóa đơn.',
+  PROCUREMENT_STATEMENT_INVOICE_LIMIT: 'Tiền theo hóa đơn lệch quá dung sai làm tròn (mỗi dòng tối đa 1.000 đ; tổng VAT / cả bảng 0,5%, tối thiểu 50.000 đ) — sửa đơn giá kèm lý do.',
   PROCUREMENT_CONTRACT_FIELDS_REQUIRED: 'Nhập số và tên hợp đồng.',
   PROCUREMENT_CONTRACT_INVALID: 'Giá trị HĐ, hạn thanh toán hoặc trạng thái không hợp lệ.',
   PROCUREMENT_CONTRACT_SCOPE_LOCKED: 'HĐ đã có giao nhận / đơn gọi hàng nên không đổi được NCC hoặc dự án.',
@@ -95,6 +104,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_ITEMS_REQUIRED: 'Thêm ít nhất một vật tư.',
   PROCUREMENT_PO_QTY_INVALID: 'Số lượng phải lớn hơn 0.',
   PROCUREMENT_PO_DUPLICATE_LINE: 'Mỗi vật tư chỉ một dòng.',
+  PROCUREMENT_PO_DUPLICATE_SPEC: 'Có hai dòng cùng mã vật tư cùng quy cách. Ghi quy cách khác nhau cho từng dòng.',
   PROCUREMENT_PO_NOT_EDITABLE: 'Đơn đã gửi — không sửa được nữa.',
   PROCUREMENT_PO_SUBMIT_DENIED: 'Chỉ người lập gửi / xóa được đơn nháp này.',
   PROCUREMENT_PO_DELETE_DENIED: 'Đơn đã từng gửi nên không xóa được.',
@@ -132,10 +142,10 @@ export const procurementContractService = {
     return call<ContractDetail>('get_procurement_contract_v1', { p_contract_id: id });
   },
   savePrices(input: { contractId: string; deleteIds?: string[]; lines: Array<{ id?: string; itemId: string; unitPrice: number; vatRate: number;
-    quantityLimit?: number | null; amountLimit?: number | null; effectiveFrom?: string | null; effectiveTo?: string | null; note?: string }> }) {
+    quantityLimit?: number | null; amountLimit?: number | null; effectiveFrom?: string | null; effectiveTo?: string | null; note?: string; specification?: string }> }) {
     return call<{ saved: number }>('save_procurement_contract_lines_v1', { p_input: input });
   },
-  saveStatement(input: { contractId: string; month: string; statementId?: string; note?: string; lines: Array<{ deliveryLineId: string; unitPrice: number; vatRate: number; reason?: string }> }) {
+  saveStatement(input: { contractId: string; month: string; statementId?: string; note?: string; lines: Array<{ deliveryLineId: string; unitPrice: number; vatRate: number; reason?: string; amount?: number }>; invoiceVat?: number }) {
     return call<{ statementId: string; code: string; lines: number; totalAmount: number }>('save_procurement_contract_statement_v1', { p_input: input });
   },
   transitionStatement(input: { statementId: string; action: 'confirm' | 'withdraw' | 'delete' | 'return' | 'post'; reason?: string }) {
@@ -153,7 +163,7 @@ export interface ContractInput {
 export interface ContractOrderInput {
   purchaseOrderId?: string; expectedRowVersion?: number; contractId: string; targetWarehouseId: string; expectedDeliveryDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; purchaseMode?: 'single' | 'multiple'; vatRate?: number; note?: string;
-  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; note?: string }>;
+  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; vatRate?: number; note?: string; specification?: string; contractLineId?: string | null }>;
 }
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {

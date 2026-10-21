@@ -65,9 +65,12 @@ import {
     PROJECT_TAB_ROUTE_BY_KEY,
     isProjectFinanceLegacyTabKey,
     isProjectOverviewTabKey,
+    type ProjectMaterialTabKey,
     type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
+import { getValidMaterialTab, MATERIAL_TAB_NAV_LABELS, MATERIAL_TAB_ORDER } from '../lib/projectMaterialTabUtils';
+import { ProjectSideNav } from '../components/project/ProjectSideNav';
 import {
     canManageProjectMaterialTab as canManageProjectMaterialTabV2,
     canManageProjectTab as canManageProjectTabV2,
@@ -120,7 +123,7 @@ import { canViewSensitive, projectSensitiveAccessService } from '../lib/projectS
 
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
-const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
+const ActualProgressTab = React.lazy(() => import('./project/ActualProgressTab'));
 const WorkPlanTab = React.lazy(() => import('./project/WorkPlanTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
@@ -561,6 +564,12 @@ const ProjectDashboard: React.FC = () => {
     const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
     const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
     const [taskProgressStatus, setTaskProgressStatus] = useState<ProjectProgressLoadStatus>('idle');
+    // Có % từ Gantt thì hiện ngay; chỉ khi phải dùng % dự phòng ở project_finances mới chờ module tài chính.
+    const progressTaskStatus = (taskProgress: number | undefined): ProjectProgressLoadStatus => {
+        if (taskProgress !== undefined) return taskProgressStatus === 'loading' ? 'loaded' : taskProgressStatus;
+        return moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus;
+    };
+
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
@@ -773,6 +782,17 @@ const ProjectDashboard: React.FC = () => {
         }
     }, [toast]);
 
+    // Tên quy trình trên thẻ dự án: nạp sau khi danh sách đã hiện, không tranh băng thông lúc mở trang.
+    const workflowTemplatesRequestedRef = useRef(false);
+    useEffect(() => {
+        if (workflowTemplatesRequestedRef.current || workflowTemplates.length > 0 || projectsLoading || projects.length === 0) return;
+        workflowTemplatesRequestedRef.current = true;
+        const timer = window.setTimeout(() => {
+            refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project list:', err));
+        }, 300);
+        return () => window.clearTimeout(timer);
+    }, [projects.length, projectsLoading, refreshWorkflowData, workflowTemplates.length]);
+
     useEffect(() => {
         if (!showProjectForm) return;
         refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project form:', err));
@@ -802,6 +822,20 @@ const ProjectDashboard: React.FC = () => {
         const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
         toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
     }, [canViewProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId, toast]);
+
+    // Menu cột: mục con của Vật tư do MaterialTab báo lên (đúng quyền thực tế); chưa mở Vật tư thì ước theo quyền tab.
+    const [materialNav, setMaterialNav] = useState<{ tabs: ProjectMaterialTabKey[]; active: ProjectMaterialTabKey } | null>(null);
+    useEffect(() => { setMaterialNav(null); }, [selectedProjectId]);
+    const sideNavMaterialItems = useMemo(() => (materialNav?.tabs
+        || MATERIAL_TAB_ORDER.filter(key => materialTabPermissions[key]?.canView))
+        .map(key => ({ key, label: MATERIAL_TAB_NAV_LABELS[key] || key })), [materialNav, materialTabPermissions]);
+    const goToMaterialTab = useCallback((materialTab: ProjectMaterialTabKey) => {
+        if (!canViewProjectTab('material')) { goToProjectTab('material'); return; }
+        const project = selectedProjectId ? projectRows.find(item => item.id === selectedProjectId) : null;
+        const siteId = project?.constructionSiteId || selectedSiteId;
+        setOverviewTab('material');
+        if (selectedProjectId) navigate(buildProjectDashboardPath(selectedProjectId, siteId, 'material', { materialTab }));
+    }, [canViewProjectTab, goToProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -943,7 +977,7 @@ const ProjectDashboard: React.FC = () => {
         const agg = getProjectAggregated(project);
         const progressDisplay = resolveProjectProgressDisplay({
             mode: project.progressCalculationMode || 'gantt_weighted',
-            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskStatus: progressTaskStatus(project.constructionSiteId ? taskProgressBySite[project.constructionSiteId]?.progressPercent : undefined),
             taskProgress: project.constructionSiteId ? taskProgressBySite[project.constructionSiteId]?.progressPercent : undefined,
             financeProgress: finance?.progressPercent,
             manualProgress: project.manualProgressPercent,
@@ -1127,10 +1161,37 @@ const ProjectDashboard: React.FC = () => {
         ]),
     ];
 
-    const financeSiteKey = useMemo(() =>
-        projectFinances.map(p => `${p.constructionSiteId}:${p.progressPercent}`).sort().join('|'),
-        [projectFinances]
-    );
+    // % tiến độ là thứ người dùng cần thấy đầu tiên: lấy mã công trường ngay từ danh sách dự án (không chờ module
+    // tài chính tải xong), cộng công trường trong project_finances. Đo 12/10/2026: % hiện ở 4,55 s vì phải chờ module.
+    const progressSiteKey = useMemo(() => JSON.stringify(Array.from(new Set([
+        ...projectRows.map(project => project.constructionSiteId),
+        ...projectFinances.map(finance => finance.constructionSiteId),
+    ].filter(Boolean) as string[])).sort()), [projectFinances, projectRows]);
+
+    // Đường chính: máy chủ tính sẵn % mỗi công trường, gọi ngay khi mở trang (song song danh sách dự án) và mỗi
+    // lần quay lại danh sách để % không cũ sau khi sửa Gantt. Máy chủ chưa có hàm → đường cũ bên dưới.
+    const [progressRpcMissing, setProgressRpcMissing] = useState(false);
+    useEffect(() => {
+        if (!isSupabaseConfigured || progressRpcMissing) return;
+        let cancelled = false;
+        setTaskProgressStatus(current => current === 'loaded' ? 'loaded' : 'loading');
+        taskService.getProgressBySite()
+            .then(next => {
+                if (cancelled) return;
+                setTaskProgressBySite(next);
+                setTaskProgressStatus('loaded');
+            })
+            .catch(error => {
+                if (cancelled) return;
+                if (error?.code === 'PGRST202' || /get_project_task_progress_v1/.test(error?.message || '')) {
+                    setProgressRpcMissing(true);
+                    return;
+                }
+                console.error(error);
+                setTaskProgressStatus('error');
+            });
+        return () => { cancelled = true; };
+    }, [activeView, progressRpcMissing]);
 
     useEffect(() => {
         if (!isSupabaseConfigured) {
@@ -1138,16 +1199,18 @@ const ProjectDashboard: React.FC = () => {
             setTaskProgressStatus('loaded');
             return;
         }
-        const siteIds = Array.from(new Set(projectFinances.map(p => p.constructionSiteId).filter(Boolean)));
+        if (!progressRpcMissing) return;
+        const siteIds = JSON.parse(progressSiteKey) as string[];
         if (siteIds.length === 0) {
             setTaskProgressBySite({});
-            setTaskProgressStatus(moduleLoadState.da === 'loaded' ? 'loaded' : 'idle');
+            setTaskProgressStatus(moduleLoadState.da === 'loaded' && !projectsLoading ? 'loaded' : 'idle');
             return;
         }
 
         let cancelled = false;
-        setTaskProgressStatus('loading');
-        taskService.listBySites(siteIds)
+        // Đã có số thì giữ hiển thị trong lúc tải thêm công trường mới (không nháy về "Đang tải").
+        setTaskProgressStatus(current => current === 'loaded' ? 'loaded' : 'loading');
+        taskService.listProgressInputsBySites(siteIds)
             .then(allTasks => {
                 if (cancelled) return;
                 const next: Record<string, { progressPercent: number; leafTaskCount: number }> = {};
@@ -1170,7 +1233,7 @@ const ProjectDashboard: React.FC = () => {
             });
 
         return () => { cancelled = true; };
-    }, [financeSiteKey, moduleLoadState.da, projectFinances]);
+    }, [moduleLoadState.da, progressRpcMissing, progressSiteKey, projectsLoading]);
 
     const getProjectMetaChips = (project: Project): { label: string; tone: string }[] => {
         const group = project.projectGroupId ? projectGroupMap.get(project.projectGroupId) : undefined;
@@ -3132,7 +3195,7 @@ const ProjectDashboard: React.FC = () => {
         const statusKey = financeForRender?.status || selectedProject.status || 'planning';
         const progressDisplay = resolveProjectProgressDisplay({
             mode: selectedProject.progressCalculationMode || 'gantt_weighted',
-            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskStatus: progressTaskStatus(effectiveSiteId ? taskProgressBySite[effectiveSiteId]?.progressPercent : undefined),
             taskProgress: effectiveSiteId ? taskProgressBySite[effectiveSiteId]?.progressPercent : undefined,
             financeProgress: selectedFinance?.progressPercent,
             manualProgress: selectedProject.manualProgressPercent,
@@ -3296,19 +3359,17 @@ const ProjectDashboard: React.FC = () => {
 
                 {/* Cần chú ý (attentionItems) - Ẩn theo yêu cầu */}
 
-                {/* Overview Sub-tabs */}
-                <div className="flex gap-1 bg-white dark:bg-zinc-900 rounded-xl p-1.5 border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                    {visibleOverviewTabs.map(tab => (
-                        <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
-                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${overviewTab === tab.key
-                                ? 'bg-teal-700 text-white shadow-sm font-semibold'
-                                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
-                                }`}>
-                            <span>{tab.icon}</span> {tab.label}
-                        </button>
-                    ))}
-                </div>
-
+                {/* Menu dạng cột (P2, 12/10/2026): nhóm theo công việc; màn hẹp là ngăn kéo. */}
+                <div className="space-y-3 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
+                <ProjectSideNav
+                    tabs={visibleOverviewTabs.map(tab => ({ key: tab.key, label: tab.label }))}
+                    activeTab={overviewTab}
+                    onSelectTab={goToProjectTab}
+                    materialItems={sideNavMaterialItems}
+                    activeMaterialTab={overviewTab === 'material' ? (materialNav?.active || getValidMaterialTab(routeParams.get('materialTab'))) : null}
+                    onSelectMaterial={goToMaterialTab}
+                />
+                <div className="min-w-0">
                 <Suspense fallback={
                     <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-10 text-center text-sm font-bold text-slate-400">
                         <Loader2 size={22} className="mx-auto mb-2 animate-spin text-orange-500" />
@@ -3349,7 +3410,7 @@ const ProjectDashboard: React.FC = () => {
                             {/* Chốt sản lượng thực tế chuyển từ tab Tài chính sang đây (doc 14 câu 3). */}
                             {hasSiteScope && <ActualProductionCard projectId={selectedProject.id} constructionSiteId={effectiveSiteId!} contractValue={contractValue}
                                 canEdit={canManageProjectTab('weekly_progress') || canManageProjectTab('finance')} />}
-                            <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                            <ActualProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                         </div>
                     ) : overviewTab === 'dailylog' ? (
                         <div className="space-y-3">
@@ -3372,6 +3433,8 @@ const ProjectDashboard: React.FC = () => {
                             siteName={selectedSite?.name}
                             canManageTab={canManageProjectTab('material')}
                             materialPermissions={materialTabPermissions}
+                            onSubNavChange={setMaterialNav}
+                            subTabsInSideNav
                         />
                     ) : overviewTab === 'report' ? (
                         hasSiteScope ? (
@@ -3384,6 +3447,8 @@ const ProjectDashboard: React.FC = () => {
                         <FinanceMovedRedirect projectId={selectedProject.id} workspaceTab={financeInitialTab} />
                     )}
                 </Suspense>
+                </div>
+                </div>
             </div>
         );
     };

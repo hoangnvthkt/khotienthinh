@@ -134,10 +134,10 @@ export const DirectReceiptsView: React.FC<{ onChanged: () => void }> = ({ onChan
               </label>
               <table className="mt-1.5 w-full text-xs sm:ml-7 sm:w-[calc(100%-1.75rem)]"><tbody>
                 {d.lines.map(l => <tr key={l.index} className="text-muted-foreground">
-                  <td className="py-0.5 pr-2 text-foreground">{l.itemName}</td>
+                  <td className="py-0.5 pr-2 text-foreground">{l.itemName}{l.specification && <span className="text-muted-foreground"> — {l.specification}</span>}</td>
                   <td className="!whitespace-nowrap px-2 text-right tabular-nums">{money(l.qty)} {l.unit || ''}</td>
                   <td className="!whitespace-nowrap px-2 text-right">{l.price > 0 ? <span className="tabular-nums">× {money(l.price)}</span>
-                    : <input aria-label={`Đơn giá ${l.itemName}`} inputMode="numeric" placeholder={l.catalogPrice ? `giá DM ${money(l.catalogPrice)}` : 'Nhập giá'}
+                    : <input aria-label={`Đơn giá ${l.itemName}${l.specification ? ` ${l.specification}` : ''}`} inputMode="numeric" placeholder={l.catalogPrice ? `giá DM ${money(l.catalogPrice)}` : 'Nhập giá'}
                       value={prices[priceKey(d, l.index)] || ''} onChange={e => setPrices(p => ({ ...p, [priceKey(d, l.index)]: e.target.value }))}
                       onBlur={() => { const n = parseMoney(prices[priceKey(d, l.index)] || ''); if (n > 0) setPrices(p => ({ ...p, [priceKey(d, l.index)]: money(n) })); }}
                       className={`w-28 border-amber-400 text-right tabular-nums ${inputCls}`} />}</td>

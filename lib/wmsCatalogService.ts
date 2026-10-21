@@ -30,6 +30,8 @@ export interface CatalogOverview {
   openPoItems: string[];
   renames: CatalogRename[];
 }
+/** Form "Tạo vật tư mới": quyền và danh sách nhóm, đơn vị tính. */
+export interface CatalogCreateOptions { canCreate: boolean; canEdit: boolean; canIssueCode: boolean; nextSku?: string; categories: string[]; units: string[] }
 export interface CatalogItemDetail {
   item: CatalogItem;
   usage: CatalogUsage;
@@ -52,17 +54,29 @@ export interface ItemCard {
     /** V1-3a: dòng của mã cũ đã gộp vào mã này. */
     fromSku?: string | null;
     /** Ngày nhập liệu (khác ngày chứng từ khi ghi lùi ngày) và loại nghiệp vụ (vd. direct_consumption). */
-    enteredAt?: string | null; event?: string | null }>;
+    enteredAt?: string | null; event?: string | null;
+    /** Quy cách của dòng chứng từ gốc (một mã nhiều quy cách; tồn vẫn cộng theo mã). */
+    specification?: string | null;
+    /** V1-3b: phần của dòng sổ thuộc quy cách nào (xuất không ghi quy cách → quy cách nhập trước). */
+    specAllocations?: SpecAllocation[] | null }>;
   otherWarehouses: Array<{ warehouseId: string; warehouseName: string; qty: number }>;
+  /** V1-3b: tồn theo quy cách, xếp theo thứ tự xuất (nhập trước). specification null = Chưa ghi quy cách. */
+  specs?: SpecAllocation[];
+  specTransfers?: SpecTransfer[];
+  canTransferSpec?: boolean;
 }
+export interface SpecAllocation { specification: string | null; qty: number }
+export interface SpecTransfer { code: string; date: string; fromSpec: string | null; toSpec: string; qty: number; reason: string; byName: string | null }
 
 const ERRORS: Record<string, string> = {
   CATALOG_ISSUE_DENIED: 'Bạn chưa có ô quyền "Cấp mã". Nhờ Admin cấp ở Cài đặt → Người dùng → Kho vật tư.',
+  CATALOG_CREATE_DENIED: 'Bạn chưa có ô quyền nhạy cảm "Tạo mã vật tư". Nhờ Admin cấp, hoặc gửi Đề xuất mã mới ở Vật tư → Danh mục.',
+  CATALOG_EDIT_DENIED: 'Bạn chưa có ô quyền nhạy cảm "Sửa mã vật tư". Nhờ Admin cấp.',
   CATALOG_VIEW_DENIED: 'Bạn chưa có quyền xem danh mục vật tư.',
   CATALOG_FIELDS_REQUIRED: 'Cần đủ tên, đơn vị tính và nhóm vật tư.',
   CATALOG_MODE_INVALID: 'Cách quản lý kho không hợp lệ.',
   CATALOG_FACTOR_INVALID: 'Hệ số quy đổi phải lớn hơn 0.',
-  CATALOG_REASON_REQUIRED: 'Cần ghi lý do.',
+  CATALOG_REASON_REQUIRED: 'Cần ghi lý do — mọi lần sửa mã đều được ghi lịch sử.',
   CATALOG_ITEMS_REQUIRED: 'Chưa chọn mã nào.',
   CATALOG_ACTION_INVALID: 'Thao tác không hợp lệ.',
   CODE_REQUEST_NOT_FOUND: 'Không tìm thấy đề xuất cấp mã.',
@@ -83,9 +97,26 @@ const ERRORS: Record<string, string> = {
   WMS_DOC_DATE_DENIED: 'Chỉ thủ kho của kho trên phiếu, Kế toán kho hoặc Admin sửa được ngày chứng từ.',
   WMS_DOC_NOT_FOUND: 'Không tìm thấy phiếu kho.',
   WMS_DOC_DATE_STATE: 'Phiếu đã hủy / từ chối — không sửa ngày.',
+  CATALOG_SKU_INVALID: 'Mã vật tư 2–30 ký tự, chỉ gồm chữ không dấu, số và . _ - (không có khoảng trắng).',
   WMS_DOC_DATE_INVALID: 'Ngày chứng từ không hợp lệ.',
   WMS_DOC_DATE_FUTURE: 'Ngày chứng từ không được sau hôm nay.',
   WMS_DOC_DATE_REASON: 'Phiếu đã ghi sổ — cần ghi lý do sửa ngày.',
+  WMS_ISSUE_DENIED: 'Chỉ thủ kho của kho xuất (hoặc Admin) được xuất.',
+  WMS_FREE_IMPORT_REMOVED: 'Đã bỏ phiếu nhập tự do — hàng vào kho qua đợt giao Mua hàng, chuyển kho hoặc kiểm đếm.',
+  WMS_SPEC_DENIED: 'Chỉ thủ kho của kho này, Kế toán kho hoặc Admin được chuyển quy cách.',
+  WMS_SPEC_INVALID: 'Cần chọn quy cách mới (tối đa 80 ký tự) và số lượng lớn hơn 0.',
+  WMS_SPEC_SAME: 'Quy cách mới trùng quy cách cũ.',
+  WMS_SPEC_REASON: 'Cần ghi lý do chuyển quy cách.',
+};
+
+/** Mã vật tư người tạo tự nhập: 2–30 ký tự chữ không dấu, số, . _ - (khớp kiểm tra ở issue_material_code_v1). */
+export const CATALOG_SKU_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{1,29}$/;
+export const catalogSkuProblem = (sku: string, taken?: (sku: string) => string | null | undefined): string => {
+  const v = sku.trim();
+  if (!v) return 'Nhập mã vật tư';
+  if (!CATALOG_SKU_PATTERN.test(v)) return 'Mã 2–30 ký tự, chỉ chữ không dấu, số và . _ -';
+  const hit = taken?.(v);
+  return hit ? `Mã ${hit} đã có trong danh mục` : '';
 };
 
 /** Đổi lỗi server (mã lỗi ở đầu thông báo) thành câu tiếng Việt. */
@@ -93,7 +124,11 @@ export const catalogErrorMessage = (error: unknown, fallback = 'Chưa thực hi�
   const raw = String((error as any)?.message || error || '');
   const dup = raw.match(/ITEM_NAME_DUPLICATE:(\S+)/);
   if (dup) return `Tên trùng với mã ${dup[1]} đã có (so sau khi bỏ dấu, khoảng trắng). Dùng mã đó hoặc ghi rõ khác biệt.`;
-  const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK): (.+)/);
+  const skuDup = raw.match(/ITEM_SKU_DUPLICATE:(\S+)/);
+  if (skuDup) return `Mã ${skuDup[1]} đã có trong danh mục — chọn mã khác.`;
+  const short = raw.match(/insufficient stock for item [^,]+, warehouse [^:]+: available ([-\d.]+)/);
+  if (short) return `Không đủ tồn — kho còn ${Number(short[1]).toLocaleString('vi-VN')}.`;
+  const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK|WMS_SPEC_INSUFFICIENT): (.+)/);
   if (merge) return merge[1];
   const code = Object.keys(ERRORS).find(k => raw.includes(k));
   return code ? ERRORS[code] : raw && !/^[A-Z0-9_:\s]+$/.test(raw) ? raw : fallback;
@@ -109,7 +144,8 @@ const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> =>
 export const wmsCatalogService = {
   overview: () => rpc<CatalogOverview>('get_catalog_overview_v1'),
   item: (itemId: string) => rpc<CatalogItemDetail>('get_catalog_item_v1', { p_item_id: itemId }),
-  issue: (input: { requestId?: string; name: string; unit: string; category: string; purchaseUnit?: string | null; purchaseConversionFactor?: number; minStock?: number; inventoryMode: InventoryMode; reason?: string }) =>
+  createOptions: () => rpc<CatalogCreateOptions>('get_catalog_create_options_v1'),
+  issue: (input: { requestId?: string; sku?: string; name: string; unit: string; category: string; purchaseUnit?: string | null; purchaseConversionFactor?: number; minStock?: number; inventoryMode: InventoryMode; reason?: string }) =>
     rpc<CatalogItem>('issue_material_code_v1', { p: input }),
   resolveRequest: (input: { requestId: string; action: 'use_existing' | 'reject'; itemId?: string; reason?: string }) =>
     rpc<{ requestId: string; action: string }>('resolve_material_code_request_v1', { p: input }),
@@ -118,6 +154,9 @@ export const wmsCatalogService = {
   setStatus: (input: { itemId: string; action: 'retire' | 'reactivate'; reason: string }) => rpc<CatalogItem>('set_catalog_item_status_v1', { p: input }),
   setMode: (input: { itemIds: string[]; mode: InventoryMode; reason?: string }) => rpc<{ updated: number }>('set_inventory_mode_v1', { p: input }),
   stock: (warehouseId?: string) => rpc<StockOverview>('list_wms_stock_v1', { p: warehouseId ? { warehouseId } : {} }),
+  /** V1-3b: phiếu chuyển quy cách trong cùng mã, cùng kho (không đổi tồn / giá trị của mã). */
+  transferSpec: (input: { itemId: string; warehouseId: string; fromSpec: string | null; toSpec: string; qty: number; reason: string }) =>
+    rpc<{ id: string; code: string }>('transfer_wms_item_spec_v1', { p: input }),
   card: (itemId: string, warehouseId: string) => rpc<ItemCard>('get_wms_item_card_v1', { p_item_id: itemId, p_warehouse_id: warehouseId }),
   // V1-3a: gộp mã trùng
   duplicates: () => rpc<DuplicatesData>('get_catalog_duplicates_v1'),
@@ -129,6 +168,14 @@ export const wmsCatalogService = {
   setDocumentDate: (input: { transactionId: string; date: string; reason?: string }) =>
     rpc<{ transactionId: string; date: string; posted: boolean }>('set_wms_document_date_v1', { p: input }),
 };
+
+// Nhật ký sửa mã: liệt kê từng trường đổi, trước → sau.
+const FIELD_LABELS: Array<[string, string]> = [['name', 'Tên'], ['unit', 'ĐVT kho'], ['category', 'Nhóm'], ['purchaseUnit', 'ĐV mua'],
+  ['purchaseConversionFactor', 'Hệ số quy đổi'], ['minStock', 'Tồn tối thiểu'], ['inventoryMode', 'Cách quản lý kho'], ['status', 'Trạng thái']];
+const fieldText = (k: string, v: unknown) => v == null || v === '' ? '—' : k === 'inventoryMode' ? INVENTORY_MODE_LABELS[v as InventoryMode] || String(v) : String(v);
+export const changedFields = (before: Record<string, unknown>, after: Record<string, unknown>) => FIELD_LABELS
+  .filter(([k]) => k in after && String(before[k] ?? '') !== String(after[k] ?? ''))
+  .map(([k, label]) => ({ label, from: fieldText(k, before[k]), to: fieldText(k, after[k]) }));
 
 // --- So trùng phía giao diện (giống app_private.catalog_name_key) ---
 export const foldVi = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');

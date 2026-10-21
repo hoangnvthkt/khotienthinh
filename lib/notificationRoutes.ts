@@ -118,16 +118,14 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     const purchaseOrderId =
       getMetaValue(metadata, ['purchaseOrderId', 'purchase_order_id', 'poId', 'po_id']) ||
       (sourceType === 'purchase_order' ? notification.sourceId : undefined);
-    const purchaseOrderParams = {
-      materialTab: 'po',
-      poId: purchaseOrderId,
-    };
-    const projectPath = buildProjectPath(notification, 'material', purchaseOrderParams);
-    if (projectPath) return projectPath;
-    if (purchaseOrderId) {
-      return withQuery('/da', { tab: 'material', ...purchaseOrderParams });
-    }
-    return notification.link || '/da?tab=material&materialTab=po';
+    // Màn PO theo dự án đã chuyển từ Dự án → Vật tư sang Mua hàng (12/10/2026).
+    const projectId = getMetaValue(metadata, ['projectId', 'project_id']);
+    const siteId =
+      getMetaValue(metadata, ['constructionSiteId', 'construction_site_id']) ||
+      notification.constructionSiteId;
+    if (projectId) return withQuery('/procurement/project-po', { projectId, siteId, poId: purchaseOrderId });
+    if (purchaseOrderId) return withQuery('/procurement', { po: purchaseOrderId });
+    return '/procurement?mode=orders';
   }
 
   // ── Task-related (assignment, gate, completion) ───────

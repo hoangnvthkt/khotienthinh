@@ -1,0 +1,6 @@
+/* Tailwind biên dịch lúc build (audit 20/10/2026, mục S5) — thay cdn.tailwindcss.com.
+   Link ở CUỐI <head> (sau index.css và khối <style> inline) vì Play CDN cũ chèn <style> vào cuối <head>:
+   giữ nguyên thứ tự ghi đè giữa utility và CSS tự viết. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

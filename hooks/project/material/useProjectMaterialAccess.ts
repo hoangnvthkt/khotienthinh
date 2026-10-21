@@ -31,6 +31,7 @@ export interface ProjectMaterialAccessState {
     canSubmitProjectRequest: boolean;
     canApproveProjectRequest: boolean;
     canViewAvailableStock: boolean;
+    canManageRequestWorkflow: boolean;
     canCreateMaterialRequest: boolean;
     canEditOwnMaterialRequest: boolean;
     canDeleteMaterialRequest: boolean;
@@ -140,23 +141,20 @@ export const useProjectMaterialAccess = ({
             }
 
             try {
-                const [results, roomActions] = await Promise.all([
-                    Promise.all(NON_BOQ_PBAC_ACTION_CODES.map(async permissionCode => ({
-                        permissionCode,
-                        allowed: (await projectStaffService.checkProjectAction({
-                            userId: user.id,
-                            projectId,
-                            constructionSiteId,
-                            permissionCode,
-                        })).allowed,
-                    }))),
+                const [allowedCodes, roomActions] = await Promise.all([
+                    projectStaffService.checkProjectActions({
+                        userId: user.id,
+                        projectId,
+                        constructionSiteId,
+                        permissionCodes: NON_BOQ_PBAC_ACTION_CODES,
+                    }),
                     projectPermissionRoomService.listMyActions(
                         projectId || constructionSiteId || '',
                         constructionSiteId || null,
                     ),
                 ]);
                 if (!cancelled) {
-                    const grantedCodes = new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
+                    const grantedCodes = new Set(NON_BOQ_PBAC_ACTION_CODES.filter(permissionCode => allowedCodes.has(permissionCode)));
                     roomActions
                         .filter(action => action.roomCode === 'material_planning')
                         .flatMap(action => getProjectMaterialActionCodesForRoomAction(
@@ -236,8 +234,7 @@ export const useProjectMaterialAccess = ({
     const canManagePo = materialAccess.po.canManage;
 
     const visibleMaterialTabs = useMemo(
-        // Chủ SP 08/10/2026: ẩn màn cũ Vật tư → Kế hoạch; KH vật tư lập ở tab Kế hoạch → Vật tư.
-        () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => tab.key !== 'planning' && materialAccess[tab.key as ProjectMaterialTabKey].canView),
+        () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => materialAccess[tab.key as ProjectMaterialTabKey].canView),
         [materialAccess],
     );
     const canEditProjectBoq = materialCapabilities.canEditBoq;
@@ -247,6 +244,7 @@ export const useProjectMaterialAccess = ({
     const canSubmitProjectRequest = materialCapabilities.canSubmitMaterialRequest;
     const canApproveProjectRequest = materialCapabilities.canApproveMaterialRequest;
     const canViewAvailableStock = materialCapabilities.canViewAvailableStock;
+    const canManageRequestWorkflow = materialCapabilities.canManageWorkflow;
     const canCreateMaterialRequest = materialCapabilities.canCreateMaterialRequest;
 
     return {
@@ -264,6 +262,7 @@ export const useProjectMaterialAccess = ({
         canSubmitProjectRequest,
         canApproveProjectRequest,
         canViewAvailableStock,
+        canManageRequestWorkflow,
         canCreateMaterialRequest,
         canEditOwnMaterialRequest: materialCapabilities.canEditOwnMaterialRequest,
         canDeleteMaterialRequest: materialCapabilities.canDeleteMaterialRequest,

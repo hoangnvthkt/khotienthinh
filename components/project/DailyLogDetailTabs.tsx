@@ -5,8 +5,21 @@ import {
   Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
 } from '../../types';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { PrefillGhost } from '../common/PrefillGhost';
+
+/** Gợi ý "Như hôm qua": in mờ khi tab còn trống, Tab / bấm để dùng, Esc để bỏ. */
+export interface DailyLogDetailPrefill {
+  sourceLogId: string;
+  /** "nhật ký 11/10 của bạn" */
+  sourceLabel: string;
+  labor: DailyLogLabor[];
+  machines: DailyLogMachine[];
+  onAccept?: (field: 'labor' | 'machines', rows: number) => void;
+  onDismiss?: (field: 'labor' | 'machines', rows: number) => void;
+}
 
 interface Props {
+  prefill?: DailyLogDetailPrefill;
   volumes: DailyLogVolume[];
   materials: DailyLogMaterial[];
   laborDetails: DailyLogLabor[];
@@ -224,7 +237,13 @@ const SearchablePicker = <T,>({
   );
 };
 
+const laborGhostText = (l: DailyLogLabor) =>
+  `${l.groupName || l.catalogName || l.laborType}${l.taskName ? ` · ${l.taskName}` : ''} · ${formatQuantity(l.count)} ${l.unit || 'người'} × ${formatQuantity(l.hours ?? 8)} giờ`;
+const machineGhostText = (m: DailyLogMachine) =>
+  `${m.catalogName || m.machineName}${m.taskName ? ` · ${m.taskName}` : ''}${m.shifts ? ` · ${formatQuantity(m.shifts)} ca` : ''}${m.hours ? ` · ${formatQuantity(m.hours)} giờ máy` : ''}`;
+
 const DailyLogDetailTabs: React.FC<Props> = ({
+  prefill,
   volumes, materials, laborDetails, machines,
   onVolumesChange, onMaterialsChange, onLaborChange, onMachinesChange,
   tasks = [],
@@ -241,6 +260,34 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   hideDailyProgressImport = false,
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
+  // Gợi ý "Như hôm qua" chỉ hiện khi tab còn trống và chưa bị bỏ; đổi nguồn (đổi ngày) thì hiện lại.
+  const [prefillDismissed, setPrefillDismissed] = useState<Record<'labor' | 'machines', boolean>>({ labor: false, machines: false });
+  useEffect(() => { setPrefillDismissed({ labor: false, machines: false }); }, [prefill?.sourceLogId]);
+  const laborGhost = prefill && laborDetails.length === 0 && prefill.labor.length > 0 && !prefillDismissed.labor ? prefill.labor : null;
+  const machineGhost = prefill && machines.length === 0 && prefill.machines.length > 0 && !prefillDismissed.machines ? prefill.machines : null;
+  const focusFirstInput = (kind: 'labor' | 'machines') => {
+    window.requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>(`[data-prefill-rows="${kind}"] input`);
+      input?.focus();
+    });
+  };
+  const acceptLaborGhost = () => {
+    if (!laborGhost || !prefill) return;
+    onLaborChange([...laborDetails, ...laborGhost]);
+    prefill.onAccept?.('labor', laborGhost.length);
+    focusFirstInput('labor');
+  };
+  const acceptMachineGhost = () => {
+    if (!machineGhost || !prefill) return;
+    onMachinesChange([...machines, ...machineGhost]);
+    prefill.onAccept?.('machines', machineGhost.length);
+    focusFirstInput('machines');
+  };
+  const dismissGhost = (kind: 'labor' | 'machines') => {
+    const rows = kind === 'labor' ? laborGhost : machineGhost;
+    setPrefillDismissed(prev => ({ ...prev, [kind]: true }));
+    if (rows) prefill?.onDismiss?.(kind, rows.length);
+  };
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
   const [volumeQuantityDrafts, setVolumeQuantityDrafts] = useState<Record<number, string>>({});
   const [quickPanelOpen, setQuickPanelOpen] = useState<Record<'volumes' | 'labor' | 'machines', boolean>>({
@@ -673,6 +720,12 @@ const DailyLogDetailTabs: React.FC<Props> = ({
             {t.key === 'materials' && materials.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] flex items-center justify-center">{materials.length}</span>}
             {t.key === 'labor' && laborDetails.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-blue-500 text-white text-[8px] flex items-center justify-center">{laborDetails.length}</span>}
             {t.key === 'machines' && machines.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-purple-500 text-white text-[8px] flex items-center justify-center">{machines.length}</span>}
+            {((t.key === 'labor' && laborGhost) || (t.key === 'machines' && machineGhost)) && (
+              <span title="Có gợi ý như hôm qua" className="ml-1 shrink-0">
+                <span className="hidden sm:inline px-1.5 rounded-full border border-dashed border-slate-300 dark:border-slate-600 text-[8px] font-bold italic text-slate-400">hôm qua</span>
+                <span className="sm:hidden inline-block w-2 h-2 rounded-full border border-dashed border-slate-400 align-middle" />
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -865,7 +918,11 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 
       {/* Labor Tab */}
       {tab === 'labor' && (
-        <div className="space-y-2">
+        <div className="space-y-2" data-prefill-rows="labor">
+          {laborGhost && prefill && (
+            <PrefillGhost title="nhân công" rows={laborGhost.map(laborGhostText)} sourceLabel={prefill.sourceLabel}
+              onAccept={acceptLaborGhost} onDismiss={() => dismissGhost('labor')} />
+          )}
           {laborSourceOptions.length > 0 && taskQuickOptions.length > 0 && (
             <div className="rounded-2xl border border-blue-100 bg-blue-50/50 overflow-hidden">
               <button
@@ -1113,7 +1170,11 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 
       {/* Machines Tab */}
       {tab === 'machines' && (
-        <div className="space-y-2">
+        <div className="space-y-2" data-prefill-rows="machines">
+          {machineGhost && prefill && (
+            <PrefillGhost title="máy thi công" rows={machineGhost.map(machineGhostText)} sourceLabel={prefill.sourceLabel}
+              onAccept={acceptMachineGhost} onDismiss={() => dismissGhost('machines')} />
+          )}
           {machineSourceOptions.length > 0 && taskQuickOptions.length > 0 && (
             <div className="rounded-2xl border border-purple-100 bg-purple-50/50 overflow-hidden">
               <button

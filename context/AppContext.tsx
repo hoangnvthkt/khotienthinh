@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { createSignatureUrl, createSignatureUrls, signaturePathFor } from '../lib/signatureService';
 import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import { wmsRecipientService } from '../lib/wmsRecipientService';
 import {
@@ -101,10 +102,10 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin' | 'workflow-people';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'hrm-core' | 'da' | 'ts' | 'ex' | 'admin' | 'workflow-people';
 export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'da', 'ts', 'ex', 'admin', 'workflow-people'];
+const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'hrm-core', 'da', 'ts', 'ex', 'admin', 'workflow-people'];
 
 const createModuleLoadState = (status: ModuleLoadStatus = 'idle') =>
   APP_MODULES.reduce((acc, module) => {
@@ -120,6 +121,7 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
   hrm: ['org_units', 'hrm_attendance'],
+  'hrm-core': ['org_units'],
 };
 
 interface AppContextType {
@@ -281,6 +283,17 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const mapOrgUnitFromDb = (u: any): OrgUnit => ({
+  id: u.id,
+  name: u.name,
+  type: u.type,
+  customTypeLabel: u.customTypeLabel || undefined,
+  parentId: u.parent_id,
+  description: u.description,
+  orderIndex: u.order_index,
+  createdAt: u.created_at,
+});
+
 const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   ...i,
   accountingCode: i.accounting_code ?? i.accountingCode ?? null,
@@ -302,6 +315,10 @@ const INVENTORY_FETCH_PAGE_SIZE = 1000;
 const ASSET_OPERATION_LIMIT = 1000;
 const ASSET_ASSIGNMENT_SELECT = 'id,asset_id,type,user_id,user_name,from_user_id,from_user_name,date,note,performed_by,performed_by_name,created_at,dept_name,site_name,qty';
 const ASSET_MAINTENANCE_SELECT = 'id,asset_id,type,description,cost,estimated_cost,actual_cost,vendor,invoice_number,start_date,end_date,status,performed_by,performed_by_name,note,attachments';
+// Danh sách dự án chỉ cộng tổng chi/thu theo dự án (Tài chính đã tách sang module riêng):
+// không tải mô tả, đính kèm, hóa đơn… (~1 MB) mỗi lần mở /da.
+// Giữ cả cột cũ dạng camelCase: một số dòng cũ chỉ lưu nguồn ở "sourceRef" (normalizer ưu tiên cột này).
+const PROJECT_TRANSACTION_SUMMARY_SELECT = 'id,type,category,amount,date,source,source_ref,"sourceRef",project_id,construction_site_id,"constructionSiteId",project_finance_id,"projectFinanceId"';
 const ASSET_TRANSFER_SELECT = 'id,code,asset_id,asset_code,asset_name,qty,from_warehouse_id,from_site_id,from_dept_id,from_location_label,to_warehouse_id,to_site_id,to_dept_id,to_location_label,received_by_user_id,received_by_name,date,reason,status,performed_by,performed_by_name,note,created_at';
 const ASSET_LOCATION_STOCK_SELECT = 'id,asset_id,warehouse_id,construction_site_id,dept_id,qty,assigned_to_user_id,assigned_to_name,note,updated_at';
 
@@ -898,15 +915,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return data;
   };
 
-  const loadModuleData = useCallback(async (module: AppModule, force = false) => {
+  // silent: tải lại ngầm (giữ dữ liệu + trạng thái 'loaded' đang hiện) — dùng khi nối lại realtime sau lúc tab ẩn.
+  const loadModuleData = useCallback(async (module: AppModule, force = false, options?: { silent?: boolean }) => {
     if (!isSupabaseConfigured) return;
-    if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
+    if (!force && (loadedModulesRef.current.has(module)
+      || (module === 'wms-core' && loadedModulesRef.current.has('wms'))
+      || (module === 'hrm-core' && loadedModulesRef.current.has('hrm')))) return;
     const existingLoad = inflightModuleLoadsRef.current[module];
     if (existingLoad) return existingLoad;
+    const silent = options?.silent === true;
 
     const loadTask = (async () => {
-      setModuleStatus(module, 'loading');
-      loadedModulesRef.current.delete(module);
+      if (!silent) {
+        setModuleStatus(module, 'loading');
+        loadedModulesRef.current.delete(module);
+      }
       try {
         const loadWmsCoreData = async () => {
           const [itemsData, whData, whTypeData, reqData] = await Promise.all([
@@ -930,10 +953,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ]);
           const requiredUsers = requireModuleData(module, 'users', usersData);
           if (requiredUsers.length === 0) throw new Error('Danh sách người dùng đang trống bất thường.');
+          // Chỉ những chữ ký RLS cho đọc (của mình, người cùng phiếu, hoặc mọi người nếu quản trị).
           const signatureByUserId = new Map<string, string>();
+          const signedByPath = await createSignatureUrls((sigData || []).map((signature: any) => signature.image_path));
           for (const signature of sigData || []) {
-            const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(signature.image_path);
-            if (urlData?.publicUrl) signatureByUserId.set(signature.user_id, urlData.publicUrl);
+            const signedUrl = signedByPath.get(signature.image_path);
+            if (signedUrl) signatureByUserId.set(signature.user_id, signedUrl);
           }
           const mappedUsers = requiredUsers.map(mapUserFromDb).map((candidate: User) => ({
             ...candidate,
@@ -967,9 +992,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const mappedUsers = requiredUsers.map(mapUserFromDb);
             if (sigData && sigData.length > 0) {
               const sigMap = new Map<string, string>();
+              const signedByPath = await createSignatureUrls(sigData.map((sig: any) => sig.image_path));
               for (const sig of sigData) {
-                const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
-                if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
+                const signedUrl = signedByPath.get(sig.image_path);
+                if (signedUrl) sigMap.set(sig.user_id, signedUrl);
               }
               mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
             }
@@ -1017,6 +1043,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
           if (auditSessionsData) setAuditSessions(auditSessionsData);
           markModuleLoaded('wms-core');
+        } else if (module === 'hrm-core') {
+          // Dự án / Mua hàng chỉ cần danh bạ nhân viên, chức vụ, sơ đồ tổ chức — không tải lương, chấm công,
+          // nghỉ phép, hợp đồng lao động… như module 'hrm' đầy đủ (đo 12/10/2026: ~20 lệnh gọi thừa khi mở /da).
+          const [empData, positionsData, orgUnitsData] = await Promise.all([
+            hrmSensitiveProjectionService.listEmployees(),
+            fetchTableHelper('hrm_positions'),
+            fetchTableHelper('org_units'),
+          ]);
+          setEmployees(requireModuleData(module, 'employees', empData));
+          if (positionsData) setHrmPositions(positionsData);
+          setOrgUnits(requireModuleData(module, 'org_units', orgUnitsData).map(mapOrgUnitFromDb));
         } else if (module === 'hrm') {
           const canViewPayroll = canPerformHrmTemplatePermission(user, 'hrm.payroll.view');
           const canViewContracts = canPerform(user, 'hrm.contract.view');
@@ -1067,16 +1104,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
           {
             const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
-            const units = requiredOrgUnits.map((u: any) => ({
-              id: u.id,
-              name: u.name,
-              type: u.type,
-              customTypeLabel: u.customTypeLabel || undefined,
-              parentId: u.parent_id,
-              description: u.description,
-              orderIndex: u.order_index,
-              createdAt: u.created_at,
-            }));
+            const units = requiredOrgUnits.map(mapOrgUnitFromDb);
 
             if (!units.some((u: OrgUnit) => u.type === 'factory')) {
               const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');
@@ -1184,7 +1212,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const [constructionSitesData, projectFinancesData, projectTxData] = await Promise.all([
             fetchTableHelper('hrm_construction_sites'),
             fetchTableHelper('project_finances'),
-            fetchTableHelper('project_transactions', fetchAllSupabaseRows(supabase.from('project_transactions').select(getSupabaseProjection('project_transactions')).order('date', { ascending: false }), { label: "context/AppContext.tsx:1178", maxRows: 10_000, orderBy: getSupabaseOrderColumns('project_transactions') })),
+            fetchTableHelper('project_transactions', fetchAllSupabaseRows(supabase.from('project_transactions').select(PROJECT_TRANSACTION_SUMMARY_SELECT).order('date', { ascending: false }), { label: "context/AppContext.tsx:1178", maxRows: 10_000, orderBy: getSupabaseOrderColumns('project_transactions') })),
           ]);
           if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
           if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
@@ -1215,6 +1243,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     inflightModuleLoadsRef.current[module] = loadTask;
     return loadTask;
   }, [markModuleLoaded, setModuleStatus, user.authId, user.email]);
+
+  // Realtime nối lại sau khi tab ẩn > 5 phút: các sự kiện trong lúc ngắt đã mất → tải lại ngầm module đã có.
+  useEffect(() => realtimeService.onResume(() => {
+    for (const module of Array.from(loadedModulesRef.current) as AppModule[]) {
+      void loadModuleData(module, true, { silent: true }).catch(() => undefined);
+    }
+  }), [loadModuleData]);
 
   // Helper to sync a single table to Supabase
   const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
@@ -3549,17 +3584,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const res = await fetch(dataUrl);
       const blob = await res.blob();
-      const path = `signatures/${userId}.png`;
+      const path = signaturePathFor(userId);
       // Upload with upsert
       const { error: upErr } = await supabase.storage.from('workflow-templates').upload(path, blob, { contentType: 'image/png', upsert: true });
       if (upErr) { console.error('Signature upload error:', upErr); return false; }
       // Upsert DB
       const { error: dbErr } = await supabase.from('user_signatures').upsert({ user_id: userId, image_path: path }, { onConflict: 'user_id' });
       if (dbErr) { console.error('Signature DB error:', dbErr); return false; }
-      // Update local state
-      const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(path);
-      const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : '';
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: publicUrl } : u));
+      // Update local state (signed URL mới nên không cần chống cache)
+      const signedUrl = (await createSignatureUrl(path)) || '';
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: signedUrl } : u));
       if (user.id === userId) await refreshProfile();
       return true;
     } catch (err) { console.error('Save signature error:', err); return false; }
@@ -3567,7 +3601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteSignature = async (userId: string): Promise<boolean> => {
     try {
-      const path = `signatures/${userId}.png`;
+      const path = signaturePathFor(userId);
       await supabase.storage.from('workflow-templates').remove([path]);
       const { error } = await supabase.from('user_signatures').delete().eq('user_id', userId);
       if (error) { console.error('Delete signature error:', error); return false; }

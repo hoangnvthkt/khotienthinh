@@ -16,6 +16,7 @@ const FakeLeave: React.FC = () => {
       <button type="button" onClick={() => setParams({ request: 'np-42' })}>Chọn đơn khác</button>
       <button type="button" onClick={() => navigate('/work/tasks/VW-1')}>Sang việc</button>
       <button type="button" onClick={() => navigate('/hrm/payroll')}>Sang bảng lương</button>
+      <a href="#/work/tasks/VW-2">Link thô sang việc</a>
     </div>
   );
 };
@@ -29,7 +30,7 @@ const CenterProbe: React.FC = () => {
       <p>App: <span data-testid="outer-path">{outer.pathname}</span> · <span data-testid="exit">{exit || '-'}</span></p>
       <RouteRenderer
         path="/hrm/leave?request=np-41"
-        routes={[{ path: '/hrm/leave', element: <FakeLeave /> }, { path: '/work/tasks/:taskCode', element: <FakeTask /> }]}
+        routes={<><Route path="/hrm/leave" element={<FakeLeave />} /><Route path="/work/tasks/:taskCode" element={<FakeTask />} /></>}
         onExit={setExit}
       />
     </div>

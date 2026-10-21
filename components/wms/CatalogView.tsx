@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, Boxes, ChevronDown, ChevronRight, CircleSlash, CopyCheck, Hash, History, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
+import { AlertTriangle, Boxes, Plus, ChevronDown, ChevronRight, CircleSlash, CopyCheck, Hash, History, ListChecks, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney } from '../finance/financeUi';
 import { useApp } from '../../context/AppContext';
@@ -9,22 +9,26 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { materialCodeRequestService } from '../../lib/materialCodeRequestService';
 import {
-  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
+  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogSkuProblem, changedFields, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
   type CatalogItemDetail, type CatalogOverview, type CatalogRename, type InventoryMode,
 } from '../../lib/wmsCatalogService';
 import type { InventoryItem, MaterialCodeRequest } from '../../types';
 import { BAD, EmptyPanel, GREY, OK, Panel, Section, Split, Stat, TEAL, Tile, WARN, dateVi, fmtQty } from './wmsUi';
 import { CatalogMergePanel, VERDICT_CLS } from './CatalogMergePanel';
+import { QuickCreateItemDialog } from './QuickCreateItemDialog';
 import { VERDICT_LABEL, sortGroups, suggestKeep, type DuplicatesData } from '../../lib/wmsCatalogMerge';
+import { SPEC_SOURCE_LABELS, itemSpecService, specSizeConflict, type PendingItemSpec } from '../../lib/itemSpecService';
+import { ItemSpecsSection } from './ItemSpecsSection';
 
 // Danh mục vật tư (V1): một cửa cấp mã. Không có nút Xóa — chỉ Ngừng dùng. Mã đã có chứng từ chỉ sửa chính tả tên (server chặn đổi bản chất).
 
-type Queue = 'all' | 'requests' | 'dupes' | 'mode' | 'renames' | 'retired';
+type Queue = 'all' | 'requests' | 'specs' | 'dupes' | 'mode' | 'renames' | 'retired';
 const MODES: InventoryMode[] = ['stock', 'use', 'service'];
 const ACTION_LABEL: Record<string, string> = {
   issue: 'cấp mã', update: 'sửa thông tin', rename: 'đổi tên', retire: 'ngừng dùng', reactivate: 'mở lại', mode: 'đổi cách quản lý kho',
-  use_existing: 'trả lời đề xuất: dùng mã này', insert: 'tạo mã', update_legacy: 'sửa', merge: 'gộp vào mã khác', merge_into: 'nhận mã gộp vào',
+  use_existing: 'trả lời đề xuất: dùng mã này', insert: 'tạo mã', update_legacy: 'sửa', merge: 'gộp vào mã khác', merge_into: 'nhận mã gộp vào', spec: 'quy cách',
 };
+const SPEC_OP: Record<string, string> = { add: 'thêm', approve: 'giữ', rename: 'sửa chữ', merge: 'gộp', retire: 'ngừng dùng', reactivate: 'dùng lại' };
 const usedOf = (u?: { ledger: number; transactions: number; purchaseOrders: number; requests: number; stockQty: number }) =>
   !!u && (Number(u.stockQty) > 0 || u.ledger > 0 || u.transactions > 0 || u.purchaseOrders > 0 || u.requests > 0);
 
@@ -36,7 +40,7 @@ const useCatalogLists = () => {
 };
 
 // ---------- Chi tiết một mã ----------
-const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids: string[]) => void; onBack: () => void; onOpen: (id: string) => void }> = ({ itemId, canIssue, onChanged, onBack, onOpen }) => {
+const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; canEdit: boolean; onChanged: (ids: string[]) => void; onBack: () => void; onOpen: (id: string) => void }> = ({ itemId, canIssue, canEdit, onChanged, onBack, onOpen }) => {
   const toast = useToast(); const confirm = useConfirm(); const reasonConfirm = useReasonConfirm();
   const { categoryOptions, unitOptions } = useCatalogLists();
   const [d, setD] = useState<CatalogItemDetail | null>(null);
@@ -63,7 +67,7 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
   };
   const saveEdit = async () => {
     const renamed = form.name.trim() !== it.name;
-    if (used && renamed && !form.reason.trim()) { toast.warning('Cần lý do', 'Mã đã có chứng từ — ghi lý do sửa tên.'); return; }
+    if (!form.reason.trim()) { toast.warning('Cần lý do', 'Mọi lần sửa mã đều ghi lịch sử — ghi lý do sửa.'); return; }
     const ok = await run(() => wmsCatalogService.update({ itemId: it.id, name: form.name.trim(), unit: form.unit, category: form.category,
       purchaseUnit: form.purchaseUnit || null, purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, minStock: Number(form.minStock) || 0, reason: form.reason.trim() || undefined }),
       `${it.sku}${renamed ? `: “${it.name}” → “${form.name.trim()}”` : ''}`);
@@ -88,13 +92,13 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
       <span className="mt-1 flex flex-wrap gap-1"><Badge className={it.status === 'retired' ? GREY : OK}>{it.mergedIntoId ? 'Đã gộp' : it.status === 'retired' ? 'Ngừng dùng' : 'Đang dùng'}</Badge>
         <Badge className={it.inventoryMode === 'stock' ? GREY : TEAL}>{INVENTORY_MODE_LABELS[it.inventoryMode]}</Badge><Badge className={GREY}>{it.category}</Badge>
         {used && <Badge className={GREY} title="Đã có sổ kho / phiếu kho / đơn mua / đề xuất">đã có chứng từ</Badge>}</span></div>}
-    foot={canIssue ? <>
-      {!edit && <button type="button" className={secondaryBtn} onClick={() => setEdit(true)} disabled={busy}><PencilLine size={15} />Sửa</button>}
-      {it.status === 'active'
+    foot={canIssue || canEdit ? <>
+      {canEdit && !edit && <button type="button" className={secondaryBtn} onClick={() => setEdit(true)} disabled={busy}><PencilLine size={15} />Sửa</button>}
+      {canIssue && (it.status === 'active'
         ? <button type="button" className={secondaryBtn} disabled={busy || !!blockRetire} title={blockRetire ? `Không ngừng dùng được: ${blockRetire}` : undefined} onClick={() => void toggleStatus()}><CircleSlash size={15} />Ngừng dùng</button>
-        : !it.mergedIntoId && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>}
-      <span className="w-full text-xs text-muted-foreground sm:w-auto">{blockRetire && it.status === 'active' ? `Ngừng dùng bị khóa: ${blockRetire}. ` : ''}Không có Xóa — mã đã tạo chỉ ngừng dùng.</span>
-    </> : <span className="text-xs text-muted-foreground">Chỉ người có ô quyền “Cấp mã” sửa danh mục.</span>}>
+        : !it.mergedIntoId && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>)}
+      <span className="w-full text-xs text-muted-foreground sm:w-auto">{canIssue && blockRetire && it.status === 'active' ? `Ngừng dùng bị khóa: ${blockRetire}. ` : ''}{canEdit ? 'Mọi lần sửa ghi lịch sử. ' : ''}Không có Xóa — mã đã tạo chỉ ngừng dùng.</span>
+    </> : <span className="text-xs text-muted-foreground">Sửa mã cần ô quyền nhạy cảm “Sửa mã vật tư”.</span>}>
     {edit && <section className="space-y-3 rounded-xl border border-teal-300 bg-teal-50/40 p-3 dark:bg-teal-950/20">
       <label className="block text-sm font-medium">Tên vật tư<input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={`mt-1 w-full ${inputCls}`} /></label>
       {used && renamedChanged && <p className={`rounded-lg border px-3 py-2 text-xs ${WARN}`}><b>Mã đã có chứng từ</b> — chỉ sửa chính tả / ghi rõ thêm, giữ nguyên bản chất. Đổi kích thước hoặc thành vật tư khác sẽ bị chặn: hãy đề xuất mã mới.</p>}
@@ -104,10 +108,10 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
         <label className="text-sm font-medium">ĐV mua<select value={form.purchaseUnit} onChange={e => setForm(f => ({ ...f, purchaseUnit: e.target.value }))} className={`mt-1 w-full ${inputCls}`}><option value="">(như ĐVT kho)</option>{unitOptions.map(u => <option key={u}>{u}</option>)}</select></label>
         <label className="text-sm font-medium">1 ĐV mua = ? ĐVT kho<input inputMode="decimal" disabled={!form.purchaseUnit} value={form.factor} onChange={e => setForm(f => ({ ...f, factor: e.target.value }))} className={`mt-1 w-full text-right ${inputCls}`} /></label>
         <label className="text-sm font-medium">Tồn tối thiểu<input inputMode="numeric" value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} className={`mt-1 w-full text-right ${inputCls}`} /></label>
-        <label className="text-sm font-medium">Lý do {used && renamedChanged && <span className="text-rose-700">*</span>}<input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="VD: sửa chính tả" className={`mt-1 w-full ${inputCls}`} /></label>
+        <label className="text-sm font-medium">Lý do sửa <span className="text-rose-700">*</span><input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="VD: sửa chính tả, NCC đổi quy cách đóng gói" className={`mt-1 w-full ${inputCls}`} /></label>
       </div>
       <div className="flex justify-end gap-2"><button type="button" className={secondaryBtn} onClick={() => { setEdit(false); void load(); }} disabled={busy}>Hủy</button>
-        <button type="button" className={primaryBtn} onClick={() => void saveEdit()} disabled={busy || !form.name.trim()}>Lưu</button></div>
+        <button type="button" className={primaryBtn} onClick={() => void saveEdit()} disabled={busy || !form.name.trim() || !form.reason.trim()} title={!form.reason.trim() ? 'Ghi lý do sửa' : undefined}>Lưu</button></div>
     </section>}
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <Stat label="ĐVT kho"><b>{it.unit}</b></Stat>
@@ -128,28 +132,37 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
     {it.mergedIntoId ? <div className={`rounded-xl border px-3 py-2 text-sm ${TEAL}`}>Đã gộp vào mã khác {dateVi(it.retiredAt)}. Tồn và kế hoạch đã chuyển sang mã giữ; lịch sử của mã này giữ nguyên.
         <button type="button" className="ml-1 font-semibold underline" onClick={() => onOpen(it.mergedIntoId!)}>Mở mã giữ</button></div>
       : it.status === 'retired' && <p className={`rounded-xl border px-3 py-2 text-sm ${GREY}`}>Ngừng dùng {dateVi(it.retiredAt)}{it.retiredReason ? ` — ${it.retiredReason}` : ''}.</p>}
+    {!it.mergedIntoId && <ItemSpecsSection itemId={it.id} itemName={it.name} unit={it.unit} onChanged={() => void load()} />}
     <Section title={<span className="inline-flex items-center gap-1"><History size={14} />Nhật ký</span>}>
       {d.events.length === 0 ? <p className="text-xs text-muted-foreground">Chưa có thay đổi nào được ghi.</p>
         : <ul className="space-y-1.5 text-xs">{d.events.map((ev, i) => <li key={i} className="flex gap-2"><span className="w-20 shrink-0 text-muted-foreground">{dateVi(ev.at)}</span>
           <span className="min-w-0"><span className={ENT}>{ev.by || '—'}</span> {ACTION_LABEL[ev.action] || (ev.fields?.length ? `sửa ${ev.fields.join(', ')}` : ev.action)}
-            {ev.before?.name && ev.after?.name && ev.before.name !== ev.after.name && <span className="block text-muted-foreground">“{ev.before.name}” → “{ev.after.name}”</span>}
+            {ev.action === 'spec' ? <span className="block text-muted-foreground">{SPEC_OP[ev.before?.op] || ev.before?.op}: “{ev.before?.spec}”{ev.after?.target ? ` → “${ev.after.target}”` : ev.after?.spec && ev.after.spec !== ev.before?.spec ? ` → “${ev.after.spec}”` : ''}{Number(ev.after?.moved) > 0 ? ` · chuyển tồn ${ev.after.moved} kho` : ''}</span>
+              : ev.before && ev.after && changedFields(ev.before, ev.after).map(c => <span key={c.label} className="block text-muted-foreground">{c.label}: “{c.from}” → “{c.to}”</span>)}
             {ev.reason && <span className="block text-muted-foreground">Lý do: {ev.reason}</span>}</span></li>)}</ul>}
     </Section>
   </Panel>;
 };
+
+// Mã người cấp tự nhập: trùng mọi mã đã có (kể cả ngừng dùng), không phân biệt hoa thường; gợi ý VT + 7 số tiếp theo.
+const skuTakenIn = (items: InventoryItem[], sku: string) => items.find(i => (i.sku || '').toUpperCase() === sku.trim().toUpperCase())?.sku;
+const nextVtSku = (items: InventoryItem[]) =>
+  `VT${String(items.reduce((m, i) => Math.max(m, /^VT\d{7}$/.test(i.sku || '') ? Number(i.sku.slice(2)) : 0), 0) + 1).padStart(7, '0')}`;
 
 // ---------- Xử lý đề xuất cấp mã ----------
 const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]; canIssue: boolean; onDone: (ids: string[]) => void; onBack: () => void }> = ({ req, items, canIssue, onDone, onBack }) => {
   const toast = useToast(); const reasonConfirm = useReasonConfirm();
   const { categoryOptions, unitOptions } = useCatalogLists();
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState(() => ({ name: req.proposedName, unit: unitOptions.find(u => foldVi(u) === foldVi(String(req.proposedUnit || '').split(' ')[0])) || '',
+  const [form, setForm] = useState(() => ({ sku: '', name: req.proposedName, unit: unitOptions.find(u => foldVi(u) === foldVi(String(req.proposedUnit || '').split(' ')[0])) || '',
     category: req.proposedCategory && categoryOptions.includes(req.proposedCategory) ? req.proposedCategory : '', purchaseUnit: '', factor: '1',
     mode: guessInventoryMode(req.proposedName, req.proposedUnit, req.proposedCategory) as InventoryMode }));
   const active = items.filter(i => i.status !== 'retired');
   const sims = similarCatalogItems(active, req.proposedName, 5);
   const exact = active.find(i => catalogNameKey(i.name) === catalogNameKey(form.name));
   const pending = req.status === 'pending';
+  const nextSku = nextVtSku(items);
+  const skuProblem = catalogSkuProblem(form.sku, sku => skuTakenIn(items, sku));
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
     try { const r = await fn() as { id?: string } | null; toast.success('Đã xử lý đề xuất', ok); onDone(r?.id ? [r.id] : []); }
@@ -168,9 +181,9 @@ const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]
     foot={!pending ? <span className="text-xs text-muted-foreground">{req.status === 'rejected' ? `Lý do: ${req.rejectionReason || '—'}` : `${req.approvedByName || ''} · ${dateVi(req.approvedAt)}`}</span>
       : canIssue ? <>
         <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void reject()}>Từ chối</button>
-        <button type="button" className={primaryBtn} disabled={busy || !form.name.trim() || !form.unit || !form.category || !!exact} title={exact ? `Trùng tên ${exact.sku}` : undefined}
-          onClick={() => void act(() => wmsCatalogService.issue({ requestId: req.id, name: form.name.trim(), unit: form.unit, category: form.category, purchaseUnit: form.purchaseUnit || null,
-            purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, inventoryMode: form.mode }), `Đã cấp mã cho “${form.name.trim()}”`)}><Hash size={15} />Cấp mã</button></>
+        <button type="button" className={primaryBtn} disabled={busy || !!skuProblem || !form.name.trim() || !form.unit || !form.category || !!exact} title={skuProblem || (exact ? `Trùng tên ${exact.sku}` : undefined)}
+          onClick={() => void act(() => wmsCatalogService.issue({ requestId: req.id, sku: form.sku.trim(), name: form.name.trim(), unit: form.unit, category: form.category, purchaseUnit: form.purchaseUnit || null,
+            purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, inventoryMode: form.mode }), `Đã cấp mã ${form.sku.trim()} cho “${form.name.trim()}”`)}><Hash size={15} />Cấp mã</button></>
       : <span className="text-xs text-muted-foreground">Chỉ người có ô quyền “Cấp mã” xử lý đề xuất.</span>}>
     {(req.proposedSpecification || req.reason) && <Stat label="Quy cách / lý do">{[req.proposedSpecification, req.reason].filter(Boolean).join(' — ')}</Stat>}
     <section className={`rounded-xl border p-3 text-sm ${sims.length ? 'border-amber-300 bg-amber-50/70 dark:bg-amber-950/30' : 'border-border'}`}>
@@ -181,7 +194,11 @@ const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]
           onClick={() => void act(() => wmsCatalogService.resolveRequest({ requestId: req.id, action: 'use_existing', itemId: item.id }), `Trả lời ${req.requestedByName || ''}: dùng ${item.sku}`)}>Dùng mã này</button>}</li>)}</ul>}
     </section>
     {pending && canIssue && <section className="space-y-3 rounded-xl border border-border p-3">
-      <h3 className="text-sm font-bold">Cấp mã mới <span className="font-normal text-muted-foreground">— mã tự sinh VT + số tiếp theo</span></h3>
+      <h3 className="text-sm font-bold">Cấp mã mới</h3>
+      <div><label className="block text-sm font-medium">Mã vật tư<input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value.replace(/\s/g, '') }))} placeholder={`VD: ${nextSku}`}
+        autoCapitalize="characters" spellCheck={false} aria-invalid={!!(form.sku.trim() && skuProblem)} className={`mt-1 w-full font-mono sm:max-w-[14rem] ${inputCls} ${form.sku.trim() && skuProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+        {form.sku.trim() && skuProblem ? <span className="mt-1 block text-xs font-semibold text-rose-700">{skuProblem}</span>
+          : form.sku.trim() !== nextSku && <button type="button" onClick={() => setForm(f => ({ ...f, sku: nextSku }))} className="mt-1 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">Dùng mã gợi ý {nextSku}</button>}</div>
       <label className="block text-sm font-medium">Tên chuẩn<input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={`mt-1 w-full ${inputCls}`} />
         {exact && <span className="mt-1 block text-xs font-semibold text-rose-700">Trùng tên với {exact.sku} · {exact.name} (so sau khi bỏ dấu, khoảng trắng).</span>}</label>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -251,13 +268,22 @@ export const CatalogView: React.FC = () => {
   const [onlyStock, setOnlyStock] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [newCode, setNewCode] = useState(false);
+  const [quickCreate, setQuickCreate] = useState(false);
+  /** Hai ô quyền nhạy cảm: Tạo mã vật tư (không qua đề xuất), Sửa mã vật tư (ghi lịch sử). */
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dupes, setDupes] = useState<DuplicatesData | null>(null);
   const [showAuto, setShowAuto] = useState(false);
+  const [specQ, setSpecQ] = useState<{ canManage: boolean; specs: PendingItemSpec[] } | null>(null);
 
   const load = useCallback(async () => {
     setState(s => (s === 'ready' ? s : 'loading'));
-    try { const [o, r, dp] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list(), wmsCatalogService.duplicates().catch(() => null)]); setOv(o); setReqs(r); setDupes(dp); setState('ready'); }
+    try {
+      const [o, r, dp, co, sq] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list(), wmsCatalogService.duplicates().catch(() => null),
+        wmsCatalogService.createOptions().catch(() => null), itemSpecService.pending().catch(() => null)]);
+      setOv(o); setReqs(r); setDupes(dp); setCanCreate(Boolean(co?.canCreate)); setCanEdit(Boolean(co?.canEdit)); setSpecQ(sq); setState('ready');
+    }
     catch (e) { setMessage(catalogErrorMessage(e, 'Chưa tải được danh mục.')); setState('error'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -277,6 +303,7 @@ export const CatalogView: React.FC = () => {
   const tiles: Array<{ k: Queue; label: string; icon: React.ElementType; value: number; hint: string; tone: string; ic: string; blink?: boolean }> = [
     { k: 'all', label: 'Tất cả mã', icon: Boxes, value: items.length, hint: `${items.filter(i => qtyOf(i.id) > 0).length} mã đang có tồn`, tone: 'text-leaf-700 dark:text-leaf-300', ic: 'bg-leaf-600' },
     { k: 'requests', label: 'Đề xuất chờ cấp mã', icon: Hash, value: pending.length, hint: pending.length ? `cũ nhất ${Math.max(...pending.map(r => Math.floor((Date.parse(today) - Date.parse(String(r.createdAt).slice(0, 10))) / 864e5)))} ngày` : 'không còn', tone: 'text-rose-700 dark:text-rose-300', ic: 'bg-rose-500', blink: pending.length > 0 },
+    { k: 'specs', label: 'Quy cách chờ rà', icon: ListChecks, value: specQ?.specs.length || 0, hint: specQ ? `${specQ.specs.filter(s => specSizeConflict(s.itemName, s.name)).length} có thể là vật tư khác` : 'chưa tải được', tone: 'text-teal-700 dark:text-teal-300', ic: 'bg-teal-600' },
     { k: 'dupes', label: 'Có thể trùng', icon: CopyCheck, value: openDupes.length, hint: dupes ? `${openDupes.filter(g => g.verdict.v === 'dup').length} trùng rõ · ${openDupes.filter(g => g.verdict.v !== 'dup').length} cần xem` : 'chưa tải được', tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'mode', label: 'Cần đặt cách quản lý', icon: Tags, value: modeCands.length, hint: 'bê tông, Base, dầu, dịch vụ…', tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'renames', label: 'Đổi tên khi đã có chứng từ', icon: PencilLine, value: risky.length, hint: `trên ${(ov?.renames || []).length} lần đổi tên`, tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
@@ -295,7 +322,8 @@ export const CatalogView: React.FC = () => {
   const selReq = reqs.find(r => r.id === sel);
   const selRename = sel?.startsWith('rn:') ? (ov.renames[+sel.slice(3)] || null) : null;
   const selDup = sel?.startsWith('dup:') ? groups.find(g => g.key === sel.slice(4)) || null : null;
-  const selItem = !selReq && !selRename && !selDup && sel && !sel.startsWith('dup:') ? sel : null;
+  const selSpec = sel?.startsWith('spec:') ? (specQ?.specs.find(s => s.id === sel.slice(5)) || null) : null;
+  const selItem = !selReq && !selRename && !selDup && sel && !sel.startsWith('dup:') && !sel.startsWith('spec:') ? sel : null;
   const pickedIds = Object.keys(picked).filter(k => picked[k]);
 
   const rowBtn = (id: string, title: React.ReactNode, sub: React.ReactNode, badge?: React.ReactNode, pre?: React.ReactNode) =>
@@ -317,6 +345,11 @@ export const CatalogView: React.FC = () => {
       <span className="w-full text-xs text-muted-foreground">{allList.length} mã</span></div>)
     : queue === 'requests' ? box(pending.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn đề xuất chờ cấp mã.</p>
       : <ul className="divide-y divide-border">{pending.map(r => rowBtn(r.id, r.proposedName, `${r.code} · ${r.requestedByName || '—'} · ${r.proposedUnit || ''}`, <Badge className={`${BAD} overdue-blink`}>{dateVi(r.createdAt)}</Badge>))}</ul>)
+    : queue === 'specs' ? box(!specQ ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Chưa tải được quy cách chờ rà. Bấm Làm mới.</p>
+      : specQ.specs.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn quy cách mới chờ rà.</p>
+      : <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">{specQ.specs.map(s => rowBtn(`spec:${s.id}`, s.name, `${s.sku} · ${s.itemName} · ${SPEC_SOURCE_LABELS[s.source]}${s.createdByName ? ` · ${s.createdByName}` : ''}`,
+        specSizeConflict(s.itemName, s.name) ? <Badge className={WARN}>khác kích thước?</Badge> : <Badge className={TEAL}>mới</Badge>))}</ul>,
+      <p className="border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">Quy cách Mua hàng / thủ kho gõ mới trên chứng từ. Giữ, sửa chữ, gộp vào quy cách có sẵn, hoặc ngừng dùng (là ghi chú / vật tư khác).</p>)
     : queue === 'dupes' ? box(!dupes ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Chưa tải được danh sách mã trùng. Bấm Làm mới.</p>
       : <>{openDupes.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn nhóm mã nào có thể trùng.</p>
         : <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">{openDupes.map(g => rowBtn(`dup:${g.key}`, suggestKeep(g).name, g.items.map(i => `${i.sku} (${i.unit})`).join(' · '),
@@ -335,13 +368,20 @@ export const CatalogView: React.FC = () => {
 
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center gap-2">
-      <p className="mr-auto text-sm text-muted-foreground">Một cửa cấp mã. Không xóa mã — chỉ <b>Ngừng dùng</b>.{!canIssue && ' Bạn có thể đề xuất mã mới; người có quyền Cấp mã xử lý.'}</p>
-      {ov.can.request && <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => setNewCode(true)}><Hash size={15} />Đề xuất mã mới</button>}
+      <p className="mr-auto text-sm text-muted-foreground">Một cửa cấp mã. Không xóa mã — chỉ <b>Ngừng dùng</b>.{canCreate ? ' Thiếu mã thì tạo ngay, không cần đề xuất.' : ' Bạn có thể đề xuất mã mới; người có quyền Cấp mã xử lý.'}</p>
+      {canCreate ? <button type="button" className={primaryBtn} onClick={() => setQuickCreate(true)}><Plus size={15} />Tạo mã mới</button>
+        : ov.can.request && <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => setNewCode(true)}><Hash size={15} />Đề xuất mã mới</button>}
       <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => void load()}><RefreshCw size={15} />Làm mới</button>
     </div>
     <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-1">{tiles.map(x => <Tile key={x.k} active={queue === x.k} onClick={() => { setQueue(x.k); setSel(null); }} icon={x.icon} label={x.label} value={x.value} hint={x.hint} tone={x.tone} ic={x.ic} blink={x.blink && queue !== x.k} />)}</div>
     <Split open={!!sel} selKey={sel} list={list}
-      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} onChanged={changed} onBack={() => setSel(null)} onOpen={id => { setQueue('all'); setSel(id); }} />
+      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} canEdit={canEdit} onChanged={changed} onBack={() => setSel(null)} onOpen={id => { setQueue('all'); setSel(id); }} />
+        : selSpec ? <Panel onBack={() => setSel(null)} head={<div><p className="text-xs text-muted-foreground">{selSpec.sku} · quy cách chờ rà</p><h2 className={`text-lg ${ENT}`}>{selSpec.itemName}</h2></div>}
+          foot={<button type="button" className={secondaryBtn} onClick={() => { setQueue('all'); setSel(selSpec.itemId); }}>Mở mã {selSpec.sku}</button>}>
+          <ItemSpecsSection key={selSpec.itemId} itemId={selSpec.itemId} itemName={selSpec.itemName} unit={selSpec.unit} focusId={selSpec.id}
+            onChanged={() => void itemSpecService.pending().then(sq => { setSpecQ(sq); if (!sq.specs.some(x => x.id === selSpec.id)) {
+              const next = sq.specs.find(x => x.itemId === selSpec.itemId) || sq.specs[0]; setSel(next ? `spec:${next.id}` : null); } }).catch(() => undefined)} />
+        </Panel>
         : selDup ? <CatalogMergePanel key={selDup.key} group={selDup} canMerge={!!dupes?.can.merge} onBack={() => setSel(null)} onOpenItem={id => { setQueue('all'); setSel(id); }}
           onDone={ids => { setSel(null); changed(ids); }} />
         : selReq ? <RequestDetail key={selReq.id} req={selReq} items={items} canIssue={canIssue} onDone={ids => { setSel(null); changed(ids); }} onBack={() => setSel(null)} />
@@ -365,5 +405,10 @@ export const CatalogView: React.FC = () => {
       })()}>Đặt “{INVENTORY_MODE_LABELS[m]}”</button>)}
     </div>}
     {newCode && <NewCodeDrawer onClose={() => setNewCode(false)} onCreated={changed} />}
+    {quickCreate && <QuickCreateItemDialog initialName={search.trim()} isSkuTaken={sku => skuTakenIn(items, sku)}
+      findSimilar={name => similarCatalogItems(items.filter(i => i.status !== 'retired'), name, 5).map(s => s.item)}
+      useExistingLabel="Mở mã này" onUseExisting={item => { setQuickCreate(false); setQueue('all'); setSel(item.id); }}
+      onClose={() => setQuickCreate(false)}
+      onCreated={item => { setQuickCreate(false); changed([item.id]); setQueue('all'); setSel(item.id); }} />}
   </div>;
 };

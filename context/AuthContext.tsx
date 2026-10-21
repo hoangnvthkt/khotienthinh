@@ -6,13 +6,15 @@ import React, {
   useMemo,
   useReducer,
   useRef,
+  useState,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Navigate } from 'react-router-dom';
-import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
+import { AlertTriangle, LogOut, RefreshCw, WifiOff } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
 import { clearAppOwnedAuthStorage } from '../lib/authStorage';
+import { loadSignatureUrlForUser } from '../lib/signatureService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { userActivityService } from '../lib/userActivityService';
 import {
@@ -29,6 +31,7 @@ import {
   authReducer,
   authenticateMockUser,
   createInitialAuthState,
+  isTransientAuthFailure,
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
@@ -50,7 +53,8 @@ export interface AuthContextValue {
   user: User | null;
   error: AuthFailure | null;
   login(email: string, password: string): Promise<User>;
-  logout(): Promise<void>;
+  /** everywhere: thoát cả các thiết bị khác của người dùng (mất điện thoại, nghi lộ mật khẩu). */
+  logout(options?: { everywhere?: boolean }): Promise<void>;
   retry(): Promise<void>;
   refreshProfile(): Promise<User>;
 }
@@ -121,34 +125,27 @@ const authGateway: AuthProfileGateway = {
     if (!data) throw new Error('Supabase did not return an authorization snapshot');
     return data;
   },
-  loadSignatureUrl: async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_signatures')
-        .select('image_path')
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (error || !data?.image_path) return undefined;
-      const { data: publicUrlData } = supabase.storage
-        .from('workflow-templates')
-        .getPublicUrl(data.image_path);
-      return publicUrlData?.publicUrl || undefined;
-    } catch {
-      return undefined;
-    }
-  },
+  // Signed URL ngắn hạn qua Storage RLS (bucket riêng tư; getPublicUrl không còn mở được).
+  loadSignatureUrl: async (userId) => loadSignatureUrlForUser(userId),
 };
 
 const toAuthFailure = (error: unknown): AuthFailure => {
-  if (error instanceof AuthResolutionError) return error.failure;
-  return {
-    code: 'session_verification_failed',
-    message: error instanceof Error
-      ? error.message
-      : 'Không thể xác minh phiên đăng nhập. Vui lòng thử lại.',
-    cause: error,
-  };
+  const failure: AuthFailure = error instanceof AuthResolutionError
+    ? error.failure
+    : {
+      code: 'session_verification_failed',
+      message: error instanceof Error
+        ? error.message
+        : 'Không thể xác minh phiên đăng nhập. Vui lòng thử lại.',
+      cause: error,
+    };
+  return isTransientAuthFailure(failure)
+    ? { ...failure, transient: true, message: 'Vioo tự kết nối lại khi có mạng.' }
+    : failure;
 };
+
+// Hết mạng lúc xác minh lại: giữ phiên, thử lại mỗi 30 giây (và khi có mạng / mở lại app).
+const TRANSIENT_RETRY_MS = 30_000;
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -158,6 +155,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const attemptsRef = useRef(new AuthAttemptCoordinator());
   const authEpochRef = useRef(new AuthoritativeAuthEpoch());
   const profileRefreshesRef = useRef(new KeyedSingleFlightCoordinator<string, User>());
+  // Lúc mở ứng dụng, sự kiện INITIAL_SESSION và loadCurrentSession cùng xác minh một token → trước đây tải hồ sơ +
+  // snapshot phân quyền 2 lần (đo 12/10/2026: 2 × ~1,4 s). Cùng token thì dùng chung một lượt xác minh; mỗi lượt
+  // gọi vẫn tự kiểm attempt/epoch của mình. Bộ riêng (không dùng profileRefreshesRef) vì refreshProfile gọi lại
+  // commitCandidateSession trong chính lượt của nó.
+  const sessionVerificationsRef = useRef(new KeyedSingleFlightCoordinator<string, User>());
+  const [needsRevalidation, setNeedsRevalidation] = useState(false);
 
   const dispatchAuth = useCallback((action: Parameters<typeof authReducer>[1]) => {
     stateRef.current = authReducer(stateRef.current, action);
@@ -190,7 +193,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (showLoading) dispatchAuth({ type: 'VERIFYING_SESSION', session });
     try {
-      const user = await resolveCandidateSession(session, authGateway);
+      const user = await sessionVerificationsRef.current.run(
+        session.access_token,
+        () => resolveCandidateSession(session, authGateway),
+      );
       if (
         !attemptsRef.current.isCurrent(attempt)
         || !authEpochRef.current.canResolve(authEpoch)
@@ -198,14 +204,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Auth verification was superseded by a newer auth event');
       }
       dispatchAuth({ type: 'AUTHENTICATED', session, user });
+      setNeedsRevalidation(false);
       return user;
     } catch (error) {
       if (
         attemptsRef.current.isCurrent(attempt)
         && authEpochRef.current.canResolve(authEpoch)
       ) {
-        handleRemoteAuthLoss();
-        dispatchAuth({ type: 'FAILED', error: toAuthFailure(error) });
+        const failure = toAuthFailure(error);
+        const current = stateRef.current;
+        if (
+          failure.transient
+          && current.status === 'authenticated'
+          && current.user
+          && current.user.authId === session.user.id
+        ) {
+          // Đã đăng nhập, chỉ mất mạng khi xác minh lại: giữ người dùng, nhận token mới, thử lại sau.
+          dispatchAuth({ type: 'AUTHENTICATED', session, user: current.user });
+          setNeedsRevalidation(true);
+          return current.user;
+        }
+        if (!failure.transient) handleRemoteAuthLoss();
+        dispatchAuth({ type: 'FAILED', error: failure });
       }
       throw error;
     }
@@ -238,8 +258,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       if (authEpochRef.current.isVersion(requestEpoch)) {
         attemptsRef.current.begin();
-        handleRemoteAuthLoss();
-        dispatchAuth({ type: 'FAILED', error: toAuthFailure(error) });
+        const failure = toAuthFailure(error);
+        if (!failure.transient) handleRemoteAuthLoss();
+        dispatchAuth({ type: 'FAILED', error: failure });
       }
     }
   }, [commitCandidateSession, dispatchAuth, handleRemoteAuthLoss]);
@@ -318,7 +339,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return commitCandidateSession(data.session, attempt, authEpoch);
   }, [commitCandidateSession, dispatchAuth]);
 
-  const logout = useCallback(async (): Promise<void> => {
+  const logout = useCallback(async (options?: { everywhere?: boolean }): Promise<void> => {
     const authState = stateRef.current;
     const shouldEndServerSession = shouldEndTelemetrySessionOnServer(
       authState.status,
@@ -337,7 +358,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut: async () => {
           if (!isSupabaseConfigured) return;
           await signOutAndConfirmLocalSessionCleared({
-            signOut: () => supabase.auth.signOut(),
+            // Mặc định chỉ thoát thiết bị này; "mọi thiết bị" thu hồi mọi phiên trên máy chủ.
+            signOut: () => supabase.auth.signOut({ scope: options?.everywhere ? 'global' : 'local' }),
             getSession: () => supabase.auth.getSession(),
           });
         },
@@ -434,6 +456,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [refreshProfile, state.status, state.user?.id]);
 
+  // Mất mạng lúc xác minh: tự thử lại khi có mạng, khi mở lại app, hoặc định kỳ.
+  const transientError = state.status === 'error' && state.error?.transient === true;
+  const backgroundRetry = state.status === 'authenticated' && needsRevalidation;
+  useEffect(() => {
+    if (!isSupabaseConfigured || (!transientError && !backgroundRetry)) return undefined;
+    const retryNow = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (transientError) void loadCurrentSession();
+      else void refreshProfile().catch(() => undefined);
+    };
+    window.addEventListener('online', retryNow);
+    document.addEventListener('visibilitychange', retryNow);
+    const intervalId = window.setInterval(retryNow, TRANSIENT_RETRY_MS);
+    return () => {
+      window.removeEventListener('online', retryNow);
+      document.removeEventListener('visibilitychange', retryNow);
+      window.clearInterval(intervalId);
+    };
+  }, [backgroundRetry, loadCurrentSession, refreshProfile, transientError]);
+
   const value = useMemo<AuthContextValue>(() => ({
     status: state.status,
     session: state.session,
@@ -461,8 +503,12 @@ export const AuthRecoveryScreen: React.FC<{
 }> = ({ error, retry, logout }) => (
   <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 dark:bg-slate-950">
     <div className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-xl dark:border-amber-900/60 dark:bg-slate-900">
-      <AlertTriangle className="mx-auto mb-4 text-amber-500" size={42} />
-      <h1 className="text-xl font-black text-slate-900 dark:text-white">Không thể mở hồ sơ người dùng</h1>
+      {error?.transient
+        ? <WifiOff className="mx-auto mb-4 text-amber-500" size={42} />
+        : <AlertTriangle className="mx-auto mb-4 text-amber-500" size={42} />}
+      <h1 className="text-xl font-black text-slate-900 dark:text-white">
+        {error?.transient ? 'Đang chờ có mạng' : 'Không thể mở hồ sơ người dùng'}
+      </h1>
       <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
         {error?.message || 'Phiên đăng nhập chưa liên kết với một hồ sơ đang hoạt động.'}
       </p>

@@ -66,7 +66,7 @@ describe('Authorization V2 legacy runtime removal', () => {
   it('authenticates every AI action from JWT before canonical permission checks', () => {
     expect(aiAssistant).not.toContain('resolveActor(request, req.userId)');
     expect(aiAssistant).toMatch(
-      /req = await request\.json\(\)[\s\S]*?const authorization = await requireAiAssistantUse\(request\);[\s\S]*?if \(req\.action === 'feedback'\)/,
+      /req = await request\.json\(\)[\s\S]*?const authorization = await requireAiAssistantUse\(request\);[\s\S]*?if \(req\.action === 'estimate_suggestion'\)/,
     );
   });
 });

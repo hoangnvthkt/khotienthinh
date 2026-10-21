@@ -19,6 +19,7 @@ import KanbanBoard from '../../components/KanbanBoard';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
+import { downloadSignatureImage } from '../../lib/signatureService';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
@@ -63,6 +64,7 @@ import WorkflowTemplateGroupList from '../../components/workflow/WorkflowTemplat
 import WorkflowInstanceSummaryPanel from '../../components/workflow/WorkflowInstanceSummaryPanel';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
+import { WORKFLOW_CLONE_PARAM, buildWorkflowCloneDraft, canCloneWorkflowInstance } from '../../lib/workflowClone';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Bản nháp', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', icon: Edit2 },
@@ -300,7 +302,7 @@ export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, fie
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { templates, categories, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
+    const { templates, categories, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceById, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('pending');
@@ -334,6 +336,7 @@ const WorkflowInstances: React.FC = () => {
     const [newNote, setNewNote] = useState('');
     const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
     const [initialAssigneeIds, setInitialAssigneeIds] = useState<string[]>([]);
+    const [cloneFromCode, setCloneFromCode] = useState<string | null>(null);
 
     const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
     const selectedCustomFields: WorkflowCustomField[] = selectedTemplate?.customFields || [];
@@ -638,8 +641,50 @@ const WorkflowInstances: React.FC = () => {
         setNewNote('');
         setCustomFormData({});
         setInitialAssigneeIds([]);
+        setCloneFromCode(null);
         setShowCreateModal(true);
     };
+
+    // "Nhân bản" from a ticket lands here with ?clone=<id>: open Tạo phiếu pre-filled, title + " (copy)".
+    const cloneSourceId = searchParams.get(WORKFLOW_CLONE_PARAM);
+    const cloneFetchRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!cloneSourceId) return;
+        const source = instances.find(i => i.id === cloneSourceId);
+        if (!source) {
+            // Opened by link and the ticket is outside the loaded list: fetch it once.
+            if (cloneFetchRef.current !== cloneSourceId) {
+                cloneFetchRef.current = cloneSourceId;
+                void loadInstanceById(cloneSourceId);
+            }
+            return;
+        }
+        if (templates.length === 0) return;
+        const clearParam = () => setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete(WORKFLOW_CLONE_PARAM);
+            return next;
+        }, { replace: true });
+        if (!canCloneWorkflowInstance(templateById.get(source.templateId))) {
+            clearParam();
+            showToast('error', 'Quy trình của phiếu này đã tắt hoặc thuộc module khác, không nhân bản được.');
+            return;
+        }
+        let cancelled = false;
+        void ensureInstanceFormData(source).then(full => {
+            if (cancelled) return;
+            const draft = buildWorkflowCloneDraft(full);
+            setSelectedTemplateId(draft.templateId);
+            setNewTitle(draft.title);
+            setNewNote(draft.note);
+            setCustomFormData(draft.formData);
+            setInitialAssigneeIds([]);
+            setCloneFromCode(source.code || source.title);
+            setShowCreateModal(true);
+            clearParam();
+        });
+        return () => { cancelled = true; };
+    }, [cloneSourceId, instances, templates.length]);
 
     const toggleInitialAssignee = (candidateId: string) => {
         setInitialAssigneeIds(previous => {
@@ -663,26 +708,27 @@ const WorkflowInstances: React.FC = () => {
             try { ImageModule = (await import('open-docxtemplater-image-module')).default; } catch { }
 
             const imageMap: Record<string, ArrayBuffer> = {};
+            // Tải thẳng từ Storage qua RLS: người cùng xử lý phiếu được đọc chữ ký của nhau;
+            // mỗi người chỉ tải một lần dù ký nhiều bước.
+            const signatureCache = new Map<string, ArrayBuffer | null>();
+            const signatureOf = async (userId: string) => {
+                if (!signatureCache.has(userId)) signatureCache.set(userId, await downloadSignatureImage(userId));
+                return signatureCache.get(userId) ?? null;
+            };
             // Collect approver signatures
             const instanceLogs = logs.filter(l => l.instanceId === instance.id);
             for (const log of instanceLogs) {
                 const node = nodes.find(n => n.id === log.nodeId);
                 if (!node) continue;
-                const actor = users.find(u => u.id === log.actedBy);
-                if (!actor?.signatureUrl) continue;
                 const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
-                try {
-                    const sigRes = await fetch(actor.signatureUrl);
-                    if (sigRes.ok) imageMap[`signature_${safeLabel}`] = await sigRes.arrayBuffer();
-                } catch { }
+                const signature = await signatureOf(log.actedBy);
+                if (signature) imageMap[`signature_${safeLabel}`] = signature;
             }
             // Creator signature
             const creator = users.find(u => u.id === instance.createdBy);
-            if (creator?.signatureUrl) {
-                try {
-                    const sigRes = await fetch(creator.signatureUrl);
-                    if (sigRes.ok) imageMap['signature_creator'] = await sigRes.arrayBuffer();
-                } catch { }
+            if (instance.createdBy) {
+                const signature = await signatureOf(instance.createdBy);
+                if (signature) imageMap['signature_creator'] = signature;
             }
 
             // 3. Parse with PizZip + Docxtemplater
@@ -1352,7 +1398,7 @@ const WorkflowInstances: React.FC = () => {
 
                         <div className="wf-scroll min-h-0 flex-1 overflow-y-auto">
                             {viewMode === 'list' ? (
-                                <div className="mx-auto max-w-7xl space-y-3 px-4 py-4 md:px-6">
+                                <div className="w-full space-y-3 px-4 py-4 md:px-6">
                                     <WorkflowKpiStrip values={kpiValues} onWaitingClick={() => goToNav('pending')} />
 
                                     <div className="flex flex-wrap items-center gap-1.5">
@@ -1475,7 +1521,7 @@ const WorkflowInstances: React.FC = () => {
                     <div className="glass-card bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 w-full sm:w-[75vw] xl:max-w-[1050px] 2xl:max-w-[1200px] shadow-2xl flex flex-col h-[92dvh] sm:h-auto max-h-[92dvh] sm:max-h-[90vh] overflow-hidden relative select-text animate-fade-in">
                         <div className="mobile-sheet-handle sm:hidden" />
                         <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white mb-3 sm:mb-4 flex items-center gap-2">
-                            <Send size={18} className="text-accent" /> Tạo phiếu mới
+                            <Send size={18} className="text-accent" /> {cloneFromCode ? `Nhân bản ${cloneFromCode}` : 'Tạo phiếu mới'}
                         </h2>
                         <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>

@@ -11,6 +11,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { useApp } from '../../context/AppContext';
 import { canManageContracts } from '../../lib/permissions/contractPermissions';
 import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
+import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 
 const CLASSIFICATION_OPTIONS: Array<{ value: PartnerClassification; label: string }> = [
   { value: 'owner', label: 'Chủ đầu tư' },
@@ -109,6 +110,7 @@ const BusinessPartners: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  useSearchParamPrefill(setSearch);
   const [filter, setFilter] = useState<PartnerClassification | ''>('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<BusinessPartner | null>(null);

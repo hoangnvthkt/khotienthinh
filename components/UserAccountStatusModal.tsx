@@ -121,7 +121,6 @@ const UserAccountStatusModal: React.FC<UserAccountStatusModalProps> = ({
             {preview && (
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div><dt>Direct grant</dt><dd className="font-bold text-slate-800">{preview.directGrants}</dd></div>
-                <div><dt>Legacy module</dt><dd className="font-bold text-slate-800">{preview.legacyModules}</dd></div>
                 <div><dt>Phân công dự án</dt><dd className="font-bold text-slate-800">{preview.projectStaffAssignments}</dd></div>
                 <div><dt>Trách nhiệm cần phân công lại</dt><dd className="font-bold text-amber-700">{preview.needsReassignment}</dd></div>
               </dl>

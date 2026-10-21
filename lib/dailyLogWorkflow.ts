@@ -53,6 +53,8 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   SUMMARY_UPDATED_AT_CONFLICT: 'Bản tổng hợp vừa thay đổi. Hãy tải lại dữ liệu rồi thử lại.',
   VERIFIED_SOURCE_IMMUTABLE: 'Phiếu đã tham gia hồ sơ được xác nhận. Hãy tạo bản điều chỉnh, không sửa nguồn đã duyệt.',
   DAILY_LOG_SOURCE_AREA_IMMUTABLE: 'Không đổi khu vực của phiếu đã lập. Hãy tạo phiếu riêng cho khu vực khác.',
+  DELAY_REASONS_INVALID: 'Lý do chậm chưa hợp lệ: chọn lại lý do trong danh mục và bên chịu trách nhiệm cho từng việc.',
+  DAILY_LOG_ALREADY_PUBLISHED: 'Nhật ký này đã được duyệt, không sửa lý do chậm được nữa.',
   DAILY_LOG_APPROVE_AND_PUBLISH_REQUIRED: 'Bạn cần cả quyền "Duyệt" và "Công bố tiến độ" trong Room Nhật ký của dự án. Liên hệ quản trị để được cấp.',
   DAILY_LOG_APPROVAL_ASSIGNMENT_REQUIRED: 'Bản tổng hợp này được gửi cho CHT khác duyệt. Chỉ người được chọn mới duyệt được.',
   DAILY_LOG_SUMMARIZE_AND_SUBMIT_REQUIRED: 'Bạn cần quyền "Kiểm tra" và "Gửi" trong Room Nhật ký để gửi bản tổng hợp.',

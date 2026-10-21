@@ -40,7 +40,6 @@ describe('buildUserAccountLifecyclePayload', () => {
       operationAction: 'DISABLE',
       hasAuthIdentity: true,
       directGrants: '2',
-      legacyModules: 1,
       projectStaffAssignments: 3,
       responsibilitySlots: 1,
       runtimeAssignments: 4,

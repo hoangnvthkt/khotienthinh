@@ -12,6 +12,8 @@ import {
   authReducer,
   authenticateMockUser,
   createInitialAuthState,
+  isTransientAuthCause,
+  isTransientAuthFailure,
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
@@ -343,6 +345,41 @@ describe('fail-closed auth state', () => {
       signOut: vi.fn(async () => ({ error: null })),
       getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
     })).resolves.toBeUndefined();
+  });
+
+  it('treats only unreachable-server verification failures as transient', () => {
+    expect(isTransientAuthCause({ name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' })).toBe(true);
+    expect(isTransientAuthCause({ message: 'TypeError: Load failed', code: '' })).toBe(true);
+    expect(isTransientAuthCause({ status: 503, message: 'Service Unavailable' })).toBe(true);
+    expect(isTransientAuthCause(new Error('supabase refresh lock timeout'))).toBe(true);
+    expect(isTransientAuthCause({ message: 'anything' }, false)).toBe(true);
+
+    expect(isTransientAuthCause({ name: 'AuthApiError', status: 401, message: 'invalid JWT' })).toBe(false);
+    expect(isTransientAuthCause({ status: 403, message: 'network policy' }, false)).toBe(false);
+    expect(isTransientAuthCause({ code: 'PGRST301', message: 'JWT expired' })).toBe(false);
+    expect(isTransientAuthCause(new Error('Supabase did not return an authorization snapshot'))).toBe(false);
+
+    const offline = { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' };
+    expect(isTransientAuthFailure({ code: 'session_verification_failed', message: '', cause: offline })).toBe(true);
+    expect(isTransientAuthFailure({ code: 'profile_load_failed', message: '', cause: offline })).toBe(true);
+    for (const code of ['profile_missing', 'profile_inactive', 'profile_mismatch', 'session_user_mismatch', 'invalid_profile_id'] as const) {
+      expect(isTransientAuthFailure({ code, message: '', cause: offline }), code).toBe(false);
+    }
+  });
+
+  it('keeps the session on network loss, signs out only this device and never auto-logs out on idle', () => {
+    const authSource = readFileSync(join(process.cwd(), 'context', 'AuthContext.tsx'), 'utf8');
+    const layoutSource = readFileSync(join(process.cwd(), 'components', 'Layout.tsx'), 'utf8');
+
+    expect(authSource).toContain("supabase.auth.signOut({ scope: options?.everywhere ? 'global' : 'local' })");
+    expect(authSource).not.toMatch(/auth\.signOut\(\)/);
+    expect(authSource).toContain('if (!failure.transient) handleRemoteAuthLoss();');
+    expect(authSource).toContain("window.addEventListener('online', retryNow);");
+    expect(layoutSource).not.toMatch(/SESSION_TIMEOUT|sessionWarning|logout\(/);
+
+    const accountSource = readFileSync(join(process.cwd(), 'pages', 'settings', 'SettingsAccount.tsx'), 'utf8');
+    expect(accountSource).toContain('await logout({ everywhere: true });');
+    expect(accountSource).toContain("title: 'Đăng xuất mọi thiết bị?'");
   });
 
   it('recognizes only UPDATE or DELETE events for the exact current profile', () => {

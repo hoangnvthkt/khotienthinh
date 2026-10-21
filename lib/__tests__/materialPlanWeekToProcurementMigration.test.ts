@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261009150000_material_plan_week_to_procurement.sql'), 'utf8').toLowerCase();
+const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261024160000_material_plan_week_to_procurement.sql'), 'utf8').toLowerCase();
 
 describe('Chỉ KH vật tư tuần vào Mua hàng', () => {
   it('sends week plans, keeps month plans that already have orders', () => {

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'; import { parseEnv } from 'node:util';
 const e = parseEnv(readFileSync('/Users/admin/khotienthinh/.env', 'utf8'));
 // --migration: nạp thử migration "chỉ KH vật tư tuần vào Mua hàng" trong cùng giao dịch (vẫn rollback).
 const mig = process.argv.includes('--migration')
-  ? readFileSync(new URL('../../../../supabase/migrations/20261009150000_material_plan_week_to_procurement.sql', import.meta.url), 'utf8') : '';
+  ? readFileSync(new URL('../../../../supabase/migrations/20261024160000_material_plan_week_to_procurement.sql', import.meta.url), 'utf8') : '';
 
 const P = 'b4ce0810-2cac-44af-a83f-8bb1a361567a', S = '240ac280-756d-4955-b612-41661e7aedaf';
 const KHOI = 'dfc81157-ecde-4ad1-b9fc-f2938c14e859' /* KS: view/edit/submit */, THANH = 'f16b6505-83d8-438e-b680-5f469f734b91' /* KS */;

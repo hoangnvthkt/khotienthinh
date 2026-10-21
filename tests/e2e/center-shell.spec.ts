@@ -23,7 +23,11 @@ const tiles = (page: Page, widget: string) => page.locator(`[data-widget="${widg
 
 const expectToday = async (page: Page) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
-  await expect(page.getByText("Thứ Tư, 07/10/2026 · 11 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026")).toBeVisible();
+  // Chủ SP 09/10: bỏ dòng ngày / số việc, bỏ dòng hướng dẫn và dòng mô tả trong ô; giữa đầu trang là ô Tìm kiếm.
+  await expect(page.getByText(/việc chờ bạn ·/)).toHaveCount(0);
+  await expect(page.getByText(/Bấm một nút để làm ngay/)).toHaveCount(0);
+  await expect(page.getByText("Đề xuất, quy trình, việc")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Tìm kiếm chức năng, hồ sơ, người, mã phiếu" })).toBeVisible();
   for (const name of WIDGETS) await expect(page.getByRole("heading", { level: 3, name, exact: true })).toBeVisible();
   // Tối đa 4 nút được phép; còn nút khác (thêm / chưa có quyền) → "Xem thêm".
   await expect(tiles(page, "project")).toHaveText(["Lập đề xuất vật tư", "Tạo nhật ký", "Báo cáo ngày", "Xem thêm"]);
@@ -35,19 +39,23 @@ const expectToday = async (page: Page) => {
   await expect(tiles(page, "finance")).toHaveText(["Chi quỹ công trường", "Tài chính dự án", "Xem thêm"]);
   // Ô không còn số liệu công việc.
   await expect(page.locator(".vcc-grid .vcc-stat")).toHaveCount(0);
-  await expect(page.getByText("Lịch: không có chuyến xe hôm nay")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Lịch" }).locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
   // Bấm nút là làm ngay, không rời Center: mở thêm một tab cạnh "Hôm nay" chạy đúng màn của module.
   await tiles(page, "project").filter({ hasText: "Tạo nhật ký" }).click();
   await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Nhật ký" })).toHaveAttribute("aria-selected", "true");
   await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog"}');
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "");
   await page.getByRole("button", { name: "Đóng Nhật ký" }).click();
-  await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
   const locked = page.getByRole("button", { name: "Mở Mua hàng" });
   await expect(locked).toBeDisabled();
   await expect(locked).toHaveAttribute("title", "Bạn chưa có quyền vào module này");
+  // Mở màn module (↗) cũng thành tab mới, không rời Center (chủ SP 10/10).
   await page.getByRole("button", { name: "Mở Dự án" }).click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dự án" })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb"}');
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "");
+  await page.getByRole("button", { name: "Đóng Dự án" }).click();
 };
 
 const inboxOf = (page: Page) => page.getByRole("complementary", { name: "Việc của tôi" });
@@ -80,7 +88,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(page.getByText("Trung tâm điều hành", { exact: true })).toBeVisible();
   const inbox = inboxOf(page);
   await expectInboxLoaded(page);
-  await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".vcc-mnav")).toBeHidden();
   await expectToday(page);
   await expectCalmPage(page);
@@ -101,7 +109,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   // Hồ sơ chưa tách view → trang module chạy ngay trong tab, đúng id (không qua bước "Mở ở màn …").
   await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toHaveAttribute("aria-current", "true");
   await inbox.getByRole("button", { name: /NK 05\/10/ }).click();
-  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "RQ-2026-000061", "NK 05/10"]);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "Bảng điều khiển", "Dòng chảy công việc", "Trợ lý", "RQ-2026-000061", "NK 05/10"]);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("NK 05/10 · Nhật ký 05/10 · Sơn Miền Bắc");
   await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510"}');
   await expect(page.getByText("Hồ sơ này xử lý ở màn")).toHaveCount(0);
@@ -119,7 +127,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await page.getByRole("button", { name: "Đóng NK 05/10" }).click();
   await expect(page.getByRole("tab", { name: "RQ-2026-000061" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Đóng RQ-2026-000061" }).click();
-  await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
 
   // Tôi gửi / Theo dõi không tải ngầm (kể cả khi quay lại cửa sổ); chỉ tải — và tải mới — mỗi lần bấm vào tab.
   const loads = () => page.evaluate(() => (window as unknown as { __vccLoads: Record<string, number> }).__vccLoads);
@@ -196,8 +204,11 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(shownRecord(page)).toContainText('route · {"path":"/work/my?create=1"}');
   await page.getByRole("button", { name: "Đóng Vioo Work" }).click();
 
+  // Nút Trợ lý trên đầu trang mở tab Trợ lý (bản tin), không còn khung "Sắp có".
   await page.getByRole("button", { name: "Trợ lý" }).click();
-  await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "Bản tin hôm nay" })).toBeVisible();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" }).click();
   await page.getByRole("button", { name: "Chuyển nền tối" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectCalmPage(page);
@@ -245,7 +256,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
   // Mặc định theo quyền: thuộc dự án, không phải kế toán / Mua hàng → Dự án trước.
   expect(await order()).toEqual(["project", "hrm", "work", "office", "supply", "finance"]);
 
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await expect(grid).toHaveAttribute("data-editing", "true");
   // Đang tùy chỉnh thì bấm ô không bung thư mục.
   await grid.locator('[data-widget="hrm"] .vcc-whead h3').click();
@@ -267,7 +278,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
   expect(await order()).toEqual(["hrm", "project", "work", "supply", "finance"]);
 
   // Thêm lại ô đã ẩn và về mặc định.
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Hành chính/ }).click();
   await expect(grid.locator("[data-widget]")).toHaveCount(6);
   await page.getByRole("button", { name: "Về mặc định" }).click();
@@ -279,7 +290,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
 test("desktop: customise is locked without the layout permission", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop");
   await page.goto(`${base}?layout=locked`);
-  const button = page.getByRole("button", { name: "Tùy chỉnh" });
+  const button = page.getByRole("button", { name: "Tùy chỉnh ô" });
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("title", /Tùy chỉnh bố cục của tôi/);
 });
@@ -290,7 +301,7 @@ test("desktop: no project / today error", async ({ page }, info) => {
   // Không thuộc dự án → mặc định chỉ Nhân sự, Công việc, Hành chính; ô theo dự án vào "Ô đã ẩn".
   await expect(page.locator(".vcc-grid [data-widget]")).toHaveCount(3);
   await expect(page.getByText("2 ô đang ẩn ·")).toBeVisible();
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Dự án/ }).click();
   await expect(page.getByText("Bạn chưa thuộc dự án nào.")).toBeVisible();
   await page.getByRole("button", { name: "Xong" }).click();
@@ -355,8 +366,10 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await page.keyboard.press("Escape");
   await expect(folder).toHaveCount(0);
 
+  // Trợ lý là tab trong vùng làm việc (bản tin hôm nay), không còn khung "Sắp có".
   await nav.getByRole("tab", { name: "Trợ lý" }).click();
-  await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Bản tin hôm nay" })).toBeVisible();
+  await expect(nav.getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Mở menu ứng dụng" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "menu");
 
@@ -437,7 +450,7 @@ test("desktop: choose which quick actions show on a card (max 4), saved for the 
   await page.reload();
   await expect(tiles(page, "hrm")).toHaveText(["Xin nghỉ phép", "Bảng công của tôi", "Chấm công", "Xem thêm"]);
   // Đổi thứ tự ô sau đó vẫn giữ nút đã chọn.
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByRole("button", { name: "Đưa Nhân sự lên trước" }).click();
   await page.getByRole("button", { name: "Xong" }).click();
   await expect(page.getByText("Đã lưu bố cục")).toBeVisible();
@@ -495,7 +508,7 @@ test("default props settle (no render loop)", async ({ page }, info) => {
   await page.goto(`${base}?defaults=1`);
   if (info.project.name !== "desktop") await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: "Hôm nay" }).click();
   await expect(page.getByRole("group", { name: "Lịch" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Lịch" })).toContainText("việc tới hạn hôm nay");
+  await expect(page.getByRole("group", { name: "Lịch" }).locator(".rdp-today")).toHaveCount(1);
   await page.mouse.move(0, 0);
   await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => undefined))));
   const mutations = await page.evaluate(() => new Promise<number>(resolve => {
@@ -507,54 +520,34 @@ test("default props settle (no render loop)", async ({ page }, info) => {
   expect(mutations).toBe(0);
 });
 
-// Lịch (Popover + Calendar, mode="range"): tuần bắt đầu Thứ Hai, bàn phím của lưới ngày, chọn khoảng → lọc Việc của tôi theo hạn.
-test("calendar date range filters my work by due date", async ({ page }, info) => {
+// Lịch tháng bình thường (chủ SP 09/10): tuần bắt đầu Thứ Hai, hôm nay tô đặc, đổi tháng bằng mũi tên, không lọc việc.
+// Ô Tìm kiếm giữa đầu trang: bấm hoặc gõ ngay → mở Tìm kiếm toàn hệ thống với chữ vừa gõ.
+test("plain month calendar and the search box", async ({ page }, info) => {
   test.skip(info.project.name === "tablet");
   const tag = info.project.name;
   await page.goto(base);
   const nav = page.getByRole("tablist", { name: "Chọn vùng" });
   if (tag !== "desktop") await nav.getByRole("tab", { name: "Hôm nay" }).click();
   const card = page.getByRole("group", { name: "Lịch" });
-  await expect(card).toContainText("việc tới hạn hôm nay");
-  await card.getByRole("button", { name: /Chọn ngày hoặc khoảng ngày/ }).click();
-  const pop = page.getByRole("dialog", { name: "Chọn ngày" });
-  await expect(pop).toBeVisible();
-  // Tuần bắt đầu Thứ Hai (locale vi).
-  const weekdays = await pop.locator(".rdp-weekday").allTextContents();
+  const weekdays = await card.locator(".rdp-weekday").allTextContents();
   expect(weekdays[0].toLowerCase()).toMatch(/^(t2|th 2|thứ 2|thứ hai)/);
-  // Ngày có việc tới hạn có chấm.
-  await expect(pop.locator(".vcc-day-due").first()).toBeVisible();
-  // Bàn phím: focus đang ở hôm nay (07/10) → → = 08/10; ↓ = 15/10; PageDown sang tháng 11, PageUp về tháng 10.
-  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.locator(":focus")).toHaveAttribute("aria-label", /8.*10.*2026|2026.*10.*8|08\/10/i);
-  await page.keyboard.press("PageDown");
-  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 11/2026");
-  await page.keyboard.press("PageUp");
-  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
-  // Chọn khoảng 07/10 → 09/10: hai đầu range_start / range_end, giữa range_middle.
-  await pop.locator('[data-day="2026-10-07"] button').click();
-  await pop.locator('[data-day="2026-10-09"] button').click();
-  await expect(pop.locator('[data-day="2026-10-07"]')).toHaveClass(/rdp-range_start/);
-  await expect(pop.locator('[data-day="2026-10-08"]')).toHaveClass(/rdp-range_middle/);
-  await expect(pop.locator('[data-day="2026-10-09"]')).toHaveClass(/rdp-range_end/);
-  await expect(pop).toContainText("07/10 – 09/10/2026");
+  await expect(card.locator(".rdp-today")).toHaveText("7");
+  await expect(card.locator("button.rdp-day_button")).toHaveCount(0);
+  await card.getByRole("button", { name: "Đến tháng tiếp theo" }).click();
+  await expect(card.locator(".rdp-month_caption")).toHaveText("Tháng 11/2026");
+  await card.getByRole("button", { name: "Về hôm nay" }).click();
+  await expect(card.locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
+  await expect(card.getByRole("button", { name: "Về hôm nay" })).toHaveCount(0);
+
+  await page.evaluate(() => { (window as unknown as { __opened: string[] }).__opened = [];
+    window.addEventListener("vioo:open-search", event => (window as unknown as { __opened: string[] }).__opened.push((event as CustomEvent).detail?.query ?? "")); });
+  const search = page.getByRole("button", { name: "Tìm kiếm chức năng, hồ sơ, người, mã phiếu" });
+  await search.click();
+  await search.press("p");
+  expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual(["", "p"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expectCalmPage(page);
-  await page.screenshot({ path: `${shots}/${tag}-calendar.png` });
-  await pop.getByRole("button", { name: "Xem việc" }).click();
-  await expect(pop).toHaveCount(0);
-  const inbox = inboxOf(page);
-  await expect(inbox).toBeVisible();
-  const bar = inbox.getByRole("status").filter({ hasText: "Hạn 07/10 – 09/10/2026" });
-  await expect(bar).toBeVisible();
-  // Chỉ còn việc có hạn trong 07–09/10 (giờ Việt Nam); việc không có hạn / ngoài khoảng bị ẩn.
-  await expect(inbox.getByRole("button", { name: /MR-2026-2688/ })).toBeVisible();
-  await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toBeVisible();
-  await expect(inbox.getByRole("button", { name: /PO-116/ })).toHaveCount(0);
-  await expect(inbox.getByRole("button", { name: /Bù công 03\/10/ })).toHaveCount(0);
-  await page.screenshot({ path: `${shots}/${tag}-calendar-filter.png` });
-  await bar.getByRole("button", { name: "Bỏ lọc theo hạn" }).click();
-  await expect(bar).toHaveCount(0);
+  await page.screenshot({ path: `${shots}/${tag}-today-hero.png` });
 });
 
 // Rail của giao diện mới: bấm app → bung bảng chức năng bên trong; app một chức năng mở thẳng; kéo thả đổi chỗ app.
@@ -585,4 +578,405 @@ test("rail: app opens its functions, single-function app navigates, apps can be 
   // Kéo "Quy trình" lên trước "Dự án".
   await rail.getByRole("button", { name: /^Quy trình/ }).dragTo(rail.getByRole("button", { name: /^Dự án/ }));
   expect((await apps()).slice(0, 3)).toEqual(["Quy trình", "Dự án", "Yêu cầu"]);
+});
+
+// Bảng điều khiển (chủ SP 09/10): bảng theo vai trò, mọi con số bấm được — bấm xuống (ngăn các dòng tạo nên số) và
+// bấm sang (mở màn gốc thành tab của Center). Dữ liệu minh họa ở tests/center/dashboardFixture.ts.
+const openDashboards = async (page: Page, query = "") => {
+  await page.goto(`${base}?inbox=empty${query}`);
+  if (page.viewportSize()!.width < 768) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Bảng điều khiển" }).click();
+};
+
+test("dashboards: four boards for management, drill-down and drill-through", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  const tag = info.project.name;
+  await openDashboards(page);
+  const boards = page.getByRole("tablist", { name: "Chọn bảng điều khiển" });
+  await expect(boards.getByRole("tab")).toHaveText(["Tiến độ dự án", "Dòng tiền & chi phí", "Vật tư", "Thu chi & công nợ"]);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Quản lý tiến độ đa dự án");
+  await expect(page.locator("article.vdb-proj")).toHaveCount(8);
+  // Dự án có vấn đề lên trước; lọc theo tình trạng.
+  await expect(page.locator("article.vdb-proj").first()).toHaveAttribute("aria-label", "Kho thép Hòa Phát Hưng Yên");
+  await page.getByRole("group", { name: "Lọc theo tình trạng" }).getByRole("button", { name: /Chậm trễ/ }).click();
+  await expect(page.locator("article.vdb-proj")).toHaveCount(1);
+  await expect(page.locator("article.vdb-proj")).toHaveAttribute("aria-label", "Nhà xưởng DA29 KCN Quế Võ");
+  // Dự án không được xem tài chính: "—", không phải 0.
+  await page.getByRole("group", { name: "Lọc theo tình trạng" }).getByRole("button", { name: /Tất cả/ }).click();
+  await expect(page.getByRole("article", { name: "Cải tạo văn phòng Hà Nội" }).locator(".vdb-proj-money")).toContainText("—");
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-dash-portfolio.png` });
+
+  // Dữ liệu còn thiếu: nhắc theo bảng, bấm dòng mở đúng màn cần bổ sung (DA29 chưa chốt baseline → Tiến độ).
+  await page.getByRole("button", { name: "2 dự án thiếu dữ liệu" }).click();
+  const gapsDrawer = page.getByRole("dialog", { name: "Dữ liệu còn thiếu" });
+  await expect(gapsDrawer.getByRole("row", { name: /QL1A/ })).toContainText("Tọa độ công trường");
+  await gapsDrawer.getByRole("row", { name: /DA29/ }).click();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: /Tiến độ/ })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Bảng điều khiển" }).click();
+
+  // Bấm xuống: số "Thu" → ngăn theo dự án; bấm dòng → mở Tài chính dự án thành tab cạnh bảng.
+  await page.getByRole("region", { name: "Tổng ngân sách, thu, chi" }).getByRole("button", { name: /Thu/ }).click();
+  const drawer = page.getByRole("dialog", { name: "Tiền chủ đầu tư đã trả theo dự án", exact: true });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator("tfoot")).toContainText("77.242.940.000");
+  // Bấm dự án → chứng từ tiền đã thu của dự án → bấm chứng từ mở Phải thu đúng hợp đồng thành tab cạnh bảng.
+  await drawer.getByRole("row", { name: /SMB-2026/ }).click();
+  await expect(drawer).toHaveCount(0);
+  const received = page.getByRole("dialog", { name: "Chứng từ · Tiền chủ đầu tư đã trả theo dự án" });
+  await received.locator("tbody tr").first().click();
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await expect(workTabs.getByRole("tab", { name: /Phải thu/ })).toHaveAttribute("aria-selected", "true");
+
+  // Dòng tiền: khối navy → bảng theo dự án, tổng khớp; bấm sang màn gốc từ nút chân ngăn.
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await boards.getByRole("tab", { name: "Dòng tiền & chi phí" }).click();
+  await page.getByRole("button", { name: /Giá trị hợp đồng/ }).first().click();
+  const contract = page.getByRole("dialog", { name: "Giá trị hợp đồng theo dự án" });
+  await expect(contract.locator("tfoot")).toContainText("204.400.000.000");
+  await contract.getByRole("button", { name: /Mở Báo cáo tài chính/ }).click();
+  await expect(workTabs.getByRole("tab", { name: /Báo cáo tài chính/ })).toHaveAttribute("aria-selected", "true");
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  // Biểu đồ có bảng số liệu thay thế (đọc bằng màn hình đọc / không phân biệt màu).
+  await page.getByRole("button", { name: "Tùy chọn Doanh thu - Chi phí" }).click();
+  await page.getByRole("menuitem", { name: "Xem bảng số liệu" }).click();
+  await expect(page.getByRole("region", { name: "Doanh thu - Chi phí" }).getByRole("row")).toHaveCount(13);
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-dash-cashflow.png` });
+
+  for (const [board, heading] of [["Vật tư", "Báo cáo nhập / xuất vật tư"], ["Thu chi & công nợ", "Báo cáo thu / chi, công nợ"]] as const) {
+    await boards.getByRole("tab", { name: board }).click();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText(heading);
+    await expectCalmPage(page);
+    await page.screenshot({ path: `${shots}/${tag}-dash-${board === "Vật tư" ? "materials" : "debt"}.png` });
+  }
+  // Lọc một dự án áp cho mọi bảng.
+  await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("da29");
+  await expect(page.getByRole("region", { name: "Bảng số liệu" }).getByRole("row")).toHaveCount(2);
+});
+
+test("dashboards follow the role: purchasing sees materials only, no finance", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await openDashboards(page, "&dash=muahang");
+  await expect(page.getByRole("tablist", { name: "Chọn bảng điều khiển" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Báo cáo nhập / xuất vật tư");
+  // Không có bảng nào → không có tab (không hiện tab rỗng).
+  await page.goto(`${base}?inbox=empty&dash=none`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Bảng điều khiển" })).toHaveCount(0);
+  await page.goto(`${base}?inbox=empty&dash=error`);
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await expect(page.getByRole("alert")).toContainText("Chưa tải được bảng điều khiển");
+  await page.goto(`${base}?inbox=empty&dash=off`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Bảng điều khiển" })).toHaveCount(0);
+});
+
+test("dashboards are not realtime: numbers stay until Cập nhật, a failed update keeps them", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  const loads = () => page.evaluate(() => (window as unknown as { __dashLoads?: number }).__dashLoads ?? 0);
+  await openDashboards(page, "&dash=flaky");
+  const stamp = page.locator(".vdb-stamp");
+  await expect(stamp).toContainText("Số liệu lúc 08:25");
+  expect(await loads()).toBe(1);
+  // Đổi tab qua lại không gọi lại máy chủ.
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await workTabs.getByRole("tab", { name: "Hôm nay" }).click();
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await expect(page.locator("article.vdb-proj")).toHaveCount(8);
+  expect(await loads()).toBe(1);
+  // Cập nhật lỗi: giữ số cũ, báo rõ đang xem số lúc nào.
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Chưa cập nhật được" })).toContainText("Đang hiện số lúc 08:25");
+  await expect(page.locator("article.vdb-proj")).toHaveCount(8);
+  expect(await loads()).toBe(2);
+  // Cập nhật được: giờ tổng hợp mới.
+  await openDashboards(page);
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.locator(".vdb-stamp")).toContainText("Số liệu lúc 09:40");
+});
+
+test("dashboards say 'no data yet' instead of zero, and flag estimated stock values", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await openDashboards(page);
+  const boards = page.getByRole("tablist", { name: "Chọn bảng điều khiển" });
+  await boards.getByRole("tab", { name: "Dòng tiền & chi phí" }).click();
+  await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("ql1a");
+  const arCard = page.getByRole("region", { name: "Công nợ chủ đầu tư" });
+  await expect(arCard.getByRole("note")).toContainText("Chưa có dữ liệu");
+  await expect(arCard).not.toContainText("0 đ");
+  await expect(page.getByRole("region", { name: "Dòng tiền" }).getByRole("note")).toContainText("Chưa có dữ liệu");
+  await boards.getByRole("tab", { name: "Thu chi & công nợ" }).click();
+  await expect(page.getByRole("region", { name: "Cơ cấu dòng thu" }).getByRole("note")).toContainText("Chưa nhập đợt phải thu CĐT");
+  // Dự án có chứng từ: số hiện bình thường.
+  await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("smb");
+  await expect(page.getByRole("region", { name: "Cơ cấu dòng thu" }).getByRole("note")).toHaveCount(0);
+  await boards.getByRole("tab", { name: "Vật tư" }).click();
+  await expect(page.getByRole("region", { name: "Xu hướng Nhập - Xuất" })).toContainText("ước tính theo đơn giá dự toán");
+  await expectCalmPage(page);
+});
+
+// Chủ SP 10/10: bảng tồn – nhập – xuất (10 dòng/trang, bấm số → giao dịch → phiếu), khối Hôm nay (+ thêm màn Bảng điều khiển,
+// xóa Truy cập nhanh), menu avatar (thông tin cá nhân, đăng xuất).
+test("materials board: stock table pages by 10, numbers open their transactions, a transaction opens its document", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await openDashboards(page);
+  await page.getByRole("tablist", { name: "Chọn bảng điều khiển" }).getByRole("tab", { name: "Vật tư" }).click();
+  await expect(page.getByRole("region", { name: "Nhu cầu mua - cấp vật tư" })).toHaveCount(0);
+  const stock = page.getByRole("region", { name: "Tồn – nhập – xuất vật tư" });
+  await expect(stock.getByRole("columnheader")).toHaveText(["Vật tư", "ĐVT", "Tổng BOQ", "Đã đặt chưa giao", "Đang giao", "Tổng nhập", "Tổng xuất", "Trả lại", "Tồn kho", "Còn lại"]);
+  await expect(stock.locator("tbody tr")).toHaveCount(10);
+  await expect(stock.getByRole("navigation", { name: "Phân trang vật tư" })).toContainText("Trang 1 / 2");
+  await stock.getByRole("button", { name: "Trang sau" }).click();
+  await expect(stock.locator("tbody tr")).toHaveCount(1);
+  await stock.getByRole("searchbox", { name: "Tìm vật tư" }).fill("be tong");
+  const row = stock.locator("tbody tr").filter({ hasText: "Bê tông thương phẩm M300" });
+  await expect(row).toContainText("VT-000087");
+  // Còn lại: xanh khi còn được mua; bấm ra cách tính.
+  await expect(row.locator("td").nth(9)).toHaveAttribute("data-remaining", "left");
+  await row.locator("td").nth(9).getByRole("button").click();
+  await expect(page.getByRole("dialog", { name: /Còn lại · Bê tông thương phẩm M300/ }).locator("tbody tr")).toHaveCount(5);
+  await page.keyboard.press("Escape");
+  // Tổng nhập → phiếu nhập → mở đúng phiếu kho trong tab mới.
+  await row.locator("td").nth(5).getByRole("button").click();
+  const drawer = page.getByRole("dialog", { name: /Nhập kho · Bê tông thương phẩm M300/ });
+  await expect(drawer.locator("tbody tr").first()).toBeVisible();
+  await drawer.locator("tbody tr").first().click();
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await expect(workTabs.getByRole("tab", { name: /Phiếu kho/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('/operations?tx=tx-');
+  // Đang giao → đợt giao của đơn mua → mở đúng đơn ở Mua hàng.
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await row.locator("td").nth(4).getByRole("button").click();
+  await page.getByRole("dialog", { name: /Đang giao · Bê tông thương phẩm M300/ }).locator("tbody tr").first().click();
+  await expect(workTabs.getByRole("tab", { name: /Mua hàng/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('/procurement?po=po-');
+  await expectCalmPage(page);
+});
+
+test("Today blocks: add a dashboard screen with +, remove quick access, account menu opens profile and signs out", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?inbox=empty`);
+  const quick = page.getByRole("region", { name: "Truy cập nhanh" });
+  await expect(quick).toBeVisible();
+  await page.getByRole("button", { name: "Thêm khối" }).click();
+  await page.getByRole("menuitem", { name: /Tiến độ dự án/ }).click();
+  const board = page.getByRole("region", { name: "Tiến độ dự án" });
+  await expect(board.locator("article.vdb-proj")).toHaveCount(8);
+  await page.getByRole("button", { name: "Xóa khối Truy cập nhanh" }).click();
+  await expect(quick).toHaveCount(0);
+  await page.getByRole("button", { name: "Xóa khối Tiến độ dự án" }).click();
+  await expect(page.getByRole("button", { name: "Thêm khối vào Hôm nay" })).toBeVisible();
+  await page.getByRole("button", { name: "Thêm khối vào Hôm nay" }).click();
+  await page.getByRole("menuitem", { name: /Truy cập nhanh/ }).click();
+  await expect(page.getByRole("region", { name: "Truy cập nhanh" })).toBeVisible();
+  await expectCalmPage(page);
+
+  await page.locator(".vcc-top").getByRole("button", { name: /Tài khoản/ }).click();
+  const menu = page.getByRole("menu", { name: "Tài khoản" });
+  await expect(menu.getByRole("menuitem")).toHaveText(["Thông tin cá nhân", "Phiếu lương của tôi", "Đăng xuất"]);
+  await menu.getByRole("menuitem", { name: "Thông tin cá nhân" }).click();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: /Hồ sơ của tôi/ })).toHaveAttribute("aria-selected", "true");
+  await page.locator(".vcc-top").getByRole("button", { name: /Tài khoản/ }).click();
+  await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "logout");
+});
+
+test("money numbers go down to documents: project → documents → the document's screen; composite numbers switch document types", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await openDashboards(page);
+  const boards = page.getByRole("tablist", { name: "Chọn bảng điều khiển" });
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  // Thẻ dự án: số Chi → chứng từ chi phí của đúng dự án.
+  await page.getByRole("article", { name: "Nhà máy Sơn Miền Bắc" }).locator(".vdb-proj-money").getByRole("button", { name: /Chi/ }).click();
+  const cost = page.getByRole("dialog", { name: "Chứng từ · Chi phí · SMB-2026" });
+  await expect(cost.locator("tbody tr")).toHaveCount(3);
+  await expect(cost.locator("tfoot")).toContainText("25.777.440.000");
+  await page.keyboard.press("Escape");
+
+  await boards.getByRole("tab", { name: "Dòng tiền & chi phí" }).click();
+  await page.getByRole("button", { name: /Giá trị hợp đồng/ }).first().click();
+  const byProject = page.getByRole("dialog", { name: "Giá trị hợp đồng theo dự án" });
+  await expect(byProject).toContainText("Bấm một dự án để xem từng chứng từ.");
+  await byProject.getByRole("row", { name: /SMB-2026/ }).click();
+  const docs = page.getByRole("dialog", { name: "Chứng từ · Giá trị hợp đồng theo dự án" });
+  await expect(docs).toContainText("SMB-2026 · Nhà máy Sơn Miền Bắc");
+  await expect(docs.locator("tfoot")).toContainText("48.600.000.000");
+  // ← quay lại ngăn theo dự án, rồi xem chứng từ mọi dự án.
+  await docs.getByRole("button", { name: "Quay lại" }).click();
+  await byProject.getByRole("button", { name: "Chứng từ" }).click();
+  await expect(docs.locator("tfoot")).toContainText("204.400.000.000");
+  // Bấm chứng từ → mở đúng hợp đồng thành tab mới.
+  await docs.locator("tbody tr").first().click();
+  await expect(workTabs.getByRole("tab", { name: /Hợp đồng CĐT/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText("/hd/customer/hd-");
+
+  // Lợi nhuận = doanh thu − chi phí: chuyển giữa hai loại chứng từ.
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await page.getByRole("button", { name: /Lợi nhuận/ }).first().click();
+  await page.getByRole("dialog", { name: "Lợi nhuận theo dự án" }).getByRole("button", { name: "Chứng từ: Chi phí" }).click();
+  const profit = page.getByRole("dialog", { name: "Chứng từ · Lợi nhuận theo dự án" });
+  await expect(profit.getByRole("tab", { name: "Chi phí" })).toHaveAttribute("aria-selected", "true");
+  await expect(profit.locator("tfoot")).toContainText("81.287.240.000");
+  await profit.getByRole("tab", { name: "Doanh thu" }).click();
+  await expect(profit.locator("tfoot")).toContainText("83.701");
+  await expectCalmPage(page);
+});
+
+// Dòng chảy công việc (chủ SP 13/10): tab cho người có phạm vi xem; dải chỉ số bấm xuống; sơ đồ dải (điện thoại: thanh theo phòng);
+// ngăn Điểm nghẽn đổi theo phòng đang chọn; lọc khoảng thời gian gọi lại máy chủ, số cũ vẫn hiện trong lúc chờ. Dữ liệu minh họa ở tests/center/flowFixture.ts.
+const openFlow = async (page: Page, query = "") => {
+  await page.goto(`${base}?inbox=empty${query}`);
+  if (page.viewportSize()!.width < 1024) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
+};
+const flowLoads = (page: Page) => page.evaluate(() => (window as unknown as { __flowLoads: number }).__flowLoads);
+
+test("flow: tiles, chart, bottleneck panel, drill-down, range filter", async ({ page }, info) => {
+  const tag = info.project.name;
+  const narrow = page.viewportSize()!.width < 640;
+  await openFlow(page);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dòng chảy công việc");
+  await expect.poll(() => flowLoads(page)).toBe(1);
+  const tiles = page.getByRole("group", { name: "Chỉ số dòng chảy" }).getByRole("button");
+  await expect(tiles).toHaveText([/Đang chờ xử lý42/, /Đứng yên > 3 ngày31/, /Quá hạn14/, /Trung vị xử lý19,5 giờ/, /Trả lại \/ từ chối\d+/, /Lượt giao 30 ngày176/]);
+  // Chip nguồn: số đang chờ thật của từng nguồn; nguồn chờ một vai (Thủ kho) vẫn có số.
+  const chips = page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button");
+  await expect(chips.first()).toHaveText(/Quy trình & Đề xuất\s*42\s*31/);
+  const panel = page.getByRole("complementary", { name: "Điểm nghẽn" });
+  await expect(panel).toContainText("Nguyễn Văn Luật");
+  await expect(panel).toContainText("Trên 30 ngày");
+  await expect(panel).toContainText("1.111");
+  // Chọn phòng Vật tư: trên sơ đồ (desktop / tablet) hoặc thanh theo phòng (điện thoại).
+  if (narrow) {
+    await expect(page.getByRole("img", { name: /Sơ đồ dòng chảy công việc/ })).toHaveCount(0);
+    await page.getByRole("list", { name: "Nơi xử lý" }).getByRole("listitem").filter({ hasText: "Phòng Vật tư - Thiết bị" }).click();
+  } else {
+    await page.getByRole("button", { name: /^Phòng Vật tư - Thiết bị: 82 nhận/ }).click();
+  }
+  await expect(panel).toContainText("Phòng Vật tư - Thiết bị");
+  await expect(panel.getByText("3 người")).toBeVisible();
+  await expect(panel).toContainText(/13\s*đang chờ/);
+  await expect(panel).toContainText("Bùi Quang Chung");
+  await panel.getByRole("button", { name: "Điểm nghẽn hôm nay" }).click();
+  await expect(panel).toContainText("Ùn ở người");
+  // Bấm xuống từ ô chỉ số: ngăn các dòng tạo nên con số, dòng Tổng khớp.
+  await tiles.first().click();
+  const drawer = page.getByRole("dialog", { name: "42 việc đang chờ theo phòng" });
+  await expect(drawer.locator("tfoot")).toContainText("42");
+  await expect(drawer).toContainText("Chờ Thủ kho");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  // Lọc 30 ngày → gọi lại máy chủ với khoảng mới; giờ số liệu đổi.
+  await page.getByRole("tablist", { name: "Khoảng thời gian" }).getByRole("tab", { name: "30 ngày" }).click();
+  await expect.poll(() => flowLoads(page)).toBe(2);
+  expect(await page.evaluate(() => (window as unknown as { __flowQuery: { range: number } }).__flowQuery.range)).toBe(30);
+  await expect(page.getByText(/Số liệu lúc 08:31/)).toBeVisible();
+  // Chuyển động (chủ SP 13/10): hạt chạy trên dải bật sẵn trên máy tính / máy tính bảng, tắt được và nhớ; điện thoại không có.
+  if (narrow) {
+    await expect(page.getByRole("button", { name: "Chuyển động" })).toHaveCount(0);
+  } else {
+    const motion = page.getByRole("button", { name: "Chuyển động" });
+    await expect(motion).toHaveAttribute("aria-pressed", page.viewportSize()!.width >= 1024 ? "true" : "false");
+    if (page.viewportSize()!.width < 1024) await motion.click();
+    expect(await page.locator(".vfl-particle").count()).toBeGreaterThan(5);
+    await motion.click();
+    await expect(motion).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".vfl-particle")).toHaveCount(0);
+    await page.reload();
+    if (page.viewportSize()!.width < 1024) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+    await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
+    await expect(page.getByRole("button", { name: "Chuyển động" })).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Chuyển động" }).click();
+    await expect(page.locator(".vfl-particle")).not.toHaveCount(0);
+    // Tắt lại để phần kiểm "trang đứng yên" phía dưới đo đúng trang không chuyển động.
+    await page.getByRole("button", { name: "Chuyển động" }).click();
+    await expect(page.locator(".vfl-particle")).toHaveCount(0);
+    await page.evaluate(() => localStorage.removeItem("vfl_motion"));
+  }
+  // Người xử lý: bảng trung vị / % đúng hạn, không gắn nhãn tốt nhất / chậm nhất (câu 5).
+  await page.getByRole("tablist", { name: "Cách nhìn" }).getByRole("tab", { name: "Người xử lý" }).click();
+  await expect(page.getByRole("region", { name: "Sơ đồ dòng chảy" }).getByRole("row")).toHaveCount(13);
+  await expect(page.getByText(/tốt nhất|chậm nhất/)).toHaveCount(0);
+  await page.getByRole("tablist", { name: "Cách nhìn" }).getByRole("tab", { name: "Dòng chảy" }).click();
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-flow.png`, fullPage: narrow });
+});
+
+test("flow: hidden without scope, refresh failure keeps old numbers, deep link", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?inbox=empty&flow=none`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" })).toHaveCount(0);
+  await openFlow(page, "&flow=flaky");
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dòng chảy công việc");
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.getByRole("status")).toContainText("Chưa cập nhật được");
+  await expect(page.getByRole("group", { name: "Chỉ số dòng chảy" }).getByRole("button").first()).toContainText("42");
+  // Trưởng phòng: chỉ phòng mình, không có thống kê thông báo toàn công ty, không có ô chọn phòng khác.
+  await openFlow(page, "&flow=head");
+  await expect(page.getByText("Phạm vi: Phòng Vật tư - Thiết bị")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Lọc theo phòng ban" })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Điểm nghẽn" })).not.toContainText("1.111");
+  await page.goto(`${base}?inbox=empty&view=flow`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" })).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({ path: `${shots}/desktop-flow-head.png` });
+});
+
+// Dòng chảy công việc PR-3: "Xem" → danh sách phiếu đang giữ (bấm phiếu mở thành tab), "Nhắc" gửi tới người giữ, "Dọn việc cũ", chip nguồn → danh sách.
+test("flow: item list, open record as tab, remind, clean up old items", async ({ page }, info) => {
+  const tag = info.project.name;
+  const narrow = page.viewportSize()!.width < 640;
+  await openFlow(page);
+  // Máy tính bật sẵn Chuyển động: tắt để phần kiểm trang đứng yên ở cuối đo đúng (bài này không kiểm chuyển động).
+  if (!narrow) {
+    const motionBtn = page.getByRole("button", { name: "Chuyển động" });
+    await motionBtn.waitFor();
+    if ((await motionBtn.getAttribute("aria-pressed")) === "true") { await motionBtn.click(); await expect(motionBtn).toHaveAttribute("aria-pressed", "false"); }
+  }
+  const panel = page.getByRole("complementary", { name: "Điểm nghẽn" });
+  // Xem việc Nguyễn Văn Luật đang giữ: 6 phiếu, phiếu chết lên đầu.
+  await panel.getByRole("button", { name: "Xem" }).first().click();
+  const list = page.getByRole("dialog", { name: "Nguyễn Văn Luật đang giữ" });
+  await expect(list).toContainText("6 phiếu");
+  await expect(list.getByRole("list").getByRole("button")).toHaveCount(6);
+  await expect(list.getByRole("list").getByRole("button").first()).toContainText("WF-2026-018");
+  expect(await page.evaluate(() => (window as unknown as { __flowItemsFilter: { holderUserId: string } }).__flowItemsFilter.holderUserId)).toBe("p-luat");
+  await page.screenshot({ path: `${shots}/${tag}-flow-items-person.png`, fullPage: narrow });
+  // Bấm phiếu → mở thành tab của Center (StubRenderer hiện route), tab Dòng chảy vẫn còn.
+  await list.getByRole("list").getByRole("button", { name: /MR-2026-2688/ }).click();
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await expect(workTabs.getByRole("tab", { name: "MR-2026-2688" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("MR-2026-2688 · Thép D16 + D10 móng nhà xưởng 3");
+  await page.getByRole("button", { name: "Đóng MR-2026-2688" }).click();
+  if (narrow) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await workTabs.getByRole("tab", { name: "Dòng chảy công việc" }).click();
+  // Nhắc: xác nhận rồi gửi, kết quả hiện trong ngăn; máy chủ nhận đúng lọc + ghi chú.
+  await panel.getByRole("button", { name: "Xem" }).first().click();
+  await list.getByRole("button", { name: /^Nhắc 1 người/ }).click();
+  await list.getByRole("textbox", { name: "Ghi chú nhắc" }).fill("Xong trước thứ Sáu");
+  await list.getByRole("button", { name: /^Gửi nhắc tới 1 người/ }).click();
+  await expect(list.getByRole("status")).toContainText("Đã nhắc 1 người");
+  expect(await page.evaluate(() => (window as unknown as { __flowReminds: Array<{ filter: { holderUserId: string }; note: string }> }).__flowReminds)).toEqual([{ filter: { projectId: null, unitId: null, holderUserId: "p-luat" }, note: "Xong trước thứ Sáu" }]);
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  // Dọn việc cũ: phiếu chờ trên 30 ngày; chip nguồn → danh sách của nguồn đó; phiếu chưa giao người không có nút Nhắc.
+  await panel.getByRole("button", { name: /^Dọn \d+ việc cũ/ }).click();
+  const dead = page.getByRole("dialog", { name: "Dọn việc cũ" });
+  await expect(dead.getByRole("list").getByRole("button")).toHaveCount(3);
+  await page.keyboard.press("Escape");
+  await page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button", { name: /^Phiếu kho/ }).click();
+  const wms = page.getByRole("dialog", { name: "Phiếu kho" });
+  await expect(wms.getByRole("list").getByRole("button")).toHaveCount(1);
+  await expect(wms).toContainText("Chờ Thủ kho");
+  await expect(wms.getByRole("button", { name: /^Nhắc/ })).toHaveCount(0);
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-flow-items.png`, fullPage: narrow });
+  await page.keyboard.press("Escape");
+  // Không nối danh sách (?flow=noitems): không có nút Xem / Dọn, chip mở bảng theo loại phiếu như PR-2.
+  if (tag === "desktop") {
+    await openFlow(page, "&flow=noitems");
+    await expect(page.getByRole("complementary", { name: "Điểm nghẽn" }).getByRole("button", { name: "Xem" })).toHaveCount(0);
+    await page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button", { name: /^Quy trình/ }).click();
+    await expect(page.getByRole("dialog", { name: /việc đang chờ theo loại phiếu/ })).toBeVisible();
+  }
 });

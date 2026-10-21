@@ -1,24 +1,20 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Loader2, Package, Plus, RefreshCcw, X, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Package, Plus, X, Search } from 'lucide-react';
 import type {
     MaterialAggregateSummaryRow,
-    ProjectMaterialDataQualityFlag,
-    ProjectMaterialReconciliationRow,
-    ProjectMaterialReconciliationSummary,
+    MaterialBudgetItem,
 } from '../../../types';
 
 const PAGE_SIZE = 10;
 
 type MaterialSummaryTabProps = {
     materialRows: MaterialAggregateSummaryRow[];
-    reconciliationRows: ProjectMaterialReconciliationRow[];
-    reconciliationSummary: ProjectMaterialReconciliationSummary;
-    reconciliationReportDate: string;
-    reconciliationPlannedProgress: number;
-    reconciliationLoading: boolean;
-    reconciliationError: string | null;
-    onReconciliationReportDateChange: (value: string) => void;
-    onReloadReconciliation: () => void;
+    /** Vật tư BOQ vượt ngân sách (lũy kế yêu cầu > ngân sách), nặng nhất trước. */
+    overBudgetItems: MaterialBudgetItem[];
+    /** Vật tư BOQ vượt ngưỡng hao hụt, nặng nhất trước. */
+    overWasteItems: MaterialBudgetItem[];
+    /** Bảng điều khiển → Vật tư lọc dự án này (đối chiếu nhập – xuất – tồn theo chứng từ). */
+    dashboardLink?: string | null;
     selectedMaterialGroupKeys: Set<string>;
     canCreateMaterialRequest: boolean;
     onToggleMaterialGroup: (rowKey: string, checked: boolean) => void;
@@ -27,16 +23,6 @@ type MaterialSummaryTabProps = {
     formatQuantity: (value: number) => string;
     formatPercent: (value: number) => string;
     formatMoneyShort: (value: number) => string;
-};
-
-const qualityFlagLabels: Record<ProjectMaterialDataQualityFlag, string> = {
-    unmapped_material: 'Chưa map mã',
-    unit_mismatch: 'Lệch ĐVT',
-    legacy_transaction: 'Dữ liệu cũ',
-    legacy_direct_receipt: 'Nhập cũ chưa phân loại',
-    legacy_direct_issue: 'Xuất cũ chưa phân loại',
-    not_in_boq: 'Ngoài BOQ',
-    pending_settlement: 'Chưa quyết toán',
 };
 
 const formatDate = (value?: string | null) => value ? value.slice(0, 10).split('-').reverse().join('/') : '-';
@@ -50,14 +36,9 @@ const warningTone = (row: MaterialAggregateSummaryRow) => {
 
 export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
     materialRows,
-    reconciliationRows,
-    reconciliationSummary,
-    reconciliationReportDate,
-    reconciliationPlannedProgress,
-    reconciliationLoading,
-    reconciliationError,
-    onReconciliationReportDateChange,
-    onReloadReconciliation,
+    overBudgetItems,
+    overWasteItems,
+    dashboardLink = null,
     selectedMaterialGroupKeys,
     canCreateMaterialRequest,
     onToggleMaterialGroup,
@@ -68,6 +49,7 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
     formatMoneyShort,
 }) => {
     const [page, setPage] = useState(1);
+    const [attention, setAttention] = useState<'budget' | 'waste' | null>(null);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [vattuWidth, setVattuWidth] = useState(180);
@@ -172,123 +154,63 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
 
     return (
         <div className="space-y-4">
-            <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="flex flex-col gap-3 border-b border-zinc-200 p-4 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h4 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            <Package size={15} className="text-blue-700 dark:text-blue-400" /> Đối chiếu BOQ với sử dụng thực tế
-                        </h4>
-                        <p className="mt-1 text-[10px] font-medium text-zinc-500">
-                            V1: đã dùng = xuất thi công − trả lại − phần chưa dùng được xác nhận; hao hụt theo dõi riêng.
-                        </p>
+            {/* Cần chú ý: vật tư vượt ngân sách / vượt hao hụt (trước là tab Hao hụt + Dashboard). Đối chiếu nhập – xuất – tồn theo chứng từ ở Bảng điều khiển. */}
+            <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Cần chú ý</span>
+                        {overBudgetItems.length === 0 && overWasteItems.length === 0 ? (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">Không có vật tư vượt ngân sách hoặc vượt hao hụt</span>
+                        ) : (<>
+                            {overBudgetItems.length > 0 && <button type="button" aria-expanded={attention === 'budget'}
+                                onClick={() => setAttention(current => current === 'budget' ? null : 'budget')}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition disabled:cursor-default disabled:opacity-60 ${attention === 'budget' ? 'border-rose-400 bg-rose-100 text-rose-800' : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300'}`}>
+                                <AlertTriangle size={12} /> Vượt ngân sách <span className="tabular-nums">{overBudgetItems.length}</span>
+                            </button>}
+                            {overWasteItems.length > 0 && <button type="button" aria-expanded={attention === 'waste'}
+                                onClick={() => setAttention(current => current === 'waste' ? null : 'waste')}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition disabled:cursor-default disabled:opacity-60 ${attention === 'waste' ? 'border-amber-400 bg-amber-100 text-amber-900' : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'}`}>
+                                <AlertTriangle size={12} /> Vượt hao hụt <span className="tabular-nums">{overWasteItems.length}</span>
+                            </button>}
+                        </>)}
                     </div>
-                    <div className="flex flex-wrap items-end gap-2">
-                        <label className="text-[10px] font-semibold text-zinc-500">
-                            Ngày báo cáo
-                            <input
-                                type="date"
-                                value={reconciliationReportDate}
-                                onChange={event => onReconciliationReportDateChange(event.target.value)}
-                                className="mt-1 block h-9 rounded-xl border border-zinc-200 bg-white px-3 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                            />
-                        </label>
-                        <button
-                            type="button"
-                            onClick={onReloadReconciliation}
-                            disabled={reconciliationLoading}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                        >
-                            {reconciliationLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Làm mới
-                        </button>
-                    </div>
+                    {dashboardLink && (
+                        <a href={dashboardLink} title="Bảng điều khiển → Vật tư, lọc dự án này"
+                            className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:border-teal-300 hover:text-teal-800 dark:border-zinc-700 dark:text-zinc-200 md:self-auto">
+                            Nhập – xuất – tồn theo chứng từ <ExternalLink size={12} className="text-zinc-400" />
+                        </a>
+                    )}
                 </div>
-
-                <div className="grid gap-2 border-b border-zinc-200 p-4 dark:border-zinc-800 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl bg-blue-50 p-3 dark:bg-blue-950/30">
-                        <div className="text-[10px] font-semibold uppercase text-blue-600 dark:text-blue-300">Tiến độ KH đến ngày</div>
-                        <div className="mt-1 text-xl font-semibold text-blue-900 dark:text-blue-100">{formatPercent(reconciliationPlannedProgress)}%</div>
-                    </div>
-                    <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/70">
-                        <div className="text-[10px] font-semibold uppercase text-zinc-500">Mã vật tư</div>
-                        <div className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-100">{reconciliationSummary.rowCount}</div>
-                    </div>
-                    <div className="rounded-xl bg-amber-50 p-3 dark:bg-amber-950/30">
-                        <div className="text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">Cần kiểm tra dữ liệu</div>
-                        <div className="mt-1 text-xl font-semibold text-amber-900 dark:text-amber-100">{reconciliationSummary.exceptionRowCount}</div>
-                    </div>
-                    <div className="rounded-xl bg-violet-50 p-3 dark:bg-violet-950/30">
-                        <div className="text-[10px] font-semibold uppercase text-violet-700 dark:text-violet-300">Chưa quyết toán sử dụng</div>
-                        <div className="mt-1 text-xl font-semibold text-violet-900 dark:text-violet-100">{reconciliationSummary.pendingSettlementRowCount}</div>
-                    </div>
-                </div>
-
-                {reconciliationError && (
-                    <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-                        {reconciliationError}
+                {attention && (
+                    <div className="overflow-x-auto border-t border-zinc-200 dark:border-zinc-800">
+                        <table className="w-full min-w-[520px] text-xs">
+                            <thead className="bg-zinc-50 text-[10px] font-semibold uppercase text-zinc-500 dark:bg-zinc-800/60">
+                                {attention === 'budget' ? (
+                                    <tr><th className="px-3 py-2 text-left">Vật tư</th><th className="px-3 py-2 text-right">Ngân sách</th><th className="px-3 py-2 text-right">Lũy kế yêu cầu</th><th className="px-3 py-2 text-right">Vượt</th></tr>
+                                ) : (
+                                    <tr><th className="px-3 py-2 text-left">Vật tư</th><th className="px-3 py-2 text-right">Hao hụt</th><th className="px-3 py-2 text-right">Ngưỡng</th><th className="px-3 py-2 text-right">Giá trị hao hụt</th></tr>
+                                )}
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                {attention === 'budget' ? overBudgetItems.map(item => (
+                                    <tr key={item.id}>
+                                        <td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">{item.itemName} <span className="text-zinc-400">{item.unit}</span></td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{formatQuantity(item.budgetQty)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatQuantity(item.cumulativeRequested || 0)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-rose-700">+{formatPercent(item.budgetOverPercent || 0)}%</td>
+                                    </tr>
+                                )) : overWasteItems.map(item => (
+                                    <tr key={item.id}>
+                                        <td className="px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">{item.itemName} <span className="text-zinc-400">{item.unit}</span></td>
+                                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-amber-700">{formatPercent(item.wastePercent || 0)}%</td>
+                                        <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{formatQuantity(item.wasteThreshold)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-amber-700">{formatMoneyShort(Math.abs(item.wasteValue || 0))} đ</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
-
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1700px] text-left text-xs">
-                        <thead className="bg-zinc-900 text-[10px] font-semibold uppercase tracking-wide text-zinc-100 dark:bg-zinc-800">
-                            <tr>
-                                <th className="px-3 py-3">Vật tư</th>
-                                <th className="px-3 py-3 text-center">ĐVT</th>
-                                <th className="px-3 py-3 text-right">Tổng BOQ</th>
-                                <th className="px-3 py-3 text-right">KH đến ngày</th>
-                                <th className="px-3 py-3 text-right">Tổng nhập</th>
-                                <th className="px-3 py-3 text-right">Tồn kho</th>
-                                <th className="px-3 py-3 text-right">Đã xuất</th>
-                                <th className="px-3 py-3 text-right">Đã trả</th>
-                                <th className="px-3 py-3 text-right">Xuất ròng</th>
-                                <th className="px-3 py-3 text-right">Đã dùng</th>
-                                <th className="px-3 py-3 text-right">Hao hụt</th>
-                                <th className="px-3 py-3 text-right">Còn giữ</th>
-                                <th className="px-3 py-3 text-right">Lệch KH</th>
-                                <th className="px-3 py-3 text-right">Lệch BOQ</th>
-                                <th className="px-3 py-3">Chất lượng dữ liệu</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                            {reconciliationRows.map(row => (
-                                <tr key={`${row.inventoryItemId || row.sku || row.itemName}:${row.unit || ''}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                                    <td className="px-3 py-3">
-                                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">{row.itemName}</div>
-                                        <div className="mt-0.5 font-mono text-[10px] text-blue-700 dark:text-blue-400">{row.sku || 'Chưa có mã'}</div>
-                                    </td>
-                                    <td className="px-3 py-3 text-center text-zinc-500">{row.unit || '-'}</td>
-                                    <td className="px-3 py-3 text-right font-semibold">{formatQuantity(row.totalBoqQty)}</td>
-                                    <td className="px-3 py-3 text-right font-semibold text-blue-700 dark:text-blue-400">{formatQuantity(row.plannedQtyToDate)}</td>
-                                    <td className="px-3 py-3 text-right">{formatQuantity(row.grossReceivedQty)}</td>
-                                    <td className="px-3 py-3 text-right">{formatQuantity(row.currentStockQty)}</td>
-                                    <td className="px-3 py-3 text-right">{formatQuantity(row.constructionIssuedQty)}</td>
-                                    <td className="px-3 py-3 text-right">{formatQuantity(row.projectReturnedQty)}</td>
-                                    <td className="px-3 py-3 text-right font-semibold">{formatQuantity(row.netIssuedQty)}</td>
-                                    <td className="px-3 py-3 text-right font-semibold text-emerald-700 dark:text-emerald-400">{formatQuantity(row.confirmedUsedQty)}</td>
-                                    <td className="px-3 py-3 text-right text-red-600 dark:text-red-400">{formatQuantity(row.lossAfterIssueQty)}</td>
-                                    <td className="px-3 py-3 text-right text-violet-700 dark:text-violet-400">{formatQuantity(row.openWithRecipientQty)}</td>
-                                    <td className={`px-3 py-3 text-right font-semibold ${row.usedVarianceToPlan > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{formatQuantity(row.usedVarianceToPlan)}</td>
-                                    <td className={`px-3 py-3 text-right font-semibold ${row.usedVarianceToBoq > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{formatQuantity(row.usedVarianceToBoq)}</td>
-                                    <td className="px-3 py-3">
-                                        <div className="flex max-w-[240px] flex-wrap gap-1">
-                                            {row.dataQualityFlags.length === 0 ? (
-                                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">Đủ dữ liệu</span>
-                                            ) : row.dataQualityFlags.map(flag => (
-                                                <span key={flag} className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{qualityFlagLabels[flag]}</span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                            {!reconciliationLoading && reconciliationRows.length === 0 && !reconciliationError && (
-                                <tr><td colSpan={15} className="px-6 py-10 text-center text-sm font-medium text-zinc-400">Chưa có dữ liệu BOQ hoặc phát sinh vật tư cho dự án.</td></tr>
-                            )}
-                            {reconciliationLoading && reconciliationRows.length === 0 && (
-                                <tr><td colSpan={15} className="px-6 py-10 text-center text-sm font-medium text-zinc-400"><Loader2 size={18} className="mx-auto mb-2 animate-spin" />Đang tổng hợp dữ liệu...</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">

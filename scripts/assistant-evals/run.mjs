@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+// Chạy bộ kiểm hồi quy Trợ lý v2 — xem README.md. Gói evals.ts (cùng mã cổng AI) bằng esbuild rồi chạy với model thật.
+//   node scripts/assistant-evals/run.mjs                 # mọi ca
+//   node scripts/assistant-evals/run.mjs po-tool-totals  # một vài ca
+//   node scripts/assistant-evals/run.mjs --model deepseek-v4.1-flash   # chạy với kết nối khác (theo model / tên ở Cài đặt → Kết nối); hoặc ASSISTANT_EVAL_MODEL=…
+//   node scripts/assistant-evals/run.mjs --kind anthropic              # cùng kết nối nhưng gọi chuẩn Anthropic (RevidAPI có /v1/messages); hoặc ASSISTANT_EVAL_KIND=…
+import { build } from 'esbuild';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, '../..');
+// SDK Anthropic (devDependencies, cùng bản deno.json của cổng AI) có sẵn sau npm ci; hoặc trỏ ASSISTANT_EVAL_NODE_MODULES.
+const modules = process.env.ASSISTANT_EVAL_NODE_MODULES || join(root, 'node_modules');
+if (!existsSync(join(modules, '@anthropic-ai/sdk'))) {
+  console.error('Thiếu @anthropic-ai/sdk. Chạy: npm ci');
+  process.exit(2);
+}
+const outDir = join(root, 'node_modules/.cache/assistant-evals');
+mkdirSync(outDir, { recursive: true });
+const outfile = join(outDir, `evals-${Date.now()}.mjs`);
+await build({ entryPoints: [join(here, 'evals.ts')], bundle: true, platform: 'node', format: 'esm', outfile, nodePaths: [modules], logLevel: 'warning',
+  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } });
+const { runEvals } = await import(pathToFileURL(outfile).href);
+const argv = process.argv.slice(2);
+let model = process.env.ASSISTANT_EVAL_MODEL || '';
+let kind = process.env.ASSISTANT_EVAL_KIND || '';
+const only = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--model') model = argv[++i] || '';
+  else if (argv[i].startsWith('--model=')) model = argv[i].slice('--model='.length);
+  else if (argv[i] === '--kind') kind = argv[++i] || '';
+  else only.push(argv[i]);
+}
+const failed = await runEvals(process.env.ASSISTANT_EVAL_ENV || join(root, '.env'), only, root, model || undefined, kind || undefined);
+process.exit(failed ? 1 : 0);

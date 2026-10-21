@@ -125,7 +125,7 @@ describe('commander report and verified history',()=>{
   });
   it('routes locked review to progress-period reopening, not publication',()=>{
     const html=render({...commandBundle,periodState:{isLocked:true} as any});
-    expect(html).toContain('Kỳ tiến độ đang khóa');expect(html).toContain('Mở Chốt tiến độ');
+    expect(html).toContain('Kỳ tiến độ đang khóa');expect(html).toContain('Mở Tiến độ thực tế');
     expect(html).not.toContain('Đối chiếu thử nghiệm');
   });
 });

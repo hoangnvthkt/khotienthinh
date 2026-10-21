@@ -10,7 +10,7 @@ import {
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
   IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
-  PanelsTopLeft
+  PanelsTopLeft, Search, Paperclip
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -33,6 +33,7 @@ import { useCenterUi } from '../lib/center/centerMode';
 import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
 import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { useAuth } from '../context/AuthContext';
+import { openGlobalSearch, searchShortcutLabel } from '../lib/search/openGlobalSearch';
 import {
   canAccessVehicleApprovalQueue,
   canViewSensitiveVehicleIssues,
@@ -65,11 +66,12 @@ const MODULE_CONFIG = [
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
   { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' },
   { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
-  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
+  { key: 'AI' as const, icon: Bot, label: 'Trung tâm AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners', gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
   { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq', gradient: 'from-indigo-600 to-purple-700', shadow: 'shadow-indigo-600/25' },
   { key: 'VEHICLE_BOOKING' as const, icon: Car, label: 'Đặt xe', shortLabel: 'CAR', route: '/booking/vehicle', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25' },
+  { key: 'VPP' as const, icon: Paperclip, label: 'Văn phòng phẩm', shortLabel: 'VPP', route: '/vpp', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -81,6 +83,8 @@ export const SIDEBAR_MODULES: readonly NavigationModule[] = MODULE_CONFIG;
 export const navigationModulesFor = (user: Parameters<typeof canAccessNavigationModule>[0]): NavigationModule[] => {
   const allowed = MODULE_CONFIG.filter(m => {
     if (m.key === 'work.module' && !isViooWorkEnabled) return false;
+    // Văn phòng phẩm: mọi nhân viên đề xuất được (route mở, máy chủ lọc dữ liệu).
+    if (m.key === 'VPP') return canAccessRoute(user, m.route);
     return canAccessNavigationModule(user, m.key, m.route);
   });
   let order: string[] = [];
@@ -133,11 +137,9 @@ export const useModuleNavigation = () => {
   const moduleNavMap: Record<AppKey, any[]> = useMemo(() => ({
     'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
     'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
-    // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
+    // V2 Kho một màn: Tồn kho + Phiếu kho + Kiểm kê gộp thành Kho. Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
     WMS: [
-      { to: '/inventory', icon: Package, label: 'Tồn kho' },
-      { to: '/operations', icon: ArrowLeftRight, label: 'Phiếu kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
-      { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
+      { to: '/inventory', icon: Package, label: 'Kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
       { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
       { to: '/reports', icon: History, label: 'Báo cáo' },
       { to: '/wms/owners', icon: Users, label: 'Phân quyền kho' },
@@ -191,7 +193,7 @@ export const useModuleNavigation = () => {
       { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
     ],
     AI: [
-      { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
+      { to: '/ai', icon: Bot, label: 'Trung tâm AI' },
       { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
       { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
     ],
@@ -210,6 +212,7 @@ export const useModuleNavigation = () => {
       { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
       { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
     ],
+    VPP: [{ to: '/vpp', icon: Paperclip, label: 'Văn phòng phẩm' }],
     VEHICLE_BOOKING: [
       { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
       { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
@@ -279,6 +282,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p === '/office' || p.startsWith('/office/')) return 'office.module';
     if (p === '/work' || p.startsWith('/work/')) return 'work.module';
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
+    if (p === '/vpp') return 'VPP';
     if (p.startsWith('/hrm') || p === '/my-profile' || p === '/my-payroll' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
@@ -546,6 +550,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
         {/* ==================== NAVIGATION ==================== */}
         <nav className="px-2 py-2 flex-1 overflow-y-auto space-y-0.5">
+          {/* Tìm kiếm toàn hệ thống — luôn thấy, không cần nhớ phím tắt */}
+          <button
+            type="button"
+            onClick={() => { if (isOpen) toggle(); openGlobalSearch(); }}
+            title={collapsed ? `Tìm kiếm (${searchShortcutLabel()})` : 'Tìm chức năng, thao tác, hồ sơ'}
+            aria-label="Tìm kiếm"
+            className={`mb-1.5 w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2 rounded-xl border transition-colors ${isDark
+              ? 'border-white/10 bg-slate-800/40 text-slate-400 hover:bg-slate-800/70 hover:text-white'
+              : 'border-white/60 bg-white/60 text-slate-500 hover:bg-white hover:text-slate-900'}`}
+          >
+            <Search className="w-5 h-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 truncate text-left text-sm font-medium">Tìm kiếm…</span>
+                <kbd className="hidden lg:inline rounded-md border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{searchShortcutLabel()}</kbd>
+              </>
+            )}
+          </button>
 
           {/* ====== MOBILE FLAT VIEW — show everything at once ====== */}
           <div className="lg:hidden">

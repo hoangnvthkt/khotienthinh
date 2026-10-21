@@ -27,6 +27,10 @@ import {
 interface WorkPlanTabProps {
   projectId: string;
   constructionSiteId?: string;
+  /** Nhúng trong Dự án → Vật tư: chỉ kế hoạch vật tư, ẩn nút chuyển Thi công/Vật tư. */
+  materialOnly?: boolean;
+  /** Mở kế hoạch thi công (khi nhúng ở Vật tư thì chuyển sang tab Kế hoạch). */
+  onOpenWorkPlan?: () => void;
 }
 
 type DraftLine = Pick<WorkPlanLine, 'taskId' | 'wbsCode' | 'taskName' | 'groupName' | 'unit' | 'totalQty' | 'doneBeforeQty' | 'crewLabel' | 'note'> & {
@@ -458,7 +462,7 @@ const VersionsBoard: React.FC<{ board: WorkPlanBoard; initialId: string; actions
     {viewed.attachments.length > 0 && <AttachmentList files={viewed.attachments} />}
     <div className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Thực hiện đến {dateVi(board.today)} — chấm theo bản gốc{viewed.id !== original?.id ? ', xem thêm theo bản đang xem' : ''}</p>
-      {!periodStarted ? <p className="text-xs text-muted-foreground">Kỳ chưa bắt đầu — số thực hiện sẽ tự lấy từ Nhật ký và Chốt tiến độ.</p> : <>
+      {!periodStarted ? <p className="text-xs text-muted-foreground">Kỳ chưa bắt đầu — số thực hiện sẽ tự lấy từ Nhật ký.</p> : <>
         {original && <PerfRow label={`Theo bản gốc (Bản ${original.revisionNo})`} hint="Dùng để đánh giá kỳ" plan={original} today={board.today} actualOf={id => actual.get(id)} strong />}
         {viewed.id !== original?.id && <PerfRow label={`Theo Bản ${viewed.revisionNo}`} hint={viewed.status === 'approved' ? 'Bản đang điều hành' : 'Bản đang xem'} plan={viewed} today={board.today} actualOf={id => actual.get(id)} />}
       </>}
@@ -473,7 +477,7 @@ const VersionsBoard: React.FC<{ board: WorkPlanBoard; initialId: string; actions
 // ---------------------------------------------------------------------------
 // Tab.
 // ---------------------------------------------------------------------------
-const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId }) => {
+const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId, materialOnly = false, onOpenWorkPlan }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const reasonConfirm = useReasonConfirm();
@@ -482,7 +486,7 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const type = params.get('period') === 'week' ? 'week' : 'month';
     return { type: type as WorkPlanPeriodType, start: normalizeWorkPlanPeriodStart(type, params.get('start') || toIsoDate(new Date())),
-      view: (params.get('view') === 'material' ? 'material' : 'work') as 'work' | 'material' };
+      view: (materialOnly || params.get('view') === 'material' ? 'material' : 'work') as 'work' | 'material' };
   })();
   const [periodType, setPeriodType] = useState<WorkPlanPeriodType>(initial.type);
   const [view, setView] = useState<'work' | 'material'>(initial.view);
@@ -531,7 +535,8 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
     } finally { if (id === request.current) setLoading(false); }
   }, [periodStart, periodType, projectId, siteId]);
 
-  useEffect(() => { void load(); setCandidates(null); }, [load]);
+  // Nhúng ở Vật tư (chỉ kế hoạch vật tư): không tải bảng kế hoạch thi công.
+  useEffect(() => { if (materialOnly) return; void load(); setCandidates(null); }, [load, materialOnly]);
 
   const ensureCandidates = useCallback(async () => {
     if (candidates) return candidates;
@@ -708,15 +713,15 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
   const header = <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div>
       <h2 className="flex items-center gap-2 text-lg font-bold text-foreground"><CalendarRange size={20} className="text-teal-600" />{view === 'work' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư'}</h2>
-      <p className="text-xs text-muted-foreground">{view === 'work' ? 'Mỗi kỳ có bản gốc và các bản điều chỉnh. Số thực hiện lấy tự động từ Nhật ký và Chốt tiến độ.'
-        : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ. Tuần: đề nghị mua gửi CHT duyệt rồi sang Mua hàng. Tháng: dự báo.'}</p>
+      <p className="text-xs text-muted-foreground">{view === 'work' ? 'Mỗi kỳ có bản gốc và các bản điều chỉnh. Số thực hiện lấy tự động từ Nhật ký.'
+        : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ, gửi CHT duyệt.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-xl border border-teal-200 bg-teal-50 p-1 dark:border-teal-900 dark:bg-teal-950/40" role="tablist" aria-label="Loại kế hoạch">
+      {!materialOnly && <div className="inline-flex rounded-xl border border-teal-200 bg-teal-50 p-1 dark:border-teal-900 dark:bg-teal-950/40" role="tablist" aria-label="Loại kế hoạch">
         {([['work', 'Thi công'], ['material', 'Vật tư']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={view === key}
           onClick={async () => { if (view !== key && (key === 'work' || await leaveDraft())) setView(key); }}
           className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${view === key ? 'bg-teal-700 text-white shadow-sm' : 'text-teal-800 hover:bg-teal-100 dark:text-teal-200 dark:hover:bg-teal-900/40'}`}>{label}</button>)}
-      </div>
+      </div>}
       <div className="inline-flex rounded-xl border border-border bg-muted/60 p-1" role="tablist" aria-label="Kỳ kế hoạch">
         {(['month', 'week'] as const).map(type => <button key={type} type="button" role="tab" aria-selected={periodType === type}
           onClick={() => void changePeriod(type, periodType === type ? periodStart : today)}
@@ -733,7 +738,7 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
   </div>;
 
   if (view === 'material') return <div className="space-y-4">{header}
-    <MaterialPlanPanel projectId={projectId} constructionSiteId={siteId} periodType={periodType} periodStart={periodStart} onOpenWorkPlan={() => setView('work')} />
+    <MaterialPlanPanel projectId={projectId} constructionSiteId={siteId} periodType={periodType} periodStart={periodStart} onOpenWorkPlan={onOpenWorkPlan || (() => setView('work'))} />
   </div>;
 
   if (loading && !board) return <div className="space-y-4">{header}<div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card p-12 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" />Đang tải kế hoạch…</div></div>;

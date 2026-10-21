@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Tìm kiếm toàn hệ thống · UI test fixture</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Như index.html của app: token ngữ nghĩa + bảng màu FastCons (mint, leaf).
+      tailwind.config = {
+        darkMode: "class",
+        theme: { extend: {
+          fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+          colors: {
+            mint: { 50: '#effbf8', 100: '#d5f4ed', 200: '#aae8db', 300: '#78d8c5', 400: '#52cbb5', 500: '#3cbfaa', 600: '#2ea592', 700: '#268576', 800: '#206a5f', 900: '#1b574e' },
+            leaf: { 50: '#f1f9ee', 100: '#ddf1d5', 200: '#bce3ad', 300: '#93d17e', 400: '#6fc158', 500: '#52b53a', 600: '#43992f', 700: '#367a27', 800: '#2e6123', 900: '#27501f' },
+            background: "var(--background)", foreground: "var(--foreground)", card: "var(--card)",
+            "card-foreground": "var(--card-foreground)", "muted-foreground": "var(--muted-foreground)",
+            border: "var(--border)", muted: "var(--muted)",
+          },
+        } },
+      };
+    </script>
+    <style>
+      /* Như index.html của app. */
+      :root { --background: #f4f4f5; --foreground: #09090b; --card: #ffffff; --card-foreground: #09090b; --muted: #f1f5f9; --muted-foreground: #71717a; --border: #e4e4e7; }
+      .dark { --background: #101214; --foreground: #cbd5e1; --card: #23272c; --card-foreground: #f1f5f9; --muted: #1c1f22; --muted-foreground: #94a3b8; --border: #2d3135; }
+    </style>
+  </head>
+  <body class="font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

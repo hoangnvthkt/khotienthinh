@@ -20,7 +20,7 @@ describe('Daily Log revision actions', () => {
     const html = render({ periodLocked: true });
     expect(html).not.toContain('Tạo bản điều chỉnh');
     expect(html).toContain('href="/da?projectId=p1&amp;tab=weekly_progress"');
-    expect(html).toContain('Mở Chốt tiến độ');
+    expect(html).toContain('Mở Tiến độ thực tế');
   });
   it('links to an existing revision without creating another revision', () => {
     const html = render({ supersededByDailyLogId: 'revision-2' });

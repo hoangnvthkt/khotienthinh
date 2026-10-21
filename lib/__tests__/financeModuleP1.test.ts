@@ -6,7 +6,7 @@ import { canAccessNavigationModule, canAccessRoute } from '../routeAccess';
 
 const sql = readFileSync('supabase/migrations/20261008134600_finance_module_p1.sql', 'utf8');
 const sidebar = readFileSync('components/Sidebar.tsx', 'utf8');
-const app = readFileSync('App.tsx', 'utf8');
+const app = readFileSync('routes/appPages.tsx', 'utf8');
 
 describe('Tài chính — P1 xuất bản module', () => {
   it('xem tài chính dự án = Tài chính — Xem hoặc công tắc xem tài chính của đúng dự án (không thêm quyền mới)', () => {

@@ -865,6 +865,26 @@ Chỉ sửa frontend, không có migration.
 - **Mốc T0 quan sát Task 13: 02/10/2026** (apply bước 1). Theo runbook, xóa cột sớm nhất **09/10/2026**, sau khi backup + diễn tập khôi phục và dependency query rỗng.
 - Rollback: `supabase/operations/authorization_task13_stop_reading_legacy_modules_rollback.sql`.
 
+### Room dự án — người rời dự án không còn chặn việc lưu quyền (09/10, chủ sản phẩm báo lỗi và cho phép apply)
+
+- Báo lỗi: áp mẫu "Thủ kho công trường" ở dự án Tiến Thịnh báo "Dữ liệu liên quan không hợp lệ…" (23503 `Room members must be active staff in the selected project scope`).
+- Nguyên nhân: rời dự án / khóa tài khoản đặt `project_staff.end_date` nhưng không đóng thành viên Room. 17 dòng Room còn hoạt động của 2 người đã rời (Tiến Thịnh, Thú nhồi bông GĐ2); mỗi lần lưu, payload gửi lại họ và bị chặn. Lỗi thứ hai lộ ra sau đó: Room theo công trường chỉ đếm người giữ quyền bắt buộc (duyệt/xác nhận) cùng phạm vi, trong khi lúc chạy (`alert_room_recipient_ids`, `project_user_has_room_action`) thành viên toàn dự án vẫn nhận việc của công trường.
+- Migration `20261009180000_project_room_close_departed_members` (apply 02:42 UTC): hàm `close_project_room_memberships_for_staff` + trigger `trg_project_staff_close_room_memberships` (rời dự án → đóng mọi Room, ghi `permission_audit_events.project_room_member_departed`); dọn 17 dòng cũ (đã đo trước: không Room nào mất người giữ quyền bắt buộc); `apply_project_room_template` chỉ giữ thành viên khác còn đang làm; kiểm tra người giữ quyền bắt buộc tính cả thành viên toàn dự án.
+- Giao diện: hai lỗi trên có câu tiếng Việt nói rõ cần làm gì.
+- Kiểm tra: tái hiện trước sửa (7 lượt 23503 ở Tiến Thịnh); sau apply, áp mẫu cho từng nhân sự đang làm (76 người, đúng phạm vi công trường như giao diện, giao dịch rollback): 6 dự án thật đều đạt, chỉ "G3 BOQ project" (dự án thử) bị chặn đúng vì Room chưa có người duyệt. Smoke `project_room_close_departed_members_smoke.sql` PASS.
+- Rollback: `supabase/operations/project_room_close_departed_members_rollback.sql` (không mở lại 17 dòng đã đóng).
+
+### Task 13 — bước cuối: xóa 4 cột legacy (09/10, chủ sản phẩm cho phép apply)
+
+- Migration `20261009170000_authorization_task13_drop_legacy_columns`, apply Cloud main **2026-10-09 02:26 UTC** (T0 = 02/10, đủ 7 ngày).
+- Thứ tự: sao lưu 95/95 dòng `users` (62 người có dữ liệu) vào `app_private.authorization_task13_legacy_column_snapshots` kèm SHA-256 (cutover `3fdab060-a1ce-4105-9a56-b57ab1b4f1c0`, RLS bật, `authenticated` không đọc được) → viết lại 10 hàm (resolver bỏ nhánh `LEGACY`, fingerprint, 2 trigger `users`, 3 hàm vòng đời tài khoản, `replace_user_permission_grants_v2_impl`, tóm tắt Sức khỏe phân quyền, danh sách principal) → xóa lệnh quyền cũ `apply/preview_user_permission_change(_impl)`, `sync_legacy_permission_projection`, trigger `trg_users_guard_legacy_permission_writes` → cổng phụ thuộc rỗng → drop 4 cột. Không `CASCADE`.
+- Sửa kèm lỗi có sẵn: fingerprint báo lỗi 22023 với 33 tài khoản có cột legacy rỗng (RPC v3 không được giao diện gọi) → 0 lỗi. Fingerprint đổi một lần với 55 người có dữ liệu cũ.
+- Trước apply: readiness (0 nguồn `LEGACY`, cờ đều fail-closed), dry-run Cloud trong giao dịch rollback (quyền thực tế 0/88 người khác biệt; smoke cuối + smoke bước 1 PASS), diễn tập rollback (95/95 người khôi phục đúng; mọi hàm + ACL y hệt), `db push --dry-run` chỉ liệt kê đúng migration này; 20 Edge Function đang deploy không dùng 4 cột.
+- Ledger: migration của #140 đã chạy trên Cloud với version `20261008105659` (nội dung trùng file `20261009160000`) → đổi tên file trong repo cho khớp.
+- Sau apply: `authorization_task13_drop_legacy_columns_smoke.sql` và `authorization_task13_stop_reading_legacy_modules_smoke.sql` PASS; RPC giao diện (Sức khỏe phân quyền, tóm tắt legacy, danh sách principal, xem trước vòng đời tài khoản) chạy bằng Admin trong giao dịch rollback đều đạt. `authorization_v2_task13_readiness.sql` chỉ dùng trước khi xóa.
+- Frontend: bỏ dòng "Legacy module" ở hộp trạng thái tài khoản (RPC vẫn trả `legacyModules: 0` cho bản cũ); script persona e2e thôi ghi 4 cột.
+- Rollback (forward migration đã diễn tập): `supabase/operations/authorization_task13_drop_legacy_columns_rollback.sql`. Không xóa bảng snapshot trong Task 13.
+
 ### Hợp đồng — quyền ghi theo đúng contract.*.manage (02/10, chủ sản phẩm cho phép apply)
 
 - Báo lỗi: người được cấp đủ quyền Hợp đồng vẫn không tạo được hợp đồng đối tác; đã thành Admin vẫn không tạo được HĐ thầu phụ.

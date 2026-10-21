@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import CommandPalette from './CommandPalette';
@@ -13,10 +13,10 @@ import LoadingSpinner from './LoadingSpinner';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
-import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
+import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun, Search } from 'lucide-react';
 import { Role } from '../types';
-import { useAuth } from '../context/AuthContext';
 import { getRouteChrome, type LayoutOutletContext } from '../lib/routeChrome';
+import { openGlobalSearch } from '../lib/search/openGlobalSearch';
 import { useCenterUi } from '../lib/center/centerMode';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
 import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
@@ -26,8 +26,6 @@ import MacOSDockLauncher from './common/MacOSDockLauncher';
 import FloatingChatBubble from './common/FloatingChatBubble';
 import PrivateStorageLinkResolver from './storage/PrivateStorageLinkResolver';
 
-const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
-const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
 
 const Layout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -58,11 +56,8 @@ const Layout: React.FC = () => {
     const saved = localStorage.getItem('macos_dock_enabled');
     return saved !== null ? saved === 'true' : true;
   });
-  const [sessionWarning, setSessionWarning] = useState(false);
-  const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
   const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, user, employees } = useApp();
-  const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
@@ -78,64 +73,7 @@ const Layout: React.FC = () => {
     if (centerUi.active && pathname === '/') navigate(CENTER_ROUTE, { replace: true });
   }, [centerUi.active, pathname, navigate]);
 
-  const lastActivityRef = useRef<number>(Date.now());
-  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-
   const appInitials = appSettings.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (error) {
-      console.warn('Logout failed:', error);
-    }
-  };
-
-  // Session timeout logic
-  const resetTimers = () => {
-    lastActivityRef.current = Date.now();
-    setSessionWarning(false);
-    clearTimeout(warningTimerRef.current);
-    clearTimeout(logoutTimerRef.current);
-    clearInterval(countdownRef.current);
-
-    warningTimerRef.current = setTimeout(() => {
-      setSessionWarning(true);
-      setCountdown(300);
-      countdownRef.current = setInterval(() => {
-        setCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(countdownRef.current);
-            void handleLogout();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }, SESSION_TIMEOUT_MS - WARN_BEFORE_MS);
-
-    logoutTimerRef.current = setTimeout(() => {
-      void handleLogout();
-    }, SESSION_TIMEOUT_MS);
-  };
-
-  useEffect(() => {
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    const handleActivity = () => {
-      if (!sessionWarning) resetTimers();
-    };
-    events.forEach(e => window.addEventListener(e, handleActivity, { passive: true }));
-    resetTimers();
-    return () => {
-      events.forEach(e => window.removeEventListener(e, handleActivity));
-      clearTimeout(warningTimerRef.current);
-      clearTimeout(logoutTimerRef.current);
-      clearInterval(countdownRef.current);
-    };
-  }, [sessionWarning]);
 
   if (connectionError) {
     return (
@@ -193,38 +131,6 @@ const Layout: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Session Warning Modal */}
-      {sessionWarning && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-card text-card-foreground rounded-3xl shadow-2xl border border-border p-8 max-w-sm w-full mx-4 text-center">
-            <div className="w-16 h-16 bg-amber-500/10 dark:bg-amber-955/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="text-amber-500" size={32} />
-            </div>
-            <h2 className="text-xl font-black text-foreground mb-2">Phiên sắp hết hạn</h2>
-            <p className="text-muted-foreground text-sm mb-4">
-              Hệ thống sẽ tự đăng xuất sau{' '}
-              <span className="font-black text-amber-600 text-lg">
-                {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
-              </span>
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={resetTimers}
-                className="flex-1 py-3 bg-accent text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition"
-              >
-                Tiếp tục làm việc
-              </button>
-              <button
-                onClick={() => void handleLogout()}
-                className="flex-1 py-3 bg-muted text-foreground rounded-xl font-black text-xs uppercase tracking-widest hover:bg-muted/80 transition"
-              >
-                Đăng xuất
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {centerUi.active && <CenterRail onExitCenter={() => exitCenter()} />}
       <Sidebar
         hideOnDesktop={centerUi.active}
@@ -256,6 +162,10 @@ const Layout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Tìm kiếm toàn hệ thống */}
+            <button onClick={() => openGlobalSearch()} aria-label="Tìm kiếm" className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
+              <Search size={18} />
+            </button>
             {centerUi.available && (
               <UiModeSwitch variant="icon" active={centerUi.active} isDark={isDark} onChange={next => (next ? enterCenter() : exitCenter())} />
             )}

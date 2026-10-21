@@ -1,20 +1,38 @@
 import React from 'react';
+import { SpecInput } from './SpecInput';
+import { ghostInput, type InputGhost } from '../common/PrefillGhost';
 
 type MaterialCommercialDescriptionFieldsProps = {
     sku?: string;
+    /** Mã vật tư — để gợi ý danh sách quy cách chuẩn của mã. */
+    itemId?: string;
     name: string;
     disabled?: boolean;
     className?: string;
     onNameChange: (value: string) => void;
+    /** Quy cách của dòng (một mã nhiều quy cách). Không truyền onSpecificationChange thì không hiện ô. */
+    specification?: string;
+    onSpecificationChange?: (value: string) => void;
+    /** Mã có từ 2 dòng trong phiếu: quy cách bắt buộc và khác nhau. */
+    specificationProblem?: string;
+    /** Quy cách lần trước (in mờ khi ô trống; Tab / Enter để dùng). */
+    specificationGhost?: InputGhost | null;
 };
 
 const MaterialCommercialDescriptionFields: React.FC<MaterialCommercialDescriptionFieldsProps> = ({
     sku,
+    itemId,
     name,
     disabled = false,
     className = '',
     onNameChange,
-}) => (
+    specification = '',
+    onSpecificationChange,
+    specificationProblem,
+    specificationGhost,
+}) => {
+    const hint = onSpecificationChange && !disabled ? ghostInput(specificationGhost, specification, onSpecificationChange) : null;
+    return (
     <div className={`space-y-1 ${className}`.trim()}>
         <div className="flex items-center gap-2">
             <span className="sr-only">Mã vật tư</span>
@@ -36,7 +54,27 @@ const MaterialCommercialDescriptionFields: React.FC<MaterialCommercialDescriptio
                 />
             </div>
         </div>
+        {onSpecificationChange && (
+            <div>
+                <span className="sr-only">Quy cách</span>
+                <SpecInput
+                    itemId={itemId}
+                    itemName={name}
+                    hideHint={!!specificationProblem}
+                    value={specification}
+                    disabled={disabled}
+                    maxLength={160}
+                    onChange={onSpecificationChange}
+                    placeholder="Quy cách / ghi chú — VD: loại 1, tôn biên 13 sóng"
+                    aria-invalid={!!specificationProblem}
+                    className={`w-full rounded-lg border bg-white px-2.5 py-1 text-xs text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:bg-slate-100 ${specificationProblem ? 'border-rose-400 ring-2 ring-rose-400/20' : 'border-slate-200'} ${hint?.className || ''}`}
+                    {...(hint?.props || {})}
+                />
+                {specificationProblem && <p className="mt-0.5 text-[10px] font-bold text-rose-600">{specificationProblem}</p>}
+            </div>
+        )}
     </div>
-);
+    );
+};
 
 export default MaterialCommercialDescriptionFields;

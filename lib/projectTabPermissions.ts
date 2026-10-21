@@ -11,7 +11,7 @@ export const PROJECT_TAB_PERMISSIONS = [
   { key: 'contract', label: 'Hợp đồng', icon: '📋', route: '/da/tabs/contract' },
   { key: 'gantt', label: 'Tiến độ', icon: '📐', route: '/da/tabs/gantt' },
   { key: 'work_plan', label: 'Kế hoạch', icon: '🗓️', route: '/da/tabs/work_plan' },
-  { key: 'weekly_progress', label: 'Chốt tiến độ', icon: '📅', route: '/da/tabs/weekly_progress' },
+  { key: 'weekly_progress', label: 'Tiến độ thực tế', icon: '📅', route: '/da/tabs/weekly_progress' },
   { key: 'dailylog', label: 'Nhật ký', icon: '📝', route: '/da/tabs/dailylog' },
   { key: 'material', label: 'Vật tư', icon: '📦', route: '/da/tabs/material' },
   

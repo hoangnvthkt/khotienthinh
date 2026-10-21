@@ -63,6 +63,8 @@ export interface ProcurementInbox {
 
 export interface ProcurementInboxLine {
   lineId: string; itemId: string | null; itemName: string; sku: string | null; unit: string | null;
+  /** Quy cách người đề xuất ghi cho dòng (một mã nhiều quy cách). */
+  specification?: string | null;
   needQty: number; orderedQty: number; receivedQty: number; remainingQty: number; stockQty: number | null;
   /** Set when the item is bought in another unit: stock qty = purchase qty × purchaseFactor. */
   purchaseUnit: string | null; purchaseFactor: number | null;
@@ -134,6 +136,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_EXCESS_OVER: 'SL gán lớn hơn phần thừa đang có ở công trường.',
   PROCUREMENT_EXCESS_TARGET_INVALID: 'Chỉ gán phần thừa cho dòng đề xuất đang chờ cung ứng, cùng vật tư, cùng dự án của công trường.',
   PROCUREMENT_PO_DUPLICATE_LINE: 'Một dòng nhu cầu bị chọn hai lần.',
+  PROCUREMENT_PO_DUPLICATE_SPEC: 'Có hai dòng cùng mã vật tư cùng quy cách. Ghi quy cách khác nhau cho từng dòng hoặc gộp lại.',
   PROCUREMENT_PO_WAREHOUSE_INVALID: 'Kho nhận không hợp lệ.',
   PROCUREMENT_PO_NOT_FOUND: 'Đơn hàng không còn tồn tại. Tải lại.',
   PROCUREMENT_PO_NOT_EDITABLE: 'Chỉ người lập được sửa đơn nháp hoặc bị trả lại.',
@@ -207,11 +210,22 @@ export const procurementInboxService = {
   vendors(search?: string) {
     return call<ProcurementVendor[]>('list_procurement_vendors_v1', { p_search: search || null });
   },
+  /** Gợi ý in mờ "Như đơn trước": đầu đơn gần nhất + dòng mua gần nhất (90 ngày) của NCC. */
+  vendorPrefill(vendorId: string) {
+    return call<ProcurementVendorPrefill>('get_procurement_vendor_prefill_v1', { p_vendor_id: vendorId });
+  },
+  /** Phạm vi Mua hàng của người công trường (không có quyền phòng Mua hàng): dự án được xem đơn, lập được mua nóng không. */
+  siteScope() {
+    return call<ProcurementSiteScope>('get_procurement_site_scope_v1', {});
+  },
   listOrders(filter: ProcurementOrderFilter) {
     return call<ProcurementOrderList>('list_procurement_orders_v1', { p_filter: filter });
   },
   poPaymentStatus(ids: string[]) {
     return ids.length ? call<Record<string, ProcurementPoPayment>>('get_procurement_po_payment_status_v1', { p_po_ids: ids }) : Promise.resolve({} as Record<string, ProcurementPoPayment>);
+  },
+  poPriceSettlements(id: string) {
+    return call<ProcurementPoPriceSettlement[]>('get_procurement_po_price_settlements_v1', { p_po_id: id });
   },
   getOrder(id: string) {
     return call<ProcurementOrderDetail>('get_procurement_order_v1', { p_po_id: id });
@@ -267,7 +281,23 @@ export const procurementInboxService = {
 
 export type ProcurementSourceRef = { sourceType: ProcurementSourceType; sourceId: string };
 export interface ProcurementVendor { id: string; name: string; taxCode: string | null; recentOrders: number }
+export interface ProcurementVendorPrefillOrder {
+  poNumber: string | null; title?: string | null; orderDate: string | null; vatRate: number | null; purchaseMode: 'single' | 'multiple' | null;
+  projectId: string | null; constructionSiteId: string | null; targetWarehouseId: string | null;
+}
+export interface ProcurementVendorPrefillLine {
+  itemId: string; specification: string; unit: string | null; stockUnit: string | null; factor: number; unitPrice: number;
+  poNumber: string | null; title?: string | null; orderDate: string | null;
+  /** Tên, mã vật tư và số đơn 90 ngày có mã này (để xếp "hay mua" lên đầu ô thêm vật tư). */
+  itemName?: string | null; sku?: string | null; orders?: number;
+}
+export interface ProcurementVendorPrefill { order: ProcurementVendorPrefillOrder | null; lines: ProcurementVendorPrefillLine[] }
 export type ProcurementOrderStage = 'drafting' | 'ordered' | 'delivering' | 'received';
+export interface ProcurementSiteScope {
+  procurementView: boolean;
+  orderProjects: Array<{ id: string; code: string | null; name: string | null }>;
+  canCreateHotPurchase: boolean;
+}
 export interface ProcurementOrderFilter { stage?: ProcurementOrderStage | 'all'; projectId?: string; search?: string; mine?: boolean }
 export interface ProcurementOrderSummary {
   id: string; poNumber: string | null; status: string; stage: ProcurementOrderStage | 'other'; isHub: boolean;
@@ -302,6 +332,11 @@ export interface ProcurementGroupSite {
     /** Đã nhận về công trường nhưng vượt các dòng nhu cầu (tồn kho) và đề xuất cùng dự án có thể nhận phần thừa. */
     excessStockQty: number; excessCandidates: Array<{ sourceId: string; lineId: string; code: string; shortQty: number }>;
     allocations: Array<{ linkId: string; kind: ProcurementSourceType; code: string | null; neededDate: string | null; orderedQty: number; receivedQty: number; excess: boolean; excessReason: string | null }> }>;
+}
+/** Giá kế toán chốt cho hàng đã giao của một dòng PO (NCC đổi đơn giá) — Mua hàng chỉ xem. */
+export interface ProcurementPoPriceSettlement {
+  poLineId: string | null; code: string; status: 'pending_approval' | 'posted'; itemName: string | null; unit: string | null; qty: number;
+  fromPrice: number; toPrice: number; deltaGross: number; reason: string; at: string; deliveryNo: number | null;
 }
 export type ProcurementPoPaymentState = 'none' | 'unpaid' | 'partial' | 'paid';
 /** Tình trạng thanh toán PO (từ công nợ nhận hàng) — Mua hàng chỉ thấy nợ, đã chi và hạn (K3b-2). */
@@ -366,7 +401,7 @@ export const committedDeliveryAmount = (deliveries: ProcurementDelivery[], excep
 export interface ProcurementOrderSaveInput {
   purchaseOrderId?: string; purchaseMode?: 'single' | 'multiple'; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
   expectedDeliveryDate?: string | null; vatRate: number; note?: string;
-  items: Array<{ itemId: string; unitPrice: number; note?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
+  items: Array<{ itemId: string; unitPrice: number; note?: string; specification?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
 }
 
 export const PROCUREMENT_PO_STATUS_LABELS: Record<string, string> = {
@@ -440,7 +475,7 @@ export interface ProcurementProactiveSaveInput {
 export interface ProcurementProactiveCandidate {
   needLineId: string; itemId: string; itemName: string; unit: string | null; remainingQty: number;
   purchaseOrderId: string; poNumber: string | null; status: string; vendorName: string | null; expectedDeliveryDate: string | null;
-  poLineId: string; lineStockQty: number; unallocatedQty: number; reasonCode: ProcurementProactiveReason | null;
+  poLineId: string; poLineSpecification?: string | null; lineStockQty: number; unallocatedQty: number; reasonCode: ProcurementProactiveReason | null;
 }
 /** BOQ status of a quantity about to be ordered: within, over the remaining BOQ, or an item outside the project BOQ. */
 export const boqStatusOf = (item: Pick<ProcurementCatalogItem, 'inBoq' | 'boqQty' | 'orderedQty'>, qty: number): ProcurementBoqSnapshot['status'] =>

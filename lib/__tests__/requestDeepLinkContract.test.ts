@@ -8,20 +8,22 @@ describe('request deep links', () => {
   });
 
   it('registers the canonical request detail route', () => {
-    expect(readFileSync('App.tsx', 'utf8')).toContain('path="rq/:requestId"');
+    expect(readFileSync('routes/appPages.tsx', 'utf8')).toContain('path="rq/:requestId"');
   });
 
   it('uses the canonical route from home and global search results', () => {
     const home = readFileSync('pages/Home.tsx', 'utf8');
     const commandPalette = readFileSync('components/CommandPalette.tsx', 'utf8');
+    const searchPresentation = readFileSync('lib/search/recordPresentation.ts', 'utf8');
 
     expect(home).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
     expect(home).toContain("import { useRequestList } from '../hooks/useRequestList';");
     expect(home).not.toContain('/rq?requestId=');
     expect(home).not.toContain("../context/RequestContext");
-    expect(commandPalette).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
-    expect(commandPalette).toContain("import { useRequestList } from '../hooks/useRequestList';");
-    expect(commandPalette).toContain('route: buildRequestRoute(rq.id)');
+    // Tìm kiếm toàn hệ thống: phiếu RQ do máy chủ tìm (search_global_v1), mở bằng route chuẩn.
+    expect(searchPresentation).toContain("import { buildRequestRoute } from '../requestRoutes';");
+    expect(searchPresentation).toContain("case 'rq':\n      return { route: buildRequestRoute(id), related };");
+    expect(commandPalette).not.toContain('/rq?requestId=');
     expect(commandPalette).not.toContain("../context/RequestContext");
   });
 
@@ -58,7 +60,7 @@ describe('request deep links', () => {
   });
 
   it('does not mount the retired request context at application scope', () => {
-    const app = readFileSync('App.tsx', 'utf8');
+    const app = readFileSync('App.tsx', 'utf8') + readFileSync('routes/appPages.tsx', 'utf8');
 
     expect(app).not.toContain('<RequestProvider>');
     expect(app).not.toContain("./context/RequestContext");
@@ -66,7 +68,7 @@ describe('request deep links', () => {
 
   it('keeps the phase 1 request workspace behind an environment rollback flag', () => {
     const flags = readFileSync('lib/featureFlags.ts', 'utf8');
-    const app = readFileSync('App.tsx', 'utf8');
+    const app = readFileSync('routes/appPages.tsx', 'utf8');
 
     expect(flags).toContain('VITE_ENABLE_REQUEST_APPROVAL_PHASE1');
     expect(app).toContain('isRequestApprovalPhase1Enabled');

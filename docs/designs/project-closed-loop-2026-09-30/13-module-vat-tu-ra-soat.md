@@ -832,3 +832,143 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 **Đã kiểm trên production trong giao dịch hoàn tác** (`tools/vbd-test.mjs`): anh Luật lùi 10 ngày bị chặn, 3 ngày được; Admin lùi 30 ngày được; ngày tương lai bị chặn; sửa ngày PO-609 dời phiếu giao HĐ sang 08/09; phiếu đã nằm trong bảng đối soát chốt bị chặn; ngày đặt hàng PO-607 về 05/09; nhận 1 bước PO-143 khi đối chiếu mở bị chặn; sửa dữ liệu 4 đơn đúng.
 
 **Lưu ý nhập bù theo HĐ:** PO-607/609/611/612 đã nằm trong bảng đối soát tháng 10 đã ghi sổ (DCHD-202610-…). Muốn dời về tháng 9: kế toán đảo bảng đối soát → sửa ngày từng phiếu nhận → lập lại bảng đối soát tháng 9.
+
+---
+
+## 22. V1-3b — Tồn kho theo quy cách, đã code (10/10/2026)
+
+Làm theo mục 9 và 16.3 (câu 30, 31 đã duyệt). Nền: #147 (mỗi dòng đơn một quy cách), #152 (quy cách đi xuyên phiếu kho / sổ kho / đối soát), #153 (Tài chính).
+
+| Phần | Cách làm |
+|---|---|
+| Tồn, giá vốn, NXT, MISA | **Không đổi** — vẫn theo (mã, kho). Quy cách là chiều phụ |
+| Sổ kho | Mỗi dòng ghi `specAllocations` = phần của dòng thuộc quy cách nào, tại hàm ghi sổ duy nhất `post_inventory_ledger_entry` |
+| Nhập | Quy cách của chứng từ (ảnh chụp dòng đơn). Không có → "Chưa ghi quy cách", không tự đoán |
+| Xuất | Phiếu có quy cách (nhập–xuất thẳng, trả NCC) → đúng quy cách đó. Không ghi → **tự lấy quy cách nhập trước**; thiếu thì phần còn lại về "Chưa ghi quy cách". Chọn tay để V2 |
+| Chuyển kho, phiếu đảo | Giữ đúng quy cách của phiếu xuất / phiếu gốc |
+| Phiếu chuyển quy cách | `wms_spec_transfers` — cùng mã, cùng kho, bắt buộc lý do, không vượt tồn quy cách. Người làm: thủ kho kho đó, Kế toán kho, Admin. Không đổi số lượng / giá trị của mã |
+| Màn Tồn kho | Bấm một mã → mục **Theo quy cách** (xếp theo thứ tự xuất), nút Chuyển quy cách / Gắn quy cách cho hàng tồn, lịch sử phiếu chuyển. Thẻ kho ghi quy cách từng dòng ("chưa ghi · 117 · Loại A · 3") |
+| Dữ liệu cũ | Chạy lại toàn bộ 821 dòng sổ theo thứ tự ghi; kiểm 210/210 cặp mã–kho: tồn các quy cách cộng lại = tồn của mã, không quy cách nào âm |
+
+Chưa làm (để đợt sau): danh sách quy cách có kiểm soát của từng mã (gợi ý, nhãn "mới", rà / gộp / ngừng dùng — mục 9.3, 16.3), chọn quy cách tay khi xuất / chuyển kho (V2 Phiếu kho một màn), kiểm kê theo quy cách (V4), in quy cách trên phiếu xuất.
+
+---
+
+## 23. Danh sách quy cách chuẩn của từng mã, đã code (10/10/2026)
+
+Làm theo mục 9.3 và 16.3 (câu 14 đã duyệt: Mua hàng tạo quy cách mới khi lập đơn, nhãn "mới", người Cấp mã rà sau).
+
+| Phần | Cách làm |
+|---|---|
+| Danh sách | Bảng `item_specs`: mỗi mã một danh sách; trạng thái đang dùng / mới · chờ rà / ngừng dùng / đã gộp (tên khác) |
+| So trùng | Cùng quy tắc với tên mã: bỏ dấu, hoa thường, dấu cách và - _ / ( ) ., "x" / "*" / "×", dấu phẩy thập phân, "ly" = mm (kể cả "1,5ly"). Áp dụng luôn cho giá HĐ theo quy cách và tồn theo quy cách |
+| Ô quy cách trên chứng từ | Đơn từ đề xuất, đơn chủ động, gọi hàng HĐ, bảng giá HĐ, phiếu đề xuất, phiếu chuyển quy cách: gợi ý danh sách của mã; gõ khác kiểu tự đổi về đúng tên; chưa có → nhãn "mới", **không chặn**; quy cách khác số với tên mã (D8 / D10, M24 / M20, 0.45mm / 0.5mm) → cảnh báo "có thể là vật tư khác" |
+| Tự vào danh sách | Quy cách gõ trên đơn mua, bảng giá HĐ, phiếu chuyển quy cách → "chờ rà" |
+| Danh mục → ô "Quy cách chờ rà" | Người Cấp mã: Giữ / Sửa chữ / Gộp vào… / Ngừng dùng (lý do gợi ý: là ghi chú, là vật tư khác — cần mã riêng, không dùng nữa) |
+| Danh mục → chi tiết mã → Quy cách | Danh sách kèm tồn từng kho, hàng đang về, số dòng đơn; thêm quy cách (kiểm trùng ngay khi gõ) |
+| Sửa chữ / gộp | Tồn chuyển sang quy cách mới bằng phiếu chuyển quy cách; tên cũ thành "tên khác" (gõ lại vẫn ra đúng). Chứng từ đã lập giữ nguyên chữ |
+| Ngừng dùng | Khóa khi còn tồn ở kho nào hoặc còn hàng đang về |
+| Nhật ký | Mọi thao tác ghi vào nhật ký của mã (ai, lúc nào, trước/sau, lý do) |
+| Dữ liệu cũ | 42 quy cách trên 21 mã (đơn mua, bảng giá HĐ, sổ kho) vào "chờ rà" để người Cấp mã rà một lượt |
+
+---
+
+## 24. V2 (một phần) — Chọn quy cách tay khi xuất kho, đã code (10/10/2026)
+
+| Phần | Cách làm |
+|---|---|
+| Xuất cấp thi công | Mỗi dòng có ô **Quy cách**: mặc định "Tự lấy nhập trước", hoặc chọn quy cách (thấy tồn từng quy cách tại kho xuất). Bấm "+ Xuất thêm quy cách khác" để tách một mã thành nhiều dòng. Phiếu xuất cấp, phiếu kho và thẻ kho hiện quy cách đã chọn |
+| Xuất hủy | Mỗi mã chọn một quy cách (hoặc tự lấy nhập trước) |
+| Sổ kho | Xuất có quy cách: lấy quy cách đó trước, tối đa phần còn; phần thiếu lấy quy cách nhập trước — không làm âm tồn quy cách. Ô chọn báo trước "còn X — phần thiếu tự lấy nhập trước" |
+| Hàng trả lại từ công trình | Về đúng quy cách đã xuất của dòng xuất cấp (trừ phần đã trả trước đó) |
+| Chuyển kho | **Chưa chọn tay**: phiếu chuyển gộp dòng theo mã lúc gửi hàng; vẫn tự lấy quy cách nhập trước, kho nhận giữ đúng quy cách đã xuất. Làm cùng "Phiếu kho một màn" |
+
+---
+
+## 25. V4 Kiểm kê theo quy cách + in quy cách trên phiếu xuất, đã code (10/10/2026)
+
+| Phần | Cách làm |
+|---|---|
+| Lập phiên | Mã có quy cách tại kho → dòng đếm tự tách theo quy cách, chụp tồn sổ từng quy cách (kể cả "Chưa ghi quy cách") |
+| Đếm | Mỗi quy cách một ô; số đếm của mã = cộng các quy cách (còn quy cách chưa đếm = dòng chưa đếm xong). "+ Quy cách khác (đếm thấy)" thêm quy cách lạ (gợi ý danh sách chuẩn). Mã chưa có quy cách: bấm "Đếm theo quy cách" để tách khi cần. Đếm mù ẩn cả số sổ từng quy cách |
+| Duyệt | Điều chỉnh lệch tổng của mã như cũ; sau đó phiếu chuyển quy cách tự động để tồn từng quy cách = số đếm (lý do "Kiểm kê KK-… — tồn từng quy cách theo số đếm"). Được chuyển về "Chưa ghi quy cách" khi đếm ra hàng không rõ quy cách |
+| Phiếu kho (xem / in) | Phiếu xuất, xuất hủy, chuyển kho đã ghi sổ: dòng ghi **quy cách thực xuất theo sổ kho**, kể cả phần tự lấy nhập trước ("chưa ghi quy cách · 2; 14+2 · 3"). Phiếu nhập / chưa ghi sổ: quy cách ghi trên phiếu. Mẫu in lấy tên theo dòng phiếu (ảnh chụp tên đã mua) |
+| Còn lại | Chọn quy cách khi chuyển kho — làm cùng đợt "Phiếu kho một màn" |
+
+---
+
+## 26. V2 — Kho một màn (mockup 10/10/2026)
+
+Mockup: `.superpowers/review/wms-one/fixture.html` (dữ liệu thật chụp 10/10 bằng `one-data.mjs`, chỉ đọc; quy cách của Xi măng PCB 30 là minh họa). Chủ SP: "toàn bộ kho chỉ trong 1 màn, cắt bớt cái không cần, bỏ phần NHẬP KHO (nhập không ràng buộc đơn hàng, không giá)".
+
+### 26.1 Số liệu làm căn cứ
+
+- **Phiếu nhập tự do (nhập trực tiếp NCC):** 72 phiếu, 61 trong 60 ngày — chị Thủy (XHV) 42, anh Luật (SMB) 20, Admin 10. 54/122 dòng không có giá. Phiếu cuối của thủ kho 25/09; từ cuối tháng 9 hàng đã đi qua đơn mua. Còn treo 3 phiếu: 2 phiếu tấm ALC ở SMB (đã duyệt, chưa nhập), 1 phiếu ở XHV.
+- **Đợt giao chờ nhận:** 17 đợt (SMB 9, XHV 7, Kho Tổng 1), 4 đợt treo từ 31/07 (PO-259/261/263/272).
+- **Xuất cấp thi công:** 63 phiếu; 36 đã đóng, 22 hủy, 1 đang chờ kho duyệt (MI-20260925, Tổ đội Vũ Văn Vui, XHV). 6/20 tên người nhận là tên giả ("XUẤT CHỐT T6", "Tài khoản 627"…).
+- **Chuyển kho:** 21 phiếu, chỉ 2 trong 60 ngày. **Xuất hủy:** 5, không có trong 60 ngày.
+
+### 26.2 Màn "Kho"
+
+| Vùng | Có gì |
+|---|---|
+| Đầu trang | Chip kho (thủ kho mặc định kho của mình) · nút Xuất cấp, Chuyển kho, Kiểm đếm, Quét QR. **Không có nút Nhập** |
+| 4 ô chỉ số (bấm = lọc) | Hàng về chờ nhận (nhấp nháy khi treo ≥ 3 ngày) · Chờ duyệt ngoại lệ · Đang có tồn (giá trị tạm tính) · Cần kiểm tra |
+| Danh sách trái, 3 chế độ | **Việc cần làm** (đợt giao, hàng chuyển đến, hàng trả lại) · **Tồn kho** · **Sổ phiếu** (đã ghi sổ + chờ duyệt) |
+| Cột phải | Nhận hàng (SL điền sẵn, chỉ sửa dòng lệch, thiếu thì chọn: giao bù / chốt thiếu / hàng lỗi trả NCC; ngày hàng về; ảnh phiếu giao; nút "Hàng không về") · Thẻ kho + theo quy cách + nút Xuất / Chuyển / Hủy / Kiểm đếm · Form Xuất cấp, Chuyển kho, Xuất hủy, Kiểm đếm · Xem / In / Đảo phiếu |
+| Điện thoại | Danh sách trước, chạm vào mở toàn màn, nút chính ghim đáy |
+
+### 26.3 Cắt bỏ so với hiện tại
+
+| Bỏ | Thay bằng |
+|---|---|
+| Phiếu **Nhập kho tự do** (tab Nhập, nút "Phiếu nhập") | Hàng vào kho chỉ từ đợt giao Mua hàng (PO, gọi hàng HĐ, mua nóng), hàng chuyển đến, hàng trả lại từ công trình. Tồn đầu kỳ / hàng tặng / hàng thừa → Kiểm đếm (chênh lệch có duyệt) |
+| Duyệt xuất cấp thường; người nhận bắt buộc xác nhận; quyết toán từng phiếu (12 trạng thái) | Xuất 1 bước: thủ kho bấm Xuất kho là ghi sổ. Người nhận ký điện thoại / QR không bắt buộc |
+| Duyệt chuyển kho | 2 bước Gửi hàng → Nhận hàng; chọn quy cách khi gửi |
+| Tab Xử lý phiếu, Lịch sử | Việc cần làm + Sổ phiếu ngay trong danh sách |
+| 3 menu Tồn kho, Phiếu kho, Kiểm kê | 1 menu **Kho**. Menu Vật tư 6 → 4: Kho · Danh mục vật tư · Báo cáo · Phân quyền kho |
+| Gõ tên người nhận tự do | Chọn tổ đội / thầu phụ có hợp đồng hoặc đối tác; chốt tiêu hao tháng làm bằng Kiểm đếm ("Đã dùng, chưa lập phiếu") |
+
+Giữ nguyên: Xuất trả NCC (đi từ Mua hàng), Đối chiếu nhận hàng (ở Mua hàng), ngày chứng từ / ghi lùi có quyền, đảo phiếu thay sửa đè, quy cách (chọn khi xuất / chuyển / đếm).
+
+### 26.4 Câu hỏi cho chủ SP
+
+33. Bỏ phiếu nhập tự do. 3 phiếu đang treo (2 phiếu tấm ALC ở SMB đã duyệt chưa nhập, 1 phiếu ở XHV): hủy và để Mua hàng lập đơn (mua nóng / gọi hàng HĐ) nếu hàng đã về? Tồn đầu kỳ, hàng tặng, hàng thừa đi qua Kiểm đếm (có duyệt). Đồng ý?
+34. 17 đợt giao đang chờ nhận, 4 đợt treo từ 31/07 (PO-259/261/263/272 SMB): Mua hàng rà và đóng / chốt thiếu trước khi lên màn mới?
+35. Xuất cấp 1 bước, không duyệt. Phiếu MI-20260925 (Tổ đội Vũ Văn Vui, XHV) đang chờ duyệt: xuất luôn hay hủy?
+36. Chuyển kho 2 bước Gửi → Nhận, bỏ duyệt. Người lập: thủ kho kho gửi và Mua hàng ("Cấp từ kho"). Đồng ý?
+37. Người nhận khi xuất cấp chỉ chọn trong danh sách (tổ đội / thầu phụ có HĐ, đối tác), không gõ tự do. Có tổ đội chưa có trong danh sách thì ai thêm (Mua hàng hay CHT)?
+38. Menu Vật tư 6 → 4 (Kho · Danh mục · Báo cáo · Phân quyền). Màn Kiểm kê cũ thành nút Kiểm đếm (kiểm nhanh 1 mã, theo nhóm, cả kho). Đồng ý?
+
+### 26.5 Chủ SP trả lời (10/10)
+
+33 hủy 3 phiếu nhập tự do (đã chạy) · 34 Mua hàng rà 17 đợt giao treo · 35 xuất luôn MI-20260925 (XK20260925-00405) · 36 chuyển kho 2 bước không duyệt · 37 Mua hàng thêm người nhận · 38 Kiểm đếm thay màn Kiểm kê · 39 giao diện chỉ tiêu đề + số liệu, bỏ dòng giải thích dài.
+
+## 27. V2 Kho một màn — đã làm (11/10)
+
+| Phần | Làm |
+|---|---|
+| Màn **Kho** (`/inventory`, `components/wms/KhoView.tsx`) | Chip kho · 4 nút Kiểm đếm / Xuất hủy / Chuyển kho / Xuất cấp · 4 ô Hàng về chờ nhận / Chờ duyệt / Đang có tồn / Cần kiểm tra · danh sách Việc cần làm / Tồn kho / Sổ phiếu · cột phải: phiếu (nhận / duyệt / nhận chuyển kho dùng lại `TransactionDetailModal`), thẻ kho (`StockItemPanel`), phiên đếm (`CountPanel`), form (`KhoForms.tsx`). Mở phiếu bằng `?tx=` |
+| Xuất cấp 1 bước | `issue_material_now_v1`: thủ kho kho xuất (quyền duyệt kho) lập + gửi + ghi sổ trong một lệnh; người nhận chỉ chọn HĐ NCC / đối tác; chọn quy cách từng dòng |
+| Chuyển kho | Lập phiếu + **Gửi hàng** ngay (`dispatch_wms_transfer_v1`, dòng mang quy cách); kho nhận bấm Nhận ở Việc cần làm |
+| Xuất hủy | Vẫn chờ người Duyệt ngoại lệ |
+| Kiểm đếm | 1 mã / nhóm vật tư / cả kho (`start_stock_count_v1` nhận `itemIds`), mặc định đếm mù; phiên mở ngay ở cột phải |
+| Bỏ nhập tự do | Trigger `trg_block_free_import` chặn phiếu IMPORT nguồn đối tác / HĐ NCC không qua đợt giao (`WMS_FREE_IMPORT_REMOVED`); bỏ tab Nhập kho (Phiếu kho), mục "Phiếu nhập", lệnh tìm "Lập phiếu nhập kho" |
+| Menu | Vật tư 6 → 4: Kho (đếm việc chờ) · Danh mục vật tư · Báo cáo · Phân quyền kho. Trang `/operations`, `/audit` giữ cho link cũ; nút "…" ở màn Kho mở Trả lại · quyết toán xuất cấp và Đối chiếu nhận hàng |
+| Sửa lỗi | `process_transaction_status` đọc số lượng kiểu numeric (trước ép integer → lỗi khi tồn lẻ 52,6) |
+
+Kiểm tra: smoke `supabase/tests/wms_v2_one_screen_smoke.sql` rollback Cloud đạt (không ghi sổ, không nhảy số phiếu); test rollback có ghi sổ (xuất, gửi chuyển kho có quy cách, chặn nhập tự do, từ chối kho không phụ trách, vượt tồn) đạt; `lib/__tests__/wmsOneScreenContract.test.ts`.
+
+Còn: In / PDF phiếu chưa có ở màn Kho (vẫn ở Phiếu kho → Lịch sử, `/operations`); nhận hàng thiếu chọn lý do (giao bù / chốt thiếu / trả NCC), ảnh phiếu giao NCC — đợt sau.
+
+## 28. In phiếu ở màn Kho + NCC giao một đơn nhiều lần (11/10)
+
+| Phần | Làm |
+|---|---|
+| In / PDF | Nút In phiếu, PDF ở chân mọi phiếu trong màn Kho. Dùng chung `lib/wmsVoucherPrint.ts` với Phiếu kho. Số phiếu lấy từ sổ kho (NK/XK; chuyển kho in cả XK + NK; chưa ghi sổ in "Chưa ghi sổ"). Phiếu nhận theo đợt giao in cột "Theo đợt giao" + thiếu/dư + lý do. Chữ ký theo loại phiếu (nhập: Người giao hàng · Thủ kho · Kế toán) |
+| Nhận thiếu | Ô bắt buộc "Phần thiếu xử lý thế nào?": **NCC giao tiếp phần còn lại** (mở ngay đợt giao kế tiếp) hoặc **Chốt thiếu — báo Mua hàng** (đơn dừng ở Về một phần) |
+| Đợt giao tiếp | `continue_purchase_delivery_v1`: đợt nhận thiếu → đợt N+1 cho phần còn lại (cùng giá, VAT, kho, quy cách theo dòng đơn), phiếu nhập chờ nhận hiện ngay ở Việc cần làm; không vượt phần đơn chưa giao; bấm lại trả đợt đã mở; báo người lập đơn. Người làm: thủ kho kho nhận, Mua hàng, Admin. Phiếu nhận thiếu đã ghi sổ có nút "NCC giao tiếp" (xử lý đơn đang treo Về một phần) |
+
+Ví dụ đơn 100 thùng sơn, NCC giao 3 lần (40 · 35 · 25): đợt 1 nhận 40 → chọn NCC giao tiếp → đợt 2 (60) chờ nhận; xe 2 nhận 35 → NCC giao tiếp → đợt 3 (25); xe 3 nhận 25 → đơn Đã nhận đủ. Mỗi lần giao một phiếu nhập kho, một dòng công nợ, cùng một đơn.
+
+Dữ liệu thật 11/10: 4 đơn ở SMB nhận thiếu đợt 1 rồi treo Về một phần, chưa có đợt tiếp (PO-449, PO-145, PO-268, PO-253).

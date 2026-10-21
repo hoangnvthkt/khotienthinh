@@ -9,6 +9,17 @@ describe('getApiErrorMessage', () => {
     })).toBe('Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở nơi khác. Vui lòng kiểm tra lại.');
   });
 
+  it('explains Room saves blocked by a departed member or a missing required recipient', () => {
+    expect(getApiErrorMessage({
+      code: '23503',
+      message: 'Room members must be active staff in the selected project scope',
+    })).toBe('Room còn người đã rời dự án hoặc đã bị khóa tài khoản. Tải lại trang rồi lưu lại.');
+    expect(getApiErrorMessage({
+      code: '23514',
+      message: 'Required workflow action has no active Room recipient',
+    })).toBe('Room này phải luôn có người giữ quyền duyệt / xác nhận bắt buộc. Giao quyền đó cho ít nhất một người trong dự án rồi lưu lại.');
+  });
+
   it('explains that a used workflow template must be deactivated instead of deleted', () => {
     expect(getApiErrorMessage({
       message: 'workflow template has bindings/versions/instances and must be deactivated instead of deleted',

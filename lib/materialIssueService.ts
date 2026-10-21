@@ -37,6 +37,8 @@ export type MaterialIssueCreateLineInput = {
   workBoqItemId?: string | null;
   subcontractorContractId?: string | null;
   note?: string | null;
+  /** Quy cách chọn khi xuất (trống = tự lấy quy cách nhập trước). */
+  specification?: string | null;
 };
 
 export type MaterialIssueCreateInput = {
@@ -273,6 +275,18 @@ export const materialIssueService = {
     if (error) throw error;
     if (!data) return null;
     return orderOrThrow(data);
+  },
+
+  /** V2 Kho một màn: lập + xuất kho trong một bước (thủ kho kho xuất). Ghi sổ ngay, không chờ duyệt. */
+  async issueNow(input: {
+    sourceWarehouseId: string; projectId?: string | null; constructionSiteId?: string | null;
+    recipientType: string; recipientId: string; recipientName: string; recipientSourceType: string; recipientSourceId: string;
+    note?: string | null; transactionDate?: string | null; lines: MaterialIssueCreateLineInput[];
+  }): Promise<{ orderId: string; issueNo: string; status: string; transactionId: string; code: string | null }> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+    const { data, error } = await supabase.rpc('issue_material_now_v1', { p: input });
+    if (error) throw error;
+    return data as { orderId: string; issueNo: string; status: string; transactionId: string; code: string | null };
   },
 
   async createDraft(input: MaterialIssueCreateInput): Promise<MaterialIssueOrder> {

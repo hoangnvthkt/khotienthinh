@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { MemoryRouter, Route, Routes, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 
@@ -7,7 +7,6 @@ import { StateBox } from '../procurement/hub/hubUi';
 // đường dẫn như khi mở trực tiếp; bấm qua lại bên trong không rời Center và không chạm lịch sử trình duyệt
 // (nút Back vẫn do Center xử lý). Router của app được "ngắt" bằng context rỗng để MemoryRouter lồng được.
 
-export interface EmbedRoute { path: string; element: React.ReactNode }
 
 /** Đi tới màn chưa nhúng được (link sang module khác) → mời mở hẳn màn đó. */
 const EmbedExit: React.FC<{ onExit?: (path: string) => void }> = ({ onExit }) => {
@@ -25,19 +24,39 @@ const EmbedExit: React.FC<{ onExit?: (path: string) => void }> = ({ onExit }) =>
   );
 };
 
+/** Link thô <a href="#/..."> trong trang module: đi trong tab thay vì đổi hash cửa sổ (đổi hash = popstate,
+ *  Center tưởng là nút Back → đóng lớp và kéo về /center). Ctrl/⌘-click, target khác vẫn để trình duyệt xử lý. */
+const HashLinkBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const onClickCapture = (event: React.MouseEvent) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    const href = anchor?.getAttribute('href');
+    if (!anchor || !href?.startsWith('#/') || (anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) return;
+    event.preventDefault();
+    navigate(href.slice(1));
+  };
+  return <div style={{ display: 'contents' }} onClickCapture={onClickCapture}>{children}</div>;
+};
+
 const NO_LOCATION = null as unknown as React.ContextType<typeof UNSAFE_LocationContext>;
 const NO_ROUTE: React.ContextType<typeof UNSAFE_RouteContext> = { outlet: null, matches: [], isDataRoute: false };
 
-const RouteRenderer: React.FC<{ path: string; routes: EmbedRoute[]; onExit?: (path: string) => void }> = ({ path, routes, onExit }) => (
+/** routes = các <Route> (bảng màn chung); gate bọc Routes trong router bộ nhớ (kiểm quyền, nạp dữ liệu theo màn). */
+const RouteRenderer: React.FC<{ path: string; state?: unknown; routes: React.ReactNode; gate?: React.ComponentType<{ children: React.ReactNode }>; onExit?: (path: string) => void }> = ({ path, state, routes, gate: Gate = React.Fragment, onExit }) => (
   <UNSAFE_LocationContext.Provider value={NO_LOCATION}>
     <UNSAFE_RouteContext.Provider value={NO_ROUTE}>
-      <MemoryRouter initialEntries={[path]}>
-        <Suspense fallback={<StateBox kind="loading" title="Đang mở màn xử lý…" />}>
-          <Routes>
-            {routes.map(route => <Route key={route.path} path={route.path} element={route.element} />)}
-            <Route path="*" element={<EmbedExit onExit={onExit} />} />
-          </Routes>
-        </Suspense>
+      <MemoryRouter initialEntries={[state === undefined ? path : { pathname: path.split('?')[0], search: path.includes('?') ? `?${path.split('?').slice(1).join('?')}` : '', state }]}>
+        <HashLinkBridge>
+          <Suspense fallback={<StateBox kind="loading" title="Đang mở màn…" />}>
+            <Gate>
+              <Routes>
+                {routes}
+                <Route path="*" element={<EmbedExit onExit={onExit} />} />
+              </Routes>
+            </Gate>
+          </Suspense>
+        </HashLinkBridge>
       </MemoryRouter>
     </UNSAFE_RouteContext.Provider>
   </UNSAFE_LocationContext.Provider>

@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
+import type { PreparedEntry } from '../../lib/search/searchEngine';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Inbox, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun, UserRound, Wallet } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
+import AssistantView, { type AssistantHooks } from './AssistantView';
 import ActionFolder from './ActionFolder';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
 import { isEmbeddableRoute, moduleForRoute, resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
@@ -12,11 +14,21 @@ import type { WidgetView } from '../../lib/center/todayWidgets';
 import { displayCode, type WorkItem } from '../../lib/center/workItemsService';
 import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers';
 import { fetchCenterToday, type CenterToday } from '../../lib/center/centerTodayService';
-import { civilOf, type CivilRange } from '../../lib/center/civilDate';
 import {
-  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
-  type CenterLayout, type CenterLayoutRecord,
+  blocksOf, defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget,
+  withBlocks, withPinnedActions, type CenterLayout, type CenterLayoutRecord, type TodayBlockId,
 } from '../../lib/center/centerLayout';
+import type { DashDocList, DashDocQuery, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
+import { routeTitle } from '../../lib/dashboard/dashboardModel';
+import { registerCenterOpener } from '../../lib/center/centerOpen';
+import AvatarMenu from './AvatarMenu';
+import type { DashboardState } from '../dashboard/DashboardView';
+import type { FlowState } from '../flow/FlowView';
+import type { FlowQuery, FlowResult, FlowScope, LoadFlowItems, RemindFlow } from '../../lib/center/centerFlowService';
+import type { LoadMaterialMoves } from '../dashboard/StockTable';
+import type { Site3dHooks } from '../../lib/site3d/site3dService';
+import type { Site3dAccess } from '../../lib/site3d/site3dData';
+import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
@@ -27,11 +39,24 @@ const PROJECT_KEY = 'vcc_project';
 const INBOX_MIN = 260;
 const INBOX_MAX = 460;
 const FOCUS_REFRESH_MS = 60_000;
-const readStorage = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
-const writeStorage = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* chỉ là tiện ích */ } };
+// Tiện ích giao diện lưu theo tài khoản (máy dùng chung nhiều người vẫn đúng của ai nấy); chưa có bản theo tài khoản thì đọc bản cũ.
+const scoped = (key: string, owner?: string) => (owner ? `${key}:${owner}` : key);
+const readStorage = (key: string, owner?: string) => { try { return localStorage.getItem(scoped(key, owner)) ?? localStorage.getItem(key); } catch { return null; } };
+const writeStorage = (key: string, value: string, owner?: string) => { try { localStorage.setItem(scoped(key, owner), value); } catch { /* chỉ là tiện ích */ } };
 const clampWidth = (value: number) => Math.min(INBOX_MAX, Math.max(INBOX_MIN, value));
 
 const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: false };
+const DASHBOARD_TAB: CenterWorkTab = { id: 'dashboard', title: 'Bảng điều khiển', closable: false };
+// Tab Trợ lý cố định cạnh Hôm nay / Bảng điều khiển (doc audit AI mục 8): bản tin + hỏi đáp, chỉ đọc.
+const ASSISTANT_TAB: CenterWorkTab = { id: 'assistant', title: 'Trợ lý', closable: false };
+const ALL_BOARDS: DashboardId[] = ['portfolio', 'cashflow', 'materials', 'debt'];
+const LazyDashboard = React.lazy(() => import('../dashboard/DashboardView'));
+const FLOW_TAB: CenterWorkTab = { id: 'flow', title: 'Dòng chảy công việc', closable: false };
+const LazyFlow = React.lazy(() => import('../flow/FlowView'));
+const FLOW_REFRESH_MS = 60_000;
+// Công trường 3D (trình chiếu tiến độ): chỉ Admin và người Admin cấp quyền center.site3d.view (máy chủ kiểm, vcc_site3d_v1).
+const SITE3D_TAB: CenterWorkTab = { id: 'site3d', title: 'Công trường 3D', closable: false };
+const LazySite3d = React.lazy(() => import('../site3d/Site3dView'));
 
 interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
 
@@ -52,6 +77,10 @@ export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
 export type LoadActions = (projectId: string | null) => Promise<CenterActionFlags>;
 export type LoadLayout = () => Promise<CenterLayoutRecord>;
 export type SaveLayout = (layout: CenterLayout) => Promise<number>;
+/** force = người dùng bấm Cập nhật; không force thì được dùng số đã tải (không realtime). */
+export type LoadDashboard = (options?: { force?: boolean }) => Promise<DashboardDataset>;
+/** Bảng người dùng được xem (nhẹ) — không có bảng nào thì không hiện tab. */
+export type LoadDashboardAccess = () => Promise<DashboardId[]>;
 
 export interface CenterShellProps {
   person: CenterPerson & { title?: string | null; avatar?: string | null };
@@ -79,6 +108,41 @@ export interface CenterShellProps {
   /** Bố cục ô của người dùng (mặc định get/save_center_layout_v1). */
   loadLayout?: LoadLayout;
   saveLayout?: SaveLayout;
+  /** Số liệu Bảng điều khiển; không truyền = chưa có tab Bảng điều khiển. */
+  loadDashboard?: LoadDashboard;
+  /** Kiểm có bảng nào không trước khi hiện tab; không truyền = có loadDashboard là hiện tab. */
+  loadDashboardAccess?: LoadDashboardAccess;
+  /** Giao dịch kho của một vật tư (bảng tồn / nhập / xuất của Bảng điều khiển). */
+  loadMaterialMoves?: LoadMaterialMoves;
+  /** Chứng từ tạo nên một con số tiền trên Bảng điều khiển. */
+  loadMetricDocs?: (query: DashDocQuery, projectId: string | null) => Promise<DashDocList>;
+  /** Tên tab của một màn (nhãn chức năng trên thanh bên); không có thì đặt theo màn. */
+  titleForRoute?: (route: string) => string | null;
+  /** Đăng xuất (menu avatar). */
+  onLogout?: () => void;
+  /** Mã người dùng: tiện ích giao diện (cột việc, dự án đang chọn) lưu riêng từng tài khoản. */
+  userId?: string;
+  /** Mở thẳng Bảng điều khiển ở một bảng (và dự án) — link từ module khác; nonce đổi = yêu cầu mới. */
+  initialDashboard?: { board: DashboardId; projectId?: string | null; nonce: number } | null;
+  /** Dòng chảy công việc (vcc_flow_v1); không truyền = chưa có tab. */
+  loadFlow?: (query: FlowQuery) => Promise<FlowResult>;
+  /** Kiểm có phạm vi xem không trước khi hiện tab (nhẹ, không tính số); không truyền = có loadFlow là hiện tab. */
+  loadFlowAccess?: () => Promise<{ access: boolean; scope: FlowScope | null }>;
+  /** Mở thẳng tab Dòng chảy công việc (/center?view=flow) hoặc Công trường 3D (/center?view=site3d). */
+  initialTab?: 'flow' | 'site3d' | 'assistant' | null;
+  /** Câu hỏi gửi ngay khi mở tab Trợ lý (từ ô Tìm kiếm "Hỏi Trợ lý AI"). */
+  initialAsk?: string | null;
+  /** Trang + thao tác người này mở được — ô hỏi Trợ lý tìm ngay (buildLocalIndex). */
+  searchLocal?: readonly PreparedEntry[];
+  /** Công trường 3D: quyền + số liệu + mô hình; không truyền = chưa có tab. */
+  site3d?: Site3dHooks;
+  /** Bản thử nghiệm: gắn window.__site3d (điều khiển cảnh 3D) để kiểm bằng Playwright. */
+  exposeSite3dDebug?: boolean;
+  /** Tab Trợ lý: tình trạng + gọi cổng AI (mặc định lib/aiGateway); fixture truyền bản giả lập. */
+  assistant?: AssistantHooks;
+  /** Danh sách phiếu đang chờ theo lọc + nhắc người giữ việc (Dòng chảy công việc PR-3). */
+  loadFlowItems?: LoadFlowItems;
+  remindFlow?: RemindFlow;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -90,24 +154,25 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
+  loadFlow, loadFlowAccess, initialTab = null, initialAsk = null, searchLocal, loadFlowItems, remindFlow,
+  assistant, site3d, exposeSite3dDebug = false,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
   const now = nowProp ?? mountedAt;
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
-  const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
-  const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY)) || 340));
+  const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY, userId) === 'true');
+  const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY, userId)) || 340));
   const [resizing, setResizing] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTab, setActiveTabState] = useState(TODAY_TAB.id);
+  // Tab Trợ lý chỉ dựng khi mở lần đầu (như Bảng điều khiển): không tính bản tin / tải Việc của tôi khi chưa ai xem.
+  const [assistantMounted, setAssistantMounted] = useState(false);
+  useEffect(() => { if (activeTab === ASSISTANT_TAB.id) setAssistantMounted(true); }, [activeTab]);
   const [mineCount, setMineCount] = useState<number | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY));
+  const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY, userId));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
-  // Lọc Việc của tôi theo hạn (ô Lịch ở Hôm nay); hạn của các việc Chờ tôi để chấm trên lịch.
-  const [dueRange, setDueRange] = useState<CivilRange | null>(null);
-  const [mineItems, setMineItems] = useState<WorkItem[]>([]);
   const [todayAttempt, setTodayAttempt] = useState(0);
   const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
   const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
@@ -171,7 +236,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, []);
 
 
-  const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value)); return !value; });
+  const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value), userId); return !value; });
 
   // Kéo mép cột việc (260–460px), nhớ độ rộng trên trình duyệt này.
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -186,7 +251,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
       target.removeEventListener('pointerup', stop);
       target.removeEventListener('pointercancel', stop);
       setResizing(false);
-      setInboxWidth(width => { writeStorage(INBOX_WIDTH_KEY, String(width)); return width; });
+      setInboxWidth(width => { writeStorage(INBOX_WIDTH_KEY, String(width), userId); return width; });
     };
     target.addEventListener('pointermove', move);
     target.addEventListener('pointerup', stop);
@@ -199,18 +264,156 @@ const CenterShell: React.FC<CenterShellProps> = ({
     setMobilePane('today');
   }, [setActiveTab]);
 
+  // Bảng điều khiển: tab chỉ hiện khi người dùng có bảng; số liệu tải khi mở tab lần đầu (không làm chậm lúc vào Center),
+  // không realtime — "Cập nhật" mới lấy số mới, trong lúc đó vẫn hiện số cũ.
+  // null = chưa biết (đang kiểm); không có hàm kiểm thì coi như đủ 4 bảng (máy chủ vẫn chỉ trả bảng được xem).
+  const [dashboardAccess, setDashboardAccess] = useState<DashboardId[] | null>(loadDashboard && !loadDashboardAccess ? ALL_BOARDS : null);
+  useEffect(() => {
+    if (!loadDashboard || !loadDashboardAccess) return undefined;
+    let alive = true;
+    loadDashboardAccess()
+      .then(access => { if (alive) setDashboardAccess(access); })
+      .catch(error => { console.warn('Dashboard access check failed:', error); if (alive) setDashboardAccess([]); });
+    return () => { alive = false; };
+  }, [loadDashboard, loadDashboardAccess]);
+  const hasDashboards = !!dashboardAccess && dashboardAccess.length > 0;
+  // Khối trên "Hôm nay" (chủ SP 10/10): Truy cập nhanh + màn của Bảng điều khiển người dùng tự thêm.
+  const savedBlocks = typeof layoutRecord === 'object' ? blocksOf(layoutRecord.layout) : null;
+  const todayBlocks = (savedBlocks || []).filter(id => id === 'quick' || (dashboardAccess || []).includes(id.slice(6) as DashboardId));
+  const boardOnToday = todayBlocks.some(id => id !== 'quick');
+  const [dashboard, setDashboard] = useState<DashboardState | null>(null);
+  const [dashboardAttempt, setDashboardAttempt] = useState(0);
+  const [dashboardBusy, setDashboardBusy] = useState(false);
+  const [dashboardNote, setDashboardNote] = useState<string | null>(null);
+  // Bấm "Mở" trên khối bảng ở Hôm nay → tab Bảng điều khiển mở đúng bảng đó.
+  const [dashboardFocus, setDashboardFocus] = useState<{ board: DashboardId; nonce: number; projectId?: string | null } | null>(null);
+  useEffect(() => {
+    if (!initialDashboard || !loadDashboard) return;
+    setDashboardFocus(initialDashboard);
+    setActiveTab(DASHBOARD_TAB.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDashboard?.nonce]);
+  const dashboardWanted = activeTab === DASHBOARD_TAB.id || dashboard !== null || boardOnToday;
+  useEffect(() => {
+    if (!loadDashboard || !dashboardWanted) return undefined;
+    let alive = true;
+    setDashboardNote(null);
+    setDashboardBusy(true);
+    setDashboard(current => (current?.status === 'ready' ? current : { status: 'loading' }));
+    loadDashboard({ force: dashboardAttempt > 0 })
+      .then(data => { if (alive) setDashboard({ status: 'ready', data }); })
+      .catch(error => {
+        if (!alive) return;
+        const message = error instanceof Error ? error.message : 'Lỗi không xác định';
+        // Đang có số cũ thì giữ, chỉ báo chưa cập nhật được.
+        setDashboard(current => (current?.status === 'ready' ? current : { status: 'error', message }));
+        setDashboardNote(message);
+      })
+      .finally(() => { if (alive) setDashboardBusy(false); });
+    return () => { alive = false; };
+    // dashboardWanted chỉ chuyển false → true một lần; tải lại theo dashboardAttempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadDashboard, dashboardWanted, dashboardAttempt]);
+
+  // Dòng chảy công việc (chủ SP 13/10): tab chỉ hiện khi máy chủ xác nhận có phạm vi xem; số liệu tải khi mở tab lần đầu và giữ khi
+  // chuyển tab; đang xem tab + cửa sổ đang hiện thì mỗi phút lấy số mới (vẫn hiện số cũ trong lúc chờ). Tab ẩn: không hẹn giờ gì.
+  const [flowAccess, setFlowAccess] = useState<boolean | null>(loadFlow && !loadFlowAccess ? true : null);
+  useEffect(() => {
+    if (!loadFlow || !loadFlowAccess) return undefined;
+    let alive = true;
+    loadFlowAccess()
+      .then(result => { if (alive) setFlowAccess(result.access); })
+      .catch(error => { console.warn('Flow access check failed:', error); if (alive) setFlowAccess(false); });
+    return () => { alive = false; };
+  }, [loadFlow, loadFlowAccess]);
+  const hasFlow = !!loadFlow && flowAccess === true;
+  const [flowQuery, setFlowQuery] = useState<FlowQuery>({ range: 90, unitId: null, projectId: null });
+  const [flow, setFlow] = useState<FlowState | null>(null);
+  const [flowAttempt, setFlowAttempt] = useState(0);
+  const [flowBusy, setFlowBusy] = useState(false);
+  const [flowNote, setFlowNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (initialTab === 'flow' && loadFlow) { setActiveTab(FLOW_TAB.id); setMobilePane('today'); }
+    if (initialTab === 'assistant') { setActiveTab(ASSISTANT_TAB.id); setMobilePane('today'); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+  const flowWanted = activeTab === FLOW_TAB.id || flow !== null;
+  useEffect(() => {
+    if (!loadFlow || !flowWanted) return undefined;
+    let alive = true;
+    setFlowNote(null);
+    setFlowBusy(true);
+    setFlow(current => (current?.status === 'ready' ? current : { status: 'loading' }));
+    loadFlow(flowQuery)
+      .then(result => {
+        if (!alive) return;
+        if (result.access === false) {
+          setFlow({ status: 'error', message: result.reason === 'no_scope' ? 'Bạn chưa có phạm vi xem dòng chảy công việc.' : 'Chưa vào được Trung tâm điều hành.' });
+          return;
+        }
+        setFlow({ status: 'ready', data: result });
+      })
+      .catch(error => {
+        if (!alive) return;
+        const message = error instanceof Error ? error.message : 'Lỗi không xác định';
+        setFlow(current => (current?.status === 'ready' ? current : { status: 'error', message }));
+        setFlowNote(message);
+      })
+      .finally(() => { if (alive) setFlowBusy(false); });
+    return () => { alive = false; };
+    // flowWanted chỉ chuyển false → true một lần; tải lại theo flowQuery / flowAttempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadFlow, flowWanted, flowQuery, flowAttempt]);
+  // Công trường 3D: kiểm quyền một lần (nhẹ), chỉ dựng cảnh khi mở tab lần đầu.
+  const [site3dAccess, setSite3dAccess] = useState<Site3dAccess | null>(null);
+  useEffect(() => {
+    if (!site3d) return undefined;
+    let alive = true;
+    site3d.loadAccess()
+      .then(result => { if (alive) setSite3dAccess(result); })
+      .catch(error => { console.warn('Site 3D access check failed:', error); if (alive) setSite3dAccess({ access: false, reason: 'error' }); });
+    return () => { alive = false; };
+  }, [site3d]);
+  const hasSite3d = !!site3d && site3dAccess?.access === true;
+  const [site3dMounted, setSite3dMounted] = useState(false);
+  useEffect(() => { if (activeTab === SITE3D_TAB.id && hasSite3d) setSite3dMounted(true); }, [activeTab, hasSite3d]);
+  useEffect(() => { if (initialTab === 'site3d' && hasSite3d) { setActiveTab(SITE3D_TAB.id); setMobilePane('today'); } }, [initialTab, hasSite3d, setActiveTab]);
+  const flowShowing = activeTab === FLOW_TAB.id && flow?.status === 'ready' && !(narrow && mobilePane !== 'today');
+  useEffect(() => {
+    if (!loadFlow || !flowShowing) return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = document.visibilityState === 'visible' ? setTimeout(() => setFlowAttempt(value => value + 1), FLOW_REFRESH_MS) : null;
+    };
+    schedule();
+    document.addEventListener('visibilitychange', schedule);
+    return () => { if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', schedule); };
+  }, [loadFlow, flowShowing, flowAttempt, flowQuery]);
+
   const openItem = useCallback((item: WorkItem) => {
     openTab({ id: workItemKey(item), title: displayCode(item), closable: true, item, module: item.module, target: resolveDrillTarget(item) });
   }, [openTab]);
 
-  // Đích từ widget: route → sang module; tab → mở view nhúng; inbox → về cột việc.
+  // Mở một màn của app thành tab mới cạnh "Hôm nay" (chủ SP 10/10: mở gì cũng ra tab — nút trên Hôm nay, thanh bên, tìm kiếm,
+  // Bảng điều khiển, menu avatar). Cùng màn + cùng trạng thái thì chuyển sang tab đang mở. Chỉ trang chủ / chính Center mới rời trang.
+  const openRoute = useCallback((route: string, title?: string, state?: unknown) => {
+    if (!isEmbeddableRoute(route)) { onNavigate(route); return; }
+    const name = title || titleForRoute?.(route) || routeTitle(route);
+    const stateJson = state === undefined || state === null ? null : JSON.stringify(state);
+    openTab({ id: `route:${route}${stateJson ? `#${stateJson}` : ''}`, title: name, closable: true, item: null, module: moduleForRoute(route),
+      target: { kind: 'tab', renderer: 'route', props: stateJson ? { path: route, state: stateJson } : { path: route }, title: name, route } });
+  }, [onNavigate, openTab, titleForRoute]);
+  useEffect(() => registerCenterOpener(request => openRoute(request.route, request.title, request.state)), [openRoute]);
+
+  // Đích từ widget: route → tab màn đó; tab → mở view nhúng; inbox → về cột việc.
   const onDrill = useCallback((target: DrillTarget) => {
-    if (target.kind === 'route') { onNavigate(target.path); return; }
-    if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false'); setMobilePane('inbox'); return; }
+    if (target.kind === 'route') { openRoute(target.path, target.title); return; }
+    if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false', userId); setMobilePane('inbox'); return; }
     const module: CenterModuleKey = target.renderer === 'request' ? 'request' : target.renderer === 'finance' ? 'finance'
       : target.renderer === 'site_assignment' ? 'hrm' : 'procurement';
     openTab({ id: `drill:${target.renderer}:${JSON.stringify(target.props)}`, title: target.title, closable: true, item: null, module, target });
-  }, [onNavigate, openTab]);
+  }, [openRoute, openTab, userId]);
 
   const closeTab = (id: string) => {
     const index = openTabs.findIndex(tab => tab.id === id);
@@ -220,7 +423,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     scrollTops.current.delete(id);
   };
 
-  const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
+  const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id, userId); setProjectId(id); };
 
   // Bố cục ô: đã lưu (máy chủ) → dùng; chưa lưu → mặc định theo quyền máy chủ. Sửa trên bản nháp, "Xong" mới lưu.
   useEffect(() => {
@@ -240,7 +443,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
     if (sameLayout(draft, baseLayout)) { setDraft(null); setLayoutStatus('idle'); return; }
     // Về đúng mặc định → lưu bố cục rỗng để sau này mặc định theo quyền vẫn tự cập nhật.
     const backToDefault = sameLayout(draft, defaultCenterLayout(actionFlags, todayData));
-    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}) } : draft;
+    const toSave: CenterLayout = backToDefault
+      ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}), ...(draft.blocks ? { blocks: draft.blocks } : {}) } : draft;
     setLayoutStatus('saving');
     saveLayout(toSave).then(version => {
       setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: toSave, version } : current));
@@ -253,6 +457,22 @@ const CenterShell: React.FC<CenterShellProps> = ({
     const next = withPinnedActions(savedLayout, id, keys);
     return saveLayout(next).then(version => {
       setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: next, version } : current));
+    });
+  }, [savedLayout, saveLayout]);
+  // Khối "Hôm nay": thêm / xóa / đổi thứ tự lưu ngay (như chọn nút nhanh), lỗi thì trả lại như cũ.
+  const [blockStatus, setBlockStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const saveBlocks = useCallback((next: TodayBlockId[]) => {
+    const previous = savedLayout;
+    const layout = withBlocks(savedLayout, next);
+    setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout } : current));
+    setBlockStatus('saving');
+    saveLayout(layout).then(version => {
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, version } : current));
+      setBlockStatus('idle');
+    }).catch(error => {
+      console.warn('Center blocks save failed:', error);
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: previous } : current));
+      setBlockStatus('error');
     });
   }, [savedLayout, saveLayout]);
   const customize: TodayCustomize = {
@@ -279,13 +499,10 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const onAction = useCallback((action: WidgetAction) => {
     const target = action.target;
     if (target.kind === 'modal') { setModal(target.modal); return; }
-    if (target.kind === 'route' && isEmbeddableRoute(target.path)) {
-      openTab({ id: `route:${target.path}`, title: target.title, closable: true, item: null, module: moduleForRoute(target.path),
-        target: { kind: 'tab', renderer: 'route', props: { path: target.path }, title: target.title, route: target.path } });
-      return;
-    }
     onDrill(target);
-  }, [onDrill, openTab]);
+  }, [onDrill]);
+  // Bấm sang từ Bảng điều khiển: mở màn gốc thành tab cạnh bảng.
+  const openDashboardRoute = useCallback((route: string) => openRoute(route), [openRoute]);
   const onModalDone = useCallback(() => { setInboxRefresh(value => value + 1); setTodayAttempt(value => value + 1); }, []);
 
   // Khôi phục khi đổi tab và khi điện thoại quay lại vùng làm việc.
@@ -302,7 +519,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     onScroll: (event: React.UIEvent<HTMLDivElement>) => { scrollTops.current.set(id, event.currentTarget.scrollTop); },
   });
 
-  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...openTabs];
+  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ...(hasSite3d ? [SITE3D_TAB] : []), ASSISTANT_TAB, ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
   // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
   const mobileRecord = narrow && mobilePane === 'today' && !!current;
@@ -318,16 +535,6 @@ const CenterShell: React.FC<CenterShellProps> = ({
   });
   backRef.current = back;
   const onMineCount = useCallback((count: number | null) => setMineCount(count), []);
-  const onMineItems = useCallback((items: WorkItem[]) => setMineItems(items), []);
-  const dueDays = useMemo(() => mineItems.map(item => civilOf(item.dueAt)).filter((day): day is string => !!day), [mineItems]);
-  // Chọn ngày ở ô Lịch → hiện Việc của tôi đã lọc (điện thoại: chuyển sang tab Việc; máy tính: mở lại cột nếu đang ẩn).
-  const applyDueRange = useCallback((range: CivilRange | null) => {
-    setDueRange(range);
-    if (!range) return;
-    setInboxHidden(false);
-    writeStorage(INBOX_HIDDEN_KEY, 'false');
-    setMobilePane('inbox');
-  }, []);
 
   return (
     <div className="vcc" data-pane={mobilePane}>
@@ -357,7 +564,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
         <button type="button" className="vcc-iconbtn vcc-mobile-only" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </button>
-        <button type="button" className="vcc-iconbtn vcc-desktop-only" onClick={() => setAssistantOpen(open => !open)} aria-pressed={assistantOpen}>
+        <button type="button" className="vcc-iconbtn vcc-desktop-only" onClick={() => setActiveTab(ASSISTANT_TAB.id)} aria-pressed={activeTab === ASSISTANT_TAB.id}>
           <Sparkles size={15} /> Trợ lý
         </button>
         {mobileNotifications && <div className="vcc-mobile-only flex">{mobileNotifications}</div>}
@@ -366,9 +573,13 @@ const CenterShell: React.FC<CenterShellProps> = ({
             <div className="vcc-who vcc-ellipsis max-w-[200px]">{person.fullName}</div>
             {person.title && <div className="text-xs vcc-muted vcc-ellipsis max-w-[200px]">{person.title}</div>}
           </div>
-          <div className="vcc-avatar" title={person.fullName}>
+          <AvatarMenu name={person.fullName} subtitle={person.title} buttonClassName="vcc-avatar" items={[
+            { key: 'profile', label: 'Thông tin cá nhân', icon: UserRound, onSelect: () => openRoute('/my-profile', 'Hồ sơ của tôi') },
+            ...(canOpenRoute('/my-payroll') ? [{ key: 'payroll', label: 'Phiếu lương của tôi', icon: Wallet, onSelect: () => openRoute('/my-payroll', 'Phiếu lương') }] : []),
+            ...(onLogout ? [{ key: 'logout', label: 'Đăng xuất', icon: LogOut, onSelect: onLogout, danger: true }] : []),
+          ]}>
             {person.avatar ? <img src={person.avatar} alt="" /> : personInitials(person.fullName)}
-          </div>
+          </AvatarMenu>
         </div>
       </header>
 
@@ -380,9 +591,6 @@ const CenterShell: React.FC<CenterShellProps> = ({
           activeItemKey={current?.item ? current.id : null}
           onOpen={openItem}
           onMineCount={onMineCount}
-          onMineItems={onMineItems}
-          dueRange={dueRange}
-          onClearDueRange={() => setDueRange(null)}
           refreshToken={inboxRefresh}
           resizer={(
             <div
@@ -404,20 +612,75 @@ const CenterShell: React.FC<CenterShellProps> = ({
               person={person}
               now={now}
               canOpenRoute={canOpenRoute}
-              onNavigate={onNavigate}
+              onNavigate={openRoute}
               onAction={onAction}
               onOpenFolder={onOpenFolder}
               actionsFor={actionsFor}
               today={today}
-              dueDays={dueDays}
-              dueRange={dueRange}
-              onDueRange={applyDueRange}
               mineCount={mineCount}
               onSelectProject={selectProject}
               customize={customize}
               onRetry={() => setTodayAttempt(value => value + 1)}
+              blocks={{
+                ids: savedBlocks ? todayBlocks : null,
+                available: ['quick', ...(dashboardAccess || []).map(board => `board:${board}` as TodayBlockId)],
+                status: blockStatus,
+                onChange: saveBlocks,
+                onOpenDashboard: hasDashboards ? board => { setDashboardFocus({ board, nonce: Date.now() }); setActiveTab(DASHBOARD_TAB.id); } : undefined,
+                renderBoard: board => (dashboard ? (
+                  <React.Suspense fallback={null}>
+                    <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves} loadDocs={loadMetricDocs} storageOwner={userId}
+                      onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} only={board} />
+                  </React.Suspense>
+                ) : null),
+              }}
             />
           </div>
+          {/* Chưa mở tab lần nào thì không dựng ngăn (giống tab hồ sơ). */}
+          {loadDashboard && hasDashboards && dashboard && (
+            <div {...panelProps(DASHBOARD_TAB.id)}>
+              <React.Suspense fallback={null}>
+                <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves} loadDocs={loadMetricDocs} storageOwner={userId}
+                  onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} focus={dashboardFocus} />
+              </React.Suspense>
+            </div>
+          )}
+          {hasFlow && flow && (
+            <div {...panelProps(FLOW_TAB.id)}>
+              <React.Suspense fallback={null}>
+                <LazyFlow state={flow} isDark={isDark} query={flowQuery} onQueryChange={setFlowQuery} refreshing={flowBusy} refreshNote={flowNote}
+                  onRetry={() => setFlowAttempt(value => value + 1)} onOpen={openDashboardRoute} now={now}
+                  loadItems={loadFlowItems} remind={remindFlow} onOpenItem={openItem} />
+              </React.Suspense>
+            </div>
+          )}
+          {hasSite3d && site3dMounted && site3dAccess?.access === true && (
+            <div {...panelProps(SITE3D_TAB.id)} style={{ overflow: 'hidden' }}>
+              <React.Suspense fallback={null}>
+                <LazySite3d hooks={site3d!} access={site3dAccess} active={activeTab === SITE3D_TAB.id && (!narrow || mobilePane === 'today')} storageOwner={userId} exposeDebug={exposeSite3dDebug} />
+              </React.Suspense>
+            </div>
+          )}
+          {/* Trợ lý tự cuộn trong khung chat (ô nhập luôn ở đáy). */}
+          {assistantMounted && <div {...panelProps(ASSISTANT_TAB.id)} style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <AssistantView
+              person={person}
+              now={now}
+              today={today}
+              mineCount={mineCount}
+              active={activeTab === ASSISTANT_TAB.id && (!narrow || mobilePane === 'today')}
+              // App thật không truyền loadWorkItems (cột việc tự dùng mặc định) → dùng cùng nguồn chung, không để undefined (sự cố 15/10).
+              loadWorkItems={loadWorkItems || loadWorkItemsShared}
+              onDrill={onDrill}
+              onOpenItem={openItem}
+              onRetry={() => setTodayAttempt(value => value + 1)}
+              onOpenRoute={openRoute}
+              initialQuestion={initialAsk}
+              canOpenRoute={canOpenRoute}
+              searchLocal={searchLocal}
+              hooks={assistant}
+            />
+          </div>}
           {openTabs.map(tab => (
             <div key={tab.id} {...panelProps(tab.id)}>
               <WorkItemTab
@@ -434,17 +697,6 @@ const CenterShell: React.FC<CenterShellProps> = ({
             </div>
           ))}
         </section>
-        <aside className="vcc-ai" data-open={assistantOpen} aria-label="Trợ lý Vioo">
-          <div className="flex items-center gap-2 border-b border-[color:var(--vcc-border)] px-4 py-2.5">
-            <b>Trợ lý Vioo</b>
-            <span className="vcc-badge">Sắp có</span>
-            <button type="button" className="vcc-desktop-only ml-auto text-xs vcc-muted" onClick={() => setAssistantOpen(false)}>Đóng</button>
-          </div>
-          <div className="space-y-3 p-4">
-            <p className="m-0">Trợ lý sẽ giúp tra số, điền sẵn phiếu và mở bản tóm tắt trước khi bạn bấm.</p>
-            <p className="m-0 text-xs vcc-muted">Nút Gửi, Duyệt luôn do bạn bấm. Trợ lý đang được chuẩn bị, chưa dùng được.</p>
-          </div>
-        </aside>
       </div>
 
       {folder && (
@@ -473,10 +725,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
         <button type="button" role="tab" aria-selected={mobilePane === 'inbox'} onClick={() => setMobilePane('inbox')}>
           <Inbox size={18} /> Việc{mineCount ? ` ${mineCount}` : ''}
         </button>
-        <button type="button" role="tab" aria-selected={mobilePane === 'today'} onClick={() => setMobilePane('today')}>
+        <button type="button" role="tab" aria-selected={mobilePane === 'today' && activeTab !== ASSISTANT_TAB.id} onClick={() => { setMobilePane('today'); if (activeTab === ASSISTANT_TAB.id) setActiveTab(TODAY_TAB.id); }}>
           <LayoutDashboard size={18} /> {current ? 'Hồ sơ' : 'Hôm nay'}
         </button>
-        <button type="button" role="tab" aria-selected={mobilePane === 'assistant'} onClick={() => setMobilePane('assistant')}>
+        {/* Điện thoại: Trợ lý là tab trong vùng làm việc (không còn khung bên phải). */}
+        <button type="button" role="tab" aria-selected={mobilePane === 'today' && activeTab === ASSISTANT_TAB.id} onClick={() => { setMobilePane('today'); setActiveTab(ASSISTANT_TAB.id); }}>
           <Sparkles size={18} /> Trợ lý
         </button>
       </nav>

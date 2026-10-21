@@ -123,6 +123,7 @@ export interface MaterialRequestEffectiveCapabilities {
   canApproveMaterialRequest: boolean;
   canConfirmFulfillment: boolean;
   canViewAvailableStock: boolean;
+  canManageWorkflow: boolean;
 }
 
 export const getEffectiveProjectRoomActionSet = (
@@ -174,5 +175,6 @@ export const getMaterialRequestEffectiveCapabilities = (
     canApproveMaterialRequest: has('approve'),
     canConfirmFulfillment: has('confirm'),
     canViewAvailableStock: has('view_available_stock'),
+    canManageWorkflow: has('manage'),
   };
 };

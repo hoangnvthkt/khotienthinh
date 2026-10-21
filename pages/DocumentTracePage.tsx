@@ -278,7 +278,7 @@ const DocumentTracePage: React.FC = () => {
 
   return (
     <div className="min-h-full bg-slate-50 px-4 py-6 text-slate-900 dark:bg-slate-950 dark:text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-5">
+      <div className="w-full space-y-5">
         <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">

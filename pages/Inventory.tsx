@@ -17,11 +17,11 @@ import { materialRequestFulfillmentService } from '../lib/materialRequestFulfill
 import { purchasePackageService } from '../lib/purchasePackageService';
 import { materialRequestService } from '../lib/materialRequestService';
 import { secondaryBtn } from '../components/procurement/hub/hubUi';
-import { WmsStockView } from '../components/wms/WmsStockView';
+import { KhoView } from '../components/wms/KhoView';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
-// Kho vật tư → Tồn kho (V1): số lấy thẳng từ sổ kho. Thêm / sửa / xóa vật tư chuyển về Danh mục vật tư (một cửa cấp mã).
+// Kho vật tư → Kho (V2 một màn): việc cần làm, tồn kho, sổ phiếu và mọi thao tác kho trên một màn.
 // Giữ nguyên nhận hàng bằng QR vì mã QR in trên đơn mua / đợt giao / phiếu xuất nội bộ đều trỏ về /inventory.
 const Inventory: React.FC = () => {
   const location = useLocation();
@@ -168,14 +168,13 @@ const Inventory: React.FC = () => {
         <div className="flex min-w-0 items-start gap-3">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-700 to-mint-500 text-white shadow-sm"><Warehouse size={22} /></span>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight md:text-2xl">Tồn kho</h1>
-            <p className="text-sm text-muted-foreground">Tồn kho toàn công ty lấy thẳng từ sổ kho. Bấm một vật tư để xem thẻ kho.</p>
+            <h1 className="text-xl font-bold tracking-tight md:text-2xl">Kho</h1>
           </div>
         </div>
         <button type="button" onClick={() => setScannerOpen(true)} disabled={loadingQr} className={`${secondaryBtn} bg-card`}>
-          {loadingQr ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}Quét QR phiếu</button>
+          {loadingQr ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}Quét QR</button>
       </header>
-      <WmsStockView />
+      <KhoView />
     </main>
   );
 };

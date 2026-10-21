@@ -8,11 +8,10 @@ create temporary table t13_context (
 ) on commit drop;
 grant select on t13_context to authenticated;
 
--- An employee with no legacy module, no project grant and no settings capability.
+-- An employee with no project grant and no settings capability (legacy columns no longer exist after the final Task 13 migration).
 insert into t13_context (emp_auth, emp_email, emp_id)
 select u.auth_id, u.email, u.id from public.users u
 where u.is_active and u.account_status = 'ACTIVE' and u.role = 'EMPLOYEE' and u.auth_id is not null
-  and cardinality(coalesce(u.allowed_modules, '{}')) = 0
   and not exists (select 1 from public.user_permission_grants g where g.user_id = u.id and g.permission_code like 'project.%' and g.is_active)
   and not exists (select 1 from public.project_staff s where s.user_id = u.id::text and s.end_date is null)
 order by u.created_at limit 1;

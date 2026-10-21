@@ -5,6 +5,7 @@ import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import { ProactiveOrderEditor } from '../../components/procurement/hub/ProactiveOrderEditor';
 import { procurementInboxService, type ProcurementCatalogItem } from '../../lib/procurementInboxService';
+import { aiGateway } from '../../lib/aiGateway';
 
 // Nhập Excel cho Lập đơn chủ động. Dữ liệu giả, không gọi Supabase.
 const catalog: ProcurementCatalogItem[] = [
@@ -27,6 +28,8 @@ svc.searchItems = async (_projectId: string | null, search?: string) => {
   return words.length ? catalog.filter(i => words.every(w => fold(`${i.name} ${i.sku}`).includes(w))) : catalog.filter(i => i.inBoq);
 };
 svc.vendors = async () => [];
+// Chưa bật AI: chỉ thử Nhập từ Excel (Chụp / dán báo giá có fixture riêng po-quote-fixture).
+(aiGateway as any).status = async () => ({ deployed: true, configured: false, skills: [] });
 
 createRoot(document.getElementById('root')!).render(
   <ToastProvider><ConfirmProvider>

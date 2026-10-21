@@ -73,7 +73,6 @@ export interface UserAccountLifecyclePreview {
   operationAction?: UserAccountLifecycleAction | null;
   hasAuthIdentity: boolean;
   directGrants: number;
-  legacyModules: number;
   projectStaffAssignments: number;
   responsibilitySlots: number;
   runtimeAssignments: number;
@@ -976,6 +975,12 @@ export interface ProjectBaseline {
   lockedBy?: string;
   tasksSnapshot: ProjectTask[];
   createdAt?: string;
+  // Điều chỉnh tiến độ có duyệt (15/10/2026): bản gốc = 0, mỗi lần duyệt +1; 'legacy' = bản chụp tay cũ.
+  versionNo?: number | null;
+  versionKind?: 'legacy' | 'original' | 'approved';
+  scheduleChangeId?: string | null;
+  finishDate?: string | null;
+  isContract?: boolean;
 }
 
 export type ProjectDelayEventStatus = 'reported' | 'accepted' | 'applied' | 'resolved' | 'void';
@@ -3620,6 +3625,9 @@ export interface TransactionItem {
   // --- VAT phiếu nhập trực tiếp NCC (K3a-3): Tài chính dùng khi ghi công nợ ---
   vatRate?: number;
   priceIncludesVat?: boolean;
+  // --- Ảnh chụp dòng đơn mua (máy chủ tự chép khi có purchaseOrderLineId): một mã nhiều quy cách ---
+  itemNameSnapshot?: string | null;
+  specification?: string | null;
 }
 
 export type MaterialIssueRecipientType = 'employee' | 'work_group' | 'subcontractor' | 'partner' | 'manual';
@@ -3688,6 +3696,8 @@ export interface MaterialIssueLine {
   workBoqItemId?: string | null;
   subcontractorContractId?: string | null;
   note?: string | null;
+  /** Quy cách chọn khi xuất (trống = tự lấy quy cách nhập trước). */
+  specification?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -3904,7 +3914,10 @@ export type WmsBusinessEventType =
   | 'opening_balance'
   | 'reversal'
   | 'legacy_direct_receipt'
-  | 'legacy_direct_issue';
+  | 'legacy_direct_issue'
+  | 'office_supply_issue'
+  | 'office_supply_return'
+  | 'office_supply_receipt';
 
 export type InventoryLedgerTransactionType =
   | 'purchase_receipt'
@@ -4399,7 +4412,7 @@ export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select'
 export type ProjectWorkflowSubjectType = 'material_request' | 'custom_material_request';
 export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
 export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
-export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
+export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback' | 'move_step';
 export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
 // ANY_ONE: one assignee approving advances the stage. ALL: every assignee must approve.
 export type WorkflowApprovalPolicy = 'ANY_ONE' | 'ALL';

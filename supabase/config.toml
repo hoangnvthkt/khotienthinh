@@ -69,3 +69,24 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/office-assistant/deno.json"
 entrypoint = "./functions/office-assistant/index.ts"
+
+[functions.wms-doc-reader]
+# JWT verified explicitly with Auth; capture, photos and save all use the caller's RLS context.
+enabled = true
+verify_jwt = false
+import_map = "./functions/wms-doc-reader/deno.json"
+entrypoint = "./functions/wms-doc-reader/index.ts"
+
+[functions.ai-gateway]
+# Cổng AI chung: JWT verified explicitly with Auth; begin/finish/feedback RPCs run in the caller's RLS context.
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-gateway/deno.json"
+entrypoint = "./functions/ai-gateway/index.ts"
+
+[functions.integrations]
+# Cài đặt → Kết nối (Admin): JWT verified explicitly + is_admin; service_role only reads one key via integration_secret_v1.
+enabled = true
+verify_jwt = false
+import_map = "./functions/integrations/deno.json"
+entrypoint = "./functions/integrations/index.ts"

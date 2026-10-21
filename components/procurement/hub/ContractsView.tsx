@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronRight, ExternalLink, FilePlus2, FileSignature, Loader2, Pencil, Plus, Search, Trash2, Truck } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ExternalLink, FilePlus2, FileSignature, Loader2, Pencil, Plus, RotateCcw, Search, Trash2, Truck } from 'lucide-react';
+import { useApp } from '../../../context/AppContext';
+import { canPerform } from '../../../lib/permissions/permissionService';
+import { LINE_ROUNDING_LIMIT, calcStatement, invoiceTolerance } from '../../../lib/statementInvoiceAmounts';
+import { Role } from '../../../types';
 import { useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -9,6 +13,7 @@ import {
 import type { Warehouse } from '../../../types';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { SpecInput } from '../../material/SpecInput';
 import { ContractForm } from './ContractForm';
 import { ContractOrderEditor } from './ContractOrderEditor';
 
@@ -47,18 +52,34 @@ const STATEMENT_TONE: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Bảng đối soát tháng
 // ---------------------------------------------------------------------------
-interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string }
+interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string;
+  /** Tiền hàng theo hóa đơn NCC ('' = SL × đơn giá). */
+  amount: string }
 // Giá khác giá HĐ tại ngày giao → phải ghi lý do.
+/** Tên dòng kèm quy cách — hai dòng cùng mã khác quy cách phải phân biệt được. */
+const lineLabel = (l: { name: string; specification?: string | null }) => l.specification ? `${l.name} (${l.specification})` : l.name;
+/** Tách theo quy cách chỉ khi có quy cách (mã chỉ một dòng không quy cách thì không cần). */
+const specRows = (specs?: Array<{ specification: string | null; qty: number; value: number | null }>) =>
+  specs && specs.some(s => s.specification) ? specs : [];
 const priceDiffers = (r: StmtRow) => { const p = parseQty(r.price); return r.line.contractPrice != null && p != null && !Number.isNaN(p) && Math.abs(p - r.line.contractPrice) > 0.005; };
 
 const StatementEditor: React.FC<{ contract: ContractDetail; month: string; statement?: ContractStatement | null; onClose: () => void; onSaved: () => void }> = ({ contract, month, statement = null, onClose, onSaved }) => {
   const toast = useToast();
+  const { user } = useApp();
+  // Sửa tiền theo hóa đơn: kế toán (Tài chính — Ghi nhận) / Admin; máy chủ kiểm lại.
+  const canInvoice = user.role === Role.ADMIN || canPerform(user, 'system.finance.record');
   const [rows, setRows] = useState<StmtRow[]>(() => contract.deliveries
     .filter(d => d.date.slice(0, 7) === month.slice(0, 7))
-    .flatMap(d => d.lines.filter(l => !l.statementId || l.statementId === statement?.id).map(l => ({
-      line: l, date: d.date, noteCode: d.code, ticketNo: d.ticketNo, poNo: d.purchaseOrderNo, scopeKey: d.scopeKey, projectCode: d.projectCode,
-      include: l.wmsReady, price: l.unitPrice != null ? qtyInput(l.unitPrice) : '', vat: qtyInput(l.vatRate ?? 0), reason: '',
-    })))
+    .flatMap(d => d.lines.filter(l => !l.statementId || l.statementId === statement?.id).map(l => {
+      // Bảng nháp mở lại: dòng đã sửa theo hóa đơn giữ số đã lưu.
+      const saved = l.statementId && l.statementId === statement?.id && l.amount != null && l.unitPrice != null
+        && Math.round(l.qty * l.unitPrice) !== Math.round(l.amount);
+      return {
+        line: l, date: d.date, noteCode: d.code, ticketNo: d.ticketNo, poNo: d.purchaseOrderNo, scopeKey: d.scopeKey, projectCode: d.projectCode,
+        include: l.wmsReady, price: l.unitPrice != null ? qtyInput(l.unitPrice) : '', vat: qtyInput(l.vatRate ?? 0), reason: '',
+        amount: saved ? String(Math.round(l.amount as number)) : '',
+      };
+    }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.noteCode.localeCompare(b.noteCode)));
   // Một bảng đối soát cho một dự án (công nợ + chi phí theo dự án); HĐ dùng chung thì chọn dự án.
   const scopes = useMemo(() => Array.from(new Map(rows.map(r => [r.scopeKey, r.projectCode || 'Kho Tổng (công ty)'])).entries()), [rows]);
@@ -69,24 +90,36 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
   const [error, setError] = useState<string | null>(null);
   const patch = (id: string, p: Partial<StmtRow>) => setRows(cur => cur.map(r => r.line.lineId === id ? { ...r, ...p } : r));
 
-  const totals = useMemo(() => rows.filter(r => r.include && r.scopeKey === scope).reduce((t, r) => {
-    const price = parseQty(r.price); const vat = parseQty(r.vat) ?? 0;
-    if (price == null || Number.isNaN(price) || price < 0 || Number.isNaN(vat) || vat < 0 || vat > 100) return { ...t, invalid: t.invalid + 1 };
-    const gross = Math.round(r.line.qty * price);
-    return { ...t, gross: t.gross + gross, vat: t.vat + Math.round(gross * vat / 100), count: t.count + 1 };
-  }, { gross: 0, vat: 0, count: 0, invalid: 0 }), [rows, scope]);
+  const [invoiceVat, setInvoiceVat] = useState('');
+  const vatOverride = invoiceVat.trim() === '' ? null : parseQty(invoiceVat);
+  const totals = useMemo(() => {
+    const picked = rows.filter(r => r.include && r.scopeKey === scope);
+    const valid = picked.flatMap(r => {
+      const price = parseQty(r.price); const vat = parseQty(r.vat) ?? 0; const amount = r.amount.trim() === '' ? null : parseQty(r.amount);
+      if (price == null || Number.isNaN(price) || price < 0 || Number.isNaN(vat) || vat < 0 || vat > 100 || (amount != null && (Number.isNaN(amount) || amount < 0))) return [];
+      return [{ qty: r.line.qty, price, vatRate: vat, amount: amount == null ? null : Math.round(amount) }];
+    });
+    const calc = calcStatement(valid, vatOverride == null || Number.isNaN(vatOverride) ? null : Math.round(vatOverride));
+    return { ...calc, count: valid.length, invalid: picked.length - valid.length + (vatOverride != null && (Number.isNaN(vatOverride) || vatOverride < 0) ? 1 : 0) };
+  }, [rows, scope, vatOverride]);
+  // Bảng nháp đã sửa tổng VAT theo hóa đơn: hiện lại số đã lưu.
+  useEffect(() => {
+    if (statement && statement.status === 'draft' && Math.abs(statement.vatAmount - totals.lineVat) >= 0.5 && totals.count > 0) setInvoiceVat(String(Math.round(statement.vatAmount)));
+  }, []);
   const missingReason = shown.filter(r => r.include && priceDiffers(r) && !r.reason.trim()).length;
 
   const save = async (confirm: boolean) => {
     setError(null);
-    if (totals.invalid) { setError('Còn dòng chưa có đơn giá hoặc VAT không hợp lệ.'); return; }
+    if (totals.invalid) { setError('Còn dòng chưa có đơn giá hoặc VAT / thành tiền không hợp lệ.'); return; }
+    if (totals.overLimit) { setError('Tiền theo hóa đơn lệch quá dung sai làm tròn — kiểm tra lại số hoặc sửa đơn giá kèm lý do.'); return; }
     if (!totals.count) { setError('Chọn ít nhất một dòng giao nhận.'); return; }
     if (missingReason) { setError(`Còn ${missingReason} dòng giá khác giá HĐ chưa ghi lý do.`); return; }
     setSaving(true);
     try {
       const r = await procurementContractService.saveStatement({ contractId: contract.id, month, statementId: statement?.id, note: note.trim(),
         lines: shown.filter(x => x.include).map(x => ({ deliveryLineId: x.line.lineId, unitPrice: parseQty(x.price) || 0, vatRate: parseQty(x.vat) || 0,
-          reason: priceDiffers(x) ? x.reason.trim() : undefined })) });
+          reason: priceDiffers(x) ? x.reason.trim() : undefined, amount: x.amount.trim() !== '' ? Math.round(parseQty(x.amount) || 0) : undefined })),
+        invoiceVat: vatOverride != null && !Number.isNaN(vatOverride) && Math.round(vatOverride) !== totals.lineVat ? Math.round(vatOverride) : undefined });
       if (confirm) await procurementContractService.transitionStatement({ statementId: r.statementId, action: 'confirm' });
       toast.success(confirm ? `Đã chốt ${r.code} — chờ kế toán ghi công nợ` : `Đã lưu nháp ${r.code}`, confirm ? 'Kế toán dự án đã được thông báo.' : undefined);
       onSaved();
@@ -116,26 +149,42 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
         return <li key={r.line.lineId} className={`px-3 py-2.5 ${r.include ? '' : 'opacity-60'}`}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <input type="checkbox" checked={r.include} disabled={!r.line.wmsReady} onChange={e => patch(r.line.lineId, { include: e.target.checked })}
-              aria-label={`Chọn ${r.noteCode} ${r.line.name}`} className="h-4 w-4 accent-teal-600" />
+              aria-label={`Chọn ${r.noteCode} ${lineLabel(r.line)}`} className="h-4 w-4 accent-teal-600" />
             <span className="w-20 text-xs tabular-nums text-muted-foreground">{dateVi(r.date)}</span>
             <span className="text-xs text-muted-foreground">{r.poNo || r.noteCode}{r.ticketNo && r.ticketNo !== r.poNo ? ` · ${r.ticketNo}` : ''}</span>
-            <span className="min-w-0 flex-1 font-medium text-foreground">{r.line.name}</span>
+            <span className="min-w-0 flex-1"><span className="font-medium text-foreground">{r.line.name}</span>{r.line.specification && <span className="ml-1.5 text-xs text-muted-foreground">— {r.line.specification}</span>}</span>
             <StockBadge line={r.line} />
             <span className="text-sm tabular-nums">{fmt(r.line.qty, 3)} {r.line.unit}</span>
           </div>
           {!r.line.wmsReady ? <p className="mt-1 pl-7 text-xs text-amber-700 dark:text-amber-300">Chưa nhập kho xong — thủ kho hoàn tất phiếu nhập trước khi đối soát.</p>
             : r.include && <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pl-7 text-xs text-muted-foreground">
               <label className="flex items-center gap-1.5">Đơn giá
-                <input inputMode="decimal" value={r.price} onChange={e => patch(r.line.lineId, { price: e.target.value })} aria-label={`Đơn giá ${r.line.name} ${r.noteCode}`}
+                <input inputMode="decimal" value={r.price} onChange={e => patch(r.line.lineId, { price: e.target.value })} aria-label={`Đơn giá ${lineLabel(r.line)} ${r.noteCode}`}
                   className={`w-28 text-right tabular-nums ${inputCls} ${r.price === '' ? 'border-rose-400' : ''}`} /></label>
               <label className="flex items-center gap-1.5">VAT %
-                <input inputMode="decimal" value={r.vat} onChange={e => patch(r.line.lineId, { vat: e.target.value })} aria-label={`VAT ${r.line.name}`} className={`w-14 text-right ${inputCls}`} /></label>
+                <input inputMode="decimal" value={r.vat} onChange={e => patch(r.line.lineId, { vat: e.target.value })} aria-label={`VAT ${lineLabel(r.line)}`} className={`w-14 text-right ${inputCls}`} /></label>
               {r.line.priceSource === 'missing' && r.price === '' && <span className="text-rose-700 dark:text-rose-300">HĐ chưa có giá vật tư này</span>}
               {r.line.priceSource === 'contract' && !priceDiffers(r) && <span>theo giá HĐ</span>}
               {priceDiffers(r) && <label className="flex min-w-[16rem] flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">Giá HĐ {money(r.line.contractPrice)} · lý do
-                <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${r.line.name}`}
+                <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${lineLabel(r.line)}`}
                   className={`min-w-0 flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></label>}
-              <span className="ml-auto font-semibold tabular-nums text-foreground">{price != null && !Number.isNaN(price) ? `${money(r.line.qty * price)} đ` : ''}</span>
+              {(() => {
+                const computed = price != null && !Number.isNaN(price) ? Math.round(r.line.qty * price) : null;
+                if (!canInvoice || computed == null) return <span className="ml-auto font-semibold tabular-nums text-foreground">{computed != null ? `${money(computed)} đ` : ''}</span>;
+                const typed = r.amount.trim() === '' ? null : parseQty(r.amount);
+                const delta = typed != null && !Number.isNaN(typed) ? Math.round(typed) - computed : 0;
+                const over = typed != null && (Number.isNaN(typed) || typed < 0 || Math.abs(delta) > LINE_ROUNDING_LIMIT);
+                return <span className="ml-auto flex items-center gap-1.5">
+                  {typed != null && <span className={`text-[11px] font-semibold tabular-nums ${over ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}
+                    title={`SL × đơn giá = ${money(computed)} đ · mỗi dòng lệch tối đa ${money(LINE_ROUNDING_LIMIT)} đ`}>
+                    {over ? 'Vượt dung sai' : `Theo HĐ ${delta > 0 ? '+' : ''}${money(delta)} đ`}</span>}
+                  <input inputMode="numeric" value={r.amount} placeholder={money(computed)} onChange={e => patch(r.line.lineId, { amount: e.target.value })}
+                    aria-label={`Thành tiền theo hóa đơn ${lineLabel(r.line)} ${r.noteCode}`} title="Thành tiền theo hóa đơn NCC — để trống = SL × đơn giá"
+                    className={`w-36 text-right font-semibold tabular-nums ${inputCls} ${over ? 'border-rose-400' : typed != null ? 'border-amber-400' : ''}`} />
+                  {typed != null && <button type="button" onClick={() => patch(r.line.lineId, { amount: '' })} title="Về SL × đơn giá" aria-label="Về SL × đơn giá"
+                    className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><RotateCcw size={13} /></button>}
+                </span>;
+              })()}
             </div>}
         </li>;
       })}</ul>}
@@ -144,8 +193,18 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} className={`mt-1 w-full ${inputCls}`} /></label>
       <dl className="space-y-0.5 rounded-2xl border border-border bg-card p-4 text-sm">
         <div className="flex justify-between"><dt className="text-muted-foreground">{totals.count} dòng · tiền hàng</dt><dd className="tabular-nums">{money(totals.gross)} đ</dd></div>
-        <div className="flex justify-between"><dt className="text-muted-foreground">VAT</dt><dd className="tabular-nums">{money(totals.vat)} đ</dd></div>
-        <div className="flex justify-between font-bold"><dt>Tổng đối soát</dt><dd className="tabular-nums">{money(totals.gross + totals.vat)} đ</dd></div>
+        {canInvoice
+          ? <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">VAT</dt><dd className="flex items-center gap-1">
+            <input inputMode="numeric" value={invoiceVat} placeholder={money(totals.lineVat)} onChange={e => setInvoiceVat(e.target.value)} aria-label="Tổng VAT theo hóa đơn"
+              title="Tổng VAT theo hóa đơn NCC — để trống = cộng VAT từng dòng"
+              className={`w-36 text-right tabular-nums ${inputCls} ${vatOverride != null ? 'border-amber-400' : ''}`} />
+            {vatOverride != null && <button type="button" onClick={() => setInvoiceVat('')} title="Về VAT cộng từ các dòng" aria-label="Về VAT cộng từ các dòng"
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><RotateCcw size={13} /></button>}</dd></div>
+          : <div className="flex justify-between"><dt className="text-muted-foreground">VAT</dt><dd className="tabular-nums">{money(totals.vat)} đ</dd></div>}
+        <div className="flex justify-between font-bold"><dt>Tổng đối soát</dt><dd className="tabular-nums">{money(totals.total)} đ</dd></div>
+        {totals.delta !== 0 && <div className={`flex justify-between text-xs ${totals.overLimit ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}
+          title={`SL × đơn giá: ${money(totals.computedGross + totals.computedVat)} đ · dung sai ${money(invoiceTolerance(totals.computedGross + totals.computedVat))} đ`}>
+          <dt>{totals.overLimit ? 'Vượt dung sai làm tròn' : 'Làm tròn theo HĐ'}</dt><dd className="tabular-nums">{totals.delta > 0 ? '+' : ''}{money(totals.delta)} đ</dd></div>}
       </dl>
     </section>
   </Drawer>;
@@ -154,17 +213,20 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
 // ---------------------------------------------------------------------------
 // Bảng giá HĐ
 // ---------------------------------------------------------------------------
-interface PriceRow { id?: string; itemId: string; name: string; unit: string | null; unitPrice: string; vatRate: string; quantityLimit: string; amountLimit: string; effectiveFrom: string; effectiveTo: string; used: boolean }
+interface PriceRow { id?: string; itemId: string; name: string; unit: string | null; spec: string; unitPrice: string; vatRate: string; quantityLimit: string; amountLimit: string; effectiveFrom: string; effectiveTo: string; used: boolean }
 
 const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCancel: () => void }> = ({ contract, onDone, onCancel }) => {
   const toast = useToast();
   const [rows, setRows] = useState<PriceRow[]>(() => {
-    const base = contract.priceLines.map(l => ({ id: l.id, itemId: l.itemId, name: l.name, unit: l.unit, unitPrice: qtyInput(l.unitPrice), vatRate: qtyInput(l.vatRate),
+    const base = contract.priceLines.map(l => ({ id: l.id, itemId: l.itemId, name: l.name, unit: l.unit, spec: l.specification || '', unitPrice: qtyInput(l.unitPrice), vatRate: qtyInput(l.vatRate),
       quantityLimit: qtyInput(l.quantityLimit), amountLimit: qtyInput(l.amountLimit), effectiveFrom: l.effectiveFrom || '', effectiveTo: l.effectiveTo || '', used: l.used }));
     // Delivered items without a price yet are proposed first.
     const priced = new Set(base.map(r => r.itemId));
-    const missing = contract.usage.filter(u => !priced.has(u.itemId)).map(u => ({ itemId: u.itemId, name: u.name, unit: u.unit, unitPrice: '', vatRate: '8',
-      quantityLimit: '', amountLimit: '', effectiveFrom: contract.signedDate || '', effectiveTo: '', used: false }));
+    const missing = contract.usage.filter(u => !priced.has(u.itemId)).flatMap(u => {
+      const specs = (u.specs || []).map(s => s.specification || '').filter(Boolean);
+      return (specs.length ? specs : ['']).map(spec => ({ itemId: u.itemId, name: u.name, unit: u.unit, spec, unitPrice: '', vatRate: '8',
+        quantityLimit: '', amountLimit: '', effectiveFrom: contract.signedDate || '', effectiveTo: '', used: false }));
+    });
     return [...base, ...missing];
   });
   const [deleted, setDeleted] = useState<string[]>([]);
@@ -186,7 +248,7 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
     setSaving(true);
     try {
       await procurementContractService.savePrices({ contractId: contract.id, deleteIds: deleted, lines: active.map(r => ({
-        id: r.id, itemId: r.itemId, unitPrice: parseQty(r.unitPrice) || 0, vatRate: parseQty(r.vatRate) || 0,
+        id: r.id, itemId: r.itemId, specification: r.spec.trim(), unitPrice: parseQty(r.unitPrice) || 0, vatRate: parseQty(r.vatRate) || 0,
         quantityLimit: parseQty(r.quantityLimit), amountLimit: parseQty(r.amountLimit), effectiveFrom: r.effectiveFrom || null, effectiveTo: r.effectiveTo || null })) });
       toast.success('Đã lưu bảng giá HĐ', 'Phiếu giao chưa đối soát tự áp giá theo ngày giao.');
       onDone();
@@ -194,14 +256,19 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
   };
 
   return <section className="space-y-3 rounded-2xl border border-teal-200 bg-card p-4 dark:border-teal-900">
-    <p className="text-sm text-muted-foreground">Đổi giá giữa chừng: đặt <b>ngày hết hiệu lực</b> cho giá cũ và thêm dòng giá mới với <b>ngày bắt đầu</b>. Dòng giá đã dùng cho phiếu giao không xóa được.</p>
+    <p className="text-sm text-muted-foreground">Đổi giá giữa chừng: đặt <b>ngày hết hiệu lực</b> cho giá cũ và thêm dòng giá mới với <b>ngày bắt đầu</b>. Một mã nhiều loại giá (VD tôn mái / tôn biên 13 sóng): bấm <b>+ Quy cách khác</b> và ghi quy cách cho từng dòng. Dòng giá đã dùng cho phiếu giao không xóa được.</p>
     <div className="overflow-x-auto">
       <table className="w-full min-w-[58rem] text-sm">
         <thead className="text-xs text-muted-foreground"><tr>
           <th className="px-2 py-1 text-left font-semibold">Vật tư</th><th className="px-2 py-1 text-right font-semibold">Đơn giá</th><th className="px-2 py-1 text-right font-semibold">VAT %</th>
           <th className="px-2 py-1 text-right font-semibold">Hạn mức SL</th><th className="px-2 py-1 text-left font-semibold">Hiệu lực từ</th><th className="px-2 py-1 text-left font-semibold">đến</th><th /></tr></thead>
         <tbody>{rows.map((r, i) => <tr key={r.id || `${r.itemId}-${i}`} className="border-t border-border">
-          <td className="min-w-[14rem] px-2 py-1.5"><span className="font-medium text-foreground">{r.name}</span> <span className="text-xs text-muted-foreground">{r.unit}</span></td>
+          <td className="min-w-[16rem] px-2 py-1.5"><span className="font-medium text-foreground">{r.name}</span> <span className="text-xs text-muted-foreground">{r.unit}</span>
+            <SpecInput itemId={r.itemId} itemName={r.name} value={r.spec} onChange={v => patch(i, { spec: v })} maxLength={160} placeholder="Quy cách (nếu có nhiều loại giá)" aria-label={`Quy cách ${r.name}`}
+              className={`mt-1 block w-full py-1 text-xs ${inputCls}`} />
+            <button type="button" onClick={() => setRows(cur => [...cur.slice(0, i + 1), { itemId: r.itemId, name: r.name, unit: r.unit, spec: '', unitPrice: '', vatRate: r.vatRate,
+              quantityLimit: '', amountLimit: '', effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, used: false }, ...cur.slice(i + 1)])}
+              className="mt-0.5 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">+ Quy cách khác</button></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.unitPrice} onChange={e => patch(i, { unitPrice: e.target.value })} placeholder="Chưa có giá" aria-label={`Đơn giá ${r.name}`} className={`w-28 text-right tabular-nums ${inputCls}`} /></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.vatRate} onChange={e => patch(i, { vatRate: e.target.value })} aria-label={`VAT ${r.name}`} className={`w-14 text-right ${inputCls}`} /></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.quantityLimit} onChange={e => patch(i, { quantityLimit: e.target.value })} placeholder="—" aria-label={`Hạn mức ${r.name}`} className={`w-24 text-right ${inputCls}`} /></td>
@@ -215,7 +282,7 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
       <Plus size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Thêm vật tư vào bảng giá…" className={`w-full pl-8 ${inputCls}`} />
       {found.length > 0 && <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">{found.map(f => <li key={f.id}>
-        <button type="button" onClick={() => { setRows(cur => [...cur, { itemId: f.id, name: f.name, unit: f.unit, unitPrice: '', vatRate: '8', quantityLimit: '', amountLimit: '', effectiveFrom: '', effectiveTo: '', used: false }]); setSearch(''); }}
+        <button type="button" onClick={() => { setRows(cur => [...cur, { itemId: f.id, name: f.name, unit: f.unit, spec: '', unitPrice: '', vatRate: '8', quantityLimit: '', amountLimit: '', effectiveFrom: '', effectiveTo: '', used: false }]); setSearch(''); }}
           className="flex w-full justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"><span>{f.name}</span><span className="text-xs text-muted-foreground">{[f.sku, f.unit].filter(Boolean).join(' · ')}</span></button></li>)}</ul>}
     </div>
     <div className="flex items-center justify-end gap-2">
@@ -245,7 +312,7 @@ const OrderRow: React.FC<{ o: ContractOrder; isBuyer: boolean; mine: boolean; bu
       {mine && (o.status === 'draft' || o.status === 'returned') && <>
         {o.status === 'draft' && <button type="button" disabled={busy} onClick={onDelete} className={secondaryBtn}><Trash2 size={14} />Xóa nháp</button>}
         <button type="button" disabled={busy} onClick={onEdit} className={primaryBtn}><Pencil size={14} />Sửa & gửi</button></>}
-      {isBuyer && o.status !== 'draft' && <a href={`/procurement?po=${encodeURIComponent(o.id)}`} className={secondaryBtn}><ExternalLink size={14} />Mở đơn</a>}
+      {isBuyer && o.status !== 'draft' && <a href={`#/procurement?po=${encodeURIComponent(o.id)}`} className={secondaryBtn}><ExternalLink size={14} />Mở đơn</a>}
     </div>
   </li>;
 
@@ -385,14 +452,20 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
           <table className="w-full text-sm">
             <thead className="bg-muted/60 text-xs text-muted-foreground"><tr><th className="px-3 py-2 text-left font-semibold">Vật tư</th><th className="px-2 py-2 text-right font-semibold">Lũy kế SL</th>
               <th className="px-2 py-2 text-right font-semibold">Giá trị</th><th className="px-3 py-2 text-left font-semibold">So với hạn mức</th></tr></thead>
-            <tbody>{c.usage.map(u => <tr key={u.itemId} className="border-t border-border">
+            <tbody>{c.usage.map(u => <React.Fragment key={u.itemId}><tr className="border-t border-border">
               <td className="px-3 py-2"><span className="font-medium text-foreground">{u.name}</span>
                 <span className="block text-xs text-muted-foreground">{u.currentPrice != null ? `Giá hiện hành ${money(u.currentPrice)} đ/${u.unit}` : 'Chưa có giá HĐ'}</span></td>
               <td className="px-2 py-2 text-right tabular-nums">{fmt(u.deliveredQty, 3)} {u.unit}</td>
               <td className="px-2 py-2 text-right tabular-nums">{money(u.deliveredValue)} đ{u.unpricedLines ? <span className="block text-xs text-amber-700 dark:text-amber-300">+{u.unpricedLines} dòng chưa giá</span> : null}</td>
               <td className="px-3 py-2"><UsageBar pct={limitPct(u.deliveredQty, u.quantityLimit) ?? limitPct(u.deliveredValue, u.amountLimit)} />
                 {u.quantityLimit ? <span className="block text-xs text-muted-foreground">hạn mức {fmt(u.quantityLimit)} {u.unit}</span> : null}</td>
-            </tr>)}</tbody>
+            </tr>
+            {/* Một mã nhiều quy cách: dòng trên cộng theo mã (so BOQ / hạn mức), dưới là từng quy cách. */}
+            {specRows(u.specs).map(s => <tr key={`${u.itemId}:${s.specification ?? ''}`} className="text-xs text-muted-foreground">
+              <td className="py-1 pl-6 pr-3">{s.specification || 'Không ghi quy cách'}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{fmt(s.qty, 3)} {u.unit}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{s.value != null ? `${money(s.value)} đ` : ''}</td><td />
+            </tr>)}</React.Fragment>)}</tbody>
           </table>
         </section>
         <section>
@@ -402,7 +475,7 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
               {d.ticketNo && !d.purchaseOrderNo && <span className="text-xs text-muted-foreground">Phiếu NCC {d.ticketNo}</span>}
               {!d.purchaseOrderNo && <Badge className="border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Phiếu giao cũ (Dự án)</Badge>}
               {d.lines[0] && <StockBadge line={d.lines[0]} />}</div>
-            <ul className="mt-0.5 text-xs text-muted-foreground">{d.lines.map(l => <li key={l.lineId}>{l.name}: {fmt(l.qty, 3)} {l.unit}
+            <ul className="mt-0.5 text-xs text-muted-foreground">{d.lines.map(l => <li key={l.lineId}>{lineLabel(l)}: {fmt(l.qty, 3)} {l.unit}
               {l.unitPrice != null ? ` × ${money(l.unitPrice)} = ${money(l.amount)} đ` : ' · chưa có giá'}
               {l.statementCode ? ` · ${l.statementCode} (${STATEMENT_STATUS_LABELS[l.statementStatus || ''] || l.statementStatus})` : ' · chưa đối soát'}</li>)}</ul>
           </li>)}</ul>
@@ -414,7 +487,7 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
             ? `Đã nhận ${c.usage.length} vật tư theo HĐ này nhưng chưa có giá. Bấm "Khai bảng giá" — danh sách vật tư đã nhận được điền sẵn, chỉ cần nhập giá.`
             : 'Khai đơn giá từng vật tư để gọi hàng tự tính tiền và theo dõi hạn mức.'} />
           : <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">{c.priceLines.map(l => <li key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-            <span className="min-w-0 flex-1 font-medium text-foreground">{l.name}</span>
+            <span className="min-w-0 flex-1"><span className="font-medium text-foreground">{l.name}</span>{l.specification && <span className="ml-1.5 text-xs text-muted-foreground">— {l.specification}</span>}</span>
             <span className="tabular-nums">{money(l.unitPrice)} đ/{l.unit} · VAT {fmt(l.vatRate)}%</span>
             <span className="text-xs text-muted-foreground">{l.effectiveFrom || l.effectiveTo ? `Hiệu lực ${l.effectiveFrom ? dateVi(l.effectiveFrom) : '…'} – ${l.effectiveTo ? dateVi(l.effectiveTo) : 'nay'}` : 'Hiệu lực cả HĐ'}</span>
             {l.quantityLimit ? <span className="text-xs text-muted-foreground">hạn mức {fmt(l.quantityLimit)} {l.unit}</span> : null}

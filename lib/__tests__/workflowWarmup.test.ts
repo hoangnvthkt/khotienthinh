@@ -3,8 +3,9 @@ import { shouldWarmWorkflowData } from '../workflowWarmup';
 
 describe('workflow data warmup', () => {
   it('warms workflow data when a project screen is opened directly', () => {
-    expect(shouldWarmWorkflowData('/da')).toBe(true);
-    expect(shouldWarmWorkflowData('/da/project/123')).toBe(true);
+    // Dự án tự nạp quy trình khi cần, không nạp sẵn lúc mở trang (12/10/2026).
+    expect(shouldWarmWorkflowData('/da')).toBe(false);
+    expect(shouldWarmWorkflowData('/da/project/123')).toBe(false);
   });
 
   it('preserves workflow routes without matching the standard dashboard', () => {

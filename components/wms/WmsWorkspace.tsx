@@ -41,7 +41,6 @@ export const wmsStepLabel = (tx: Transaction) => {
 
 type CreateKind = 'IMPORT' | 'MATERIAL_ISSUE' | 'TRANSFER' | 'LIQUIDATION';
 const CREATE_OPTIONS: Array<{ kind: CreateKind; label: string; hint: string; Icon: React.ComponentType<{ size?: number; className?: string }>; color: string }> = [
-  { kind: 'IMPORT', label: 'Phiếu nhập', hint: 'Tồn đầu kỳ, hàng tặng, thu hồi…', Icon: ArrowDownToLine, color: 'text-mint-600' },
   { kind: 'MATERIAL_ISSUE', label: 'Xuất vật tư thi công', hint: 'Cấp cho tổ đội / hạng mục', Icon: ArrowUpFromLine, color: 'text-leaf-600' },
   { kind: 'TRANSFER', label: 'Chuyển kho', hint: 'Sang kho khác', Icon: ArrowRightLeft, color: 'text-sky-600' },
   { kind: 'LIQUIDATION', label: 'Xuất hủy', hint: 'Hàng hỏng, mất', Icon: Trash2, color: 'text-rose-600' },

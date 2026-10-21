@@ -1,0 +1,82 @@
+{
+ "vendorName": null,
+ "vendorTaxCode": null,
+ "docNo": null,
+ "docDate": null,
+ "vatRate": 10,
+ "lines": [
+  {
+   "sku": null,
+   "name": "Thép D8 CB240",
+   "spec": "Shengli CB240",
+   "unit": "kg",
+   "qty": 6300,
+   "unitPrice": 14640,
+   "amount": 92232000,
+   "note": "3 cây"
+  },
+  {
+   "sku": null,
+   "name": "Thép D10 CB500",
+   "spec": "Shengli CB500",
+   "unit": "kg",
+   "qty": 21490.1,
+   "unitPrice": 14930,
+   "amount": 320846447,
+   "note": "3115 cây"
+  },
+  {
+   "sku": null,
+   "name": "Thép D16 CB500",
+   "spec": "Shengli CB500",
+   "unit": "kg",
+   "qty": 10192,
+   "unitPrice": 14750,
+   "amount": 150332000,
+   "note": "560 cây"
+  },
+  {
+   "sku": null,
+   "name": "Thép D18 CB500",
+   "spec": "Shengli CB500",
+   "unit": "kg",
+   "qty": 24604.8,
+   "unitPrice": 14750,
+   "amount": 362920800,
+   "note": "1056 cây"
+  },
+  {
+   "sku": null,
+   "name": "Thép D20 CB500",
+   "spec": "Shengli CB500",
+   "unit": "kg",
+   "qty": 3456.3,
+   "unitPrice": 14750,
+   "amount": 50980425,
+   "note": "123 cây"
+  },
+  {
+   "sku": null,
+   "name": "Thép D25 CB500",
+   "spec": "Shengli CB500",
+   "unit": "kg",
+   "qty": 586.2,
+   "unitPrice": 14750,
+   "amount": 8646008,
+   "note": "13 cây"
+  }
+ ],
+ "subtotal": 985957679,
+ "vatAmount": 98595768,
+ "total": null,
+ "warnings": [
+  "Không xác định được bên bán: tiêu đề chỉ ghi '... --> Công ty HANAKA Việt Nam', chưa rõ HANAKA là bên bán hay nơi nhận hàng nên để null.",
+  "Không có số hóa đơn, ngày báo giá, mã số thuế trên ảnh.",
+  "Dòng D10: 21.490,1 × 14.930 = 320.847.193, lệch 746 so với thành tiền 320.846.447 (có thể do khối lượng hiển thị làm tròn).",
+  "Dòng D25: 586,2 × 14.750 = 8.646.450, lệch 442 so với thành tiền 8.646.008 (có thể do khối lượng hiển thị làm tròn).",
+  "Tổng các dòng = 985.957.680, lệch 1 so với dòng Cộng 985.957.679.",
+  "Dòng D8 là CB240 nằm trong nhóm 'Thép Shengli CB500'; spec ghi theo mác trên dòng.",
+  "Ảnh không có dòng tổng thanh toán sau thuế nên total để null.",
+  "Số liệu theo kiểu Việt (dấu . ngăn nghìn, dấu , thập phân); trọng lượng là 'tạm tính' nên có thể thay đổi khi cân thực tế."
+ ]
+}

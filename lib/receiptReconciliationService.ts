@@ -8,6 +8,8 @@ export type ReconSide = 'buyer' | 'keeper';
 
 export interface ReconLine {
   deliveryLineId: string; itemId: string; name: string; sku: string | null; unit: string | null;
+  /** Quy cách của dòng đơn (một mã nhiều quy cách). */
+  specification?: string | null;
   plannedQty: number; unitPrice: number;
   /** Thủ kho đã kiểm SL/CL nhưng chưa nhập kho. */
   checkedQty: number | null;
@@ -35,7 +37,7 @@ export interface ReconItem {
   wmsTransactionId: string; txStatus: string; docDate: string; ageDays: number; createdByName: string | null; vatRate: number;
   open: boolean; stocked: boolean;
   checked: { byName: string | null; at: string } | null;
-  poUnscheduled: Array<{ name: string; unit: string | null; qty: number }>;
+  poUnscheduled: Array<{ name: string; specification?: string | null; unit: string | null; qty: number }>;
   otherOpenDeliveries: number;
   lines: ReconLine[];
   recon: ReconRecord | null;

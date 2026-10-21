@@ -13,6 +13,7 @@ import {
   TaskContractItem,
 } from '../types';
 import { fromDb } from './dbMapping';
+import type { ActualProgressWeek } from './projectActualProgress';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import {
   clampProgress,
@@ -640,6 +641,7 @@ export const getProjectProgressMutationErrorMessage = (
   const message = typeof error === 'object' && error !== null && 'message' in error
     ? String((error as { message?: unknown }).message || '')
     : '';
+  if (message.includes('WEEKLY_PROGRESS_FROM_DAILY_LOG')) return 'Tuần này lấy số từ Nhật ký đã duyệt, không nhập tay.';
   return APPROVED_PROGRESS_MUTATION_MESSAGES.find(approved => message.includes(approved)) || fallback;
 };
 
@@ -674,6 +676,17 @@ export const projectWeeklyProgressService = {
     });
     if (error) throw error;
     return fromDb(data) as SaveDailyProgressExceptionResult;
+  },
+
+  async getActualProgressWeek(input: { projectId: string; constructionSiteId?: string | null; weekStart: string }): Promise<ActualProgressWeek> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('get_project_actual_progress_week_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_week_start: input.weekStart,
+    });
+    if (error) throw error;
+    return data as ActualProgressWeek;
   },
 
   async getPeriodBundle(input: ProjectProgressPeriodBundleInput): Promise<ProjectProgressPeriodBundle> {

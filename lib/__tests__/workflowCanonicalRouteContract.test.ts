@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const app = readFileSync('App.tsx', 'utf8');
+const app = readFileSync('routes/appPages.tsx', 'utf8');
 const routes = readFileSync('constants/routes.ts', 'utf8');
 const access = readFileSync('lib/routeAccess.ts', 'utf8');
 const home = readFileSync('pages/Home.tsx', 'utf8');

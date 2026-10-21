@@ -102,7 +102,7 @@ export const buildTodayWidgets = (today: CenterToday, ctx: TodayContext): Widget
             tone: (c.fronts || 0) > 0 && (c.slips || 0) < (c.fronts || 0) ? 'warn' : 'num',
             hint: c.summaryStatus === 'submitted' ? 'Bản tổng hợp đang chờ duyệt' : c.summaryStatus === 'verified' ? 'Đã công bố tiến độ' : undefined }
         : { key: 'construction', label: 'Thi công hôm nay', value: c.state === 'denied' ? 'Cần quyền xem nhật ký' : 'Chưa đọc được nhật ký', tone: 'muted', target: dailylog, locked: c.state === 'denied' ? 'Bạn chưa có quyền xem nhật ký của dự án này' : undefined });
-      const po = route(query('/da', { projectId: pid, tab: 'material', materialTab: 'po' }), 'Đơn hàng');
+      const po = route(query('/procurement', { mode: 'orders', project: pid }), 'Đơn hàng');
       const s = pw.supply;
       base.stats.push(s.state === 'ready'
         ? { key: 'supply', label: 'Vật tư đang về', target: po,
@@ -212,7 +212,7 @@ export const buildTodayWidgets = (today: CenterToday, ctx: TodayContext): Widget
               ? `${rq.pending ?? 0} chờ duyệt${rq.waitingStep && (rq.pending || 0) > 0 ? ` (${rq.waitingStep})` : ''} · ${rq.supplying ?? 0} đang cung ứng` : 'Không có đề xuất đang mở',
             tone: (rq.pending || 0) > 0 ? 'warn' : (rq.supplying || 0) > 0 ? 'num' : 'muted' }
         : { key: 'requests', label: `Cần mua của ${project.code}`, value: 'Cần quyền xem đề xuất vật tư', tone: 'muted', target: mr, locked: 'Bạn chưa có quyền xem đề xuất vật tư của dự án này' });
-      const po = route(query('/da', { projectId: pid, tab: 'material', materialTab: 'po' }), 'Đơn hàng');
+      const po = route(query('/procurement', { mode: 'orders', project: pid }), 'Đơn hàng');
       const od = s.orders;
       base.stats.push(od.state === 'ready'
         ? { key: 'orders', label: 'Đơn hàng', target: po,
@@ -249,11 +249,3 @@ export const buildTodayWidgets = (today: CenterToday, ctx: TodayContext): Widget
 };
 
 /** Dòng tóm tắt dưới lời chào: việc chờ + hạn hợp đồng của dự án đang xem. */
-export const buildTodaySummary = (today: CenterToday | null, ctx: TodayContext): string => {
-  const parts: string[] = [];
-  if (ctx.mineCount !== null) parts.push(ctx.mineCount > 0 ? `${ctx.mineCount} việc chờ bạn` : 'không có việc chờ bạn');
-  const project = today?.project;
-  const days = daysUntil(project?.endDate, ctx.now);
-  if (project && days !== null) parts.push(days < 0 ? `quá hạn hợp đồng ${project.code} ${-days} ngày` : days === 0 ? `hôm nay hết hạn hợp đồng ${project.code}` : `${days} ngày tới hạn hợp đồng ${project.code}`);
-  return parts.join(' · ');
-};

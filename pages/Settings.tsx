@@ -7,8 +7,8 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, FolderKanban,
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug, Link2
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -19,12 +19,10 @@ import SettingsUsers from './settings/SettingsUsers';
 import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
-import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
-import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
@@ -33,6 +31,9 @@ import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplate
 import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
+import SettingsSuggestionStats from './settings/SettingsSuggestionStats';
+import SettingsAiGateway from './settings/SettingsAiGateway';
+import SettingsConnections from './settings/SettingsConnections';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -52,12 +53,14 @@ import {
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { loadSignatureUrlForUser } from '../lib/signatureService';
 import { canPerform, canPerformHrmTemplatePermission } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
 import { readOfficePermissionFocus } from '../lib/office/officeAdminNavigation';
+import { supabase } from '../lib/supabase';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -153,7 +156,7 @@ const Settings: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState(
-    readOfficePermissionFocus(location.search) ? 'users' : location.pathname === '/settings/role-templates'
+    readOfficePermissionFocus(location.search) ? 'users' : ['ai-gateway', 'connections'].includes(new URLSearchParams(location.search).get('tab') || '') ? new URLSearchParams(location.search).get('tab')! : location.pathname === '/settings/role-templates'
       ? 'role-templates'
       : location.pathname === '/settings/permission-health'
       ? 'permission-health'
@@ -162,6 +165,14 @@ const Settings: React.FC = () => {
         : 'general',
   );
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  // Signed URL chữ ký hết hạn sau 10 phút: mở lại Cài đặt thì ký mới, không dùng URL cũ từ lúc đăng nhập.
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | undefined>(currentUser.signatureUrl);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser.signatureUrl) { setSignaturePreviewUrl(undefined); return; }
+    loadSignatureUrlForUser(currentUser.id).then(url => { if (!cancelled) setSignaturePreviewUrl(url || currentUser.signatureUrl); });
+    return () => { cancelled = true; };
+  }, [currentUser.id, currentUser.signatureUrl]);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -289,24 +300,35 @@ const Settings: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Ảnh đại diện lưu ở kho ảnh (bucket avatars), cột users.avatar chỉ giữ URL — như Hồ sơ của tôi. Trước 12/10/2026
+  // nút này lưu nguyên base64 vào users.avatar (6 người, 5,8 MB) → mọi trang nạp danh sách người dùng tải theo.
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      setAvatarUploading(true);
-      try {
-        await updateUser({ ...currentUser, avatar: base64 });
-        toast.success('Đã cập nhật ảnh đại diện');
-      } catch (error: any) {
-        logApiError('settings.avatarUpload', error);
-        toast.error('Không thể cập nhật ảnh đại diện', getApiErrorMessage(error, 'Không thể cập nhật ảnh đại diện trên Supabase.'));
-      } finally {
-        setAvatarUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 2 * 1024 * 1024) {
+      toast.warning('Ảnh quá lớn', 'Dung lượng tối đa là 2MB.');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.warning('File không hợp lệ', 'Chỉ chấp nhận JPG, PNG hoặc WEBP.');
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `employees/${currentUser.id}_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      await updateUser({ ...currentUser, avatar: urlData.publicUrl });
+      toast.success('Đã cập nhật ảnh đại diện');
+    } catch (error: any) {
+      logApiError('settings.avatarUpload', error);
+      toast.error('Không thể cập nhật ảnh đại diện', getApiErrorMessage(error, 'Không thể cập nhật ảnh đại diện trên Supabase.'));
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   // Warehouse Handlers
@@ -1124,8 +1146,9 @@ const Settings: React.FC = () => {
     { id: 'role-templates', label: 'Vai trò đặc biệt', icon: ShieldCheck, rolesOnly: true },
     { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
-    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
-    { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
+    { id: 'connections', label: 'Kết nối', icon: Link2, adminOnly: true },
+    { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
+    { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
   ].filter(tab => tab.rolesOnly
@@ -1142,6 +1165,9 @@ const Settings: React.FC = () => {
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const activeFeatureReadOnly = activeSettingsTab !== 'account'
     && activeSettingsTab !== 'attendance-locations'
+    && activeSettingsTab !== 'suggestion-stats'
+    && activeSettingsTab !== 'ai-gateway'
+    && activeSettingsTab !== 'connections'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
     && activeSettingsTab !== 'project-room-templates'
@@ -2201,10 +2227,10 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-6">
-                  {currentUser.signatureUrl ? (
+                  {signaturePreviewUrl ? (
                     <div className="flex items-center gap-6">
                       <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-center w-64 h-32">
-                        <img src={currentUser.signatureUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
+                        <img src={signaturePreviewUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
                       </div>
                       <div className="space-y-2">
                         <button onClick={() => setShowSignaturePad(true)}
@@ -2226,7 +2252,7 @@ const Settings: React.FC = () => {
 
               {showSignaturePad && (
                 <SignaturePad
-                  currentSignatureUrl={currentUser.signatureUrl}
+                  currentSignatureUrl={signaturePreviewUrl}
                   onSave={async (dataUrl) => { await saveSignature(currentUser.id, dataUrl); setShowSignaturePad(false); }}
                   onDelete={async () => { await deleteSignature(currentUser.id); setShowSignaturePad(false); }}
                   onClose={() => setShowSignaturePad(false)}
@@ -2409,12 +2435,16 @@ const Settings: React.FC = () => {
         </div>
       )}
 
-          {activeSettingsTab === 'chibi-bot' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsChibiBot /></fieldset>
+          {activeSettingsTab === 'suggestion-stats' && (
+            <SettingsSuggestionStats />
           )}
 
-          {activeSettingsTab === 'ai-learning' && (
-            <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
+          {activeSettingsTab === 'ai-gateway' && (
+            <SettingsAiGateway />
+          )}
+
+          {activeSettingsTab === 'connections' && (
+            <SettingsConnections />
           )}
     </div>
   );

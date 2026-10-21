@@ -22,6 +22,14 @@ export default defineConfig(() => {
           output: {
             manualChunks(id) {
               const normalizedId = id.replaceAll('\\', '/');
+              // Rollup pulls unassigned static deps of a manual chunk into it.
+              // Shared helpers must be pinned to an always-loaded chunk, else the
+              // preload helper lands in `three` (entry preloads three.js) and
+              // @babel/runtime lands in `charts` (3D screens load recharts).
+              if (
+                normalizedId.includes('vite/preload-helper') ||
+                normalizedId.includes('/node_modules/@babel/runtime/')
+              ) return 'react-vendor';
               if (!normalizedId.includes('/node_modules/')) return;
               if (normalizedId.includes('/node_modules/xlsx/')) return 'xlsx';
               if (normalizedId.includes('/node_modules/lucide-react/')) return 'icons';

@@ -269,6 +269,22 @@ export function workError(error: unknown): string {
     WORK_CREATE_DENIED: "Bạn không có quyền tạo việc trong phạm vi này.",
     WORK_ATTACHMENT_TOO_LARGE: "Tệp vượt quá dung lượng cho phép.",
     WORK_INVALID_ATTACHMENT: "Tên hoặc định dạng tệp chưa được hỗ trợ.",
+    WORK_PROGRESS_REPORT_EMPTY: "Ghi ít nhất một dòng Đã làm, Đang làm, Sẽ làm hoặc Vướng.",
+    WORK_PROGRESS_REPORT_TOO_LONG: "Mỗi dòng cập nhật tối đa 2.000 ký tự.",
+    WORK_PROGRESS_REPORT_PROGRESS: "Tiến độ phải từ 0 đến 100%.",
+    WORK_ATTACHMENT_NOT_FOUND: "Tệp đính kèm không còn trong công việc này. Hãy tải lại rồi chọn lại tệp.",
+    WORK_AI_RUN_INVALID: "Bản nháp AI không còn hợp lệ. Hãy gửi lại mà không dùng bản nháp này.",
+    WORK_BOARD_DENIED: "Bạn chưa được xem số liệu của đơn vị này.",
+    WORK_GIVER_INELIGIBLE: "Người giao đã chọn chưa dùng Vioo Work nên chưa xác nhận được.",
+    WORK_ORIGIN_ALREADY_SET: "Việc này đã ghi nguồn giao trước đó.",
+    WORK_CLAIM_ALREADY_DECIDED: "Việc này đã được xác nhận hoặc từ chối trước đó.",
+    WORK_INVALID_PERIOD: "Kỳ chưa hợp lệ: ngày đến phải sau ngày từ, tối đa 400 ngày và không ở tương lai.",
+    WORK_INVALID_SETTING: "Lịch chốt chưa hợp lệ. Kiểm tra chu kỳ, thứ và giờ.",
+    WORK_PERIOD_ALREADY_CLOSED: "Kỳ này đã được chốt. Tải lại để xem bản chốt.",
+    WORK_PERIOD_NOT_CLOSED: "Kỳ này đã được mở lại trước đó.",
+    WORK_REOPEN_REASON_REQUIRED: "Ghi lý do mở lại (ít nhất 5 ký tự).",
+    WORK_GOAL_INVALID: "Mục tiêu chưa hợp lệ. Kiểm tra tên, kỳ, chỉ tiêu và người phụ trách.",
+    WORK_GOAL_SOLUTION_REQUIRED: "Mục tiêu chưa đạt cần ghi Giải pháp trước khi chốt.",
   };
   return messages[code] || "Không thể hoàn tất yêu cầu. Vui lòng thử lại.";
 }

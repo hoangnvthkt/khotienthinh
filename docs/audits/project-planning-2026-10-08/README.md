@@ -95,7 +95,7 @@ Phát hiện thêm từ lần chạy 1: Nhật ký SMB gần như chưa được
 
 ## 5. Quyết định của chủ SP (08/10/2026) và cách làm
 
-1. **Chỉ KH vật tư tuần vào Mua hàng.** Migration `20261009150000_material_plan_week_to_procurement.sql`: Cần mua chỉ nhận KH vật tư tuần. KH vật tư tháng là dự báo; bản tháng đã có đơn đặt vẫn hiện để không mất dấu. Màn Kế hoạch → Vật tư có dòng giải thích theo kỳ. Chạy thử: `flow-test.mjs --migration`.
+1. **Chỉ KH vật tư tuần vào Mua hàng.** Migration `20261024160000_material_plan_week_to_procurement.sql`: Cần mua chỉ nhận KH vật tư tuần. KH vật tư tháng là dự báo; bản tháng đã có đơn đặt vẫn hiện để không mất dấu. Màn Kế hoạch vật tư có nhãn theo kỳ (tuần = đề nghị mua, tháng = dự báo). Chạy thử: `flow-test.mjs --migration`.
 2. **Nhật ký SMB/DA29 chuyển chính thức.** Script `tools/daily-log-enforce.mjs`, mặc định chạy thử, `--commit` mới ghi. Chốt an toàn của hệ thống: mọi bản tổng hợp chờ duyệt phải có số đối chiếu thí điểm khớp. Sau khi chuyển: CHT duyệt nhật ký là công bố tiến độ ngày; Chốt tiến độ ngày từ 01/10 chỉ đọc (chốt tuần, khóa kỳ vẫn làm).
    Chạy thử 08/10: **CHƯA ĐẠT** (`PILOT_SHADOW_UNRESOLVED`). Mỗi dự án có 1 bản tổng hợp chờ duyệt và 2 lần đối chiếu đều lệch.
    "Lệch" nghĩa là số nhật ký khác số Chốt tiến độ của cùng ngày. Chốt an toàn đòi hai nơi khớp nhau trước khi chuyển, mâu thuẫn với quyết định bỏ nhập hai nơi.
@@ -107,4 +107,4 @@ Phát hiện thêm từ lần chạy 1: Nhật ký SMB gần như chưa được
    **ĐÃ GHI production 08/10/2026** (chủ SP chạy `--override-gate --commit`): SMB-2026 và DA29 chính thức từ 09/10.
    Dự phòng: `tools/daily-log-back-to-pilot.mjs` (chạy thử mặc định, `--commit` để ghi, `--only=SMB-2026|DA29`).
    Theo dõi lần công bố thật đầu tiên ngày 09/10: chế độ chính thức chưa từng chạy trên production.
-3. **Ẩn màn cũ Vật tư → Kế hoạch.** Bỏ khỏi thanh tab Vật tư. Liên kết cũ (lệnh nhanh, nút tắt, truy vết chứng từ) chuyển sang Kế hoạch → Vật tư (tuần). Code màn cũ còn trong `MaterialTab.tsx`, xóa ở đợt dọn sau.
+3. **Ẩn màn cũ Vật tư → Kế hoạch.** Đã xong bằng #166 (12/10): tab Vật tư → Kế hoạch vật tư nay mở chính màn KH vật tư tuần/tháng mới (`WorkPlanTab materialOnly`); màn cũ cân đối BOQ đã bỏ. PR này không ẩn tab nữa.

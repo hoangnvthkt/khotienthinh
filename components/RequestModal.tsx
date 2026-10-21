@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer, FileText, Shield } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer, FileText, Shield, Keyboard } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -29,6 +29,7 @@ import {
     WorkflowNodeType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
+import { QuickRequestLines, type QuickLine, type QuickLinesInitial } from './QuickRequestLines';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
 import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
@@ -38,6 +39,7 @@ import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canDeleteWmsMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
+import ReasonConfirmModal from './ReasonConfirmModal';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { projectWorkflowService } from '../lib/projectWorkflowService';
@@ -49,8 +51,12 @@ import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
 import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { BoqSummaryStrip } from './erp';
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
-import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
+import { buildSiteItemHistory, frequentSiteItems, siteSpecGhost } from '../lib/materialRequestPrefill';
+import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
+import { duplicateItemSpecProblems, getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 import { MaterialRequestSupplyPanel } from './project/material/MaterialRequestSupplyPanel';
+import { toMaterialRequestRecord, toRequestItem, type MaterialRequestLineDraft } from '../lib/materialRequestBuild';
+import { MaterialRequestNotSavedError, getMaterialRequestBinding, saveAndStartWorkflow, toSubmittedProjectRequest } from '../lib/materialRequestSend';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -154,6 +160,7 @@ interface RequestModalProps {
     initialAction?: 'createFulfillmentBatch';
     canProcessProjectWorkflow?: boolean;
     canManageProjectWorkflow?: boolean;
+    canMoveWorkflowStep?: boolean;
     canEditProjectRequest?: boolean;
     canDeleteProjectRequest?: boolean;
     canSubmitProjectRequest?: boolean;
@@ -166,7 +173,8 @@ interface RequestModalProps {
     projectWorkflowReturnTargetNode?: WorkflowNode | null;
     canViewAvailableStock?: boolean;
     onProjectWorkflowAction?: (context: ProjectWorkflowActionContext) => void | Promise<void>;
-    onSaved?: (request: MaterialRequest) => void;
+    /** submitted: phiếu đã gửi duyệt (false = mới lưu nháp). */
+    onSaved?: (request: MaterialRequest, meta?: { submitted: boolean }) => void;
     onDeleted?: (requestId: string) => void;
 }
 
@@ -186,29 +194,11 @@ export type MaterialRequestInitialDraft = {
         materialGroupSource?: 'summary_aggregate' | string | null;
         materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
     }>;
+    /** Trợ lý chuẩn bị (T2b): mở sẵn Gõ nhanh với các dòng Trợ lý tách — người dùng khớp mã, kiểm rồi thêm vào phiếu. */
+    quick?: QuickLinesInitial | null;
 };
 
-type RequestLineDraft = {
-    lineId: string;
-    itemId: string;
-    qty: number | string;
-    workBoqItemId?: string | null;
-    workBoqItemName?: string | null;
-    materialBudgetItemId?: string | null;
-    materialBudgetItemName?: string | null;
-    neededDate?: string;
-    note?: string;
-    overBudgetReason?: string;
-    isManualItem?: boolean;
-    itemNameSnapshot?: string;
-    unitSnapshot?: string;
-    skuSnapshot?: string;
-    specification?: string;
-    manualReason?: string;
-    materialGroupKey?: string | null;
-    materialGroupSource?: 'summary_aggregate' | string | null;
-    materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
-};
+type RequestLineDraft = MaterialRequestLineDraft;
 
 type RequestDisplayRow = RequestLineDraft | RequestItem;
 
@@ -314,6 +304,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     initialAction,
     canProcessProjectWorkflow = false,
     canManageProjectWorkflow = false,
+    canMoveWorkflowStep = false,
     canEditProjectRequest = false,
     canDeleteProjectRequest = false,
     canSubmitProjectRequest = false,
@@ -346,6 +337,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [expectedDate, setExpectedDate] = useState('');
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
+    const [isReturnDialogOpen, setIsReturnDialogOpen] = useState(false);
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
     const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number, qtyInput?: string }[]>([]);
     const [selectedWorkBoqItemIds, setSelectedWorkBoqItemIds] = useState<Set<string>>(() => new Set());
@@ -411,9 +403,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const items = appItems.length > 0 ? appItems : projectCatalog;
     const isUsingProjectCatalog = appItems.length === 0 && projectCatalog.length > 0;
 
+    // Chỉ hỏi lại tồn khả dụng khi tập mã vật tư đổi, không phải mỗi lần gõ số lượng/ghi chú trên dòng.
+    const availableStockItemKey = useMemo(
+        () => JSON.stringify([...new Set(reqItems.map(line => line.itemId).filter(Boolean))].sort()),
+        [reqItems],
+    );
     useEffect(() => {
         let cancelled = false;
-        const itemIds = [...new Set(reqItems.map(line => line.itemId).filter(Boolean))];
+        const itemIds = JSON.parse(availableStockItemKey) as string[];
         if (!isOpen || !isProjectRequest || !canViewAvailableStock || !effectiveProjectId || !projectStockWarehouseId || itemIds.length === 0) {
             setProjectAvailableStock({});
             return;
@@ -432,7 +429,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             if (!cancelled) setProjectAvailableStock({});
         });
         return () => { cancelled = true; };
-    }, [canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, projectStockWarehouseId, reqItems]);
+    }, [availableStockItemKey, canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, projectStockWarehouseId]);
     const isProjectWorkflowReviewStep = !!request
         && isProjectRequest
         && request.status === RequestStatus.PENDING
@@ -490,6 +487,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (effectiveProjectId) return req.projectId === effectiveProjectId;
         if (effectiveConstructionSiteId) return req.constructionSiteId === effectiveConstructionSiteId;
         return true;
+    };
+
+    // Gợi ý (chủ SP 11–13/10): mã công trường hay đề xuất lên đầu ô chọn; quy cách lần trước in mờ, Tab để dùng. Chỉ khi lập phiếu.
+    const prefillEnabled = isOpen && isProjectRequest && step === 'CREATE' && (!request || request.status === RequestStatus.DRAFT);
+    const siteItemHistory = useMemo(
+        () => (prefillEnabled ? buildSiteItemHistory(requests, { projectId: effectiveProjectId, constructionSiteId: effectiveConstructionSiteId, excludeRequestId: request?.id }) : new Map()),
+        [prefillEnabled, requests, effectiveProjectId, effectiveConstructionSiteId, request?.id],
+    );
+    const frequentItems = useMemo(() => frequentSiteItems(siteItemHistory), [siteItemHistory]);
+    const frequentItemIds = useMemo(() => new Set(frequentItems.map(f => f.itemId)), [frequentItems]);
+    const [isQuickLinesOpen, setQuickLinesOpen] = useState(false);
+    useEffect(() => { if (!isOpen) setQuickLinesOpen(false); }, [isOpen]);
+    const recordSpecOutcome = (lines: RequestLineDraft[], code?: string) => {
+        if (request?.id || !siteItemHistory.size) return;
+        let suggested = 0; let accepted = 0;
+        lines.forEach(line => {
+            const last = siteItemHistory.get(line.itemId)?.lastSpec;
+            if (!last) return;
+            suggested += 1;
+            if (String(line.specification || '').trim().toLowerCase() === last.toLowerCase()) accepted += 1;
+        });
+        if (suggested) recordSuggestionEvent({ screen: 'material_request', field: 'spec', outcome: accepted === suggested ? 'accepted' : accepted ? 'edited' : 'dismissed', suggested, accepted, source: { projectId: effectiveProjectId, code } });
     };
 
     const getCompletedReceivedQtyForBudgetLine = (req: MaterialRequest, line: RequestItem, lineIndex: number) => {
@@ -916,6 +935,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftBudgetQtyById({});
                 setDraftNeededDate('');
                 setDraftLineNote('');
+                if (initialDraft?.quick?.lines.length) setQuickLinesOpen(true);
             }
         }
     }, [canEditProjectRequest, canReviewProjectWorkflow, defaultSiteWarehouseId, initialDraft, isOpen, isProjectRequest, items, materialBudgetMap, request, user]);
@@ -947,7 +967,31 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setItemSelectOpen(true);
     };
 
+    // Gõ nhanh danh sách (A1 "đề xuất từ một câu"): cùng điều kiện như Thêm vật tư; dòng thêm vào như chọn từng mã.
+    const handleOpenQuickLines = () => {
+        if (items.length === 0 || (!isProjectRequest && !sourceWarehouseId)) { handleAddItem(); return; }
+        setQuickLinesOpen(true);
+    };
+    const handleAddQuickLines = (lines: QuickLine[]) => {
+        setReqItems(prev => [...prev, ...lines.map(line => ({
+            lineId: crypto.randomUUID(),
+            itemId: line.item.id,
+            qty: line.qty,
+            itemNameSnapshot: line.item.name,
+            unitSnapshot: line.item.unit,
+            skuSnapshot: line.item.sku,
+            specification: line.specification,
+            overBudgetReason: isProjectRequest ? line.reason : undefined,
+            note: !isProjectRequest ? line.reason : undefined,
+            ...(line.neededDate ? { neededDate: line.neededDate } : {}),
+        }))]);
+        setQuickLinesOpen(false);
+        toast.success(`Đã thêm ${lines.length} dòng`, 'Kiểm lại số lượng, quy cách trước khi gửi.');
+    };
+
     const handleSelectFromModal = (item: InventoryItem) => {
+        const used = siteItemHistory.get(item.id);
+        if (used) recordSuggestionEvent({ screen: 'material_request', field: 'item', outcome: 'accepted', suggested: 1, accepted: 1, source: { projectId: effectiveProjectId, code: used.lastCode } });
         setReqItems([...reqItems, {
             lineId: crypto.randomUUID(),
             itemId: item.id,
@@ -1144,8 +1188,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể lưu đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
             }
+            recordSpecOutcome(reqItems, requestToSave.code);
             toast.success(successTitle, successMessage);
-            onSaved?.(requestToSave);
+            onSaved?.(requestToSave, { submitted: false });
             onClose();
         } catch (err: any) {
             logApiError('requestModal.save', err);
@@ -1158,29 +1203,36 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const submitRequestForApproval = async (draftRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
         if (!submissionTarget) return;
-        const dynamicConfiguration = isProjectRequest
-            ? await projectWorkflowService.getConfiguration('material_request', effectiveProjectId || null, effectiveConstructionSiteId || null)
-            : null;
-        if (isProjectRequest && (!dynamicConfiguration?.valid || !dynamicConfiguration.binding)) {
-            throw new Error(dynamicConfiguration?.errors?.[0] || 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.');
+        // Đề xuất dự án: dùng chung bước gửi với form gọn trong khung chat Trợ lý (lib/materialRequestSend).
+        if (isProjectRequest) {
+            const binding = await getMaterialRequestBinding(effectiveProjectId || null, effectiveConstructionSiteId || null);
+            setIsSaving(true);
+            try {
+                const savedForCallback = await saveAndStartWorkflow(toSubmittedProjectRequest(draftRequest, user.id, submissionTarget.note), binding, submissionTarget, { addRequest });
+                recordSpecOutcome(reqItems, draftRequest.code);
+                setSubmittingProjectRequest(null);
+                toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
+                onSaved?.(savedForCallback, { submitted: true });
+                onClose();
+            } catch (err: any) {
+                if (err instanceof MaterialRequestNotSavedError) {
+                    toast.error('Không thể gửi đề xuất', err.message);
+                    return;
+                }
+                logApiError('requestModal.submitApproval', err);
+                toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
+                throw err;
+            } finally {
+                setIsSaving(false);
+            }
+            return;
         }
-        const dynamicBinding = dynamicConfiguration?.binding || null;
         const now = new Date().toISOString();
         const requestToSave: MaterialRequest = {
             ...draftRequest,
-            status: dynamicBinding ? RequestStatus.DRAFT : RequestStatus.PENDING,
-            ...(dynamicBinding
-                ? {
-                    submittedToUserId: null,
-                    submittedToName: null,
-                    submittedToPermission: null,
-                    submissionNote: null,
-                }
-                : projectSubmissionService.targetToUpdate(submissionTarget)),
-            ...projectSubmissionService.actionMeta(user.id, !dynamicBinding),
-            ...(isProjectRequest
-                ? getMaterialRequestWorkflowPatch(dynamicBinding ? 'draft' : 'site_manager_review', user.id)
-                : {}),
+            status: RequestStatus.PENDING,
+            ...projectSubmissionService.targetToUpdate(submissionTarget),
+            ...projectSubmissionService.actionMeta(user.id, true),
             logs: [
                 ...(draftRequest.logs || []),
                 { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
@@ -1194,25 +1246,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 return;
             }
-            let savedForCallback = requestToSave;
-            if (dynamicBinding) {
-                const targetUserIds = submissionTarget.userIds?.length
-                    ? submissionTarget.userIds
-                    : submissionTarget.userId
-                        ? [submissionTarget.userId]
-                        : [];
-                await projectWorkflowService.startMaterialRequestWorkflowV2({
-                    requestId: requestToSave.id,
-                    templateId: dynamicBinding.workflowTemplateId,
-                    firstAssigneeUserIds: targetUserIds,
-                    comment: submissionTarget.note,
-                });
-                const freshRequest = await materialRequestService.getById(requestToSave.id);
-                if (freshRequest) savedForCallback = freshRequest;
-            }
+            recordSpecOutcome(reqItems, requestToSave.code);
             setSubmittingProjectRequest(null);
             toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
-            onSaved?.(savedForCallback);
+            onSaved?.(requestToSave, { submitted: true });
             onClose();
         } catch (err: any) {
             logApiError('requestModal.submitApproval', err);
@@ -1230,7 +1267,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const buildDraftRequestFromForm = (issuedCode?: string): MaterialRequest => {
         const now = new Date().toISOString();
-        const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
         const workflowPatch = isProjectRequest
             ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
             : {};
@@ -1239,69 +1275,32 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (!requestCode) {
             throw new Error('Hệ thống chưa cấp được mã phiếu MR mới.');
         }
-        return {
-            ...(request || {}),
-            id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        return toMaterialRequestRecord({
+            base: request,
             code: requestCode,
-            title: requestTitle.trim() || request?.title || 'Đề xuất vật tư',
+            title: requestTitle,
             projectId: effectiveProjectId,
             constructionSiteId: effectiveConstructionSiteId,
             requestOrigin: isProjectRequest ? 'project' : 'wms',
             siteWarehouseId,
-            sourceWarehouseId: sourceWarehouseId || undefined,
-            requesterId: request?.requesterId || user.id,
-            status: RequestStatus.DRAFT,
-            submittedToUserId: null,
-            submittedToName: null,
-            submittedToPermission: null,
-            submissionNote: null,
-            ...workflowPatch,
-            createdDate: request?.createdDate || now,
-            expectedDate: expectedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
+            sourceWarehouseId,
+            requesterId: user.id,
+            workflowPatch,
+            now,
+            expectedDate,
             note,
             fulfillmentMode,
-            items: reqItems.map(i => {
-                const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
-                const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
-                const overReason = i.overBudgetReason || undefined;
-                return {
-                    lineId: i.lineId,
-                    itemId: i.itemId,
-                    requestQty: parseNonNegativeLocaleNumber(i.qty),
-                    approvedQty: 0,
-                    workBoqItemId: i.workBoqItemId || null,
-                    workBoqItemName: i.workBoqItemName || work?.name || null,
-                    materialBudgetItemId: i.materialBudgetItemId || null,
-                    materialBudgetItemName: i.materialBudgetItemName || snapshot.budget?.itemName || null,
-                    neededDate: i.neededDate || undefined,
-                    note: i.note || undefined,
-                    budgetQtySnapshot: snapshot.budgetQty,
-                    reservedBeforeQtySnapshot: snapshot.reservedBeforeQty,
-                    previousRequestedQtySnapshot: snapshot.previousRequested,
-                    isOverBoq: snapshot.overBudgetQty > 0,
-                    overQty: snapshot.overBudgetQty,
-                    overPercent: snapshot.overBudgetPercent,
-                    overReason,
-                    overBudgetQtySnapshot: snapshot.overBudgetQty,
-                    overBudgetPercentSnapshot: snapshot.overBudgetPercent,
-                    overBudgetReason: overReason,
-                    isManualItem: i.isManualItem || false,
-                    itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
-                    unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
-                    skuSnapshot: i.skuSnapshot || getLineInventory(i.itemId)?.sku || undefined,
-                    specification: i.specification || undefined,
-                    manualReason: i.manualReason || undefined,
-                    materialGroupKey: i.materialGroupKey || undefined,
-                    materialGroupSource: i.materialGroupSource || undefined,
-                    materialGroupSnapshot: i.materialGroupSnapshot || undefined,
-                };
-            }),
-            logs: [
-                ...(request?.logs || []),
-                { action: isExistingDraft ? 'UPDATED_DRAFT' : 'CREATED_DRAFT', userId: user.id, timestamp: now },
-            ],
-        };
+            userId: user.id,
+            items: reqItems.map(i => toRequestItem(
+                i,
+                sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id),
+                getLineInventory(i.itemId),
+                i.workBoqItemId ? workBoqMap.get(i.workBoqItemId)?.name : undefined,
+            )),
+        });
     };
+
+    const specProblems = duplicateItemSpecProblems(reqItems.map(line => ({ key: line.lineId, itemId: line.itemId, specification: line.specification })));
 
     const validateDraftForm = async () => {
         if (isProjectRequest && !requestTitle.trim()) {
@@ -1317,6 +1316,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (invalidQtyLine) {
             const item = items.find(i => i.id === invalidQtyLine.itemId);
             toast.warning('Thiếu khối lượng đề xuất', `${item?.name || invalidQtyLine.itemNameSnapshot || invalidQtyLine.itemId} cần nhập số lượng lớn hơn 0.`);
+            return false;
+        }
+
+        const specProblemLine = reqItems.find(line => specProblems.has(line.lineId));
+        if (specProblemLine) {
+            const item = items.find(i => i.id === specProblemLine.itemId);
+            toast.warning('Thiếu quy cách', `${item?.name || specProblemLine.itemNameSnapshot || specProblemLine.itemId} có nhiều dòng — ghi quy cách khác nhau cho từng dòng để Mua hàng đặt đúng loại.`);
             return false;
         }
 
@@ -1609,28 +1615,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
-    const handleReturnRequest = async () => {
+    const handleReturnRequest = () => {
         if (isSaving || !request) return;
         if (request.relatedTransactionId) {
             toast.error('Không thể trả lại trực tiếp', 'Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước.');
             return;
         }
-        const reason = overrideReason.trim() || note.trim();
-        if (!reason) {
-            toast.warning('Thiếu lý do trả lại', 'Vui lòng nhập lý do để người tạo phiếu biết cần bổ sung gì.');
-            return;
-        }
-        const ok = await confirm({
-            title: 'Trả lại phiếu đề xuất',
-            targetName: request.code,
-            subtitle: 'Phiếu sẽ quay về trạng thái Nháp và hiển thị nhãn Bị trả lại cho người tạo phiếu.',
-            confirmText: 'Xác nhận trả lại',
-            actionLabel: 'Trả lại',
-            cancelLabel: 'Kiểm tra lại',
-            intent: 'warning',
-            countdownSeconds: 1,
-        });
-        if (!ok) return;
+        setIsReturnDialogOpen(true);
+    };
+
+    const confirmReturnRequest = async (reason: string) => {
+        if (isSaving || !request) return;
         setIsSaving(true);
         try {
             const saved = await updateRequestStatus(request.id, RequestStatus.DRAFT, reason, undefined, undefined, undefined, 'RETURNED');
@@ -1638,7 +1633,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể trả lại phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống.');
                 return;
             }
-            toast.success('Đã trả lại phiếu', 'Phiếu đã quay về Nháp để người tạo phiếu chỉnh sửa và gửi lại.');
+            setIsReturnDialogOpen(false);
+            toast.success('Đã trả lại phiếu', `Phiếu đã quay về Nháp để ${requester?.name || 'người lập phiếu'} chỉnh sửa và gửi lại.`);
             onClose();
         } catch (err: any) {
             logApiError('requestModal.returnRequest', err);
@@ -2952,6 +2948,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             canReassign={canReviewProjectWorkflow || canManageProjectWorkflow}
                             canResubmit={isDynamicReturnedDraft && request.requesterId === user.id && canSubmitProjectRequest}
                             canRollback={canManageProjectWorkflow}
+                            canMoveStep={canMoveWorkflowStep}
                             completionHandoff={{
                                 required: true,
                                 eligiblePermissionCodes: ['approve'],
@@ -3201,8 +3198,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         {isEditable && !hasMultipleSources && (
                                                             <MaterialCommercialDescriptionFields
                                                                 sku={group.sku}
+                                                                itemId={primaryRow.itemId}
                                                                 name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                                 onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                                specification={(primaryRow as RequestLineDraft).specification || ''}
+                                                                onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                                specificationGhost={prefillEnabled ? siteSpecGhost(siteItemHistory.get(primaryRow.itemId)) : null}
+                                                                specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                             />
                                                         )}
                                                         {!hasMultipleSources && isProjectRequest && (
@@ -3409,13 +3411,24 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </tbody>
                         </table>
                         {isEditable && (
-                            <button
-                                type="button"
-                                onClick={handleAddItem}
-                                className="w-full py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 active:scale-[0.99]"
-                            >
-                                <Plus size={15} /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
-                            </button>
+                            <div className="flex">
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    className="flex-1 py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 active:scale-[0.99]"
+                                >
+                                    <Plus size={15} /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenQuickLines}
+                                    aria-expanded={isQuickLinesOpen}
+                                    title="Gõ hoặc dán danh sách vật tư, hệ thống tách dòng và khớp mã"
+                                    className="px-4 py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-l border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-1.5 whitespace-nowrap"
+                                >
+                                    <Keyboard size={15} /> Gõ nhanh
+                                </button>
+                            </div>
                         )}
                     </div>
 
@@ -3457,8 +3470,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             {isEditable && !hasMultipleSources && (
                                                 <MaterialCommercialDescriptionFields
                                                     sku={group.sku}
+                                                    itemId={primaryRow.itemId}
                                                     name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                     onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                    specification={(primaryRow as RequestLineDraft).specification || ''}
+                                                    onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                                specificationGhost={prefillEnabled ? siteSpecGhost(siteItemHistory.get(primaryRow.itemId)) : null}
+                                                    specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                 />
                                             )}
                                             {!hasMultipleSources && isProjectRequest && (primaryRow.workBoqItemName || primaryRow.materialBudgetItemName || !primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
@@ -3619,11 +3637,29 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             );
                         })}
                         {isEditable && (
-                            <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center active:scale-95 transition-all hover:bg-muted">
-                                <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={handleAddItem} className="flex-1 py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center active:scale-95 transition-all hover:bg-muted">
+                                    <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
+                                </button>
+                                <button type="button" onClick={handleOpenQuickLines} aria-expanded={isQuickLinesOpen} className="px-4 py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 transition-all hover:bg-muted">
+                                    <Keyboard size={16} /> Gõ nhanh
+                                </button>
+                            </div>
                         )}
                     </div>
+
+                    {isEditable && isQuickLinesOpen && (
+                        <QuickRequestLines
+                            items={items}
+                            boost={frequentItemIds}
+                            withReason={isProjectRequest}
+                            filterWarehouseId={isProjectRequest && !canSeeAvailability ? undefined : isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
+                            allowAllItems={isProjectRequest}
+                            onAdd={handleAddQuickLines}
+                            onClose={() => setQuickLinesOpen(false)}
+                            initial={!request ? initialDraft?.quick : null}
+                        />
+                    )}
 
                     {!isEditable && request && isProjectRequest && [RequestStatus.APPROVED, RequestStatus.IN_TRANSIT, RequestStatus.COMPLETED].includes(request.status) && (
                         <div className="mt-5">
@@ -4287,6 +4323,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 allowAllItems={isProjectRequest}
                 showStockQuantities={canSeeAvailability && !isUsingProjectCatalog}
                 items={items}
+                frequent={prefillEnabled ? frequentItems : undefined}
             />
 
             {isScannerOpen && (
@@ -4347,6 +4384,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     onConfirm={target => submitRequestForApproval(submittingProjectRequest, target)}
                 />
             )}
+            <ReasonConfirmModal
+                isOpen={isReturnDialogOpen && !!request}
+                onClose={() => { if (!isSaving) setIsReturnDialogOpen(false); }}
+                onConfirm={confirmReturnRequest}
+                title="Trả lại phiếu đề xuất"
+                targetName={request?.code || ''}
+                subtitle={`Trả về người lập: ${requester?.name || 'N/A'}`}
+                warningText="Phiếu quay về Nháp, số lượng đã duyệt được xoá. Người lập sửa xong gửi duyệt lại từ đầu."
+                reasonLabel="Lý do trả lại"
+                reasonPlaceholder="Ví dụ: Bổ sung quy cách, sửa lại số lượng..."
+                actionLabel="Trả lại"
+                cancelLabel="Huỷ"
+                intent="warning"
+                isSubmitting={isSaving}
+            />
         </div>
     );
 };

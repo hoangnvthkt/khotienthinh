@@ -286,6 +286,12 @@
       ]
     },
     {
+      "permissionCode": "center.flow.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "center.layout.manage",
       "scopeTypes": [
         "own"
@@ -293,6 +299,12 @@
     },
     {
       "permissionCode": "center.module.access",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "center.site3d.view",
       "scopeTypes": [
         "global"
       ]
@@ -2754,6 +2766,18 @@
       ]
     },
     {
+      "permissionCode": "wms.master_data.create_item",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.master_data.edit_item",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "wms.master_data.issue_code",
       "scopeTypes": [
         "global"
@@ -2778,6 +2802,18 @@
       "scopeTypes": [
         "global",
         "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.office_supply.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.office_supply.report",
+      "scopeTypes": [
+        "global"
       ]
     },
     {
