@@ -1,4 +1,4 @@
-// Vioo Work · Đợt 1 PR-3 (20/10/2026): ca kiểm model THẬT cho 5 skill soạn nháp + lệnh máy chủ giả cho công cụ Trợ lý Vioo Work.
+// Vioo Work · Đợt 1 PR-3 (20/10/2026) + Đợt 2 PR-6: ca kiểm model THẬT cho 6 skill soạn nháp + lệnh máy chủ giả cho công cụ Trợ lý Vioo Work.
 // Ca hội thoại nằm trong CASES (evals.ts); ca skill chạy riêng ở runWorkSkillEvals — cùng lời dặn / lược đồ / chuẩn hóa như cổng AI.
 import { readFileSync } from 'node:fs';
 import { complete } from '../../supabase/functions/ai-gateway/providers.ts';
@@ -67,6 +67,37 @@ Chủ trì: Tổng giám đốc
 5. Cần một người liên hệ CĐT xin lịch nghiệm thu cốt thép móng M4 trong tuần.
 6. Ghi nhận: công tác an toàn tuần qua tốt.`;
 
+// Đợt 2 PR-6 · chốt kỳ: dòng số liệu theo đúng khuôn periodReviewFacts (lib/work/workGoals.ts). Id mục tiêu dạng uuid (nhóm cuối có chữ để không bị che).
+const GOAL_A = '7c1e2a40-5b1d-4f3e-9a10-0b2c4d6e8fa1';
+const GOAL_B = '3d9f0b12-8e7a-4c55-b1d2-a3c4e5f60b7c';
+const GOAL_C = 'e4a7c9d0-1f2b-4a3c-8d5e-6f70a1b2c3de';
+const PERIOD_GOOD = `Đơn vị: Phòng Quản lý dự án · Kỳ: Tháng 10/2026
+Đúng hạn: 92% (23/25 việc đến hạn) · kỳ trước 85%
+Quá hạn đang mở: 0 việc
+Chỉ đạo BLĐ: 4 xong, 1 đang mở, 0 trễ
+Mục tiêu [${GOAL_A}] Nghiệm thu móng SMB khu A (Tháng 10/2026) · chỉ tiêu 12 hạng mục · thực tế 12 hạng mục · đạt 100% · việc 6/6 xong, 6 đúng hạn, 0 trễ, 0 đang quá hạn · trạng thái máy tính: Đạt · phụ trách Tạ Minh Khôi
+Mục tiêu [${GOAL_B}] Hồ sơ thanh toán đợt 3 XinHai (Tháng 10/2026) · không có chỉ tiêu số · chưa nhập thực tế · đạt chưa có số · việc 4/4 xong, 4 đúng hạn, 0 trễ, 0 đang quá hạn · trạng thái máy tính: Đạt · phụ trách Lê Minh An`;
+const PERIOD_BAD = `Đơn vị: Phòng Quản lý dự án · Kỳ: Tháng 10/2026
+Đúng hạn: 64% (16/25 việc đến hạn) · kỳ trước 81%
+Quá hạn đang mở: 2 việc · lâu chưa cập nhật: 1
+Chỉ đạo BLĐ: 2 xong, 2 đang mở, 1 trễ
+Mục tiêu [${GOAL_A}] Nghiệm thu móng SMB khu A (Tháng 10/2026) · chỉ tiêu 12 hạng mục · thực tế 9 hạng mục · đạt 75% · việc 4/6 xong, 3 đúng hạn, 1 trễ, 2 đang quá hạn · trạng thái máy tính: Chưa đạt · phụ trách Tạ Minh Khôi
+Mục tiêu [${GOAL_B}] Hồ sơ thanh toán đợt 3 XinHai (Tháng 10/2026) · không có chỉ tiêu số · chưa nhập thực tế · đạt chưa có số · việc 4/4 xong, 4 đúng hạn, 0 trễ, 0 đang quá hạn · trạng thái máy tính: Đạt · phụ trách Lê Minh An
+Mục tiêu [${GOAL_C}] Giảm hao hụt thép XinHai (Tháng 10/2026) · chỉ tiêu 3% (càng thấp càng tốt) · chưa nhập thực tế · đạt chưa có số · việc 0/0 xong, 0 đúng hạn, 0 trễ, 0 đang quá hạn · trạng thái máy tính: Chưa có số
+Việc trễ: Nghiệm thu cốt thép móng M4 · Tạ Minh Khôi · hạn 24/10
+Việc trễ: Bổ sung biên bản lấy mẫu bê tông khu A · Lê Minh An · hạn 27/10`;
+const periodGoals = (...ids: string[]) => ids.map(id => ({ id, title: { [GOAL_A]: 'Nghiệm thu móng SMB khu A', [GOAL_B]: 'Hồ sơ thanh toán đợt 3 XinHai', [GOAL_C]: 'Giảm hao hụt thép XinHai' }[id] as string }));
+type PeriodGoal = { id: string; assessment: string; solution: string | null };
+const periodOut = (o: Record<string, unknown>) => ({ overall: o.overall as { assessment: string; solution: string | null }, goals: (o.goals as PeriodGoal[]) || [] });
+const goalOf = (o: Record<string, unknown>, id: string) => periodOut(o).goals.find(g => g.id === id);
+/** Số trong nháp phải có trong dòng số liệu (không bịa số / ngày). */
+const strayNumbers = (o: Record<string, unknown>, facts: string) => {
+  const known = new Set(facts.match(/\d+(?:[.,]\d+)?/g) || []);
+  const { overall, goals } = periodOut(o);
+  const all = [overall?.assessment, overall?.solution, ...goals.flatMap(g => [g.assessment, g.solution])].filter(Boolean).join(' ').replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '');
+  return (all.match(/\d+(?:[.,]\d+)?/g) || []).filter(n => !known.has(n));
+};
+
 export const WORK_SKILL_CASES: SkillCase[] = [
   { id: 'wk-draft-basic', bug: 'PR-3: câu giao việc thường — người theo chữ trong câu, hạn "trước thứ 6", mức B, tên việc không chứa người / hạn', skill: 'work_task_draft',
     input: { text: 'Hà KH rà soát HĐ cốp pha SMB trước thứ 6, quan trọng, gửi kèm bảng so sánh giá', today: TODAY, people },
@@ -130,6 +161,31 @@ export const WORK_SKILL_CASES: SkillCase[] = [
       return first(fail(!/quá hạn/i.test(text), `không nói quá hạn: ${text}`), fail(!/CĐT|chủ đầu tư/i.test(text), `không nêu vướng: ${text}`), fail(nums.length > 0, `số lạ ${nums.join(', ')}`),
         fail(text.split(/[.!?](\s|$)/).filter(s => s && s.trim()).length > 4, `dài: ${text}`));
     } },
+  { id: 'wk-period-good', bug: 'PR-6: kỳ tốt — mọi mục tiêu Đạt ⇒ Giải pháp null, nhận xét nêu đúng hạn 92%, không số lạ', skill: 'work_period_review',
+    input: { facts: PERIOD_GOOD, goals: periodGoals(GOAL_A, GOAL_B) },
+    check: o => {
+      const { overall, goals } = periodOut(o);
+      return first(fail(goals.map(g => g.id).sort().join(',') !== [GOAL_A, GOAL_B].sort().join(','), `id: ${goals.map(g => g.id).join(',')}`),
+        fail(goals.some(g => g.solution != null), `có giải pháp khi đạt: ${goals.map(g => g.solution).join(' | ')}`),
+        fail(!/92\s?%/.test(String(overall?.assessment)), `nhận xét không nêu 92%: ${overall?.assessment}`),
+        fail(strayNumbers(o, PERIOD_GOOD).length > 0, `số lạ ${strayNumbers(o, PERIOD_GOOD).join(', ')}`));
+    } },
+  { id: 'wk-period-bad', bug: 'PR-6: kỳ xấu — mục tiêu Chưa đạt có giải pháp nhắc đúng việc trễ / người; mục tiêu Đạt để null; không số lạ', skill: 'work_period_review',
+    input: { facts: PERIOD_BAD, goals: periodGoals(GOAL_A, GOAL_B, GOAL_C) },
+    check: o => {
+      const { overall } = periodOut(o);
+      const a = goalOf(o, GOAL_A), b = goalOf(o, GOAL_B), c = goalOf(o, GOAL_C);
+      return first(fail(!a || !b || !c, `thiếu mục tiêu: ${periodOut(o).goals.map(g => g.id).join(',')}`),
+        fail(!a?.solution || !/Khôi|M4|cốt thép/i.test(a.solution), `giải pháp mục tiêu chưa đạt: ${a?.solution}`),
+        fail(b?.solution != null, `giải pháp khi đạt: ${b?.solution}`),
+        fail(c?.solution != null || !/chưa (nhập|có)/i.test(String(c?.assessment)), `chưa có số: ${c?.assessment} / ${c?.solution}`),
+        fail(!/64\s?%/.test(String(overall?.assessment)) || !overall?.solution, `nhận xét: ${overall?.assessment} / ${overall?.solution}`),
+        fail(strayNumbers(o, PERIOD_BAD).length > 0, `số lạ ${strayNumbers(o, PERIOD_BAD).join(', ')}`));
+    } },
+  { id: 'wk-period-no-goals', bug: 'PR-6: kỳ không có mục tiêu ⇒ goals rỗng, chỉ nhận xét kỳ', skill: 'work_period_review',
+    input: { facts: PERIOD_BAD.split('\n').filter(l => !l.startsWith('Mục tiêu')).concat('Mục tiêu: không có mục tiêu trong kỳ').join('\n'), goals: [] },
+    check: o => first(fail(periodOut(o).goals.length > 0, `bịa mục tiêu: ${periodOut(o).goals.map(g => g.id).join(',')}`),
+      fail(String(periodOut(o).overall?.assessment).length < 20, `nhận xét ngắn: ${periodOut(o).overall?.assessment}`)) },
 ];
 
 /** Chạy ca skill: lời dặn + lược đồ + chuẩn hóa đúng như cổng AI (che dữ liệu nhạy cảm như cổng). */

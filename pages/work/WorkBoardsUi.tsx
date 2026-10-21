@@ -124,7 +124,7 @@ export function personView(m: WorkTeamMember, unitName: string, board: Pick<Work
 }
 
 /** Bảng người của một đơn vị: đang làm (A/B/C), quá hạn, chưa cập nhật, đúng hạn tuần, tải. Bấm một người để xem việc. */
-export function MemberTable({ members, onPick }: { members: WorkTeamMember[]; onPick: (m: WorkTeamMember) => void }) {
+export function MemberTable({ members, onPick }: { members: WorkTeamMember[]; /** Không truyền = chỉ xem (bản chốt). */ onPick?: (m: WorkTeamMember) => void }) {
   if (!members.length) return <p className="work-hint">Chưa có nhân viên trong đơn vị (theo Sơ đồ tổ chức).</p>;
   const mix = (m: WorkTeamMember) => {
     const tot = m.levels.A + m.levels.B + m.levels.C || 1;
@@ -140,8 +140,9 @@ export function MemberTable({ members, onPick }: { members: WorkTeamMember[]; on
       </div>
       {members.map((m) => {
         const rate = ontimeRate(m.ontime, m.due);
+        const Row = onPick ? "button" : "div";
         return (
-          <button type="button" key={m.userId} className="work-members-r" role="row" onClick={() => onPick(m)}>
+          <Row type={onPick ? "button" : undefined} key={m.userId} className={`work-members-r${onPick ? "" : " is-static"}`} role="row" onClick={onPick ? () => onPick(m) : undefined}>
             <span className="work-members-who" role="cell"><span className="work-av" aria-hidden="true">{m.name.split(" ").pop()?.[0] || "?"}</span>
               <span><b>{m.name}{m.isHead && <em> · Trưởng</em>}</b><small>{m.title || ""}</small></span></span>
             <span role="cell" data-label="Đang làm"><b className="work-num">{m.active}</b>{mix(m)}</span>
@@ -150,7 +151,7 @@ export function MemberTable({ members, onPick }: { members: WorkTeamMember[]; on
             <span role="cell" data-label="Đúng hạn"><b className="work-num">{rateText(rate)}</b><small>{m.due ? `${m.ontime}/${m.due} việc` : "chưa có việc đến hạn"}</small></span>
             <span role="cell" data-label="Tải"><span className="work-my-bar"><i className={m.load >= CAP ? "is-full" : ""} style={{ width: `${Math.min(100, (m.load / CAP) * 100)}%` }} /></span>
               <small className="work-num">{m.load}/{CAP}</small></span>
-          </button>
+          </Row>
         );
       })}
     </div>

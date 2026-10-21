@@ -294,7 +294,12 @@ const board = {
   },
 };
 // Đợt 1 PR-3: AI giả (không gọi cổng AI). ?ai=off → tắt nút AI; ?ai=fail → cổng báo hết lượt.
-const aiResults: Record<string, (input: any) => unknown> = {
+const aiResults: Record<string, (input: any) => any> = {
+  work_period_review: (input: any) => ({
+    overall: { assessment: "Đúng hạn 72%, giảm so với kỳ trước; còn 3 việc quá hạn ở hiện trường.", solution: "Khôi chốt lại kế hoạch cốp pha trong tuần tới." },
+    goals: (input.goals || []).map((g: any, i: number) => ({ id: g.id, assessment: i === 0 ? "Thu được 3,2/5 tỷ, chậm do hồ sơ thanh toán đợt 3 bị trả lại." : "Đúng tiến độ.",
+      solution: i === 0 ? "Lê Minh An bổ sung chữ ký TVGS, nộp lại hồ sơ trước thứ 4." : null })),
+  }),
   work_task_draft: (input) => /Hà/.test(input.text)
     ? { title: "Bóc khối lượng mái khu B", assignee: "Hà", assigneeName: null, dueText: "thứ 6", dueDate: null, dueTime: null, level: "B", description: "", checklist: [], tags: ["XinHai"], evidence: { photo: false, file: true }, warnings: [] }
     : { title: "Rà soát hồ sơ thanh toán đợt 3 SMB", assignee: "anh Đô", assigneeName: "Vương Thành Đô", dueText: "mai 9h", dueDate: null, dueTime: "09:00", level: "A",
@@ -847,6 +852,78 @@ const attachments: ReturnType<typeof createWorkAttachmentService> = {
     throw new Error("not used");
   },
 };
+// Đợt 2 PR-6: mục tiêu / chốt kỳ / lịch chốt (bộ nhớ trên máy; ?goals=empty → chưa có mục tiêu).
+const gIso = (d: Date) => d.toISOString().slice(0, 10);
+const gToday = gIso(new Date(Date.now() + 7 * 3_600_000));
+const gMonth = `${gToday.slice(0, 8)}01`;
+const gQuarter = `${gToday.slice(0, 5)}${String(Math.floor((Number(gToday.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, "0")}-01`;
+const gMonthEnd = gIso(new Date(Date.UTC(Number(gToday.slice(0, 4)), Number(gToday.slice(5, 7)), 0)));
+const gQuarterEnd = gIso(new Date(Date.UTC(Number(gQuarter.slice(0, 4)), Number(gQuarter.slice(5, 7)) + 2, 0)));
+const goalOf = (x: any) => ({ orgUnitId: "u-qlda", unit: { id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }, periodKind: "month", periodStart: gMonth, periodEnd: gMonthEnd,
+  label: `Tháng ${Number(gMonth.slice(5, 7))}/${gMonth.slice(0, 4)}`, parentGoalId: null, criteria: null, measure: null, higherIsBetter: true, actualValue: null,
+  owner: null, assessment: null, solution: null, lockVersion: 1, updatedAt: new Date().toISOString(), tasks: { total: 0, done: 0, ontime: 0, late: 0, overdue: 0 },
+  achievedPercent: null, status: "on_track", ...x });
+const goalRows: any[] = query.get("goals") === "empty" ? [] : [
+  goalOf({ id: "g-q", periodKind: "quarter", periodStart: gQuarter, periodEnd: gQuarterEnd, label: `Quý ${Math.floor((Number(gQuarter.slice(5, 7)) - 1) / 3) + 1}/${gQuarter.slice(0, 4)}`,
+    title: "Thu tiền dự án SMB", targetValue: 15, measure: "tỷ", actualValue: 8.2, achievedPercent: 55, owner: { id: "actor", name: "Lê Minh An" },
+    tasks: { total: 6, done: 3, ontime: 2, late: 1, overdue: 1 }, status: "at_risk" }),
+  goalOf({ id: "g-m", parentGoalId: "g-q", title: "Thu tiền dự án SMB", targetValue: 5, measure: "tỷ", actualValue: 3.2, achievedPercent: 64, owner: { id: "actor", name: "Lê Minh An" },
+    tasks: { total: 3, done: 1, ontime: 1, late: 0, overdue: 1 }, status: "at_risk" }),
+  goalOf({ id: "g-2", title: "Hồ sơ nghiệm thu đúng hạn", targetValue: 95, measure: "%", actualValue: 96, achievedPercent: 101, owner: { id: "khoi", name: "Tạ Minh Khôi" },
+    tasks: { total: 4, done: 4, ontime: 4, late: 0, overdue: 0 }, status: "met" }),
+];
+const companyGoalRows: any[] = [goalOf({ id: "g-c", orgUnitId: null, unit: null, title: "Doanh thu toàn công ty", targetValue: 40, measure: "tỷ", actualValue: 31, achievedPercent: 78,
+  tasks: { total: 5, done: 3, ontime: 3, late: 0, overdue: 0 }, status: "on_track" })];
+let periodSetting: any = { orgUnitId: null, cadence: "week", closeDow: 6, closeTime: "17:00", reportDow: 1, reportTime: "08:00", updatedAt: null, updatedBy: null };
+const unitSettings: any[] = [];
+const closes: any[] = [];
+const goalsService = {
+  async settings() { log("goals.settings"); await wait(60); return { company: periodSetting, overrides: unitSettings.slice(), canEditCompany: !query.get("access"),
+    editableUnits: [{ id: "u-qlda", code: "QLDA", name: "Phòng Quản lý dự án" }],
+    reopens: closes.flatMap((c) => c.history.filter((h: any) => h.action === "reopen").map((h: any) => ({ ...h, closeId: c.id, unit: c.orgUnitId ? { id: c.orgUnitId, code: "QLDA", name: "Phòng Quản lý dự án" } : null, from: c.from, to: c.to, label: c.label }))) }; },
+  async saveSetting(orgUnitId: string | null, x: any) { log("goals.saveSetting", orgUnitId, x);
+    const row = { orgUnitId, ...x, updatedAt: new Date().toISOString(), updatedBy: "Lê Minh An" };
+    if (!orgUnitId) periodSetting = row; else { const i = unitSettings.findIndex((u) => u.orgUnitId === orgUnitId); if (i >= 0) unitSettings[i] = row; else unitSettings.push({ ...row, unit: { id: orgUnitId, code: "QLDA", name: "Phòng Quản lý dự án" } }); }
+    return row; },
+  async resetSetting(orgUnitId: string) { log("goals.resetSetting", orgUnitId); unitSettings.splice(unitSettings.findIndex((u) => u.orgUnitId === orgUnitId), 1); return periodSetting; },
+  async status(orgUnitId: string | null, from: string, to: string) { log("goals.status", orgUnitId, from, to); await wait(50);
+    const all = closes.filter((c) => c.orgUnitId === orgUnitId && c.from === from && c.to === to);
+    const c = all.find((x) => x.status === "closed");
+    return { orgUnitId, setting: unitSettings.find((u) => u.orgUnitId === orgUnitId) || periodSetting, settingSource: "company", canClose: true,
+      close: c ? { id: c.id, from, to, label: c.label, note: c.note, closedAt: c.closedAt, closedBy: "Vương Thành Đô" } : null,
+      history: all.flatMap((x) => x.history) }; },
+  async close(input: any) { log("goals.close", input); await wait(120);
+    const id = `close-${closes.length + 1}`;
+    const rows = input.orgUnitId ? goalRows : companyGoalRows;
+    for (const r of input.reviews) { const g = rows.find((x) => x.id === r.goalId); if (g) Object.assign(g, { actualValue: r.actualValue, assessment: r.assessment, solution: r.solution }); }
+    const b = input.orgUnitId ? await board.teamBoard(input.orgUnitId, input) : await board.companyBoard(input);
+    closes.push({ id, orgUnitId: input.orgUnitId, from: input.from, to: input.to, label: input.label, note: input.note, status: "closed", closedAt: new Date().toISOString(),
+      snapshot: { version: 1, scope: { orgUnitId: input.orgUnitId, code: input.orgUnitId ? "QLDA" : null, name: input.orgUnitId ? "Phòng Quản lý dự án" : null }, from: input.from, to: input.to,
+        label: input.label, board: b, directives: [], goals: structuredClone(rows), note: input.note, closedAt: new Date().toISOString(), closedBy: { id: "fourth", name: "Vương Thành Đô" } },
+      history: [{ closeId: id, action: "close", at: new Date().toISOString(), actor: "Vương Thành Đô", reason: null }] });
+    return { closeId: id, closedAt: new Date().toISOString() }; },
+  async reopen(closeId: string, reason: string) { log("goals.reopen", closeId, reason); const c = closes.find((x) => x.id === closeId)!;
+    c.status = "reopened"; c.history.unshift({ closeId, action: "reopen", at: new Date().toISOString(), actor: "Vương Thành Đô", reason }); return { closeId, status: "reopened" }; },
+  async closeDetail(closeId: string) { log("goals.closeDetail", closeId); await wait(60); const c = closes.find((x) => x.id === closeId)!;
+    return { id: c.id, orgUnitId: c.orgUnitId, from: c.from, to: c.to, label: c.label, status: c.status, note: c.note, closedAt: c.closedAt, closedBy: "Vương Thành Đô",
+      reopenedAt: null, reopenedBy: null, reopenReason: null, snapshot: c.snapshot, history: c.history }; },
+  async goals(orgUnitId: string | null, from: string, to: string) { log("goals.list", orgUnitId, from, to); await wait(70);
+    return { canEdit: query.get("access") !== "staff", goals: structuredClone(orgUnitId ? goalRows : companyGoalRows) }; },
+  async saveGoal(g: any) { log("goals.save", g); await wait(80);
+    if (g.id) { const x = goalRows.find((r) => r.id === g.id) || companyGoalRows.find((r) => r.id === g.id); Object.assign(x, { title: g.title, targetValue: g.targetValue, measure: g.measure,
+      actualValue: g.actualValue, higherIsBetter: g.higherIsBetter, lockVersion: x.lockVersion + 1 }); return x; }
+    const x = goalOf({ id: `g-new-${goalRows.length}`, orgUnitId: g.orgUnitId, periodKind: g.periodKind, periodStart: g.periodStart, title: g.title, targetValue: g.targetValue,
+      measure: g.measure, actualValue: g.actualValue, higherIsBetter: g.higherIsBetter, status: "on_track" });
+    (g.orgUnitId ? goalRows : companyGoalRows).push(x); return x; },
+  async splitGoal(id: string) { log("goals.split", id); return { goals: goalRows.filter((g) => g.parentGoalId === id) }; },
+  async deleteGoal(id: string, v: number) { log("goals.delete", id, v); const i = goalRows.findIndex((g) => g.id === id); if (i >= 0) goalRows.splice(i, 1); return { id }; },
+  async setGoalTasks(id: string, add: string[], remove: string[]) { log("goals.setTasks", id, add, remove); return { total: add.length }; },
+  async goalTasks(id: string) { log("goals.tasks", id); await wait(50);
+    return { items: boardTasks.slice(0, 3).map((t) => ({ id: t.id, code: t.code, title: t.title, status: t.status, level: t.level, deadlineAt: t.deadlineAt,
+      progressPercent: t.progressPercent, completedAt: t.completedAt || null, ontime: t.completedAt ? true : null, overdue: false, lastProgressAt: t.lastProgressAt,
+      assignees: [{ userId: "actor", name: "Lê Minh An" }], restricted: false })) }; },
+};
+
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <Routes>
@@ -860,6 +937,7 @@ createRoot(document.getElementById("root")!).render(
             actorName="Lê Minh An"
             canQuickAssign={query.get("quick") !== "false"}
             ai={fixtureAi}
+            goals={goalsService as any}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
@@ -875,6 +953,7 @@ createRoot(document.getElementById("root")!).render(
             actorName="Lê Minh An"
             canQuickAssign={query.get("quick") !== "false"}
             ai={fixtureAi}
+            goals={goalsService as any}
             attachments={attachments}
             subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
