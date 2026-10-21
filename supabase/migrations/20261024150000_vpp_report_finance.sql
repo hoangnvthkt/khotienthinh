@@ -148,7 +148,7 @@ begin
   return (with led as (
     -- Tồn đầu kỳ ghi bằng phiếu "opening_balance" tính vào cột Tồn đầu của tháng đó.
     select e.material_id, e.quantity_in qi, e.quantity_out qo, e.quantity_in * e.unit_price vi, e.quantity_out * e.unit_price vo,
-      e.transaction_date < v_from or coalesce(e.metadata->>'businessEventType', '') = 'opening_balance' is_open
+      e.transaction_date < v_from or coalesce(e.business_event_type, e.metadata->>'businessEventType', '') = 'opening_balance' is_open
     from public.inventory_ledger_entries e where e.warehouse_id = v_wh and e.transaction_date < v_to
   ), agg as (
     select l.material_id,
