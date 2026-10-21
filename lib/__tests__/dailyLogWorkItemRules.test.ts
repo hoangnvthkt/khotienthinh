@@ -106,6 +106,20 @@ describe('dailyLogWorkItemRules', () => {
     expect(result[0].dailyQuantity).toBeNull();
   });
 
+  it('một mũi chưa chia khối lượng riêng: quy đổi theo khối lượng hạng mục (DA29 4.1.1.9: 85% × 2,766 m³)', () => {
+    const [single] = aggregateAreaWorkItems([
+      { id: 'a', taskId: 'task-1', workAreaCode: 'NX1', areaPlannedQuantity: null, plannedQuantity: 2.766, cumulativePercent: 85, dailyQuantity: null },
+    ]);
+    expect(single.cumulativeQuantity).toBe(2.3511);
+    expect(single.conflicts).toEqual([]);
+    // Hai mũi chưa chia vẫn phải chia khối lượng, không lấy khối lượng hạng mục cho cả hai.
+    const [shared] = aggregateAreaWorkItems([
+      { id: 'a', taskId: 'task-1', workAreaCode: 'A', areaPlannedQuantity: null, plannedQuantity: 100, cumulativePercent: 30, dailyQuantity: 5 },
+      { id: 'b', taskId: 'task-1', workAreaCode: 'B', areaPlannedQuantity: null, plannedQuantity: 100, cumulativePercent: 45, dailyQuantity: 7 },
+    ]);
+    expect(shared.conflicts).toContain('missing_area_allocation');
+  });
+
   it('weights the same task by allocated planned quantity', () => {
     const result = aggregateAreaWorkItems([
       { id: 'a', taskId: 'task-1', workAreaCode: 'A', areaPlannedQuantity: 100, cumulativePercent: 20, dailyQuantity: 5 },

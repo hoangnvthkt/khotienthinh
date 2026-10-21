@@ -132,7 +132,7 @@ export const buildDailyLogSummaryDraft = (bundle: DailyLogWbsBundle, selectedIds
   const aggregates = addForecastConflicts(activeItems, aggregateAreaWorkItems(activeItems.map(item => ({
     id: item.sourceWorkItemId || item.id || `${item.taskId}-${item.workAreaCode}`,
     taskId: item.taskId, workAreaCode: item.workAreaCode,
-    areaPlannedQuantity: item.areaPlannedQuantity ?? null,
+    areaPlannedQuantity: item.areaPlannedQuantity ?? null, plannedQuantity: item.plannedQuantity ?? null,
     cumulativePercent: item.cumulativeProgressPercent, dailyQuantity: item.dailyQuantityDone ?? null,
   }))));
   const groups = aggregates.map(aggregate => ({ aggregate, items: activeItems.filter(item => item.taskId === aggregate.taskId) }));
@@ -207,8 +207,10 @@ export const adjustSummaryCardProgress = (card: DailyLogAreaCardModel, itemId: s
   if (!reason.trim()) throw new Error('Cần nhập lý do chỉnh bản sao.');
   return { ...card, source: { ...card.source, hasAdjustments: true, adjustmentReason: reason.trim() }, editedItems: card.editedItems.map(item => {
     if ((item.id || item.sourceWorkItemId) !== itemId) return item;
-    const quantity = Number.isFinite(percent) && item.unit?.trim() && item.areaPlannedQuantity != null && item.areaPlannedQuantity > 0
-      ? Math.round(item.areaPlannedQuantity * percent * 100) / 10000 : null;
+    // Cơ sở quy đổi: khối lượng mũi nếu đã chia, không thì khối lượng hạng mục.
+    const plan = item.areaPlannedQuantity ?? item.plannedQuantity ?? null;
+    const quantity = Number.isFinite(percent) && item.unit?.trim() && plan != null && plan > 0
+      ? Math.round(plan * percent * 100) / 10000 : null;
     return { ...item, cumulativeProgressPercent: percent, cumulativeQuantityDone: quantity,
       dailyQuantityDone: quantity != null && item.baselineQuantityDone != null ? Math.round((quantity - item.baselineQuantityDone) * 10000) / 10000 : null };
   }) };
@@ -231,7 +233,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const [returnText, setReturnText] = useState('');
   const groups = useMemo(() => {
     const items = cards.flatMap(card => card.editedItems);
-    return addForecastConflicts(items, aggregateAreaWorkItems(items.map(item => ({ id: item.sourceWorkItemId || item.id || '', taskId: item.taskId, workAreaCode: item.workAreaCode, areaPlannedQuantity: item.areaPlannedQuantity ?? null, cumulativePercent: item.cumulativeProgressPercent, dailyQuantity: item.dailyQuantityDone ?? null }))))
+    return addForecastConflicts(items, aggregateAreaWorkItems(items.map(item => ({ id: item.sourceWorkItemId || item.id || '', taskId: item.taskId, workAreaCode: item.workAreaCode, areaPlannedQuantity: item.areaPlannedQuantity ?? null, plannedQuantity: item.plannedQuantity ?? null, cumulativePercent: item.cumulativeProgressPercent, dailyQuantity: item.dailyQuantityDone ?? null }))))
       .map(aggregate => ({ aggregate, items: items.filter(item => item.taskId === aggregate.taskId) }));
   }, [cards]);
   const decisions = bundle.summaryLog?.status==='verified' ? savedDecisions : Object.fromEntries(groups.map(group=>[group.aggregate.taskId,savedDecisions[group.aggregate.taskId] || autoDecision(group,bundle.summaryLog?.id)]));

@@ -13,6 +13,8 @@ export interface AreaWorkItemProgressInput {
   taskId: string;
   workAreaCode: string;
   areaPlannedQuantity: number | null;
+  /** Khối lượng hạng mục (BOQ / tạm tính) — cơ sở quy đổi khi chỉ một mũi báo và mũi chưa chia khối lượng riêng. */
+  plannedQuantity?: number | null;
   cumulativePercent: number;
   dailyQuantity: number | null;
 }
@@ -121,8 +123,9 @@ export const aggregateAreaWorkItems = (
 
     if (taskItems.length === 1) {
       const [item] = taskItems;
-      const cumulativeQuantity = item.areaPlannedQuantity != null && item.areaPlannedQuantity > 0
-        ? roundQuantity(item.areaPlannedQuantity * item.cumulativePercent / 100)
+      const plan = item.areaPlannedQuantity ?? item.plannedQuantity ?? null;
+      const cumulativeQuantity = plan != null && plan > 0
+        ? roundQuantity(plan * item.cumulativePercent / 100)
         : null;
       return {
         taskId,

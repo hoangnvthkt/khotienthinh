@@ -81,7 +81,8 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
     fingerprint: string;
     allowOver100: boolean;
     priorRowId: string | null;
-    previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number; unitSnapshot: string } | null;
+    /** Cơ sở quy đổi của ngày trước: khối lượng mũi (areaPlannedQuantitySnapshot) nếu đã chia, không thì plannedQuantitySnapshot. */
+    previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number | null; plannedQuantitySnapshot?: number | null; unitSnapshot: string } | null;
     nextItem: { cumulativeQuantityDone: number | null; areaPlannedQuantitySnapshot: number | null; unitSnapshot: string | null } | null;
   }>;
   permissions: DailyLogWbsBundle['permissions'] & {
