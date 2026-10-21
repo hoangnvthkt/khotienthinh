@@ -377,7 +377,8 @@
     "20261022183000_cron_locks_retention_indexes.sql",
     "20261022200000_work_dot1_boards.sql",
     "20261023090000_work_dot2_periods.sql",
-    "20261023120000_work_dot2_close_goals.sql"
+    "20261023120000_work_dot2_close_goals.sql",
+    "20261023150000_work_dot2_digest.sql"
   ],
   "forbidIncludeAll": true
 }

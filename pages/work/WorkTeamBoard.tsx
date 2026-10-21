@@ -10,14 +10,18 @@ import type { WorkGoalService } from "../../lib/work/workGoals";
 import type { WorkAiService } from "../../lib/work/workAi";
 import { WorkGoalsCard } from "./WorkGoals";
 import { WorkPeriodBar, closeView, settingsView, snapshotView } from "./WorkPeriodClose";
+import { WorkPeriodReport } from "./WorkPeriodReport";
+import type { WorkBoardLink } from "./WorkCompanyBoard";
 import { BoardDrawer, BoardKpi, DeltaText, DirectiveItem, MemberTable, ReviewItem, TaskListLoader, personView, rateText, type DrawerView } from "./WorkBoardsUi";
 
 /** Phòng tôi (trưởng đơn vị theo Sơ đồ tổ chức, Đợt 1 PR-4): 6 ô số, bảng người, chờ tôi duyệt, chỉ đạo BLĐ của đơn vị. */
-export function WorkTeamBoard({ board, service, goalsService, ai, access, detailTo, onNotice, onAssignTo, children }: {
-  board: Pick<WorkBoardService, "teamBoard" | "reviewQueue" | "directives" | "tasksOverview" | "decideClaimV2" | "assignablePeople">;
+export function WorkTeamBoard({ board, service, goalsService, ai, access, link, detailTo, onNotice, onAssignTo, children }: {
+  board: Pick<WorkBoardService, "teamBoard" | "companyBoard" | "reviewQueue" | "directives" | "tasksOverview" | "decideClaimV2" | "assignablePeople">;
   /** Đợt 2 PR-6: mục tiêu, chốt kỳ, lịch chốt; không truyền thì ẩn. */
   goalsService?: WorkGoalService;
   ai?: WorkAiService | null;
+  /** Link bản tin: kỳ + đơn vị + mở báo cáo. */
+  link?: WorkBoardLink | null;
   service: Pick<WorkTaskService, "command">;
   access: WorkBoardAccess;
   detailTo: (code: string) => string;
@@ -27,8 +31,9 @@ export function WorkTeamBoard({ board, service, goalsService, ai, access, detail
   /** Giao nhanh (đặt dưới ô số). */
   children?: React.ReactNode;
 }) {
-  const [unitId, setUnitId] = useState<string | null>(access.myUnits[0]?.id || null);
-  const [period, setPeriod, today] = useWorkPeriod();
+  const [unitId, setUnitId] = useState<string | null>(link?.unit || access.myUnits[0]?.id || null);
+  const [report, setReport] = useState(Boolean(link?.report && goalsService));
+  const [period, setPeriod, today] = useWorkPeriod(link);
   const query = periodQuery(period, today);
   const [team, setTeam] = useState<Team | null>(null);
   const [reviews, setReviews] = useState<WorkReviewItem[] | null>(null);
@@ -102,7 +107,7 @@ export function WorkTeamBoard({ board, service, goalsService, ai, access, detail
       </header>
 
       {goalsService && (
-        <WorkPeriodBar goalsService={goalsService} reloadKey={periodTick}
+        <WorkPeriodBar goalsService={goalsService} reloadKey={periodTick} onReport={() => setReport(true)}
           scope={{ orgUnitId: team.unit.id, scopeName: team.unit.name, period, query, label: periodLabel(period) }}
           onSettings={() => open(settingsView({ goalsService, onSaved: (m) => periodChanged(m, true) }))}
           onOpen={(id, canClose) => open(snapshotView({ goalsService, closeId: id, canReopen: canClose, onReopened: (m) => periodChanged(m) }))}
@@ -160,6 +165,8 @@ export function WorkTeamBoard({ board, service, goalsService, ai, access, detail
         </aside>
       </div>
       <BoardDrawer stack={stack} onBack={() => setStack((s) => s.slice(0, -1))} onClose={() => setStack([])} />
+      {report && goalsService && <WorkPeriodReport board={board} goals={goalsService} onClose={() => setReport(false)}
+        scope={{ orgUnitId: team.unit.id, unitCode: unitQuery, scopeName: team.unit.name, label: periodLabel(period), from: period.from, to: period.to, query }} />}
     </section>
   );
 }
