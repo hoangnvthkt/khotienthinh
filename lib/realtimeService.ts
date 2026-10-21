@@ -24,6 +24,16 @@ type ResumeCallback = () => void;
 // Khi tab hiện lại: nối lại và báo onResume để AppContext tải lại dữ liệu đã có (bù sự kiện bỏ lỡ).
 export const REALTIME_IDLE_SUSPEND_MS = 5 * 60 * 1000;
 
+// Realtime đợt 2 (audit 20/10/2026, H2): 3 bảng ghi nhiều của Kho nhận qua Broadcast theo kênh phạm vi
+// (migration 20261025220000_realtime_wms_broadcast.sql). Realtime kiểm quyền một lần lúc vào kênh thay vì
+// chạy RLS cho từng người đang nghe ở mỗi thay đổi. Danh sách kênh do RPC wms_realtime_topics_v1 trả theo quyền.
+export const WMS_BROADCAST_TABLES = new Set(['transactions', 'activities', 'items']);
+const WMS_BROADCAST_TOPIC_PREFIX: Record<string, string> = {
+  transactions: 'wms:tx:',
+  activities: 'wms:act:',
+  items: 'wms:items',
+};
+
 class RealtimeService {
   private channels: RealtimeChannel[] = [];
   private callbacks: Map<string, RealtimeCallback[]> = new Map();
@@ -39,6 +49,7 @@ class RealtimeService {
   private shouldReconnect = false;
   private activeTablesKey = '';
   private connectionId = 0;
+  private fallbackConnectionId = -1;
 
   get status(): RealtimeStatus {
     return this._status;
@@ -175,28 +186,18 @@ class RealtimeService {
     const connectionId = ++this.connectionId;
     this.setStatus('connecting');
 
+    // Bảng ghi nhiều của Kho đi Broadcast theo kênh phạm vi (đợt 2); phần còn lại vẫn postgres_changes.
+    const broadcastTables = tables.filter(table => WMS_BROADCAST_TABLES.has(table));
+    const changeTables = tables.filter(table => !WMS_BROADCAST_TABLES.has(table));
+
     // Create one combined channel for all critical tables
     const channel = supabase.channel('realtime-all', {
       config: { broadcast: { self: true } }
     });
 
     // Add listeners for each table
-    tables.forEach(table => {
-      channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table },
-        (payload) => {
-          const event: RealtimeEvent = {
-            table,
-            eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
-            newRecord: payload.new,
-            oldRecord: payload.old,
-            timestamp: Date.now(),
-          };
-          this.notifyListeners(table, event);
-        }
-      );
-    });
+    changeTables.forEach(table => this.listenPostgresChanges(channel, table));
+    if (broadcastTables.length > 0) void this.connectBroadcast(broadcastTables, connectionId);
 
     // Track connection status
     channel.subscribe((status) => {
@@ -218,6 +219,77 @@ class RealtimeService {
 
     // Đã ẩn sẵn khi nối (mở tab nền): đếm giờ tạm ngắt ngay.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') this.scheduleIdleSuspend();
+  }
+
+  private listenPostgresChanges(channel: RealtimeChannel, table: string) {
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table },
+      (payload) => {
+        const event: RealtimeEvent = {
+          table,
+          eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+          newRecord: payload.new,
+          oldRecord: payload.old,
+          timestamp: Date.now(),
+        };
+        this.notifyListeners(table, event);
+      }
+    );
+  }
+
+  /** Lỗi RPC / kênh Broadcast: nghe lại các bảng này bằng postgres_changes (một lần mỗi lượt kết nối). */
+  private fallbackToPostgresChanges(tables: string[], connectionId: number, reason: string) {
+    if (connectionId !== this.connectionId || this.fallbackConnectionId === connectionId) return;
+    this.fallbackConnectionId = connectionId;
+    console.warn('[Realtime] Broadcast không dùng được, quay về postgres_changes:', reason);
+    const channel = supabase.channel('realtime-wms-fallback');
+    tables.forEach(table => this.listenPostgresChanges(channel, table));
+    channel.subscribe();
+    this.channels.push(channel);
+  }
+
+  private async connectBroadcast(tables: string[], connectionId: number) {
+    const { data, error } = await supabase.rpc('wms_realtime_topics_v1');
+    if (connectionId !== this.connectionId) return;
+    if (error || !Array.isArray(data)) {
+      this.fallbackToPostgresChanges(tables, connectionId, error?.message || 'no topics');
+      return;
+    }
+    const topics = (data as string[]).filter(topic => tables.some(table => topic.startsWith(WMS_BROADCAST_TOPIC_PREFIX[table])));
+    if (topics.length === 0) return; // không có quyền xem bảng nào trong số này → không nghe gì (đúng như RLS)
+
+    try {
+      await supabase.realtime.setAuth();
+    } catch {
+      // setAuth lỗi thì kênh private sẽ báo CHANNEL_ERROR → quay về postgres_changes bên dưới.
+    }
+    if (connectionId !== this.connectionId) return;
+
+    topics.forEach(topic => {
+      const channel = supabase.channel(topic, { config: { private: true } });
+      channel.on('broadcast', { event: '*' }, ({ payload }) => {
+        const table = typeof payload?.table === 'string' ? payload.table : '';
+        if (!WMS_BROADCAST_TABLES.has(table)) return;
+        const eventType = payload.eventType as RealtimeEvent['eventType'];
+        if (eventType !== 'INSERT' && eventType !== 'UPDATE' && eventType !== 'DELETE') return;
+        this.notifyListeners(table, {
+          table,
+          eventType,
+          newRecord: payload.new ?? {},
+          oldRecord: payload.old ?? {},
+          timestamp: Date.now(),
+        });
+      });
+      channel.subscribe(status => {
+        if (connectionId !== this.connectionId) return;
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          this.fallbackToPostgresChanges(tables, connectionId, `${topic} ${status}`);
+        }
+      });
+      this.channels.push(channel);
+    });
+    console.log('[Realtime] 📡 Broadcast', topics.length, 'kênh Kho');
   }
 
   private scheduleReconnect(tables: string[]) {

@@ -50,17 +50,41 @@ không có subscription; Realtime bớt ≈ 22 % thay đổi phải giải mã/�
 Ước tính ở 200 người: tỉ lệ tab ẩn > 5 phút thường 50–70 % → số subscription WMS/HRM mà Realtime phải đối chiếu giảm tương
 ứng; số kết nối WebSocket không đổi (kênh thông báo còn mở) nhưng kênh nặng nhất đã đóng.
 
-## 3. Đợt 2 (chưa làm) — Broadcast theo kho
+## 3. Đợt 2 — Broadcast theo kho (21/10, migration `20261025220000_realtime_wms_broadcast.sql`)
 
-Chuyển `transactions`, `requests`, `activities`, `inventory_ledger_entries` sang trigger `realtime.broadcast_changes` lên
-kênh `wms:warehouse:<id>` (+ `user:<id>` cho own/assigned); client đăng ký kênh theo tập kho từ
-`wms_action_scope_tokens`; RLS trên `realtime.messages` kiểm **một lần lúc join** thay vì mỗi thay đổi × mỗi người. Cần
-sửa `realtimeService` + handler trong `AppContext` và test trên WebKit; làm khi số người dùng WMS đồng thời > 50.
+Ba bảng Kho ghi nhiều — `transactions`, `activities`, `items` — chuyển từ `postgres_changes` sang **Broadcast private**:
+
+- **Trigger** `zz_wms_broadcast_*` (AFTER INSERT/UPDATE/DELETE) gửi dòng (`to_jsonb(new)`) vào các kênh phạm vi của dòng bằng
+  `realtime.send(..., private => true)`. UPDATE làm một kênh mất quyền xem dòng → kênh đó chỉ nhận `{id}` kiểu DELETE (không lộ
+  nội dung mới). Lỗi gửi không bao giờ làm hỏng lệnh ghi.
+- **Kênh** (khớp từng nhánh của policy SELECT):
+
+| Bảng | Kênh | Được vào khi |
+|---|---|---|
+| transactions | `wms:tx:anywh` · `wms:tx:nowh` · `wms:tx:wh:<kho>` · `wms:tx:own:<người>` · `wms:tx:assigned:<người>` | token `wms_action_scope_tokens(['wms.transaction.view'])` tương ứng `global:*`/`warehouse:*` · `global:*` · `warehouse:<kho>` · `own:*` (chính mình) · `assigned:*` (chính mình) |
+| activities | `wms:act:all` · `wms:act:user:<người>` · `wms:act:wh:<kho>` · `wms:act:nowh` | `is_admin()` · chính mình · `activity_wms_scope()` all hoặc có kho · all hoặc any |
+| items | `wms:items` | cùng biểu thức `items_phase4_select` ∨ `items_settings_select` |
+
+- **Quyền** `app_private.wms_realtime_topic_allowed(topic)` dùng cho policy `wms_broadcast_receive` trên `realtime.messages`
+  (Realtime kiểm **một lần lúc vào kênh**) và cho RPC `public.wms_realtime_topics_v1()` (client hỏi danh sách kênh được vào; bỏ
+  kênh bị kênh rộng hơn bao trùm: Admin chỉ vào 4 kênh).
+- **Client** `lib/realtimeService.ts`: `WMS_BROADCAST_TABLES` đi kênh private (`supabase.realtime.setAuth()` trước khi vào); các bảng
+  khác giữ `realtime-all` postgres_changes. RPC lỗi hoặc kênh báo `CHANNEL_ERROR`/`TIMED_OUT` → tự quay về postgres_changes cho các
+  bảng đó (kênh `realtime-wms-fallback`, một lần mỗi lượt kết nối), nên deploy client trước/sau migration đều an toàn. Ba bảng vẫn
+  nằm trong publication để làm đường lui.
+- **Kiểm tương đương (Cloud, rollback):** 88 người active × 3 bảng, so tập dòng RLS cho xem với tập dòng có ít nhất một kênh của
+  dòng nằm trong danh sách kênh của người đó: **0 lệch** (transactions 391 dòng, activities 3.405, items theo quyền xem).
+
+Chi phí ở 200 người: mỗi thay đổi = 1–5 dòng `realtime.messages` (thay vì 200 lần chạy RLS); quyền kiểm lúc vào kênh
+(RPC ~0,2–1 s một lần mỗi phiên). `requests` (toàn bộ là phiếu nguồn dự án, quyền theo phòng dự án) và bảng danh mục ít ghi giữ
+postgres_changes.
 
 ## 4. Kiểm tra sau khi áp
 
 ```sql
 select count(*) from pg_publication_tables where pubname = 'supabase_realtime';   -- 44
+select count(*) from pg_trigger where tgname like 'zz_wms_broadcast_%';                 -- 3 (đợt 2)
+select topic, count(*) from realtime.messages where topic like 'wms:%' group by 1;   -- có dòng sau mỗi thay đổi Kho
 select entity::text, count(*) from realtime.subscription group by 1 order by 2 desc;
 ```
 
