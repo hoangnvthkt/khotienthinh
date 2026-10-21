@@ -8,6 +8,7 @@ import {
   Phone, Mail, Briefcase, Calendar, IdCard, X
 } from 'lucide-react';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
+import { viDate } from '../../components/finance/financeUi';
 
 const EmployeeDirectory: React.FC = () => {
   const { employees, users } = useApp();
@@ -166,6 +167,12 @@ const EmployeeDirectory: React.FC = () => {
                     <div className="flex items-center gap-2 text-slate-500">
                       <Calendar size={11} className="text-slate-400 shrink-0" />
                       <span>Vào làm: {new Date(emp.startDate).toLocaleDateString('vi-VN')}</span>
+                    </div>
+                  )}
+                  {emp.exitDate && !isActive && (
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <Calendar size={11} className="text-slate-400 shrink-0" />
+                      <span>Nghỉ việc: {viDate(emp.exitDate)}</span>
                     </div>
                   )}
                 </div>

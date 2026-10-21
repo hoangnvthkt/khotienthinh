@@ -117,14 +117,6 @@ export const hrmSensitiveProjectionService = {
     return mapEmployeeFromDb(requireRow<any>(data, error, 'Không thể tạo hồ sơ nhân sự.'));
   },
 
-  async archiveEmployee(employeeId: string, reason: string): Promise<Employee> {
-    const { data, error } = await supabase.rpc('archive_hrm_employee', {
-      p_employee_id: employeeId,
-      p_reason: reason,
-    });
-    return mapEmployeeFromDb(requireRow<any>(data, error, 'Không thể lưu hồ sơ nhân sự đã nghỉ việc.'));
-  },
-
   async upsertPayroll(payroll: PayrollRecord, reason: string): Promise<PayrollRecord> {
     const { data, error } = await supabase.rpc('upsert_hrm_payroll', {
       p_payroll: payroll,

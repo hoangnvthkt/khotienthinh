@@ -23,6 +23,7 @@ export const mapEmployeeFromDb = (row: any): Employee => ({
   startDate: row.start_date || '',
   officialDate: row.official_date || '',
   status: row.status || 'Đang làm việc',
+  exitDate: row.exit_date || '',
   userId: row.user_id || undefined,
   areaId: row.area_id || undefined,
   officeId: row.office_id || undefined,

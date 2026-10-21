@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { leaveBalanceAvailable } from '../../lib/leaveBalance';
+import { viDate } from '../../components/finance/financeUi';
 
 // ======================== TAB DEFINITIONS ========================
 const TABS = [
@@ -142,6 +143,7 @@ const EmployeeProfile: React.FC = () => {
             { icon: Calendar, label: 'Ngày sinh', value: employee.dateOfBirth ? new Date(employee.dateOfBirth).toLocaleDateString('vi-VN') : '—' },
             { icon: Calendar, label: 'Ngày vào', value: employee.startDate ? new Date(employee.startDate).toLocaleDateString('vi-VN') : '—' },
             { icon: Calendar, label: 'Ngày chính thức', value: employee.officialDate ? new Date(employee.officialDate).toLocaleDateString('vi-VN') : '—' },
+            ...(employee.status === 'Đã nghỉ việc' ? [{ icon: Calendar, label: 'Ngày nghỉ việc', value: employee.exitDate ? viDate(employee.exitDate) : 'Chưa ghi' }] : []),
             { icon: Building, label: 'Tình trạng HN', value: employee.maritalStatus || '—' },
           ].map((item, i) => {
             const Icon = item.icon;
@@ -639,7 +641,7 @@ const EmployeeProfile: React.FC = () => {
                 {employee.employeeCode}
               </span>
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                {employee.status}
+                {employee.status}{!isActive && employee.exitDate ? ` từ ${viDate(employee.exitDate)}` : ''}
               </span>
             </div>
             <h1 className="text-xl font-black text-slate-800 dark:text-white">{employee.fullName}</h1>
