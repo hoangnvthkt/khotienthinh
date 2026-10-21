@@ -31,6 +31,7 @@ import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
 import { useToast } from '../context/ToastContext';
 import { usePermission } from '../hooks/usePermission';
+import { canPerformHrmTemplatePermission } from '../lib/permissions/permissionService';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
@@ -343,6 +344,12 @@ const emptyProjectFilters = (): ProjectFilterState => ({
     hidden: 'active',
 });
 
+/** "Công trình Hương Liên 2026" → "Công trường Hương Liên 2026". */
+const suggestSiteName = (projectName: string): string => {
+    const base = projectName.trim().replace(/^(công trình|công trường|dự án)\s+/i, '');
+    return base ? `Công trường ${base}` : '';
+};
+
 const buildProjectDashboardPath = (
     projectId: string | null | undefined,
     siteId: string | null | undefined,
@@ -481,7 +488,7 @@ const ProjectDashboard: React.FC = () => {
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
-        user, users, employees, hrmPositions, moduleLoadState, moduleLoadErrors, loadModuleData
+        user, users, employees, hrmPositions, moduleLoadState, moduleLoadErrors, loadModuleData, addHrmItem
     } = useApp();
     const toast = useToast();
 
@@ -609,6 +616,9 @@ const ProjectDashboard: React.FC = () => {
     const [workGroups, setWorkGroups] = useState<WorkGroupWithMembers[]>([]);
     const [workGroupsLoading, setWorkGroupsLoading] = useState(false);
     const [showProjectAdvanced, setShowProjectAdvanced] = useState(false);
+    const [quickSiteName, setQuickSiteName] = useState<string | null>(null);
+    const [quickSiteSaving, setQuickSiteSaving] = useState(false);
+    const canCreateConstructionSite = canPerformHrmTemplatePermission(user, 'hrm.master_data.manage');
     const [quickCategoryKind, setQuickCategoryKind] = useState<'group' | 'type' | 'sector' | null>(null);
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
     const [activeSelectPopover, setActiveSelectPopover] = useState<{ field: string; type: 'user' | 'group' } | null>(null);
@@ -2019,6 +2029,30 @@ const ProjectDashboard: React.FC = () => {
         }
     };
 
+    const saveQuickSite = async () => {
+        const name = quickSiteName?.trim() || '';
+        if (!name) return;
+        const existing = hrmConstructionSites.find(site => site.name.trim().toLowerCase() === name.toLowerCase());
+        if (existing) {
+            setProjectForm(prev => ({ ...prev, constructionSiteId: existing.id }));
+            setQuickSiteName(null);
+            toast.info('Công trường đã có', `Đã chọn "${existing.name}".`);
+            return;
+        }
+        const id = crypto.randomUUID();
+        setQuickSiteSaving(true);
+        try {
+            await addHrmItem('hrm_construction_sites', { id, name, checkInRadius: 300 });
+            setProjectForm(prev => ({ ...prev, constructionSiteId: id }));
+            setQuickSiteName(null);
+            toast.success('Đã tạo công trường', `${name}. Tọa độ chấm công thêm ở Cài đặt → Địa điểm chấm công.`);
+        } catch (error) {
+            toast.error('Chưa tạo được công trường', getApiErrorMessage(error, 'Tài khoản cần quyền quản trị danh mục HRM.'));
+        } finally {
+            setQuickSiteSaving(false);
+        }
+    };
+
     const openQuickCategory = (kind: 'group' | 'type' | 'sector') => {
         setQuickCategoryKind(kind);
         setQuickCategoryForm({ code: '', name: '', description: '' });
@@ -2623,6 +2657,43 @@ const ProjectDashboard: React.FC = () => {
                                 <label className="text-sm font-black text-slate-700 md:text-right pt-3">Lĩnh vực</label>
                                 {renderCategorySelect('Lĩnh vực', projectForm.projectSectorId, value => setProjectForm({ ...projectForm, projectSectorId: value }), activeProjectSectors, 'sector', projectMasterDataLoading ? 'Đang tải...' : 'Chọn lĩnh vực')}
 
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Công trường</label>
+                                <div>
+                                    <div className="flex gap-2">
+                                        <select value={projectForm.constructionSiteId} onChange={e => setProjectForm({ ...projectForm, constructionSiteId: e.target.value })} className={`${inputCls} font-bold`}>
+                                            <option value="">Không liên kết công trường</option>
+                                            {hrmConstructionSites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+                                        </select>
+                                        {canCreateConstructionSite && quickSiteName === null && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setQuickSiteName(suggestSiteName(projectForm.name))}
+                                                className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-orange-50 px-3 text-xs font-black text-orange-600 hover:bg-orange-100"
+                                            >
+                                                <Plus size={14} /> Tạo mới
+                                            </button>
+                                        )}
+                                    </div>
+                                    {quickSiteName !== null && (
+                                        <div className="mt-2 flex flex-wrap gap-2 sm:flex-nowrap">
+                                            <input
+                                                autoFocus
+                                                value={quickSiteName}
+                                                onChange={e => setQuickSiteName(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void saveQuickSite(); } if (e.key === 'Escape') setQuickSiteName(null); }}
+                                                placeholder="Tên công trường mới"
+                                                className={`${inputCls} font-bold min-w-0 basis-full sm:basis-auto`}
+                                            />
+                                            <button type="button" onClick={() => setQuickSiteName(null)} className="ml-auto shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 sm:ml-0">Hủy</button>
+                                            <button type="button" onClick={() => void saveQuickSite()} disabled={quickSiteSaving || !quickSiteName.trim()} className="shrink-0 rounded-xl bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+                                                {quickSiteSaving ? 'Đang tạo…' : 'Tạo'}
+                                            </button>
+                                        </div>
+                                    )}
+                                    {linkedSiteProject && <p className="text-[10px] text-amber-600 font-bold mt-1">Công trường này đang được liên kết với {linkedSiteProject.name}</p>}
+                                    {!projectForm.constructionSiteId && <p className="text-[10px] text-slate-400 font-bold mt-1">Cần công trường để tạo kho và lập đơn mua hàng.</p>}
+                                </div>
+
                                 <label className="text-sm font-black text-slate-700 md:text-right pt-3">Quy trình</label>
                                 <select value={projectForm.workflowTemplateId} onChange={e => setProjectForm({ ...projectForm, workflowTemplateId: e.target.value })} className={`${inputCls} font-bold`}>
                                     <option value="">Chọn quy trình</option>
@@ -2674,14 +2745,6 @@ const ProjectDashboard: React.FC = () => {
                                             <label className={labelCls}>Chủ đầu tư / Khách hàng</label>
                                             <input value={projectForm.clientName} onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}
                                                 placeholder="Tên chủ đầu tư" className={inputCls} />
-                                        </div>
-                                        <div>
-                                            <label className={labelCls}>Công trường / Địa điểm thi công</label>
-                                            <select value={projectForm.constructionSiteId} onChange={e => setProjectForm({ ...projectForm, constructionSiteId: e.target.value })} className={`${inputCls} font-bold`}>
-                                                <option value="">Không liên kết công trường</option>
-                                                {hrmConstructionSites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
-                                            </select>
-                                            {linkedSiteProject && <p className="text-[10px] text-amber-600 font-bold mt-1">Công trường này đang được liên kết với {linkedSiteProject.name}</p>}
                                         </div>
                                         <div>
                                             <label className={labelCls}>Ngày bắt đầu</label>
