@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { companyTotals, directiveCounts, directiveSource, directivesOfUnit, prevWeekStart, rateDelta, teamTotals, unitSections, weekRangeLabel } from "../work/workBoards";
+import { companyTotals, directiveCounts, directiveSource, directivesDone, directivesOfUnit, prevRateOf, prevWeekStart, rateDelta, teamTotals, unitSections, weekRangeLabel } from "../work/workBoards";
 import type { WorkCompanyUnit, WorkDirective, WorkTeamMember } from "../work/workBoardService";
 
 const migration = readFileSync("supabase/migrations/20261022200000_work_dot1_boards.sql", "utf8");
@@ -37,6 +37,14 @@ describe("Phòng tôi / Toàn công ty · tổng hợp", () => {
     expect(directivesOfUnit(list, "TCKT")).toHaveLength(1);
     expect(directiveSource(list[0])).toBe("Giao ban tuần 43 · TGĐ");
     expect(directiveSource(dir("confirm", { origin: "oral_claim", meeting: null, giver: { id: "p", name: "Phó TGĐ" } }))).toBe("Phó TGĐ giao trực tiếp 14/10");
+  });
+  it("kỳ trước: gộp prevDue / prevOntime; máy chủ không trả kỳ trước thì null", () => {
+    expect(teamTotals([member({ prevDue: 4, prevOntime: 3 }), member({ prevDue: 6, prevOntime: 4 })]).prevRate).toBe(70);
+    expect(prevRateOf([member({}), member({ prevDue: null })])).toBeNull();
+    expect(prevRateOf([member({ prevDue: 0, prevOntime: 0 })])).toBeNull();
+    expect(companyTotals([unit("a", null, { prevDue: 5, prevOntime: 5 })]).prevRate).toBe(100);
+    expect(directivesDone(unit("a", null, { directives: { open: 1, late: 0, doneThisMonth: 4, doneInPeriod: 2 } }))).toBe(2);
+    expect(directivesDone(unit("a", null, { directives: { open: 1, late: 0, doneThisMonth: 4 } }))).toBe(4);
   });
   it("tuần", () => {
     expect(prevWeekStart("2026-10-19")).toBe("2026-10-12");

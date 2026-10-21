@@ -8,18 +8,27 @@ export const prevWeekStart = (weekStart: string) => addDays(weekStart, -7);
 /** "Tuần 42 · 12–18/10". */
 export const weekRangeLabel = (weekStart: string) => `Tuần ${isoWeek(weekStart)} · ${weekStart.slice(8, 10)}–${ddmm(addDays(weekStart, 6))}`;
 
+/** Tỷ lệ đúng hạn kỳ trước từ prevDue / prevOntime; máy chủ không trả kỳ trước thì null. */
+export function prevRateOf(rows: Array<{ prevDue?: number | null; prevOntime?: number | null }>): number | null {
+  const has = rows.filter((r) => r.prevDue != null);
+  if (!has.length) return null;
+  return ontimeRate(has.reduce((n, r) => n + (r.prevOntime || 0), 0), has.reduce((n, r) => n + (r.prevDue || 0), 0));
+}
+
 export function teamTotals(members: WorkTeamMember[]) {
   const sum = (k: keyof Pick<WorkTeamMember, "due" | "ontime" | "overdue" | "stale" | "unack" | "active">) => members.reduce((n, m) => n + (m[k] || 0), 0);
   const due = sum("due"); const ontime = sum("ontime");
-  return { due, ontime, rate: ontimeRate(ontime, due), overdue: sum("overdue"), stale: sum("stale"), unack: sum("unack"), active: sum("active") };
+  return { due, ontime, rate: ontimeRate(ontime, due), prevRate: prevRateOf(members), overdue: sum("overdue"), stale: sum("stale"), unack: sum("unack"), active: sum("active") };
 }
 export function companyTotals(units: WorkCompanyUnit[]) {
   const sum = (f: (u: WorkCompanyUnit) => number) => units.reduce((n, u) => n + f(u), 0);
   const due = sum((u) => u.due); const ontime = sum((u) => u.ontime);
-  return { due, ontime, rate: ontimeRate(ontime, due), overdue: sum((u) => u.overdue), people: sum((u) => u.people),
+  return { due, ontime, rate: ontimeRate(ontime, due), prevRate: prevRateOf(units), overdue: sum((u) => u.overdue), people: sum((u) => u.people),
     noHead: units.filter((u) => !u.hasHead).length, units: units.length };
 }
-/** Chênh điểm % so với tuần trước; thiếu số thì null (không che bằng 0). */
+/** Chỉ đạo xong trong kỳ (máy chủ cũ chỉ có từ đầu tháng). */
+export const directivesDone = (u: WorkCompanyUnit) => u.directives.doneInPeriod ?? u.directives.doneThisMonth;
+/** Chênh điểm % so với kỳ trước; thiếu số thì null (không che bằng 0). */
 export const rateDelta = (now: number | null, prev: number | null) => (now != null && prev != null ? now - prev : null);
 
 export type UnitSort = "group" | "rate" | "overdue";

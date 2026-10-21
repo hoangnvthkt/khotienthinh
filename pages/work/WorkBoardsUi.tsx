@@ -24,9 +24,10 @@ export function BoardKpi({ tone, icon, label, value, sub, onClick, pressed, titl
 }
 
 export const rateText = (rate: number | null) => (rate == null ? "—" : `${rate}%`);
-export const DeltaText = ({ delta, week }: { delta: number | null; week: number | null }) => delta == null
-  ? <>tuần trước nữa chưa có số</>
-  : <><span className={delta >= 0 ? "work-up" : "work-down"}>{delta >= 0 ? "+" : ""}{delta} điểm</span> so với tuần {week}</>;
+/** "+5 điểm so với tuần 41"; kỳ trước chưa có số thì nói rõ (không che bằng 0). */
+export const DeltaText = ({ delta, vs }: { delta: number | null; vs: string }) => delta == null
+  ? <>{vs} chưa có số</>
+  : <><span className={delta >= 0 ? "work-up" : "work-down"}>{delta >= 0 ? "+" : ""}{delta} điểm</span> so với {vs}</>;
 
 /** Ngăn chi tiết bên phải (toàn màn hình trên điện thoại), có Quay lại để đi Phòng → Người → Việc; Esc đóng. */
 export interface DrawerView { key: string; title: string; sub?: string; body: React.ReactNode; foot?: React.ReactNode }
@@ -66,8 +67,10 @@ export function TaskLine({ t, to, showPeople = true }: { t: WorkOverviewTask; to
         <b>{t.title}</b>
         <span className="work-tline-meta">
           {showPeople && t.assignees.length > 0 && <span>{t.assignees.map((a) => a.name).join(", ")}</span>}
-          <span className={`work-due tone-${due.tone}`}><Clock3 size={12} aria-hidden="true" /> {due.text}</span>
-          <span className="work-row-progress"><span><i style={{ width: `${t.progressPercent}%` }} /></span><b>{t.progressPercent}%</b></span>
+          {t.completedAt && t.ontime != null
+            ? <span className={`work-pill tone-${t.ontime ? "ok" : "rose"}`}>{t.ontime ? "Xong đúng hạn" : "Xong trễ"} {workDayLabel(t.completedAt)}</span>
+            : <span className={`work-due tone-${due.tone}`}><Clock3 size={12} aria-hidden="true" /> {due.text}</span>}
+          {!t.completedAt && <span className="work-row-progress"><span><i style={{ width: `${t.progressPercent}%` }} /></span><b>{t.progressPercent}%</b></span>}
           {upd?.stale && <span className="work-stale">{upd.text}</span>}
         </span>
       </span>
@@ -77,7 +80,8 @@ export function TaskLine({ t, to, showPeople = true }: { t: WorkOverviewTask; to
 
 /** Danh sách việc tải theo bộ lọc (người / đơn vị / trạng thái) — dùng cho ô số và người trong ngăn chi tiết. */
 export function TaskListLoader({ board, filter, detailTo, showPeople = true, empty = "Không có việc." }: {
-  board: Pick<WorkBoardService, "tasksOverview">; filter: { assigneeUserId?: string | null; unit?: string | null; state: WorkOverviewState };
+  board: Pick<WorkBoardService, "tasksOverview">;
+  filter: { assigneeUserId?: string | null; unit?: string | null; state: WorkOverviewState; dueFrom?: string | null; dueBefore?: string | null };
   detailTo: (code: string) => string; showPeople?: boolean; empty?: string;
 }) {
   const [items, setItems] = useState<WorkOverviewTask[] | null>(null);
@@ -88,7 +92,7 @@ export function TaskListLoader({ board, filter, detailTo, showPeople = true, emp
     setItems(null); setError(null);
     board.tasksOverview({ ...filter, limit: 60 }).then((r) => { if (live) setItems(r.items || []); }, (e) => { if (live) setError(e); });
     return () => { live = false; };
-  }, [board, filter.assigneeUserId, filter.unit, filter.state, retry]);
+  }, [board, filter.assigneeUserId, filter.unit, filter.state, filter.dueFrom, filter.dueBefore, retry]);
   if (error) return <p className="work-error" role="alert">{workError(error)} <button className="work-text-button" onClick={() => setRetry((v) => v + 1)}>Thử lại</button></p>;
   if (!items) return <p className="work-hint" role="status"><Loader2 size={14} className="work-spin" /> Đang tải việc…</p>;
   if (!items.length) return <p className="work-hint">{empty}</p>;
@@ -100,8 +104,9 @@ export const MiniStats = ({ items }: { items: Array<[string, React.ReactNode, st
   <dl className="work-mini">{items.map(([label, value, tone]) => <div key={label}><dt>{label}</dt><dd className={tone ? `tone-${tone}` : ""}>{value}</dd></div>)}</dl>
 );
 
-/** Ngăn một người: số + việc đang làm (theo quyền xem). */
-export function personView(m: WorkTeamMember, unitName: string, board: Pick<WorkBoardService, "tasksOverview">, detailTo: (code: string) => string, foot?: React.ReactNode): DrawerView {
+/** Ngăn một người: số + việc đang làm (theo quyền xem); có kỳ thì thêm việc đến hạn trong kỳ. */
+export function personView(m: WorkTeamMember, unitName: string, board: Pick<WorkBoardService, "tasksOverview">, detailTo: (code: string) => string,
+  foot?: React.ReactNode, period?: { from: string; to: string; label: string }): DrawerView {
   return {
     key: `p-${m.userId}`, title: m.name, sub: [m.title, unitName].filter(Boolean).join(" · "),
     body: <>
@@ -109,6 +114,10 @@ export function personView(m: WorkTeamMember, unitName: string, board: Pick<Work
         ["Đúng hạn", rateText(ontimeRate(m.ontime, m.due))], ["Tải", `${m.load}/${CAP}`]]} />
       <h3 className="work-my-group-h">Việc đang làm</h3>
       <TaskListLoader board={board} filter={{ assigneeUserId: m.userId, state: "open" }} detailTo={detailTo} showPeople={false} empty="Không có việc đang làm." />
+      {period && m.due > 0 && <>
+        <h3 className="work-my-group-h">Đến hạn {period.label} <span className="work-count">{m.due}</span></h3>
+        <TaskListLoader board={board} filter={{ assigneeUserId: m.userId, state: "due", dueFrom: period.from, dueBefore: period.to }} detailTo={detailTo} showPeople={false} />
+      </>}
     </>,
     foot,
   };

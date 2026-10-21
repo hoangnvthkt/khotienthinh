@@ -72,7 +72,9 @@ describe("Vioo Work Đợt 1 · RPC đọc gọn và nguồn việc", () => {
     const service = createWorkBoardService({ rpc } as any);
     await service.taskBrief("t");
     await service.teamBoard();
-    await service.companyBoard("2026-10-12");
+    await service.companyBoard({ from: "2026-10-01", to: "2026-10-21", prevFrom: "2026-09-01", prevTo: "2026-09-30" });
+    await service.directives(null, { from: "2026-10-01", to: "2026-10-21" });
+    await service.tasksOverview({ unit: "QLDA", state: "due", dueFrom: "2026-10-01", dueBefore: "2026-10-21" });
     await service.assignablePeople("  Hà ", 20);
     await service.createMeeting(" Giao ban tuần 43 ", "2026-10-19");
     await service.setOrigin("t", "oral_claim", null, "u-bld");
@@ -80,8 +82,10 @@ describe("Vioo Work Đợt 1 · RPC đọc gọn và nguồn việc", () => {
     await service.linkAi("t", "run", "task_draft");
     expect(rpc.mock.calls).toEqual([
       ["work_task_brief_v1", { p_task_id: "t" }],
-      ["work_team_board_v1", { p_org_unit_id: null, p_week_start: null }],
-      ["work_company_board_v1", { p_week_start: "2026-10-12" }],
+      ["work_team_board_v1", { p_org_unit_id: null }],
+      ["work_company_board_v1", { p_from: "2026-10-01", p_to: "2026-10-21", p_prev_from: "2026-09-01", p_prev_to: "2026-09-30" }],
+      ["work_directives_v1", { p_org_unit_id: null, p_from: "2026-10-01", p_to: "2026-10-21" }],
+      ["work_tasks_overview_v1", { p_assignee_user_id: null, p_unit_query: "QLDA", p_state: "due", p_due_before: "2026-10-21", p_limit: 30, p_due_from: "2026-10-01" }],
       ["work_assignable_people_v1", { p_query: "Hà", p_limit: 20 }],
       ["work_meeting_create_v1", { p_title: "Giao ban tuần 43", p_held_on: "2026-10-19", p_org_unit_id: null }],
       ["work_task_set_origin_v1", { p_task_id: "t", p_origin: "oral_claim", p_meeting_id: null, p_giver_user_id: "u-bld" }],

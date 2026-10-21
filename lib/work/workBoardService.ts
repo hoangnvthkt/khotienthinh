@@ -2,6 +2,7 @@
  * Mọi số liệu do RPC tính theo quyền; client chỉ kiểm sơ bộ đầu vào để báo lỗi sớm. */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkPriority, WorkTaskStatus } from "./workTypes";
+import type { WorkPeriodQuery } from "./workPeriod";
 
 /** Mức quan trọng hiển thị: A Trọng điểm · B Quan trọng · C Thường (lưu bằng priority sẵn có). */
 export type WorkLevel = "A" | "B" | "C";
@@ -96,18 +97,21 @@ export interface WorkTaskBrief {
 export interface WorkTeamMember {
   userId: string; name: string; title: string | null; orgUnitId: string; isHead: boolean;
   active: number; levels: Record<WorkLevel, number>; load: number; overdue: number; stale: number; unack: number;
-  /** Tuần trước: việc đến hạn / hoàn thành đúng hạn (việc tự ghi chưa được xác nhận không tính). */
-  due: number; ontime: number;
+  /** Kỳ đang xem: việc đến hạn / hoàn thành đúng hạn (việc tự ghi chưa được xác nhận không tính); prev* = kỳ trước, null khi không so. */
+  due: number; ontime: number; prevDue?: number | null; prevOntime?: number | null;
 }
+/** Kỳ máy chủ đã tính (ngày VN, tính cả hai đầu). */
+export interface WorkBoardPeriod { from: string; to: string; prevFrom: string | null; prevTo: string | null }
 export interface WorkTeamBoard {
   unit: WorkUnitRef; myUnits: WorkUnitRef[]; weekStart: string; canViewAll: boolean; reviewWaiting: number; members: WorkTeamMember[];
+  period?: WorkBoardPeriod;
 }
 export interface WorkCompanyUnit {
   id: string; code: string | null; name: string; type: string; parent: WorkUnitRef | null; people: number; hasHead: boolean;
-  active: number; overdue: number; stale: number; due: number; ontime: number;
-  directives: { open: number; late: number; doneThisMonth: number }; claimsPending: number;
+  active: number; overdue: number; stale: number; due: number; ontime: number; prevDue?: number | null; prevOntime?: number | null;
+  directives: { open: number; late: number; doneThisMonth: number; doneInPeriod?: number }; claimsPending: number;
 }
-export interface WorkCompanyBoard { weekStart: string; units: WorkCompanyUnit[]; claimsWaitingMe: number }
+export interface WorkCompanyBoard { weekStart: string; units: WorkCompanyUnit[]; claimsWaitingMe: number; period?: WorkBoardPeriod }
 export interface WorkAssignablePerson {
   userId: string; name: string; title: string | null; unit: WorkUnitRef | null; myTeam: boolean; sameUnit: boolean; isMe: boolean;
   canReceive: boolean; load: number; aliases: string[];
@@ -144,9 +148,11 @@ export interface WorkDirective {
 export interface WorkOverviewTask {
   id: string; code: string; title: string; status: WorkTaskStatus; level: WorkLevel; deadlineAt: string | null; progressPercent: number;
   lastProgressAt: string | null; overdue: boolean; restricted: boolean; createdByName: string | null; assignees: Array<{ userId: string; name: string }>;
+  completedAt?: string | null; ontime?: boolean | null;
 }
 export interface WorkOverview { unit: WorkUnitRef | null; total: number; overdue: number; stale: number; items: WorkOverviewTask[]; code?: string }
-export type WorkOverviewState = "open" | "overdue" | "stale" | "review" | "unack" | "done_recent" | "all";
+/** due = việc đến hạn tính vào tỷ lệ đúng hạn (dùng kèm dueFrom / dueBefore). */
+export type WorkOverviewState = "open" | "overdue" | "stale" | "review" | "unack" | "done_recent" | "due" | "all";
 export interface WorkMyBoard {
   me: { userId: string; name: string; title: string | null; unit: WorkUnitRef | null };
   today: string; weekStart: string; weekEnd: string; tasks: WorkMyTask[];
@@ -155,11 +161,15 @@ export interface WorkMyBoard {
   /** 4 tuần đã qua, gần nhất trước. */
   weeks: Array<{ weekStart: string; due: number; ontime: number }>;
   review: { reviewed: number; firstPass: number }; load: number;
+  /** Số đúng hạn của kỳ đang xem + kỳ trước. */
+  period?: WorkBoardPeriod & { due: number; ontime: number; prevDue: number | null; prevOntime: number | null };
 }
 export type WorkAiLinkKind = "task_draft" | "meeting_tasks" | "update_draft" | "task_writer" | "task_brief" | "week_report" | "assistant";
 
 /** Tỷ lệ đúng hạn; chưa có việc đến hạn thì null (không che bằng 0). */
 export const ontimeRate = (ontime: number, due: number): number | null => (due > 0 ? Math.round((ontime / due) * 100) : null);
+
+const periodArgs = (p: WorkPeriodQuery | null) => (p ? { p_from: p.from, p_to: p.to, p_prev_from: p.prevFrom, p_prev_to: p.prevTo } : {});
 
 export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
   async function call<T>(name: string, args: Record<string, unknown>): Promise<T> {
@@ -180,21 +190,25 @@ export function createWorkBoardService(client: Pick<SupabaseClient, "rpc">) {
     /** Dòng cập nhật, mới nhất trước; truyền nextBefore để xem thêm. */
     listUpdates: (taskId: string, before: string | null = null, limit = 20) =>
       call<WorkUpdatePage>("list_work_task_updates_v1", { p_task_id: taskId, p_before: before, p_limit: limit }),
-    myBoard: (weekStart: string | null = null) => call<WorkMyBoard>("work_my_board_v1", { p_week_start: weekStart }),
+    myBoard: (period: WorkPeriodQuery | null = null) => call<WorkMyBoard>("work_my_board_v1", { p_week_start: null, ...periodArgs(period) }),
     boardAccess: () => call<WorkBoardAccess>("work_board_access_v1", {}),
     reviewQueue: () => call<WorkReviewItem[]>("work_review_queue_v1", {}),
-    directives: (orgUnitId: string | null = null) => call<WorkDirective[]>("work_directives_v1", { p_org_unit_id: orgUnitId }),
+    /** Xong = việc xong trong kỳ (không truyền kỳ thì từ đầu tháng). */
+    directives: (orgUnitId: string | null = null, period: Pick<WorkPeriodQuery, "from" | "to"> | null = null) =>
+      call<WorkDirective[]>("work_directives_v1", { p_org_unit_id: orgUnitId, p_from: period?.from ?? null, p_to: period?.to ?? null }),
     /** Việc theo người / đơn vị (mã) / trạng thái, theo quyền xem của người hỏi. */
-    tasksOverview: (input: { assigneeUserId?: string | null; unit?: string | null; state?: WorkOverviewState; dueBefore?: string | null; limit?: number }) =>
+    tasksOverview: (input: { assigneeUserId?: string | null; unit?: string | null; state?: WorkOverviewState; dueFrom?: string | null; dueBefore?: string | null; limit?: number }) =>
       call<WorkOverview>("work_tasks_overview_v1", { p_assignee_user_id: input.assigneeUserId ?? null, p_unit_query: input.unit ?? null,
-        p_state: input.state ?? "open", p_due_before: input.dueBefore ?? null, p_limit: input.limit ?? 30 }),
+        p_state: input.state ?? "open", p_due_before: input.dueBefore ?? null, p_limit: input.limit ?? 30,
+        ...(input.dueFrom ? { p_due_from: input.dueFrom } : {}) }),
     /** Người giao xác nhận / không nhận việc giao miệng; xác nhận có thể kèm hạn mới. */
     decideClaimV2: (taskId: string, decision: "confirm" | "reject", note: string | null = null, deadlineAt: string | null = null) =>
       call<{ taskId: string; claimStatus: string; deadlineAt?: string }>("work_task_claim_decide_v2", {
         p_task_id: taskId, p_decision: decision, p_note: note?.trim() || null, p_deadline_at: deadlineAt }),
-    teamBoard: (orgUnitId: string | null = null, weekStart: string | null = null) =>
-      call<WorkTeamBoard>("work_team_board_v1", { p_org_unit_id: orgUnitId, p_week_start: weekStart }),
-    companyBoard: (weekStart: string | null = null) => call<WorkCompanyBoard>("work_company_board_v1", { p_week_start: weekStart }),
+    /** Không truyền kỳ thì máy chủ lấy tuần trước + tuần trước nữa để so. */
+    teamBoard: (orgUnitId: string | null = null, period: WorkPeriodQuery | null = null) =>
+      call<WorkTeamBoard>("work_team_board_v1", { p_org_unit_id: orgUnitId, ...periodArgs(period) }),
+    companyBoard: (period: WorkPeriodQuery | null = null) => call<WorkCompanyBoard>("work_company_board_v1", periodArgs(period)),
     assignablePeople: (query: string | null = null, limit = 50) =>
       call<WorkAssignablePeople>("work_assignable_people_v1", { p_query: query?.trim() || null, p_limit: limit }),
     createMeeting: (title: string, heldOn: string, orgUnitId: string | null = null) =>

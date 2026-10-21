@@ -4,9 +4,10 @@ import type { WorkCompanyBoard as Company, WorkCompanyUnit, WorkBoardService, Wo
 import { ontimeRate } from "../../lib/work/workBoardService";
 import { workError } from "../../lib/work/workForm";
 import {
-  DIRECTIVE_TABS, companyTotals, directiveCounts, directivesOfUnit, prevWeekStart, rateDelta, unitSections, weekRangeLabel, type UnitSort,
+  DIRECTIVE_TABS, companyTotals, directiveCounts, directivesDone, directivesOfUnit, rateDelta, unitSections, type UnitSort,
 } from "../../lib/work/workBoards";
-import { isoWeek } from "../../lib/work/workMyBoard";
+import { periodLabel, periodQuery, periodShort, prevShort, type WorkPeriodQuery } from "../../lib/work/workPeriod";
+import { WorkPeriodPicker, useWorkPeriod } from "./WorkPeriodPicker";
 import { BoardDrawer, BoardKpi, DeltaText, DirectiveItem, MemberTable, MiniStats, NoHeadWarning, personView, rateText, type DrawerView } from "./WorkBoardsUi";
 
 const SORTS: Array<{ id: UnitSort; label: string }> = [{ id: "group", label: "Theo khối" }, { id: "rate", label: "Đúng hạn thấp" }, { id: "overdue", label: "Quá hạn nhiều" }];
@@ -21,8 +22,9 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
   /** Khung Ghi chỉ đạo khi mở. */
   children?: React.ReactNode;
 }) {
+  const [period, setPeriod, today] = useWorkPeriod();
+  const query = periodQuery(period, today);
   const [company, setCompany] = useState<Company | null>(null);
-  const [prev, setPrev] = useState<Company | null>(null);
   const [dirs, setDirs] = useState<WorkDirective[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
@@ -34,15 +36,10 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
   useEffect(() => {
     let live = true;
     setError(null);
-    board.companyBoard().then(async (c) => {
-      if (!live) return;
-      setCompany(c);
-      const p = await board.companyBoard(prevWeekStart(c.weekStart)).catch(() => null);
-      if (live) setPrev(p);
-    }, (e) => { if (live) setError(e); });
-    board.directives().then((d) => { if (live) setDirs(d); }, () => { if (live) setDirs([]); });
+    board.companyBoard(query).then((c) => { if (live) setCompany(c); }, (e) => { if (live) setError(e); });
+    board.directives(null, query).then((d) => { if (live) setDirs(d); }, () => { if (live) setDirs([]); });
     return () => { live = false; };
-  }, [board, reload]);
+  }, [board, reload, query.from, query.to, query.prevFrom, query.prevTo]);
 
   const sections = useMemo(() => (company ? unitSections(company.units, sort, noHead) : []), [company, sort, noHead]);
   const push = useCallback((v: DrawerView) => setStack((s) => [...s, v]), []);
@@ -51,8 +48,7 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
   if (!company) return <section className="work-my" aria-busy="true"><p className="work-hint" role="status"><Loader2 size={15} className="work-spin" /> Đang tải Toàn công ty…</p></section>;
 
   const tot = companyTotals(company.units);
-  const prevRate = prev ? companyTotals(prev.units).rate : null;
-  const prevById = new Map((prev?.units || []).map((u) => [u.id, u]));
+  const range = { from: query.from, to: query.to, label: periodShort(period) };
   const counts = directiveCounts(dirs || []);
   const dirTotal = counts.late + counts.doing + counts.done;
   const shown = (dirs || []).filter((d) => d.bucket === tab);
@@ -70,11 +66,11 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
       body: <>
         {!u.hasHead && <NoHeadWarning />}
         <MiniStats items={[["Đúng hạn", <>{rateText(rate)}{u.due > 0 && <small> {u.ontime}/{u.due}</small>}</>], ["Quá hạn", u.overdue, u.overdue ? "rose" : undefined],
-          ["Chưa cập nhật", u.stale, u.stale ? "amber" : undefined], ["Chỉ đạo", `${u.directives.doneThisMonth}/${u.directives.open + u.directives.doneThisMonth}`, u.directives.late ? "rose" : undefined]]} />
+          ["Chưa cập nhật", u.stale, u.stale ? "amber" : undefined], ["Chỉ đạo", `${directivesDone(u)}/${u.directives.open + directivesDone(u)}`, u.directives.late ? "rose" : undefined]]} />
         {open.length > 0 && <><h3 className="work-my-group-h">Chỉ đạo đang mở <span className="work-count">{open.length}</span></h3>
           <div className="work-dirs">{open.map((d) => <DirectiveItem key={d.id} d={d} to={detailTo(d.code)} onDecide={decide} />)}</div></>}
         <h3 className="work-my-group-h">Nhân viên</h3>
-        <UnitMembers board={board} unit={u} onPick={(m) => push(personView(m, u.name, board, detailTo))} />
+        <UnitMembers board={board} unit={u} period={query} onPick={(m) => push(personView(m, u.name, board, detailTo, undefined, range))} />
       </>,
     };
   };
@@ -85,15 +81,16 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
         <span className="work-my-icon" aria-hidden="true"><Building2 size={22} /></span>
         <div className="work-my-title">
           <h1>Toàn công ty</h1>
-          <p>{tot.units} đơn vị · {tot.people} người · số {weekRangeLabel(company.weekStart)}</p>
+          <p>{tot.units} đơn vị · {tot.people} người</p>
         </div>
-        <div className="work-my-actions">{headerActions}</div>
+        <div className="work-my-actions"><WorkPeriodPicker period={period} today={today} onChange={setPeriod} />{headerActions}</div>
       </header>
 
       <div className="work-kpis">
-        <BoardKpi tone="ok" icon={<Check size={18} />} label={`Đúng hạn tuần ${isoWeek(company.weekStart)}`}
+        <BoardKpi tone="ok" icon={<Check size={18} />} label={`Đúng hạn ${periodShort(period)}`} title={`${periodLabel(period)} · bấm để xếp đơn vị đúng hạn thấp lên đầu`}
           value={<>{rateText(tot.rate)}{tot.due > 0 && <small> {tot.ontime}/{tot.due}</small>}</>}
-          sub={tot.rate == null ? "chưa có việc đến hạn" : <DeltaText delta={rateDelta(tot.rate, prevRate)} week={isoWeek(prevWeekStart(company.weekStart))} />} />
+          sub={tot.rate == null ? "chưa có việc đến hạn" : <DeltaText delta={rateDelta(tot.rate, tot.prevRate)} vs={prevShort(period)} />}
+          pressed={sort === "rate"} onClick={() => setSort((s) => (s === "rate" ? "group" : "rate"))} />
         <BoardKpi tone="rose" icon={<AlertTriangle size={18} />} label="Quá hạn" value={tot.overdue} sub="việc đang trễ" pressed={sort === "overdue"}
           onClick={() => setSort((s) => (s === "overdue" ? "group" : "overdue"))} title="Xếp đơn vị quá hạn nhiều lên đầu" />
         <BoardKpi tone="teal" icon={<MessageSquare size={18} />} label="Chỉ đạo BLĐ" value={<>{counts.done}/{dirTotal} <small>xong</small></>}
@@ -122,8 +119,7 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
                 {sec.title && <div className="work-units-g" role="row">{sec.title} · {sec.units.length} đơn vị · {sec.units.reduce((n, u) => n + u.people, 0)} người</div>}
                 {sec.units.map((u) => {
                   const rate = ontimeRate(u.ontime, u.due);
-                  const p = prevById.get(u.id);
-                  const delta = p && u.due >= 3 ? rateDelta(rate, ontimeRate(p.ontime, p.due)) : null;
+                  const delta = u.due >= 3 && u.prevDue != null ? rateDelta(rate, ontimeRate(u.prevOntime || 0, u.prevDue)) : null;
                   return (
                     <button type="button" key={u.id} className="work-units-r" role="row" onClick={() => setStack([unitView(u)])}>
                       <span className="work-units-name"><b>{u.name}</b><small>{u.code}{!u.hasHead && <em> · Chưa gán trưởng BP</em>}</small></span>
@@ -133,8 +129,8 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
                         <b className="work-num">{rateText(rate)}</b><small className="work-num">{u.due ? `${u.ontime}/${u.due}` : "—"}</small></span>
                       <span data-label="±" className="work-num">{delta == null ? <span className="work-muted">—</span> : <span className={delta >= 0 ? "work-up" : "work-down"}>{delta >= 0 ? "+" : ""}{delta}</span>}</span>
                       <span data-label="Quá hạn">{u.overdue ? <span className="work-pill tone-rose">{u.overdue}</span> : <span className="work-muted">0</span>}</span>
-                      <span data-label="Chỉ đạo" className="work-num">{u.directives.open + u.directives.doneThisMonth
-                        ? <>{u.directives.doneThisMonth}/{u.directives.open + u.directives.doneThisMonth}{u.directives.late > 0 && <span className="work-pill tone-rose">{u.directives.late} trễ</span>}</>
+                      <span data-label="Chỉ đạo" className="work-num">{u.directives.open + directivesDone(u)
+                        ? <>{directivesDone(u)}/{u.directives.open + directivesDone(u)}{u.directives.late > 0 && <span className="work-pill tone-rose">{u.directives.late} trễ</span>}</>
                         : <span className="work-muted">—</span>}</span>
                     </button>
                   );
@@ -146,7 +142,7 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
         </section>
 
         <section className="work-my-card work-sticky" id="work-dir-card" aria-label="Sổ chỉ đạo BLĐ">
-          <header><h2>Sổ chỉ đạo BLĐ</h2><span>{(dirs || []).length} việc · tháng này</span></header>
+          <header><h2>Sổ chỉ đạo BLĐ</h2><span>{(dirs || []).length} việc · xong {periodShort(period)}</span></header>
           <div className="work-dir-tabs" role="tablist">
             {DIRECTIVE_TABS.map((t) => (
               <button type="button" role="tab" key={t.id} aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
@@ -167,14 +163,16 @@ export function WorkCompanyBoard({ board, detailTo, onNotice, headerActions, chi
 }
 
 /** Nhân viên của một đơn vị (BLĐ xem được mọi đơn vị). */
-function UnitMembers({ board, unit, onPick }: { board: Pick<WorkBoardService, "teamBoard">; unit: WorkCompanyUnit; onPick: (m: WorkTeamMember) => void }) {
+function UnitMembers({ board, unit, period, onPick }: {
+  board: Pick<WorkBoardService, "teamBoard">; unit: WorkCompanyUnit; period: WorkPeriodQuery; onPick: (m: WorkTeamMember) => void;
+}) {
   const [members, setMembers] = useState<WorkTeamMember[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let live = true;
-    board.teamBoard(unit.id).then((t) => { if (live) setMembers(t.members); }, (e) => { if (live) setError(e); });
+    board.teamBoard(unit.id, period).then((t) => { if (live) setMembers(t.members); }, (e) => { if (live) setError(e); });
     return () => { live = false; };
-  }, [board, unit.id]);
+  }, [board, unit.id, period.from, period.to, period.prevFrom, period.prevTo]);
   if (error) return <p className="work-error" role="alert">{workError(error)}</p>;
   if (!members) return <p className="work-hint"><Loader2 size={14} className="work-spin" /> Đang tải…</p>;
   return <MemberTable members={members} onPick={onPick} />;

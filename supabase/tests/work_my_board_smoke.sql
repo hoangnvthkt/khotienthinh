@@ -142,5 +142,5 @@ begin
   perform pg_temp.as_('noaccess');
   e := pg_temp.err($q$select public.work_my_board_v1()$q$);
   perform pg_temp.ok(e = 'WORK_TASK_NOT_FOUND', 'người ngoài Vioo Work bị chặn: '||coalesce(e, 'null'));
-  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_my_board_v1(date)', 'execute'), 'anon không gọi được');
+  perform pg_temp.ok(not has_function_privilege('anon', 'public.work_my_board_v1(date, date, date, date, date)', 'execute'), 'anon không gọi được');
 end $$;

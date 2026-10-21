@@ -2218,3 +2218,33 @@ button.work-kpi:hover { border-color: #99f6e4; }
 .work-bdrawer-body .work-members-r { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; border: 1px solid var(--work-border); border-radius: 10px; }
 .work-bdrawer-body .work-members-r > .work-members-who { grid-column: 1 / -1; }
 .work-bdrawer-body .work-members-r > span[data-label]::before { content: attr(data-label) ": "; color: #94a3b8; font-size: 11.5px; }
+
+/* Bộ chọn kỳ (Đợt 2 PR-5): một nút trên đầu màn, bấm mở bảng 6 kỳ; điện thoại mở thành tấm dưới đáy. */
+.work-period { position: relative; }
+.work-period-btn { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+  background: #fff; color: #0f172a; font-size: 14px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.work-period-btn svg:first-child { color: #0f766e; }
+.work-period-btn svg:last-child { color: #64748b; }
+.work-period-btn:hover, .work-period-btn[aria-expanded="true"] { border-color: #14b8a6; }
+.work-period-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 340px; padding: 10px; border: 1px solid var(--work-border);
+  border-radius: 12px; background: #fff; box-shadow: 0 12px 32px #0f172a24; display: grid; gap: 10px; }
+.work-period-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.work-period-grid button { position: relative; display: grid; gap: 2px; text-align: left; padding: 9px 28px 9px 10px; min-height: 52px; border: 1px solid #e2e8f0;
+  border-radius: 8px; background: #fff; color: #0f172a; cursor: pointer; }
+.work-period-grid button b { font-size: 14px; font-weight: 650; }
+.work-period-grid button small { font-size: 12px; color: #64748b; }
+.work-period-grid button:hover { border-color: #99f6e4; }
+.work-period-grid button[aria-pressed="true"] { border-color: #14b8a6; background: #f0fdfa; }
+.work-period-grid button[aria-pressed="true"] b { color: #0f766e; }
+.work-period-grid button svg { position: absolute; right: 8px; top: 10px; color: #0f766e; }
+.work-period-custom { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.work-period-custom label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: #475569; }
+.work-period-custom input { height: 42px; }
+.work-period-custom .work-primary { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .work-my-actions > .work-period { flex: 1 1 100%; }
+  .work-period-btn { width: 100%; justify-content: center; }
+  .work-period-btn span { flex: 1; text-align: left; }
+  .work-period-pop { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; border-radius: 16px 16px 0 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 0 0 100vmax #0f172a59; }
+}
