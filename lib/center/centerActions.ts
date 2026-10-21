@@ -120,6 +120,8 @@ export const buildWidgetActions = (
       const f = flags?.work;
       return [
         act('request', 'Tạo đề xuất', !!f?.request, modal('request', 'Tạo đề xuất'), 'Chưa có quyền tạo yêu cầu', true),
+        // Đợt 2 PR-8: mở thẳng ô Giao nhanh của Vioo Work (một dòng: việc · người · hạn · mức).
+        act('assign', 'Giao việc', !!f?.task, route(query('/work/my', { assign: '1' }), 'Vioo Work'), 'Vioo Work chưa bật hoặc chưa có quyền tạo việc'),
         act('workflow', 'Tạo phiếu quy trình', !!f?.workflow, route('/wf', 'Quy trình'), 'Chưa có quyền tạo phiếu quy trình'),
         act('task', 'Tạo công việc', !!f?.task, route(query('/work/my', { create: '1' }), 'Vioo Work'), 'Vioo Work chưa bật hoặc chưa có quyền tạo việc'),
       ];

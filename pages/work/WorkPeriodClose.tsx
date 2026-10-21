@@ -312,6 +312,7 @@ function PeriodSettings({ goalsService, onSaved }: Parameters<typeof settingsVie
         {data.canEditCompany && edit !== "company" && <button type="button" className="work-secondary work-sm" onClick={() => setEdit("company")}>Sửa</button>}
       </section>
       {edit === "company" && <SettingForm goalsService={goalsService} orgUnitId={null} initial={data.company} onCancel={() => setEdit(null)} onDone={done} />}
+      <p className="work-hint">Đến giờ chốt: nhắc trưởng đơn vị / BLĐ, chưa chốt thì nhắc lại sau 1 ngày. Giờ báo cáo: gửi bản tin kỳ.</p>
       {data.editableUnits.length > 0 && <h3 className="work-my-group-h">Đơn vị</h3>}
       {data.editableUnits.map((u) => {
         const o = own(u.id);

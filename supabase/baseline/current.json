@@ -380,7 +380,8 @@
     "20261023120000_work_dot2_close_goals.sql",
     "20261023150000_work_dot2_digest.sql",
     "20261023160000_progress_rollup_by_plan_days.sql",
-    "20261024090000_inventory_nxt_report.sql"
+    "20261024090000_inventory_nxt_report.sql",
+    "20261024120000_work_dot2_reminders.sql"
   ],
   "forbidIncludeAll": true
 }
