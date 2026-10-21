@@ -271,3 +271,18 @@ rollback;
 - **PR #277 (S6)** merged `c753b299`, prod lên: `xlsx` 0.20.3 (tarball SheetJS), `xmldom` → `@xmldom/xmldom` 0.9.12, `fflate` 0.8.3; CI có `npm audit --audit-level=high` (đã chạy xanh trên main). Còn 2 moderate react-router (SSR, không dùng). Chưa thử in phiếu Quy trình có ảnh trên prod.
 - **PR #280 (H4 + H5)** mở: 6 job cron → 2 tick có `pg_try_advisory_xact_lock` + exception riêng từng việc; retention `user_session_events`/`notification_deliveries` 90 ngày, `user_sessions` 180 ngày (mỗi ngày 03:15 UTC, lô 5.000); 21 index FK; bỏ 4 index 0 lần dùng; sửa job `cleanup-expired-hrm-imports` lỗi 7/7 ngày (xóa storage bằng SQL). **Đính chính H5:** `project_daily_task_progress` / `project_weekly_task_progress` / `cost_norm_import_raw_rows` không bloat — chưa từng ANALYZE nên `n_live_tup` báo 8 dòng, thực tế 14.318 / 7.702 / 3.865 dòng; đã `VACUUM (FULL, ANALYZE)` 20/10, kích thước gần như không đổi nhưng thống kê đã đúng.
 - **PR #280 (H4 + H5)** merged `b394f6d9`, migration `20261022183000` áp sau 60 s: cron còn 13 job (2 tick có khóa + retention hằng ngày), 21 index FK, bỏ 4 index.
+
+## 9. Việc tiếp theo ngày 21/10
+
+Chủ sản phẩm để **sau** (không tự làm): H3 nâng compute Medium, S7 MFA cho Admin/Tài chính/HR, bật CSP thực thi (sau khi xem Console không còn `Refused`), xóa bucket `Images` trên Dashboard.
+
+| PR | Việc | Kết quả trên Cloud / prod |
+|---|---|---|
+| #298 | Tệp hợp đồng (`contract-files`) chỉ đọc khi xem được dòng hợp đồng chủ | Migration `20261025200000` đã áp. Kiểm 88 người: 0 lệch so với RLS bảng hợp đồng; 41 nhân viên không còn đọc được tệp nào (trước 13/13) |
+| #299 | Dọn tệp nhập nhân sự hết hạn (`hrm-private-imports`) | Migration `20261025210000` đã áp; Edge Function `hrm-checkin-photo-retention` bản 226 đã deploy (gọi không secret → 401). Lượt chạy thật đầu tiên 20:20 UTC 21/10 |
+| #300 | H6: Inter tự host, tách mỗi mục Cài đặt, poll chỉ khi tab hiện | Prod: 0 request Google Fonts, 3 tệp woff2 cache 1 năm, CSP report-only bỏ 2 host font; chunk `Settings` 609 → 106 KB, mục Người dùng tải riêng khi mở |
+| #301 | H2 đợt 2: Broadcast theo kênh phạm vi cho `transactions`, `activities`, `items` | Migration `20261025220000` đã áp (3 trigger, policy `wms_broadcast_receive`). Kiểm 88 người × 3 bảng: 0 lệch. Trên prod (Admin): client vào 4 kênh, không quay về cách cũ; WebSocket thử: kênh được phép vào được và nhận tin từ DB, kênh người khác / kênh lạ bị từ chối `Unauthorized`; `realtime.subscription` không còn 3 bảng này |
+
+**Bài học vận hành:** từ #298, tích hợp Supabase GitHub **không tự áp** migration khi merge (không có lỗi, không báo). Sau mỗi merge có migration phải kiểm `supabase_migrations.schema_migrations`; nếu thiếu thì `supabase db push --linked` từ `main`.
+
+**Phát hiện phụ (chưa sửa):** RPC `award_my_daily_xp` trả 404 trên mọi trang (hàm không tồn tại trên Cloud). Tab mở từ trước một lần deploy gặp chunk cũ 404 khi chuyển màn, nhưng `ErrorBoundary` đã tự tải lại (giới hạn 30 giây một lần) nên không cần sửa.
