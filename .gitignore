@@ -58,6 +58,7 @@ service-account*.json
 /.center-test-results/
 /.search-test-results/
 /.quick-lines-test-results/
+/.hrm-work-status-test-results/
 
 .office-run-logs/
 /.daily-log-prefill-test-results/

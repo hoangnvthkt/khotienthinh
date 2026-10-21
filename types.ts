@@ -3509,6 +3509,7 @@ export interface Employee {
   startDate?: string;
   officialDate?: string;
   status: 'Đang làm việc' | 'Đã nghỉ việc';
+  exitDate?: string; // Ngày nghỉ việc = sự kiện NGHI_VIEC gần nhất (chỉ người đang nghỉ)
   userId?: string; // Liên kết tới bảng users
   // HRM Master Data FK fields
   areaId?: string;

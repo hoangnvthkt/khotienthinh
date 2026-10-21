@@ -3,15 +3,16 @@ import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { Employee } from '../../types';
-import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Table2 } from 'lucide-react';
+import { Plus, Search, Edit2, UserMinus, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Table2 } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
-import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
+import EmploymentDateDialog from '../../components/hrm/EmploymentDateDialog';
+import HrmEmploymentDateGapsPanel from '../../components/hrm/HrmEmploymentDateGapsPanel';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { canPerform, canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
-import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { getApiErrorMessage } from '../../lib/apiError';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
 import HrmEmployeeAssignmentDialog from '../../components/hrm/organization/HrmEmployeeAssignmentDialog';
@@ -33,7 +34,7 @@ const ViewSwitch: React.FC<{ view: 'roster' | 'directory'; onChange: (view: 'ros
     </div>;
 
 const Employees: React.FC = () => {
-    const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
+    const { employees, updateEmployee, updateUser, replaceEmployeeLocal, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
     const canCRUD = canPerform(user, 'hrm.employee.edit_profile');
     const isHr = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
     useModuleData('hrm');
@@ -51,8 +52,7 @@ const Employees: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
-    const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
-    const [deleting, setDeleting] = useState(false);
+    const [exitingEmployee, setExitingEmployee] = useState<Employee | null>(null);
     const [organizationBundle, setOrganizationBundle] = useState<Pick<
         HrmSharedCatalogBundle,
         'orgUnits' | 'slots' | 'assignments' | 'employees' | 'positions'
@@ -98,24 +98,9 @@ const Employees: React.FC = () => {
     };
     const handleAdd = () => { setEditingEmployee(null); setOrganizationBundle(null); setIsModalOpen(true); };
     const handleView = (emp: Employee) => { setViewingEmployee(emp); };
-    const handleDelete = (emp: Employee) => {
-        setDeletingEmployee(emp);
-    };
-    const handleConfirmDelete = async () => {
-        if (deletingEmployee) {
-            setDeleting(true);
-            try {
-                await removeEmployee(deletingEmployee.id);
-                toast.success('Đã xoá hồ sơ nhân sự', deletingEmployee.fullName);
-                setDeletingEmployee(null);
-            } catch (err: any) {
-                logApiError('employees.delete', err);
-                toast.error('Không thể xoá hồ sơ nhân sự', getApiErrorMessage(err, 'Không thể xoá hồ sơ nhân sự trên Supabase.'));
-            } finally {
-                setDeleting(false);
-            }
-        }
-    };
+    // "Cho nghỉ việc" asks for the exit date and reason (sự kiện NGHI_VIEC); nothing is deleted.
+    const handleExit = (emp: Employee) => setExitingEmployee(emp);
+    const dateGaps = canCRUD ? <HrmEmploymentDateGapsPanel employees={employees} onSaved={replaceEmployeeLocal} /> : null;
     const handleSelfEmployeeUpdate = async (nextEmployee: Employee) => {
         const patch = {
             fullName: nextEmployee.fullName,
@@ -236,6 +221,7 @@ const Employees: React.FC = () => {
         return (
             <div className="flex h-full flex-col space-y-4">
                 {isHr && <ViewSwitch view="roster" onChange={setPageView} />}
+                {dateGaps}
                 <HrmRosterView embedded initialTab={searchParams.get('tab') === 'batches' ? 'batches' : 'roster'}
                     initialBatchId={searchParams.get('batch')} initialPersonId={searchParams.get('person')}
                     onDataChanged={() => loadModuleData('hrm', true)} />
@@ -282,6 +268,7 @@ const Employees: React.FC = () => {
                 </div>
             </div>
 
+            {dateGaps}
             {isHr && <HrmWorkQueuePanel />}
             {isHr && <HrmProfileCompletenessPanel />}
 
@@ -346,7 +333,7 @@ const Employees: React.FC = () => {
                                                 <Mail size={7} className="shrink-0" /> {emp.email || '—'}
                                             </p>
                                             {/* 7: Trạng thái */}
-                                            <span className={`inline-flex items-center gap-0.5 text-[7px] font-bold px-1 py-px rounded mt-0.5 ${isActive ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/15 dark:text-emerald-400' : 'text-red-600 bg-red-50 dark:bg-red-500/15 dark:text-red-400'}`}>
+                                            <span title={!isActive ? (emp.exitDate ? `Nghỉ từ ${emp.exitDate.split('-').reverse().join('/')}` : 'Chưa ghi ngày nghỉ việc') : undefined} className={`inline-flex items-center gap-0.5 text-[7px] font-bold px-1 py-px rounded mt-0.5 ${isActive ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/15 dark:text-emerald-400' : 'text-red-600 bg-red-50 dark:bg-red-500/15 dark:text-red-400'}`}>
                                                 <span className={`w-1 h-1 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
                                                 {emp.status}
                                             </span>
@@ -356,7 +343,7 @@ const Employees: React.FC = () => {
                                         {canEditEmployee(emp) && (
                                             <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
-                                                {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>}
+                                                {canCRUD && isActive && <button onClick={(e) => { e.stopPropagation(); handleExit(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Cho nghỉ việc" aria-label={`Cho nghỉ việc ${emp.fullName}`}><UserMinus size={9} /></button>}
                                             </div>
                                         )}
                                     </div>
@@ -447,12 +434,15 @@ const Employees: React.FC = () => {
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
                                                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />{emp.status}
                                                 </span>
+                                                {!isActive && (emp.exitDate
+                                                    ? <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">từ {emp.exitDate.split('-').reverse().join('/')}</p>
+                                                    : <p className="mt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">chưa ghi ngày</p>)}
                                             </td>
                                             {showActions && (
                                                 <td className="py-2.5 px-4 text-center">
                                                     <div className="flex items-center justify-center gap-0.5">
                                                         {canEditEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>}
-                                                        {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>}
+                                                        {canCRUD && isActive && <button onClick={(e) => { e.stopPropagation(); handleExit(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Cho nghỉ việc" aria-label={`Cho nghỉ việc ${emp.fullName}`}><UserMinus size={14} /></button>}
                                                     </div>
                                                 </td>
                                             )}
@@ -505,17 +495,9 @@ const Employees: React.FC = () => {
             />
             {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} onClose={() => setViewingEmployee(null)} onEdit={(emp) => { setViewingEmployee(null); handleEdit(emp); }} />}
 
-            <ConfirmDeleteModal
-                isOpen={!!deletingEmployee}
-                onClose={() => setDeletingEmployee(null)}
-                onConfirm={handleConfirmDelete}
-                title="Xác nhận xoá nhân sự"
-                targetName={deletingEmployee?.fullName || ''}
-                subtitle={deletingEmployee ? `Mã NV: ${deletingEmployee.employeeCode}` : undefined}
-                warningText="Hành động này không thể hoàn tác. Toàn bộ dữ liệu liên quan (chấm công, phép, lương...) cũng sẽ bị xoá."
-                countdownSeconds={3}
-                isDeleting={deleting}
-            />
+            {exitingEmployee && (
+                <EmploymentDateDialog employee={exitingEmployee} kind="exit" onClose={() => setExitingEmployee(null)} onSaved={replaceEmployeeLocal} />
+            )}
         </div>
     );
 };

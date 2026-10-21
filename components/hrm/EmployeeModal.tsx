@@ -8,6 +8,9 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import HrmEmployeeOrganizationCard from './organization/HrmEmployeeOrganizationCard';
 import type { HrmEmployeeOrganizationSummary } from '../../types/hrmSharedCatalog';
 import { leaveBalanceAvailable } from '../../lib/leaveBalance';
+import { KIND_TEXT, RESIGNED, emptyWorkStatusInput, statusChangeKind, validateEmploymentDate, workStatusErrorMessage } from '../../lib/hrmWorkStatus';
+import EmploymentDateFields from './EmploymentDateFields';
+import EmploymentDateDialog from './EmploymentDateDialog';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -36,7 +39,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     canManageOrganization = false,
     onManageOrganization,
 }) => {
-    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, leaveBalances } = useApp();
+    const { addEmployee, updateEmployee, replaceEmployeeLocal, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, leaveBalances } = useApp();
     const toast = useToast();
     const isSelfMode = mode === 'self';
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -66,6 +69,11 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [saving, setSaving] = useState(false);
+    // Đổi trạng thái làm việc phải kèm ngày + lý do; lưu cùng lệnh với hồ sơ (sự kiện NGHI_VIEC / TIEP_NHAN).
+    const [statusInput, setStatusInput] = useState(emptyWorkStatusInput);
+    const [statusError, setStatusError] = useState<string | null>(null);
+    const [fillingExit, setFillingExit] = useState(false);
+    const statusKind = !isSelfMode && employee ? statusChangeKind(employee.status, formData.status) : null;
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -115,6 +123,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+        if (name === 'status') { setStatusInput(emptyWorkStatusInput()); setStatusError(null); }
     };
 
     const handleLinkedUserChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -142,6 +151,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
             toast.warning('Thiếu họ tên', 'Vui lòng nhập họ tên nhân sự.');
             return;
         }
+        if (statusKind) {
+            const problem = validateEmploymentDate(statusKind, statusInput, { startDate: formData.startDate, exitDate: employee?.exitDate });
+            if (problem) {
+                setStatusError(problem);
+                toast.warning(`Thiếu thông tin ${KIND_TEXT[statusKind].title.toLowerCase()}`, problem);
+                return;
+            }
+        }
 
         setSaving(true);
         try {
@@ -156,7 +173,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
             }
 
             if (employee && employee.id) {
-                await updateEmployee(formData as Employee);
+                await updateEmployee(formData as Employee, statusKind ? statusInput : undefined);
             } else {
                 const newEmployee: Employee = {
                     ...formData,
@@ -170,7 +187,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
             onClose();
         } catch (err: any) {
             logApiError('employeeModal.save', err);
-            toast.error('Không thể lưu hồ sơ nhân sự', getApiErrorMessage(err, 'Không thể lưu hồ sơ nhân sự trên Supabase.'));
+            const message = workStatusErrorMessage(err, getApiErrorMessage(err, 'Không thể lưu hồ sơ nhân sự trên Supabase.'));
+            if (statusKind) setStatusError(message);
+            toast.error('Không thể lưu hồ sơ nhân sự', message);
         } finally {
             setSaving(false);
         }
@@ -307,9 +326,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
 
                             {!isSelfMode && (
                                 <>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
+                                    {employee && <div className="space-y-2">
+                                        <label htmlFor="employee-status" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
                                         <select
+                                            id="employee-status"
                                             name="status"
                                             value={formData.status}
                                             onChange={handleChange}
@@ -318,7 +338,13 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
                                             <option value="Đang làm việc">Đang làm việc</option>
                                             <option value="Đã nghỉ việc">Đã nghỉ việc</option>
                                         </select>
-                                    </div>
+                                        {!statusKind && employee.status === RESIGNED && (formData.exitDate
+                                            ? <p className="!whitespace-normal !overflow-visible text-xs text-slate-500">Nghỉ từ <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-200">{formData.exitDate.split('-').reverse().join('/')}</span></p>
+                                            : <p className="!whitespace-normal !overflow-visible flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                                Chưa ghi ngày nghỉ việc
+                                                <button type="button" onClick={() => setFillingExit(true)} className="rounded-lg px-2 py-1 text-leaf-700 underline-offset-2 hover:underline dark:text-leaf-300">Bổ sung</button>
+                                            </p>)}
+                                    </div>}
 
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Bắt Đầu (Thử Việc)</label>
@@ -343,6 +369,19 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
                                 </>
                             )}
                         </div>
+
+                        {statusKind && (
+                            <div className={`rounded-2xl border border-slate-200 border-l-4 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/40 ${statusKind === 'exit' ? 'border-l-rose-400' : 'border-l-mint-500'}`}
+                                role="group" aria-label={KIND_TEXT[statusKind].title}>
+                                <p className="mb-3 text-sm font-black text-slate-800 dark:text-white">
+                                    {KIND_TEXT[statusKind].title}
+                                    {statusKind === 'return' && employee?.exitDate && <span className="ml-2 text-xs font-semibold text-slate-500">nghỉ từ {employee.exitDate.split('-').reverse().join('/')}</span>}
+                                </p>
+                                <EmploymentDateFields kind={statusKind} value={statusInput} onChange={next => { setStatusInput(next); setStatusError(null); }}
+                                    error={statusError}
+                                    inputClassName="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent" />
+                            </div>
+                        )}
 
                         {!isSelfMode && (
                             <div className="mt-6 border-t border-slate-100 pt-6 dark:border-slate-800">
@@ -504,6 +543,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     </button>
                 </div>
             </div>
+            {fillingExit && employee && (
+                <EmploymentDateDialog employee={{ ...employee, ...formData, status: employee.status } as Employee} kind="exit"
+                    onClose={() => setFillingExit(false)}
+                    onSaved={saved => {
+                        setFormData(prev => ({ ...prev, exitDate: saved.exitDate }));
+                        replaceEmployeeLocal({ ...employee, exitDate: saved.exitDate });
+                    }} />
+            )}
         </div>
     );
 };
