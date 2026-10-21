@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { deptSheetRows, monthLabel, peopleSheetRows, reportFileName, shiftMonth, xntActive, xntSheetRows } from '../officeSupplyReport';
 import { vppErrorMessage, isVppConflict, type VppReport, type VppXntRow } from '../officeSupplyService';
 
-const sql = readFileSync(new URL('../../supabase/migrations/20261024150000_vpp_report_finance.sql', import.meta.url), 'utf8');
+const sql = readFileSync(new URL('../../supabase/migrations/20261024170000_vpp_report_finance.sql', import.meta.url), 'utf8');
 const smoke = readFileSync(new URL('../../supabase/tests/vpp_report_finance_smoke.sql', import.meta.url), 'utf8');
 const baseline = JSON.parse(readFileSync(new URL('../../supabase/baseline/current.json', import.meta.url), 'utf8'));
 
@@ -55,7 +55,7 @@ describe('VPP báo cáo — tháng và bảng tính XNT', () => {
 
 describe('VPP báo cáo — migration', () => {
   it('nằm trong allowlist', () => {
-    expect(baseline.allowedPostBaselineFiles).toContain('20261024150000_vpp_report_finance.sql');
+    expect(baseline.allowedPostBaselineFiles).toContain('20261024170000_vpp_report_finance.sql');
   });
   it('mọi hàm security definer có search_path rỗng; xung đột dùng PT409, không dùng 40001', () => {
     const fns = [...sql.matchAll(/create or replace function ([\w.]+)\(/g)].map(m => m[1]);

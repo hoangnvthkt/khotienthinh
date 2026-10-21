@@ -384,7 +384,7 @@
     "20261024120000_work_dot2_reminders.sql",
     "20261024130000_work_done_last_assignee.sql",
     "20261024140000_hrm_work_status_events.sql",
-    "20261024150000_vpp_report_finance.sql"
+    "20261024170000_vpp_report_finance.sql"
   ],
   "forbidIncludeAll": true
 }
