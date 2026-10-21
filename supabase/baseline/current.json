@@ -388,7 +388,8 @@
     "20261024170000_vpp_report_finance.sql",
     "20261024180000_inventory_value_adjustment.sql",
     "20261025090000_daily_log_effective_plan_quantity.sql",
-    "20261025120000_daily_log_gantt_backfill.sql"
+    "20261025120000_daily_log_gantt_backfill.sql",
+    "20261025210000_hrm_import_file_cleanup.sql"
   ],
   "forbidIncludeAll": true
 }
