@@ -27,36 +27,27 @@ import {
 import {
   InventoryLedgerEntry,
   InventoryLedgerTransactionType,
-  TransactionStatus,
-  TransactionType,
 } from '../types';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { useInventoryLedger } from '../hooks/useInventoryLedger';
 import { buildDocumentTracePath } from '../lib/documentTraceService';
 import { getDefaultWmsWarehouseFilter, getWmsWarehouseAccess } from '../lib/wmsPermissions';
-import { aggregateTransactionItemsForInventory } from '../lib/transactionItemAggregation';
+import { useInventoryNxtReport } from '../hooks/useInventoryNxtReport';
+import {
+  InventoryNxtRow,
+  MISSING_ITEM_LABEL,
+  NXT_EXCEL_HEADERS,
+  buildNxtExcelRows,
+  isNegativeStock,
+  isValueMissing,
+  rowMissingPrice,
+  summarizeNxt,
+} from '../lib/inventoryNxtReport';
+import { Kpi, shortMoney } from '../components/finance/financeUi';
+import { StateBox } from '../components/procurement/hub/hubUi';
 
 type ReportView = 'summary' | 'material_card' | 'warehouse_card' | 'history';
-
-type StockReportRow = {
-  id: string;
-  sku: string;
-  name: string;
-  unit?: string;
-  opening: number;
-  inImport: number;
-  inTransfer: number;
-  inAdjustment: number;
-  inReversal: number;
-  totalIn: number;
-  outExport: number;
-  outTransfer: number;
-  outLiquidation: number;
-  totalOut: number;
-  closing: number;
-  value: number;
-};
 
 const transactionTypeLabels: Record<InventoryLedgerTransactionType, string> = {
   purchase_receipt: 'Nhập mua hàng',
@@ -86,6 +77,9 @@ const transactionTypeOptions: Array<{ value: InventoryLedgerTransactionType | 'a
 const fmt = (value: number) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 const money = (value: number) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')} ₫`;
 const REPORT_PAGE_SIZE = 10;
+const NXT_PAGE_SIZE = 50;
+const wholeMoney = (value: number) => Math.round(Number(value || 0)).toLocaleString('vi-VN');
+const QTY_EPS = 0.00005;
 
 const startOfDay = (value: string) => {
   const date = new Date(value);
@@ -168,7 +162,7 @@ const PaginationFooter: React.FC<{
 
 const Reports: React.FC = () => {
   const navigate = useNavigate();
-  const { items, transactions, warehouses, users, user } = useApp();
+  const { items, warehouses, users, user } = useApp();
   useModuleData('wms');
 
   const assignedWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
@@ -203,6 +197,7 @@ const Reports: React.FC = () => {
   const [selectedMaterialId, setSelectedMaterialId] = useState('ALL');
   const [selectedType, setSelectedType] = useState<InventoryLedgerTransactionType | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [traceEntry, setTraceEntry] = useState<InventoryLedgerEntry | null>(null);
 
   const ledgerFilters = useMemo(() => ({
@@ -211,9 +206,14 @@ const Reports: React.FC = () => {
     transactionType: selectedType,
     dateFrom: startDate,
     dateTo: endDate,
-    search: searchTerm,
+    search: debouncedSearch,
     limit: 500,
-  }), [endDate, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
+  }), [debouncedSearch, endDate, selectedMaterialId, selectedType, selectedWh, startDate]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   const { entries: ledgerEntries, report: ledgerReport, available: ledgerAvailable, loading: ledgerLoading, error: ledgerError } = useInventoryLedger(ledgerFilters);
 
@@ -251,179 +251,22 @@ const Reports: React.FC = () => {
     });
   }, [endDate, itemById, ledgerAvailable, ledgerEntries, ledgerReport, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
 
-  const reportDataFromLedger = useMemo<StockReportRow[]>(() => {
-    const start = startOfDay(startDate);
-    const end = endOfDay(endDate);
-    const search = searchTerm.trim().toLowerCase();
-    const grouped = new Map<string, StockReportRow>();
-
-    const ensureRow = (materialId: string): StockReportRow => {
-      const item = itemById.get(materialId);
-      const existing = grouped.get(materialId);
-      if (existing) return existing;
-      const row: StockReportRow = {
-        id: materialId,
-        sku: item?.sku || materialId,
-        name: item?.name || materialId,
-        unit: item?.unit,
-        opening: 0,
-        inImport: 0,
-        inTransfer: 0,
-        inAdjustment: 0,
-        inReversal: 0,
-        totalIn: 0,
-        outExport: 0,
-        outTransfer: 0,
-        outLiquidation: 0,
-        totalOut: 0,
-        closing: 0,
-        value: 0,
-      };
-      grouped.set(materialId, row);
-      return row;
-    };
-
-    ledgerEntries.forEach(entry => {
-      const item = itemById.get(entry.materialId);
-      const txDate = new Date(entry.transactionDate);
-      if (txDate > end) return;
-      if (selectedWh !== 'ALL' && entry.warehouseId !== selectedWh) return;
-      if (selectedMaterialId !== 'ALL' && entry.materialId !== selectedMaterialId) return;
-      if (search && !`${item?.sku || ''} ${item?.name || ''}`.toLowerCase().includes(search)) return;
-
-      const row = ensureRow(entry.materialId);
-      const delta = Number(entry.quantityDelta || 0);
-      if (txDate < start) {
-        row.opening += delta;
-        return;
-      }
-
-      if (selectedType !== 'all' && entry.transactionType !== selectedType) return;
-
-      if (entry.movementDirection === 'in') {
-        if (entry.transactionType === 'reversal') row.inReversal += entry.quantityIn;
-        else if (entry.transactionType === 'transfer_receipt') row.inTransfer += entry.quantityIn;
-        else if (entry.transactionType === 'adjustment_in') row.inAdjustment += entry.quantityIn;
-        else row.inImport += entry.quantityIn;
-      } else {
-        if (entry.transactionType === 'transfer_issue') row.outTransfer += entry.quantityOut;
-        else if (entry.transactionType === 'loss_issue' || entry.transactionType === 'adjustment_out') row.outLiquidation += entry.quantityOut;
-        else row.outExport += entry.quantityOut;
-      }
-    });
-
-    grouped.forEach(row => {
-      const item = itemById.get(row.id);
-      row.totalIn = row.inImport + row.inTransfer + row.inAdjustment + row.inReversal;
-      row.totalOut = row.outExport + row.outTransfer + row.outLiquidation;
-      row.closing = row.opening + row.totalIn - row.totalOut;
-      row.value = row.closing * Number(item?.priceIn || 0);
-    });
-
-    return Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
-  }, [endDate, itemById, ledgerEntries, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
-
-  const fallbackReportData = useMemo<StockReportRow[]>(() => {
-    const start = startOfDay(startDate);
-    const end = endOfDay(endDate);
-    const search = searchTerm.trim().toLowerCase();
-
-    return items
-      .filter(item => {
-        if (selectedMaterialId !== 'ALL') return item.id === selectedMaterialId;
-        if (selectedWh !== 'ALL') return selectedWh in item.stockByWarehouse;
-        if (!warehouseAccess.canViewAll && visibleWarehouseIdSet.size > 0) {
-          return Object.keys(item.stockByWarehouse || {}).some(warehouseId => visibleWarehouseIdSet.has(warehouseId));
-        }
-        return true;
-      })
-      .map(item => {
-        let opening = 0;
-        let inImport = 0;
-        let inTransfer = 0;
-        let inAdjustment = 0;
-        let inReversal = 0;
-        let outExport = 0;
-        let outTransfer = 0;
-        let outLiquidation = 0;
-
-        transactions.forEach(tx => {
-          if (tx.status !== TransactionStatus.COMPLETED) return;
-          const txDate = new Date(tx.date);
-          const txItem = aggregateTransactionItemsForInventory(tx.items, item.id);
-          if (!txItem) return;
-          const qty = txItem.quantity;
-          const isRelatedToWh = selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh || tx.sourceWarehouseId === selectedWh;
-          if (!isRelatedToWh) return;
-
-          if (txDate < start) {
-            if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) opening += qty;
-            else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) opening -= qty;
-            else if (tx.type === TransactionType.TRANSFER && selectedWh !== 'ALL') {
-              if (tx.targetWarehouseId === selectedWh) opening += qty;
-              if (tx.sourceWarehouseId === selectedWh) opening -= qty;
-            } else if (tx.type === TransactionType.ADJUSTMENT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) opening += qty;
-          } else if (txDate <= end) {
-            const fallbackTransactionType: InventoryLedgerTransactionType = tx.businessEventType === 'reversal'
-              ? 'reversal'
-              : tx.type === TransactionType.IMPORT
-                ? tx.businessEventType === 'project_return_receipt' ? 'project_return_receipt' : 'purchase_receipt'
-                : tx.type === TransactionType.TRANSFER
-                  ? tx.targetWarehouseId === selectedWh ? 'transfer_receipt' : 'transfer_issue'
-                  : tx.type === TransactionType.LIQUIDATION
-                    ? 'loss_issue'
-                    : tx.type === TransactionType.ADJUSTMENT
-                      ? 'adjustment_in'
-                      : 'project_issue';
-            if (selectedType !== 'all' && fallbackTransactionType !== selectedType) return;
-            if (tx.businessEventType === 'reversal' && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inReversal += qty;
-            else if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inImport += qty;
-            else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) outExport += qty;
-            else if (tx.type === TransactionType.TRANSFER && selectedWh !== 'ALL') {
-              if (tx.targetWarehouseId === selectedWh) inTransfer += qty;
-              if (tx.sourceWarehouseId === selectedWh) outTransfer += qty;
-            } else if (tx.type === TransactionType.LIQUIDATION && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) outLiquidation += qty;
-            else if (tx.type === TransactionType.ADJUSTMENT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inAdjustment += qty;
-          }
-        });
-
-        const totalIn = inImport + inTransfer + inAdjustment + inReversal;
-        const totalOut = outExport + outTransfer + outLiquidation;
-        const closing = opening + totalIn - totalOut;
-        return {
-          id: item.id,
-          sku: item.sku,
-          name: item.name,
-          unit: item.unit,
-          opening,
-          inImport,
-          inTransfer,
-          inAdjustment,
-          inReversal,
-          totalIn,
-          outExport,
-          outTransfer,
-          outLiquidation,
-          totalOut,
-          closing,
-          value: closing * Number(item.priceIn || 0),
-        };
-      })
-      .filter(row => !search || `${row.sku} ${row.name}`.toLowerCase().includes(search));
-  }, [endDate, items, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate, transactions, visibleWarehouseIdSet, warehouseAccess.canViewAll]);
-
-  const reportData = ledgerAvailable && ledgerReport ? ledgerReport.stockRows : (ledgerAvailable ? reportDataFromLedger : fallbackReportData);
-
-  const summary = useMemo(() => reportData.reduce(
-    (acc, row) => ({
-      opening: acc.opening + row.opening,
-      closing: acc.closing + row.closing,
-      totalValue: acc.totalValue + row.value,
-      totalIn: acc.totalIn + row.totalIn,
-      totalOut: acc.totalOut + row.totalOut,
-    }),
-    { opening: 0, closing: 0, totalValue: 0, totalIn: 0, totalOut: 0 },
-  ), [reportData]);
+  const nxtFilters = useMemo(() => ({
+    warehouseId: selectedWh,
+    materialId: selectedMaterialId === 'ALL' ? undefined : selectedMaterialId,
+    dateFrom: startDate,
+    dateTo: endDate,
+    search: debouncedSearch,
+  }), [debouncedSearch, endDate, selectedMaterialId, selectedWh, startDate]);
+  const { rows: nxtRows, loading: nxtLoading, error: nxtError, reload: reloadNxt } = useInventoryNxtReport(nxtFilters);
+  const [missingPriceOnly, setMissingPriceOnly] = useState(false);
+  const nxtTotals = useMemo(() => summarizeNxt(nxtRows), [nxtRows]);
+  const visibleNxtRows = useMemo(
+    () => missingPriceOnly ? nxtRows.filter(rowMissingPrice) : nxtRows,
+    [missingPriceOnly, nxtRows],
+  );
+  const visibleNxtTotals = useMemo(() => summarizeNxt(visibleNxtRows), [visibleNxtRows]);
+  const showWarehouseColumn = selectedWh === 'ALL' || new Set(nxtRows.map(row => row.warehouseId)).size > 1;
 
   const warehouseCardRows = useMemo(() => {
     const grouped = new Map<string, {
@@ -486,44 +329,48 @@ const Reports: React.FC = () => {
     selectedMaterialId,
     selectedType,
     searchTerm,
-    ledgerAvailable ? 'ledger' : 'fallback',
+    missingPriceOnly ? 'missing' : 'all',
   ].join('|');
-  const summaryPage = useClientPagination(reportData, paginationResetKey);
+  const nxtPage = useClientPagination(visibleNxtRows, paginationResetKey, NXT_PAGE_SIZE);
   const warehousePage = useClientPagination(warehouseCardRows, paginationResetKey);
 
   const handleExportExcel = async () => {
     const XLSX = await loadXlsx();
-    const data = reportData.map(row => ({
-      'Ma SKU': row.sku,
-      'Ten vat tu': row.name,
-      'DVT': row.unit,
-      'Ton dau ky': row.opening,
-      'Nhap mua': row.inImport,
-      'Nhap chuyen kho': row.inTransfer,
-      'Nhap khac': row.inAdjustment,
-      'Nhập đảo': row.inReversal,
-      'Tong nhap': row.totalIn,
-      'Xuat cong trinh': row.outExport,
-      'Xuat chuyen kho': row.outTransfer,
-      'Xuat hao hut/huy': row.outLiquidation,
-      'Tong xuat': row.totalOut,
-      'Ton cuoi ky': row.closing,
-      'Gia tri ton': row.value,
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.aoa_to_sheet([[...NXT_EXCEL_HEADERS], ...buildNxtExcelRows(visibleNxtRows)]);
+    // Định dạng số kiểu MISA: số lượng tới 3 số lẻ, giá trị số nguyên, số 0 hiện "-".
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    for (let r = 1; r <= range.e.r; r += 1) {
+      for (let c = 3; c <= 10; c += 1) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell && typeof cell.v === 'number') cell.z = c % 2 === 1 ? '#,##0.###;-#,##0.###;"-"' : '#,##0;-#,##0;"-"';
+      }
+    }
+    ws['!cols'] = [12, 36, 8, 14, 16, 14, 16, 14, 16, 14, 16, 36].map(wch => ({ wch }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: NXT_EXCEL_HEADERS.length - 1 } }) };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Inventory Ledger');
+    XLSX.utils.book_append_sheet(wb, ws, 'Nhap xuat ton');
     const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `TheKho_${startDate}_to_${endDate}.xlsx`;
+    link.download = `NhapXuatTon_${startDate}_den_${endDate}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const exportDisabledReason = nxtLoading
+    ? 'Đang tổng hợp số liệu'
+    : nxtError
+      ? 'Chưa tải được báo cáo nhập xuất tồn'
+      : visibleNxtRows.length === 0 ? 'Không có dòng nào để xuất' : '';
+
+  const openMaterialCard = (row: InventoryNxtRow) => {
+    setSelectedMaterialId(row.materialId);
+    if (canSelectWarehouse && visibleWarehouses.some(warehouse => warehouse.id === row.warehouseId)) setSelectedWh(row.warehouseId);
+    setActiveView('material_card');
   };
 
   const openSourceDocument = (entry: InventoryLedgerEntry) => {
@@ -577,15 +424,17 @@ const Reports: React.FC = () => {
             </button>
             <button
               onClick={handleExportExcel}
-              className="flex items-center px-4 py-2.5 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition font-bold text-sm shadow-lg shadow-emerald-900/20"
+              disabled={Boolean(exportDisabledReason)}
+              title={exportDisabledReason || 'Tải bảng nhập xuất tồn theo mẫu MISA'}
+              className="flex items-center px-4 py-2.5 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition font-bold text-sm shadow-lg shadow-emerald-900/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Download size={18} className="mr-2" /> Xuất Excel
+              <Download size={18} className="mr-2" /> Xuất Excel NXT
             </button>
           </div>
         </div>
 
         <div className="p-4 bg-slate-50 border-t border-slate-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 ${activeView === 'summary' ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                 <Calendar size={12} /> Từ ngày
@@ -616,7 +465,7 @@ const Reports: React.FC = () => {
                 {items.map(item => <option key={item.id} value={item.id}>{item.sku} - {item.name}</option>)}
               </select>
             </div>
-            <div className="space-y-1">
+            <div className={`space-y-1 ${activeView === 'summary' ? 'hidden' : ''}`}>
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                 <Filter size={12} /> Loại giao dịch
               </label>
@@ -631,17 +480,15 @@ const Reports: React.FC = () => {
               <input
                 value={searchTerm}
                 onChange={event => setSearchTerm(event.target.value)}
-                placeholder="Tìm mã vật tư, tên vật tư, mã phiếu..."
+                                placeholder={activeView === 'summary' ? 'Tìm mã hàng, tên hàng...' : 'Tìm mã vật tư, tên vật tư, mã phiếu...'}
                 className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-300"
               />
             </label>
             <div className="flex items-center gap-2 text-[11px] font-bold">
-              {ledgerLoading && <span className="inline-flex items-center gap-1 text-slate-500"><Loader2 size={13} className="animate-spin" /> Đang tải ledger</span>}
-              {!ledgerLoading && ledgerAvailable && <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 border border-emerald-200">Đang dùng Inventory Ledger</span>}
-              {!ledgerLoading && !ledgerAvailable && <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700 border border-amber-200">Fallback từ transactions cũ</span>}
+              {(activeView === 'summary' ? nxtLoading : ledgerLoading) && <span className="inline-flex items-center gap-1 text-slate-500"><Loader2 size={13} className="animate-spin" /> Đang tải số liệu</span>}
             </div>
           </div>
-          {ledgerError && (
+          {ledgerError && activeView !== 'summary' && (
             <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
               <AlertTriangle size={14} /> {ledgerError}
             </div>
@@ -649,31 +496,42 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="no-scrollbar flex gap-3 overflow-x-auto md:grid md:grid-cols-5 md:overflow-visible">
         {[
-          { label: 'Tồn đầu kỳ', value: fmt(summary.opening), icon: PieChart, tone: 'text-blue-600 bg-blue-50 border-blue-100' },
-          { label: 'Tổng nhập', value: fmt(summary.totalIn), icon: ArrowDownLeft, tone: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
-          { label: 'Tổng xuất', value: fmt(summary.totalOut), icon: ArrowUpRight, tone: 'text-orange-600 bg-orange-50 border-orange-100' },
-          { label: 'Tồn cuối kỳ', value: fmt(summary.closing), icon: Package, tone: 'text-slate-700 bg-slate-50 border-slate-200' },
-          { label: 'Giá trị tồn', value: money(summary.totalValue), icon: FileText, tone: 'text-indigo-600 bg-indigo-50 border-indigo-100' },
-        ].map(card => {
-          const Icon = card.icon;
-          return (
-            <div key={card.label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm flex items-center gap-3">
-              <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${card.tone}`}><Icon size={21} /></div>
-              <div className="min-w-0">
-                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{card.label}</div>
-                <div className="mt-0.5 text-base font-black text-slate-900 truncate">{card.value}</div>
-              </div>
-            </div>
-          );
-        })}
+          { label: 'Đầu kỳ', value: nxtTotals.openingValue, hint: 'giá trị tồn đầu kỳ', icon: PieChart, tone: 'text-sky-600' },
+          { label: 'Nhập kho', value: nxtTotals.inValue, hint: 'giá trị nhập trong kỳ', icon: ArrowDownLeft, tone: 'text-leaf-700' },
+          { label: 'Xuất kho', value: nxtTotals.outValue, hint: 'giá trị xuất trong kỳ', icon: ArrowUpRight, tone: 'text-teal-700' },
+          { label: 'Cuối kỳ', value: nxtTotals.closingValue, hint: 'giá trị tồn cuối kỳ', icon: Package, tone: 'text-mint-700' },
+        ].map(card => (
+          <div key={card.label} className="min-w-[150px] flex-1 md:min-w-0 [&>button]:h-full [&>button]:w-full">
+            <Kpi
+              active={false}
+              onClick={() => { setActiveView('summary'); setMissingPriceOnly(false); }}
+              icon={card.icon}
+              label={card.label}
+              value={nxtLoading || nxtError ? '—' : shortMoney(card.value)}
+              hint={nxtError ? 'chưa tải được' : card.hint}
+              tone={card.tone}
+            />
+          </div>
+        ))}
+        <div className="min-w-[150px] flex-1 md:min-w-0 [&>button]:h-full [&>button]:w-full">
+          <Kpi
+            active={missingPriceOnly}
+            onClick={() => { setActiveView('summary'); setMissingPriceOnly(value => !value); }}
+            icon={AlertTriangle}
+            label="Thiếu đơn giá"
+            value={nxtLoading || nxtError ? '—' : `${nxtTotals.missingPriceRows} dòng`}
+            hint={nxtError ? 'chưa tải được' : missingPriceOnly ? 'bấm để xem tất cả' : 'giá trị tồn chưa đủ, bấm để lọc'}
+            tone={nxtTotals.missingPriceRows > 0 ? 'text-amber-600' : 'text-slate-500'}
+          />
+        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
         <div className="flex overflow-x-auto border-b border-slate-100 bg-slate-50/70">
           {[
-            { key: 'summary', label: 'Tổng quan tồn kho', icon: PieChart },
+            { key: 'summary', label: 'Nhập xuất tồn', icon: PieChart },
             { key: 'material_card', label: 'Thẻ kho vật tư', icon: Package },
             { key: 'warehouse_card', label: 'Thẻ kho theo kho', icon: Warehouse },
             { key: 'history', label: 'Lịch sử giao dịch', icon: History },
@@ -693,72 +551,94 @@ const Reports: React.FC = () => {
         </div>
 
         {activeView === 'summary' && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1250px] text-left border-collapse">
-              <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400 tracking-wider">
-                <tr>
-                  <th className="p-4 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Vật tư / SKU</th>
-                  <th className="p-4 text-right bg-blue-50/40">Tồn đầu kỳ</th>
-                  <th className="p-4 text-center">Nhập mua</th>
-                  <th className="p-4 text-center">Nhập chuyển</th>
-                  <th className="p-4 text-center">Nhập khác</th>
-                  <th className="p-4 text-center">Nhập đảo</th>
-                  <th className="p-4 text-right bg-emerald-50/70 text-emerald-700">Tổng nhập</th>
-                  <th className="p-4 text-center">Xuất CT</th>
-                  <th className="p-4 text-center">Xuất chuyển</th>
-                  <th className="p-4 text-center">Xuất huỷ/hao hụt</th>
-                  <th className="p-4 text-right bg-orange-50/70 text-orange-700">Tổng xuất</th>
-                  <th className="p-4 text-right bg-slate-900 text-white">Tồn cuối</th>
-                  <th className="p-4 text-right">Giá trị</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {summaryPage.pageRows.map(row => (
-                  <tr key={row.id} className="hover:bg-slate-50 group">
-                    <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100">
-                      <button
-                        onClick={() => {
-                          setSelectedMaterialId(row.id);
-                          setActiveView('material_card');
-                        }}
-                        className="text-left"
-                      >
-                        <div className="font-black text-slate-800 hover:text-emerald-700">{row.name}</div>
-                        <div className="text-[10px] font-mono text-slate-400">{row.sku} • {row.unit || '-'}</div>
-                      </button>
-                    </td>
-                    <td className="p-4 text-right font-bold text-slate-600 bg-blue-50/10">{fmt(row.opening)}</td>
-                    <td className="p-4 text-center text-slate-500">{row.inImport ? fmt(row.inImport) : '-'}</td>
-                    <td className="p-4 text-center text-slate-500">{row.inTransfer ? fmt(row.inTransfer) : '-'}</td>
-                    <td className="p-4 text-center text-slate-500">{row.inAdjustment ? fmt(row.inAdjustment) : '-'}</td>
-                    <td className="p-4 text-center font-bold text-orange-600">{row.inReversal ? fmt(row.inReversal) : '-'}</td>
-                    <td className="p-4 text-right font-black text-emerald-600 bg-emerald-50/20">{fmt(row.totalIn)}</td>
-                    <td className="p-4 text-center text-slate-500">{row.outExport ? fmt(row.outExport) : '-'}</td>
-                    <td className="p-4 text-center text-slate-500">{row.outTransfer ? fmt(row.outTransfer) : '-'}</td>
-                    <td className="p-4 text-center text-slate-500">{row.outLiquidation ? fmt(row.outLiquidation) : '-'}</td>
-                    <td className="p-4 text-right font-black text-orange-600 bg-orange-50/20">{fmt(row.totalOut)}</td>
-                    <td className="p-4 text-right font-black text-slate-900 bg-slate-100/40">{fmt(row.closing)}</td>
-                    <td className="p-4 text-right font-bold text-slate-600">{money(row.value)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {reportData.length === 0 && (
-              <div className="p-20 text-center text-slate-300">
-                <Package size={48} className="mx-auto" />
-                <p className="mt-4 text-sm font-bold">Không có dữ liệu cho bộ lọc hiện tại.</p>
+          <div>
+            {missingPriceOnly && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800">
+                <span className="inline-flex items-center gap-1.5"><AlertTriangle size={14} /> Đang xem {visibleNxtRows.length} dòng có số lượng nhưng phiếu nhập chưa có đơn giá.</span>
+                <button type="button" onClick={() => setMissingPriceOnly(false)} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 hover:bg-amber-100">Xem tất cả</button>
               </div>
             )}
-            {reportData.length > 0 && (
-              <PaginationFooter
-                page={summaryPage.page}
-                pageCount={summaryPage.pageCount}
-                pageStart={summaryPage.pageStart}
-                pageEnd={summaryPage.pageEnd}
-                total={summaryPage.total}
-                noun="vật tư"
-                onPageChange={summaryPage.setPage}
-              />
+            {nxtLoading ? (
+              <div className="p-4"><StateBox kind="loading" title="Đang tổng hợp nhập xuất tồn…" /></div>
+            ) : nxtError ? (
+              <div className="p-4"><StateBox kind="error" title="Chưa tải được báo cáo nhập xuất tồn" message={nxtError} onRetry={reloadNxt} /></div>
+            ) : visibleNxtRows.length === 0 ? (
+              <div className="p-4"><StateBox kind="empty" title="Không có số liệu trong kỳ" message="Đổi khoảng ngày, kho hoặc từ khóa để xem." /></div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1180px] border-collapse text-sm">
+                    <thead className="text-[11px] font-black text-slate-500">
+                      <tr className="bg-slate-50">
+                        <th rowSpan={2} className="sticky left-0 z-20 w-[112px] min-w-[112px] border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left">Mã hàng</th>
+                        <th rowSpan={2} className="z-20 min-w-[220px] border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left md:sticky md:left-[112px]">Tên hàng</th>
+                        <th rowSpan={2} className="border-b border-r border-slate-200 px-2 py-2 text-left">ĐVT</th>
+                        <th colSpan={2} className="border-b border-r border-slate-200 bg-sky-50/70 px-3 py-1.5 text-center text-sky-800">Đầu kỳ</th>
+                        <th colSpan={2} className="border-b border-r border-slate-200 bg-leaf-50 px-3 py-1.5 text-center text-leaf-800">Nhập kho</th>
+                        <th colSpan={2} className="border-b border-r border-slate-200 bg-teal-50/70 px-3 py-1.5 text-center text-teal-800">Xuất kho</th>
+                        <th colSpan={2} className="border-b border-r border-slate-200 bg-mint-50 px-3 py-1.5 text-center text-mint-800">Cuối kỳ</th>
+                        {showWarehouseColumn && <th rowSpan={2} className="min-w-[180px] border-b border-slate-200 px-3 py-2 text-left">Tên kho</th>}
+                      </tr>
+                      <tr className="bg-slate-50">
+                        {['sky', 'leaf', 'teal', 'mint'].flatMap(group => [
+                          <th key={`${group}-qty`} className="whitespace-nowrap border-b border-r border-slate-200 px-3 py-1.5 text-right font-bold">Số lượng</th>,
+                          <th key={`${group}-value`} className="whitespace-nowrap border-b border-r border-slate-200 px-3 py-1.5 text-right font-bold">Giá trị</th>,
+                        ])}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {nxtPage.pageRows.map(row => {
+                        const negative = isNegativeStock(row);
+                        return (
+                          <tr key={row.key} onClick={() => openMaterialCard(row)} className="group cursor-pointer hover:bg-slate-50" title="Bấm để xem thẻ kho vật tư">
+                            <td className="sticky left-0 z-10 border-r border-slate-100 bg-white px-3 py-2 font-mono text-xs font-bold text-mint-700 group-hover:bg-slate-50" title={row.itemMissing ? row.materialId : undefined}>
+                              {row.itemMissing ? <span className="text-slate-300">—</span> : row.sku}
+                            </td>
+                            <td className="z-10 border-r border-slate-100 bg-white px-3 py-2 font-semibold text-slate-800 group-hover:bg-slate-50 md:sticky md:left-[112px]">
+                              {row.itemMissing
+                                ? <span className="italic text-slate-400" title="Mã còn trên sổ kho nhưng đã bị xóa hoặc gộp trong Danh mục vật tư">{MISSING_ITEM_LABEL}</span>
+                                : <span className="line-clamp-2">{row.name}</span>}
+                            </td>
+                            <td className="border-r border-slate-100 px-2 py-2 text-slate-500">{row.unit || '—'}</td>
+                            <NxtQty value={row.openingQty} />
+                            <NxtValue qty={row.openingQty} value={row.openingValue} />
+                            <NxtQty value={row.inQty} />
+                            <NxtValue qty={row.inQty} value={row.inValue} />
+                            <NxtQty value={row.outQty} />
+                            <NxtValue qty={row.outQty} value={row.outValue} />
+                            <NxtQty value={row.closingQty} strong negative={negative} />
+                            <NxtValue qty={row.closingQty} value={row.closingValue} strong />
+                            {showWarehouseColumn && <td className="px-3 py-2 text-xs font-semibold text-slate-600">{row.warehouseName}</td>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-sm font-black text-slate-800">
+                      <tr>
+                        <td colSpan={3} className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5">Tổng cộng · {visibleNxtRows.length} dòng</td>
+                        <td className="px-3 py-2.5" />
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums">{wholeMoney(visibleNxtTotals.openingValue)}</td>
+                        <td className="px-3 py-2.5" />
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-leaf-700">{wholeMoney(visibleNxtTotals.inValue)}</td>
+                        <td className="px-3 py-2.5" />
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-teal-700">{wholeMoney(visibleNxtTotals.outValue)}</td>
+                        <td className="px-3 py-2.5" />
+                        <td className="border-r border-slate-200 px-3 py-2.5 text-right tabular-nums text-mint-700">{wholeMoney(visibleNxtTotals.closingValue)}</td>
+                        {showWarehouseColumn && <td />}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <PaginationFooter
+                  page={nxtPage.page}
+                  pageCount={nxtPage.pageCount}
+                  pageStart={nxtPage.pageStart}
+                  pageEnd={nxtPage.pageEnd}
+                  total={nxtPage.total}
+                  noun="dòng"
+                  onPageChange={nxtPage.setPage}
+                />
+              </>
             )}
           </div>
         )}
@@ -904,6 +784,23 @@ const Reports: React.FC = () => {
     </div>
   );
 };
+
+const NxtQty: React.FC<{ value: number; strong?: boolean; negative?: boolean }> = ({ value, strong, negative }) => (
+  <td
+    className={`px-3 py-2 text-right tabular-nums ${negative ? 'font-black text-rose-600' : strong ? 'font-bold text-slate-900' : 'text-slate-600'}`}
+    title={negative ? 'Âm kho: xuất nhiều hơn nhập, cần kiểm tra phiếu' : undefined}
+  >
+    {Math.abs(value) < QTY_EPS ? <span className="text-slate-300">–</span> : fmt(value)}
+  </td>
+);
+
+const NxtValue: React.FC<{ qty: number; value: number; strong?: boolean }> = ({ qty, value, strong }) => (
+  <td className={`border-r border-slate-100 px-3 py-2 text-right tabular-nums ${strong ? 'font-bold text-slate-900' : 'text-slate-600'}`}>
+    {isValueMissing(qty, value)
+      ? <span className="whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700" title="Có số lượng nhưng phiếu chưa có đơn giá">Chưa có giá</span>
+      : Math.round(value) === 0 ? <span className="text-slate-300">–</span> : wholeMoney(value)}
+  </td>
+);
 
 const TraceField: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
   <div className="rounded-xl border border-slate-100 bg-white p-3">
