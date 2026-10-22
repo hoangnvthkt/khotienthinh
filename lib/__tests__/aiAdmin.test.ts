@@ -56,3 +56,20 @@ describe('Trung tâm AI · cấp AI theo người', () => {
     expect(aiErrorMessage({ code: 'AI_DENIED' })).toContain('nhờ Quản trị AI cấp ở Trung tâm AI');
   });
 });
+
+describe('B4 bản tin Admin tuần — đọc hàng máy chủ', () => {
+  it('parseDigest: đọc tuần, việc, tín hiệu; thiếu trường → 0 / null; không có week_start → null; mondayOf đúng Thứ Hai', async () => {
+    const { parseDigest, mondayOf } = await import('../aiAdmin');
+    const d = parseDigest({ week_start: '2026-10-12', week_end: '2026-10-18', generated_at: '2026-10-19T00:00:05Z', sent_at: null, recipients: '0',
+      picks: [{ key: 'ai_errors', score: 95, title: 'Kiểm cổng AI', detail: 'AI_TIMEOUT ×5', link: '/settings?tab=ai-gateway' }, { title: '' }],
+      signals: { assistant: { runs: 61, errors: '5', errorCodes: [{ code: 'AI_TIMEOUT', n: 5 }], idle: ['A', null], jev: { auto: 27, autoAgree: 15 } }, feedback: { new: 0, oldestOpenDays: null }, stale: { leavePending3d: 4 } } })!;
+    expect(d).toMatchObject({ weekStart: '2026-10-12', sentAt: null, recipients: 0, picks: [{ key: 'ai_errors', score: 95, link: '/settings?tab=ai-gateway' }],
+      assistant: { runs: 61, errors: 5, errorCodes: [{ code: 'AI_TIMEOUT', n: 5 }], idle: ['A'], jev: { auto: 27, autoAgree: 15, n: 0 }, commands: { prepared: 0, done: 0 } },
+      feedback: { new: 0, open: 0, oldestOpenDays: null }, stale: { leavePending3d: 4, wfRunningStale7d: 0 } });
+    expect(d.picks).toHaveLength(1);
+    expect(parseDigest({ picks: [] })).toBeNull();
+    expect(mondayOf(new Date(2026, 9, 21))).toBe('2026-10-19');
+    expect(mondayOf(new Date(2026, 9, 19))).toBe('2026-10-19');
+    expect(mondayOf(new Date(2026, 9, 18))).toBe('2026-10-12');
+  });
+});

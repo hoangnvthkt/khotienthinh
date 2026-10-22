@@ -112,6 +112,36 @@ test("Hoạt động: câu hỏi, thẻ gửi thật / chuẩn bị, hỏi về 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
 
+test("B4 Bản tin tuần: tuần trước đã gửi với 3 việc + tín hiệu; dựng thử tuần này chưa gửi; Gửi Admin ngay có xác nhận → đã gửi 3 Admin; mở từ ?tab=digest; điện thoại không tràn", async ({ page, isMobile }) => {
+  await page.goto(`${base}?tab=digest`);
+  const panel = page.getByRole("tabpanel", { name: "Bản tin tuần" });
+  await expect(panel).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Bản tin tuần/ })).toHaveAttribute("aria-selected", "true");
+  const latest = panel.getByRole("article", { name: "Bản tin tuần 12/10–18/10" });
+  await expect(latest).toContainText("Đã gửi 3 Admin");
+  const picks = latest.getByRole("list", { name: "Việc nên làm" }).getByRole("listitem");
+  await expect(picks).toHaveCount(3);
+  await expect(picks.first()).toContainText("Kiểm cổng AI: 5 lượt lỗi trong tuần");
+  await expect(picks.nth(2)).toContainText("10/16 người được cấp chưa hỏi Trợ lý");
+  await latest.getByText("Tín hiệu phía sau").click();
+  await expect(latest).toContainText("Chưa hỏi Trợ lý tuần này (10): Lê Thị Mơ, Nguyễn Văn Chuẩn…");
+  await expect(latest).toContainText("56 %");
+  if (isMobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  await panel.getByRole("button", { name: "Dựng thử tuần này" }).click();
+  const current = panel.getByRole("article", { name: "Bản tin tuần 19/10–21/10" });
+  await expect(current).toContainText("Chưa gửi");
+  await expect(current.getByRole("list", { name: "Việc nên làm" }).getByRole("listitem")).toHaveCount(1);
+  await expect(panel.getByRole("region", { name: "Bản tin trước" })).toContainText("Tuần 12/10 – 18/10");
+  await current.getByRole("button", { name: "Gửi Admin ngay" }).click();
+  await expect(page.getByText("Gửi bản tin cho mọi Admin?")).toBeVisible();
+  await expect(page.getByText("Mỗi tuần chỉ gửi một lần")).toBeVisible();
+  await page.getByRole("button", { name: "Gửi ngay" }).click();
+  await expect(current).toContainText("Đã gửi 3 Admin");
+  await expect(current.getByRole("button", { name: "Gửi Admin ngay" })).toHaveCount(0);
+  expect((await calls(page)).filter(c => c.digest)).toEqual([{ digest: "preview", weekStart: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }, { digest: "send", weekStart: "2026-10-19" }]);
+});
+
 test("Skill · xem bên trong: dòng có lượt 7 ngày + màn gọi; skill chưa gắn màn báo rõ; công cụ mở ngăn chỉ xem (dùng khi, quyền, thẻ, lượt); từ Trợ lý mở công cụ rồi quay lại", async ({ page }) => {
   await page.goto(base);
   await page.getByRole("tab", { name: /Skill/ }).click();
@@ -119,7 +149,8 @@ test("Skill · xem bên trong: dòng có lượt 7 ngày + màn gọi; skill ch�
   await expect(panel.getByRole("listitem", { name: "Trợ lý · hội thoại" })).toContainText("142 lượt · 11 người");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt đơn trước khi duyệt" })).toContainText("Mua hàng → đơn chờ duyệt");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt văn bản" })).toContainText("Chưa gắn màn nào");
-  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(13);
+  // 20 công cụ Trợ lý tính đến B3 (22/10): tim_ho_so … so_tay, bao_cao, bien_dong_nhan_su, 5 chuan_bi_*, chuan_bi_su_co, 4 Vioo Work.
+  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(20);
 
   await panel.getByRole("button", { name: "Xem công cụ Chuẩn bị đơn mua" }).click();
   const tool = page.getByRole("dialog", { name: "Công cụ Chuẩn bị đơn mua" });
