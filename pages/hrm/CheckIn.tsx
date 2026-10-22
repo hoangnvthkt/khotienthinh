@@ -37,7 +37,6 @@ import {
   PlaceDistance,
   toCoordinate,
 } from '../../lib/attendanceGeo';
-import { xpService } from '../../lib/xpService';
 import AttendancePhoto from '../../components/hrm/AttendancePhoto';
 
 const PHOTO_MAX_EDGE = 720;
@@ -349,7 +348,6 @@ const CheckIn: React.FC = () => {
       const time = isFirst ? saved.checkIn : saved.checkOut;
       setResult({ ok: true, message: `${isFirst ? 'Đã chấm công vào' : 'Đã chấm công ra'} lúc ${time} tại ${selectedPlace.name}` });
       if (isFirst) {
-        xpService.awardDailyXP('daily_checkin', saved.id).catch(() => { });
         celebrate({ variant: 'checkin', title: 'Chấm công vào thành công', subtitle: selectedPlace.name, confetti: false, duration: 1600 });
       } else {
         showToast({ type: 'success', title: 'Chấm công ra thành công', message: selectedPlace.name });

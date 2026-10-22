@@ -37,6 +37,11 @@ describe('procurement orders', () => {
     await expect(procurementInboxService.transitionOrder({ purchaseOrderId: 'po-1', expectedRowVersion: 1, action: 'submit', approverUserId: 'me' }))
       .rejects.toThrow('không phải người lập');
   });
+  it('says a timed-out save is too slow, not a failed load', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'canceling statement due to statement timeout', code: '57014' } });
+    await expect(procurementInboxService.saveOrder({ vendorId: 'v1', vatRate: 8, items: [] }))
+      .rejects.toThrow('tách thành vài đơn nhỏ hơn');
+  });
   it('sends the order payload unchanged to the save RPC', async () => {
     rpc.mockResolvedValueOnce({ data: { purchaseOrderId: 'po-1', poNumber: 'PO-1', rowVersion: 1, totalAmount: 10, lines: 1 }, error: null });
     const input = { vendorId: 'v1', vatRate: 8, items: [{ itemId: 'i1', unitPrice: 5, allocations: [{ sourceType: 'material_request' as const, sourceId: 'r1', lineId: 'l1', qty: 2 }] }] };

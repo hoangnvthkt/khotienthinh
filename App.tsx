@@ -25,7 +25,6 @@ import {
 } from './context/AuthContext';
 import { selectApplicationShell } from './context/authState';
 import { UserSessionTelemetryHost } from './hooks/useUserSessionTelemetry';
-import { DailyLoginXpHost } from './hooks/useDailyLoginXp';
 import { shouldWarmWorkflowData } from './lib/workflowWarmup';
 import { getWorkflowWarmupModules } from './lib/appDataWarmupPolicy';
 import { appPageRoutes } from './routes/appPages';
@@ -252,7 +251,6 @@ const PublicLoginRoute: React.FC = () => {
 export const AuthenticatedApplication: React.FC = () => (
   <AuthenticatedBoundary>
     <UserSessionTelemetryHost />
-    <DailyLoginXpHost />
     <ConfirmProvider>
       <AppProvider>
         <WorkflowProvider>
