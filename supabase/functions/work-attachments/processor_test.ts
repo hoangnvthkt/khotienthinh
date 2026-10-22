@@ -12,9 +12,9 @@ Deno.test('normalizes EXIF orientation, strips metadata, bounds variants and pre
     return img.write(MagickFormat.Jpeg, data => data.slice());
   });
   const result = await processFile(source, 'image/jpeg', source.length, false, 640);
-  assert.deepEqual(result.map(x => x.name), ['display.webp','fallback.png','thumbnail.webp']);
+  assert.deepEqual(result.map(x => x.name), ['display.webp','thumbnail.webp']);
   assert.equal(result[0].width, 320); assert.equal(result[0].height, 640);
-  assert.equal(result[2].width, 160); assert.equal(result[2].height, 320);
+  assert.equal(result[1].width, 160); assert.equal(result[1].height, 320);
   for (const output of result) ImageMagick.read(output.bytes, img => {
     assert.equal(img.profileNames.includes('exif'), false); assert.equal(img.comment, null);
     assert.equal(img.width, output.width); assert.equal(img.height, output.height);

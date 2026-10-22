@@ -76,7 +76,8 @@ export async function processFile(bytes: Uint8Array, mimeType: string, expectedS
       const outputs: Output[] = [];
       img.quality = 80;
       outputs.push({ name: 'display.webp', mimeType: 'image/webp', width: img.width, height: img.height, bytes: img.write(MagickFormat.WebP, data => data.slice()) });
-      outputs.push({ name: 'fallback.png', mimeType: 'image/png', width: img.width, height: img.height, bytes: img.write(MagickFormat.Png, data => data.slice()) });
+      // No fallback.png: encoding it took ~70% of CPU and pushed photos past the 2 s
+      // Edge Function CPU limit (worker killed, file stuck in "processing"). Clients read display.
       resize(320);
       outputs.push({ name: 'thumbnail.webp', mimeType: 'image/webp', width: img.width, height: img.height, bytes: img.write(MagickFormat.WebP, data => data.slice()) });
       if (keepOriginal) outputs.push({ name: 'original', mimeType, bytes });
@@ -89,5 +90,5 @@ export async function processFile(bytes: Uint8Array, mimeType: string, expectedS
 export async function imageProcessorHealth() {
   const fixture = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABAQMAAADO7O3JAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAADUExURf8AABniCTcAAAAHdElNRQfqCQcEFCT+aFPUAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTA5LTA3VDA0OjIwOjM2KzAwOjAwKF24VAAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0wOS0wN1QwNDoyMDozNiswMDowMFkAAOgAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMDktMDdUMDQ6MjA6MzYrMDA6MDAOFSE3AAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
   const outputs = await processFile(fixture,'image/png',fixture.length,false);
-  return { ok: outputs.length === 3 && outputs.every(x => x.width === 2 && x.height === 1 && x.bytes.length > 0), processor: 'magick-wasm', formats: ['webp','png'] };
+  return { ok: outputs.length === 2 && outputs.every(x => x.width === 2 && x.height === 1 && x.bytes.length > 0), processor: 'magick-wasm', formats: ['webp'] };
 }
