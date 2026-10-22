@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, FileText,
     CheckCircle2, AlertCircle, Clock, Ban, Package, CreditCard, List, FilePlus2, ClipboardCheck, DollarSign, ShieldCheck, TrendingUp
@@ -151,10 +150,8 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
 
     return (
         <div className="space-y-6">
-            {/* AI Analysis */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black text-slate-700 dark:text-white">Hợp đồng</h3>
-                <AiInsightPanel module="contract" siteId={constructionSiteId} />
             </div>
 
             {/* Summary Cards */}

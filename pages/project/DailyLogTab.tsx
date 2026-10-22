@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import AiInsightPanel from '../../components/AiInsightPanel';
 import { ClipboardPaste, Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText, History } from 'lucide-react';
 import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -2950,7 +2949,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             className="inline-flex h-8 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[11px] font-bold text-slate-600 hover:bg-muted">
                             <BarChart3 size={13} className="text-teal-600" /> Báo cáo
                         </a>
-                        <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
                         {reportAiReady && todayBoardEnabled && boardProjectId && <button type="button" onClick={() => setShowReportImport(true)}
                             disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             title="Dán tin báo cáo Zalo hoặc chụp sổ — AI tách ngày, mũi, hạng mục thành phiếu nháp"

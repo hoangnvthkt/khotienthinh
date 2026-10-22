@@ -48,7 +48,6 @@ const HrmReports = React.lazy(() => import('../pages/hrm/HrmReports'));
 const HrmDashboard = React.lazy(() => import('../pages/hrm/HrmDashboard'));
 const HrmDocuments = React.lazy(() => import('../pages/hrm/HrmDocuments'));
 const ShiftManagement = React.lazy(() => import('../pages/hrm/ShiftManagement'));
-const EmployeeRanking = React.lazy(() => import('../pages/hrm/EmployeeRanking'));
 
 // Expense pages
 
@@ -68,11 +67,8 @@ const DataStorage = React.lazy(() => import('../pages/DataStorage'));
 
 // AI Assistant
 const AiCenter = React.lazy(() => import('../pages/AiCenter'));
-const ExecutiveAI = React.lazy(() => import('../pages/ExecutiveAI'));
-const AiReports = React.lazy(() => import('../pages/AiReports'));
 
 // Knowledge Base
-const KnowledgeBase = React.lazy(() => import('../pages/KnowledgeBase'));
 
 // Audit Trail
 const AuditTrail = React.lazy(() => import('../pages/AuditTrail'));
@@ -200,7 +196,7 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="hrm/checkin" element={<CheckIn />} />
     <Route path="hrm/reports" element={<HrmReports />} />
     <Route path="hrm/documents" element={<HrmDocuments />} />
-    <Route path="hrm/ranking" element={<EmployeeRanking />} />
+    <Route path="hrm/ranking" element={<Navigate to="/hrm/reports" replace />} />
     <Route path="da" element={<ProjectDashboard />} />
     <Route path="safety-card/:qrToken" element={<SafetyCardLookup />} />
     <Route path="da/portfolio" element={<PortfolioDashboard />} />
@@ -214,9 +210,10 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
     <Route path="storage" element={<DataStorage />} />
     <Route path="ai" element={<AiCenter />} />
-    <Route path="ai/executive" element={<ExecutiveAI />} />
-    <Route path="ai/reports" element={<AiReports />} />
-    <Route path="knowledge-base" element={<KnowledgeBase />} />
+    {/* Màn AI cũ đã gỡ — Trợ lý ở /ai thay thế; giữ đường dẫn cũ cho dấu trang. */}
+    <Route path="ai/executive" element={<Navigate to="/ai" replace />} />
+    <Route path="ai/reports" element={<Navigate to="/ai" replace />} />
+    <Route path="knowledge-base" element={<Navigate to="/ai" replace />} />
     <Route path="audit-trail" element={<AuditTrail />} />
     <Route path="admin/activity" element={<AdminActivityDashboard />} />
     <Route path="analytics" element={<PredictiveAnalytics />} />

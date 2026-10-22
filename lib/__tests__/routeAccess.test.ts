@@ -257,7 +257,6 @@ describe('HRM employee self-service route access', () => {
     expect(canAccessRoute(masterDataOnly, '/hrm/contracts')).toBe(false);
     expect(canAccessRoute(masterDataOnly, '/hrm/documents')).toBe(false);
     expect(canAccessRoute(masterDataOnly, '/hrm/reports')).toBe(false);
-    expect(canAccessRoute(masterDataOnly, '/hrm/ranking')).toBe(false);
   });
 
   it('opens contract and document pages only from their governed HR source', () => {
@@ -287,7 +286,6 @@ describe('HRM employee self-service route access', () => {
       '/hrm/contracts',
       '/hrm/documents',
       '/hrm/reports',
-      '/hrm/ranking',
       '/settings/hrm-shared-catalog',
     ]) {
       expect(canAccessRoute(businessUser, route), route).toBe(false);

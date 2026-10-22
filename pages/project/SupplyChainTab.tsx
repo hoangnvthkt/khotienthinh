@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import AiInsightPanel from '../../components/AiInsightPanel';
 import { EmptyState, StatusBadge, type ErpStatusTone } from '../../components/erp';
 import {
     calculateLineTotal,
@@ -6471,7 +6470,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {!compact && (
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-black text-slate-700 dark:text-white">Đơn hàng vật tư (PO)</h3>
-                    <AiInsightPanel module="supplychain" siteId={constructionSiteId} />
                 </div>
             )}
             <div className="flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
