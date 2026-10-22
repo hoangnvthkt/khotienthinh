@@ -205,7 +205,7 @@ Phòng Quản lý dự án hoặc user có quyền tạo/quản trị dự án.
 
 #### Các bước thực hiện
 
-1. Tại màn hình danh sách dự án, bấm **Tạo mới** hoặc nút tương đương.
+1. Tại màn hình danh sách dự án, bấm **Thêm dự án**.
 2. Nhập thông tin cơ bản: tên, mã, khách hàng, mô tả.
 3. Chọn nhóm dự án, loại dự án, lĩnh vực dự án nếu có.
 4. Chọn công trường HRM nếu dự án đã có công trường tương ứng.
@@ -915,8 +915,8 @@ Dự án đã có danh sách công việc/WBS.
 
 #### Các bước thực hiện
 
-1. Mở tab **Tiến độ**.
-2. Tìm công việc cần cập nhật.
+1. Dự án đã ghi tiến độ bằng **Nhật ký** (chủ SP chốt 15/10/2026: một nguồn = Nhật ký): % hoàn thành lấy từ phiếu nhật ký đã duyệt, ô % trên Gantt bị khóa — cập nhật bằng phiếu nhật ký; các bước dưới chỉ dùng cho dự án chưa ghi Nhật ký.
+2. Mở tab **Tiến độ**, tìm công việc cần cập nhật.
 3. Mở form chỉnh sửa hoặc cập nhật tiến độ.
 4. Nhập phần trăm hoàn thành, ngày thực tế hoặc thông tin liên quan.
 5. Kiểm tra cảnh báo trễ, phụ thuộc hoặc đường găng.
@@ -930,7 +930,7 @@ Tiến độ thực tế được cập nhật và có thể ảnh hưởng đ�
 
 #### Lưu ý
 
-Một số tiến độ có thể được cập nhật từ nhật ký đã xác nhận hoặc dữ liệu khối lượng nghiệm thu.
+Dự án dùng Nhật ký: % chỉ đổi khi phiếu nhật ký được duyệt (không sửa tay trên Gantt); muốn chỉnh ngày kế hoạch thì gửi điều chỉnh tiến độ có duyệt.
 
 #### Lỗi thường gặp và cách xử lý
 

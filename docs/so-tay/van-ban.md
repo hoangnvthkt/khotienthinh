@@ -1,15 +1,22 @@
 ---
-title: Soạn văn bản, xử lý văn bản đến
+title: Soạn và gửi duyệt văn bản đi, nội bộ, thông báo
 module: Văn bản
-routes: /office/new|Soạn văn bản;/office/documents|Văn bản
-keywords: soan van ban cong van to trinh quyet dinh thong bao van ban den van ban di so van ban ban hanh
-permission: Theo quyền Office; Văn thư cấp số
+routes: /office/new|Tạo văn bản;/office/documents|Văn bản
+keywords: soan van ban cong van van ban di van ban noi bo thong bao quyet dinh quy dinh to trinh trinh ky gui duyet tuyen duyet mau van ban vioo office nguoi nhan toan cong ty
+questions: soạn công văn ở đâu | lam sao tao van ban gui duyet | soạn thông báo toàn công ty | dùng mẫu văn bản có sẵn | sao không thấy nút Tạo văn bản | văn bản bị trả lại sửa sao | không có tuyến duyệt để chọn
+permission: Văn bản · Soạn / tiếp nhận văn bản
 ---
-**Khi nào:** ban hành thông báo / quyết định / công văn, hoặc tiếp nhận văn bản đến.
+**Khi nào:** ban hành công văn gửi đối tác, quyết định / quy định nội bộ, thông báo.
 **Các bước:**
-1. Gõ "soạn văn bản" ở ô Tìm kiếm → **Soạn văn bản** → chọn loại văn bản, mẫu nếu có.
-2. Soạn nội dung, chọn người ký, nơi nhận, mức khẩn / mật; đính kèm.
-3. **Gửi duyệt** → ký duyệt → Văn thư **cấp số** và **ban hành** → nơi nhận thấy ở Văn bản.
-4. Văn bản đến: Văn thư vào Văn bản → Tiếp nhận → nhập số, ngày, nơi gửi, hạn xử lý → giao người xử lý → người xử lý ghi kết quả.
+1. **Vioo Office** → **Tạo văn bản** (hoặc ở **Tổng quan** chọn **Văn bản đi** / **Văn bản nội bộ** / **Thông báo**).
+2. Gõ **Tiêu đề văn bản**, chọn **Loại văn bản**, **Nghiệp vụ**, **Kho lưu trữ**, **Ngày văn bản**.
+3. Chọn **Người nhận** (người, phòng ban, dự án… hoặc **Thêm toàn công ty**); văn bản đi ghi **Đơn vị / đối tác nhận văn bản**; chọn **Tuyến duyệt** nếu loại văn bản cần duyệt.
+4. Soạn **Nội dung** (bấm **Chọn mẫu văn bản** để dùng mẫu), đính kèm tệp; mở **Thông tin thêm** để chọn người ký, mức khẩn, bảo mật.
+5. Bấm **Lưu & gửi duyệt** (chưa xong thì **Lưu nháp**).
+**Không làm được?**
+- Không thấy **Tạo văn bản** → thiếu quyền "Văn bản · Soạn / tiếp nhận văn bản".
+- "Chưa có tuyến duyệt phù hợp" → **Lưu nháp**, nhờ người quản trị Office cấu hình tuyến duyệt.
+- Văn bản bị **Trả lại** → mở văn bản → **Chỉnh sửa** → **Lưu & gửi duyệt** lại.
 **Lưu ý:**
-- Văn bản có hạn mà chưa ghi kết quả sẽ tính "quá hạn xử lý" trong thống kê.
+- Duyệt xong, Văn thư **Cấp số văn bản** rồi **Phát hành văn bản** thì người nhận mới thấy.
+- Gửi nhầm khi đang chờ duyệt: **Thao tác khác** → **Hủy văn bản**.

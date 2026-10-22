@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { MemoryRouter, Route, Routes, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
+import ScreenTracker from '../ai/ScreenTracker';
 
 // Chạy một trang module ngay trong tab Center bằng router riêng trong bộ nhớ: trang đọc đúng id / bộ lọc từ
 // đường dẫn như khi mở trực tiếp; bấm qua lại bên trong không rời Center và không chạm lịch sử trình duyệt
@@ -48,6 +49,7 @@ const RouteRenderer: React.FC<{ path: string; state?: unknown; routes: React.Rea
     <UNSAFE_RouteContext.Provider value={NO_ROUTE}>
       <MemoryRouter initialEntries={[state === undefined ? path : { pathname: path.split('?')[0], search: path.includes('?') ? `?${path.split('?').slice(1).join('?')}` : '', state }]}>
         <HashLinkBridge>
+          <ScreenTracker />
           <Suspense fallback={<StateBox kind="loading" title="Đang mở màn…" />}>
             <Gate>
               <Routes>

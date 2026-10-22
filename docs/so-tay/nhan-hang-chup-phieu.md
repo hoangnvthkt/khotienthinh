@@ -1,16 +1,22 @@
 ---
 title: Nhận hàng ở kho bằng chụp phiếu giao
 module: Kho
-routes: /operations|Phiếu kho
-keywords: nhan hang chup phieu giao phieu giao ncc nhap kho phieu nhap ai doc phieu nhan theo xe
-permission: Thủ kho của kho nhận
+routes: /inventory|Kho
+keywords: nhan hang chup phieu giao phieu giao ncc nhap kho phieu nhap ai doc phieu nhan theo xe xap phieu chon tu album thu kho
+questions: Chụp phiếu giao để nhận hàng thế nào? | xe NCC giao tới thì nhận trên phần mềm ra sao | sao nút Nhận hàng bị mờ | AI không đọc được phiếu giao | chụp nhiều tờ phiếu một lúc | chưa thấy đơn khớp với phiếu giao | phiếu giao chụp trùng
+permission: Giao dịch kho · Thủ kho (kho nhận)
 ---
-**Khi nào:** xe nhà cung cấp giao hàng tới kho / công trường.
+**Khi nào:** xe NCC giao hàng, thủ kho chụp tờ phiếu giao để nhận vào đơn mua.
 **Các bước:**
-1. Kho → **Phiếu giao chụp** → **Chụp phiếu** (chụp liền nhiều tờ) hoặc Chọn từ album.
-2. Chờ AI đọc (khoảng 20–40 giây): nhà cung cấp, số phiếu, biển xe, dòng hàng được điền sẵn; sai thì sửa tay. AI chậm hoặc lỗi → bấm **Đọc lại** hoặc nhập tay.
-3. Chọn **đơn mua** tương ứng (hệ thống gợi ý theo NCC); đối chiếu số nhận với đơn; vượt phần chưa giao sẽ bị chặn, có hộp kiểm lại.
-4. Bấm **Nhận hàng** → tạo phiếu nhập theo xe; giao nhiều lần vẫn gắn cùng một đơn.
+1. Kho → **Chụp phiếu giao** → **Chụp phiếu** (chụp liền nhiều tờ) hoặc **Chọn từ album** (nhiều ảnh, PDF). Nhiều tờ thành **Xấp phiếu giao**, AI đọc lần lượt.
+2. Giữ nhiều kho thì chọn **Kho nhận**; chờ AI đọc: NCC, số phiếu, xe, dòng hàng được điền sẵn — sửa nếu sai.
+3. Ở **Đơn mua** chọn đơn gợi ý (hoặc **Tìm đơn**); mỗi dòng hàng chọn dòng đơn tương ứng hoặc **Không nhận dòng này**.
+4. Bấm **Nhận hàng** → có phiếu nhập kho theo xe; bấm **Mở phiếu nhập** để xem / in.
+**Không làm được?**
+- **Nhận hàng** mờ, ghi "Chọn đơn mua" / "Chưa thấy đơn khớp" → bấm **Lưu, nhận sau**; Mua hàng xử lý ở Phiếu giao chờ.
+- "Đơn chờ duyệt — Mua hàng duyệt xong mới nhận được" → nhắc người duyệt đơn.
+- "Số nhận vượt phần đơn còn lại" → giảm số; phần dư báo Mua hàng.
+- "Chưa bật AI · nhập tay" / AI lỗi → bấm **Đọc lại** hoặc gõ tay, vẫn nhận được.
+- Báo phiếu giao này đã nhận vào đơn rồi → phiếu trùng, bấm **Bỏ phiếu**.
 **Lưu ý:**
-- Chưa bật AI thì màn chuyển sang nhập tay, vẫn nhận được.
-- Số lượng thép: ghi theo số cây / kg như phiếu NCC, quy cách chọn đúng để tồn theo quy cách.
+- Dòng ghi "đơn tính theo …" → phiếu khác đơn vị với đơn (kg ↔ cây), nhập số theo đơn vị của đơn.
