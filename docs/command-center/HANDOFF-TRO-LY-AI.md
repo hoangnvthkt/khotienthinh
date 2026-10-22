@@ -78,6 +78,11 @@ ai-gateway (supabase/functions/ai-gateway)
              cần nửa số từ khớp mạnh) trong sổ tay sinh sẵn: docs/so-tay/*.md (21 mục viết tay), docs/huong-dan-su-dung-phong-quan-ly-du-an.md (43 mục "Các bước
              thực hiện"), danh mục màn / thao tác lib/search/searchCatalog.ts (37). Sinh lại: npm run handbook:build (scripts/handbook); test assistantHandbook so khớp tệp
              sinh. Nguồn kiểu page (SourceBook.page → [[hN]]) → client vẽ nút mở màn (lib/assistantChat parseSources, AssistantView sourceChips).
+  Bản tin Admin tuần (B4, 22/10) — không trong cổng: migration 20261027120000_ai_admin_weekly_digest: app_private.ai_admin_digest_signals (tín hiệu tuần: Trợ lý
+             lỗi / 👎 / từ chối / chậm / chi phí / thẻ nháp / người được cấp chưa dùng / Jev khớp; góp ý mới + mở; việc treo: phép, quy trình, yêu cầu, phiếu giao;
+             nháp bỏ dở) → ai_admin_digest_picks (luật có điểm → ≤ 3 việc) → ai_admin_digest_build (bảng ai_admin_digests + notifications push_enabled cho users
+             role ADMIN) · cron 'ai-admin-weekly-digest' 0 0 * * 1 (07:00 VN) · RPC ai_admin_digest_list_v1 / ai_admin_digest_run_v1(p_week_start, p_send) ·
+             UI Trung tâm AI → tab Bản tin tuần (components/aiCenter/AiDigestPanel.tsx, ?tab=digest từ thông báo). Smoke supabase/tests/ai_admin_weekly_digest_smoke.sql.
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
              B2 (21/10) buildIssueRequest / askJevIssue: Choice loại góp ý (8) + mức khẩn (4) cho công cụ chuan_bi_su_co; ≥ 0,85 lấy của Jev, không thì giữ của
              model; ghi ai_decisions kind issue_class (predicted Jev / actual model, agree theo loại). Không gán kết nối → bỏ qua, thẻ vẫn ra.
@@ -173,7 +178,7 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 7. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
 8. **Trợ lý "sống trong phần mềm"** (chủ SP 21/10, doc `14-tro-ly-song-trong-phan-mem-2026-10-21.md`): B1 đường đọc ảnh chung — XONG (#302, deployed 21/10);
    B2 phiếu sự cố — XONG (PR B2: dùng module Góp ý thay bảng mới; 4 câu doc 14 mục 5 em tự chốt, chủ SP duyệt "đề xuất rồi làm theo");
-   A2 báo cáo 7 loại — XONG (#305); B3 sổ tay Vioo — XONG (PR B3; thêm mục: viết .md vào docs/so-tay rồi npm run handbook:build + deploy); tiếp B4 bản tin Admin tuần (Thứ Hai 7h, app + web push như bản tin BLĐ), B5 OCR hợp đồng / văn bản. Chưa làm: tab Sự cố riêng ở Trung tâm AI (Admin dùng /feedback lọc nguồn Trợ lý); mục "Hoạt động" chưa đếm thẻ issue_report (hàm SQL ai_activity map theo tên công cụ).
+   A2 báo cáo 7 loại — XONG (#305); B3 sổ tay Vioo — XONG (#306); B4 bản tin Admin tuần — XONG (PR B4: luật có điểm, không gọi model; thêm tín hiệu = sửa ai_admin_digest_signals / picks); tiếp B5 OCR hợp đồng / văn bản. Chưa làm: tab Sự cố riêng ở Trung tâm AI (Admin dùng /feedback lọc nguồn Trợ lý); mục "Hoạt động" chưa đếm thẻ issue_report (hàm SQL ai_activity map theo tên công cụ).
 
 ## 9. Memory liên quan
 

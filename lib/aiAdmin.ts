@@ -73,7 +73,38 @@ export interface AiAdminService {
   saveModel: (m: Pick<AiConnectionRow, 'id' | 'displayName' | 'blurb' | 'icon' | 'vision'>) => Promise<void>;
   /** Tab Hoạt động (không có → tab báo chưa có dữ liệu). */
   activity?: (days: number) => Promise<AiActivity>;
+  /** B4 (22/10): bản tin Admin tuần — danh sách đã dựng; dựng ngay tuần này / tuần trước (gửi khi send = true). */
+  digests?: () => Promise<AiDigest[]>;
+  runDigest?: (weekStart: string | null, send: boolean) => Promise<AiDigest>;
 }
+
+// ── B4 — bản tin Admin hằng tuần ──────────────────────────────────────────────────────────────────────────────────────
+export interface AiDigestPick { key: string; score: number; title: string; detail: string; link: string | null }
+export interface AiDigest {
+  weekStart: string; weekEnd: string; generatedAt: string; sentAt: string | null; recipients: number; picks: AiDigestPick[];
+  assistant: { runs: number; askers: number; questions: number; errors: number; errorCodes: Array<{ code: string; n: number }>; dislikes: number; refusals: number; slow: number; costUsd: number;
+    granted: number; idleCount: number; idle: string[]; commands: { prepared: number; done: number; cancelled: number; expired: number }; jev: { n: number; auto: number; autoAgree: number } };
+  feedback: { new: number; fromAssistant: number; open: number; oldestOpenDays: number | null; urgentOpen: number };
+  stale: { leavePending3d: number; wfRunningStale7d: number; captureUnreceived3d: number; poDraft7d: number; requestDraft7d: number; dailyLogDraft3d: number; requestPending3d: number };
+}
+const digestObj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const dn = (v: unknown) => (v == null || v === '' ? 0 : Number(v) || 0);
+export const parseDigest = (raw: unknown): AiDigest | null => {
+  const o = digestObj(raw);
+  if (!str(o.week_start)) return null;
+  const s = digestObj(o.signals); const a = digestObj(s.assistant); const f = digestObj(s.feedback); const st = digestObj(s.stale); const cmd = digestObj(a.commands); const jev = digestObj(a.jev);
+  return {
+    weekStart: str(o.week_start), weekEnd: str(o.week_end), generatedAt: str(o.generated_at), sentAt: str(o.sent_at) || null, recipients: dn(o.recipients),
+    picks: arr(o.picks).map(digestObj).filter(p => str(p.title)).map(p => ({ key: str(p.key), score: dn(p.score), title: str(p.title), detail: str(p.detail), link: str(p.link) || null })),
+    assistant: { runs: dn(a.runs), askers: dn(a.askers), questions: dn(a.questions), errors: dn(a.errors), errorCodes: arr(a.errorCodes).map(digestObj).map(e => ({ code: str(e.code), n: dn(e.n) })),
+      dislikes: dn(a.dislikes), refusals: dn(a.refusals), slow: dn(a.slow), costUsd: dn(a.costUsd), granted: dn(a.granted), idleCount: dn(a.idleCount), idle: (Array.isArray(a.idle) ? a.idle : []).map(x => str(x)).filter(Boolean),
+      commands: { prepared: dn(cmd.prepared), done: dn(cmd.done), cancelled: dn(cmd.cancelled), expired: dn(cmd.expired) }, jev: { n: dn(jev.n), auto: dn(jev.auto), autoAgree: dn(jev.autoAgree) } },
+    feedback: { new: dn(f.new), fromAssistant: dn(f.fromAssistant), open: dn(f.open), oldestOpenDays: f.oldestOpenDays == null ? null : dn(f.oldestOpenDays), urgentOpen: dn(f.urgentOpen) },
+    stale: { leavePending3d: dn(st.leavePending3d), wfRunningStale7d: dn(st.wfRunningStale7d), captureUnreceived3d: dn(st.captureUnreceived3d), poDraft7d: dn(st.poDraft7d), requestDraft7d: dn(st.requestDraft7d), dailyLogDraft3d: dn(st.dailyLogDraft3d), requestPending3d: dn(st.requestPending3d) },
+  };
+};
+/** Thứ Hai của tuần chứa ngày d (YYYY-MM-DD, theo giờ máy). */
+export const mondayOf = (d: Date): string => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
 
 export const aiAdminService: AiAdminService = {
   async overview() {
@@ -100,6 +131,18 @@ export const aiAdminService: AiAdminService = {
     if (error) fail(error);
   },
   activity: days => aiActivityService.get(days),
+  async digests() {
+    const { data, error } = await supabase.rpc('ai_admin_digest_list_v1', { p_limit: 8 });
+    if (error) fail(error);
+    return arr(data).map(parseDigest).filter((d): d is AiDigest => Boolean(d));
+  },
+  async runDigest(weekStart, send) {
+    const { data, error } = await supabase.rpc('ai_admin_digest_run_v1', { p_week_start: weekStart, p_send: send });
+    if (error) fail(error);
+    const d = parseDigest(data);
+    if (!d) throw new Error('Máy chủ không trả bản tin.');
+    return d;
+  },
   async saveModel(m) {
     const { error } = await supabase.rpc('ai_admin_model_save_v1', { p: { id: m.id, displayName: m.displayName.trim(), blurb: m.blurb.trim(), icon: m.icon.trim(), vision: m.vision } });
     if (error) fail(error);

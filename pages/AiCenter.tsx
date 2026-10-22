@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Activity, Bot, Check, ChevronDown, Coins, Cpu, RefreshCcw, Settings, Eye, EyeOff, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Activity, Bot, Check, ChevronDown, Coins, Cpu, Newspaper, RefreshCcw, Settings, Eye, EyeOff, Layers, Loader2, Plus, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import { Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../components/procurement/hub/hubUi';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { ENT, Kpi } from '../components/finance/financeUi';
 import AiActivityPanel from '../components/aiCenter/AiActivityPanel';
+import AiDigestPanel from '../components/aiCenter/AiDigestPanel';
 import AiSkillsPanel from '../components/aiCenter/AiSkillsPanel';
 import { aiSkillCatalogService, type AiSkillCatalogService } from '../lib/aiSkillCatalog';
 import {
@@ -17,7 +18,8 @@ import {
 // Người không phải Admin vào đây thấy lời mời dùng Trợ lý trong Trung tâm điều hành.
 
 type Load<T> = T | 'loading' | 'error' | 'denied';
-type Tab = 'people' | 'activity' | 'templates' | 'models' | 'skills';
+type Tab = 'people' | 'activity' | 'digest' | 'templates' | 'models' | 'skills';
+const TABS: readonly Tab[] = ['people', 'activity', 'digest', 'templates', 'models', 'skills'];
 const nf = new Intl.NumberFormat('vi-VN');
 const EMPTY_GRANT: AiGrantValues = { enabled: true, templateId: null, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '' };
 const numOrNull = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? null : Number(v.replace(',', '.')));
@@ -307,9 +309,11 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [data, setData] = useState<Load<AiAdminOverview>>('loading');
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('people');
+  // ?tab=digest từ thông báo bản tin tuần (B4) mở đúng tab.
+  const [tab, setTab] = useState<Tab>(() => { const t = searchParams.get('tab'); return t && (TABS as readonly string[]).includes(t) ? t as Tab : 'people'; });
   const [filter, setFilter] = useState('');
   const [grantDrawer, setGrantDrawer] = useState<{ editing: AiGrant | null } | null>(null);
   const [templateDrawer, setTemplateDrawer] = useState<{ editing: AiTemplate | null } | null>(null);
@@ -387,7 +391,7 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
       </div>
 
       <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1" role="tablist" aria-label="Trung tâm AI">
-        {([['people', 'Người dùng', Users, data.grants.length], ['activity', 'Hoạt động', Activity, null], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
+        {([['people', 'Người dùng', Users, data.grants.length], ['activity', 'Hoạt động', Activity, null], ['digest', 'Bản tin tuần', Newspaper, null], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
             className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === key ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
             <Icon size={15} /> {label} {n != null && <span className={`text-xs font-medium ${tab === key ? 'text-teal-100' : 'text-muted-foreground'}`}>{n}</span>}</button>
@@ -437,6 +441,7 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
       )}
 
       {tab === 'activity' && <div role="tabpanel" aria-label="Hoạt động"><AiActivityPanel load={service.activity} /></div>}
+      {tab === 'digest' && <AiDigestPanel list={service.digests} run={service.runDigest} onOpenRoute={route => navigate(route)} confirm={o => confirm({ title: o.title, targetName: o.targetName, warningText: o.message, actionLabel: o.confirmText, intent: 'warning', countdownSeconds: 0 })} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))} />}
 
       {tab === 'templates' && (
         <section role="tabpanel" aria-label="Mẫu cấp phát" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

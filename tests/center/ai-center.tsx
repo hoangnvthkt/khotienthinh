@@ -5,7 +5,7 @@ import '../../index.css';
 import { ToastProvider } from '../../context/ToastContext';
 import { ConfirmProvider } from '../../context/ConfirmContext';
 import AiCenter from '../../pages/AiCenter';
-import type { AiActivity, AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
+import type { AiActivity, AiDigest, AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
 import { parseSkillCatalog, type AiSkillCatalogService, type SkillUsage } from '../../lib/aiSkillCatalog';
 import { skillCatalog } from '../../supabase/functions/ai-gateway/catalog';
 
@@ -86,6 +86,20 @@ const service: AiAdminService = {
   },
   deleteTemplate: async id => { calls.push({ deleteTemplate: id }); state.templates = state.templates.filter(t => t.id !== id); },
   activity: async days => { calls.push({ activity: days }); await sleep(60); if (params.get('activity') === 'fail') throw new Error('Mất kết nối'); return { ...ACTIVITY, days }; },
+  // B4: bản tin tuần — tuần trước đã gửi 3 Admin; dựng thử tuần này trả bản chưa gửi; gửi → recipients 3.
+  digests: async () => { await sleep(50); return digestState.map(d => JSON.parse(JSON.stringify(d))); },
+  runDigest: async (weekStart, send) => {
+    calls.push({ digest: send ? 'send' : 'preview', weekStart });
+    await sleep(60);
+    const start = weekStart || '2026-10-19';
+    const existing = digestState.find(d => d.weekStart === start);
+    const base: AiDigest = existing ? { ...existing } : { ...DIGEST_PREV, weekStart: start, weekEnd: '2026-10-21', generatedAt: '2026-10-21T09:30:00Z', sentAt: null, recipients: 0,
+      picks: [{ key: 'feedback_new', score: 93, title: 'Xử lý 2 góp ý / phiếu sự cố mới (1 khẩn đang mở)', detail: '1 từ Trợ lý · tổng 34 phiếu đang mở, cũ nhất 120 ngày.', link: '/feedback' }],
+      feedback: { ...DIGEST_PREV.feedback, new: 2, fromAssistant: 1, urgentOpen: 1 } };
+    const next: AiDigest = send && !base.sentAt ? { ...base, sentAt: '2026-10-21T09:31:00Z', recipients: 3 } : base;
+    digestState = [next, ...digestState.filter(d => d.weekStart !== start)].sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+    return JSON.parse(JSON.stringify(next));
+  },
   saveModel: async m => { calls.push({ saveModel: m }); state.connections = state.connections.map(c => (c.id === m.id ? { ...c, ...m } : c)); },
   setSkillAccess: async (code, access) => { calls.push({ setSkillAccess: code, access }); state.skills = state.skills.map(s => (s.code === code ? { ...s, access } : s)); },
 };
@@ -93,6 +107,19 @@ const service: AiAdminService = {
 // Hoạt động 14 ngày của nhóm thí điểm (số giả lập); ?activity=fail → lỗi tải.
 const PILOT = ['Dương Xuân Thịnh', 'Nguyễn Thị Mơ', 'Hà Đức Chuẩn', 'Đặng Thị Thu Hà', 'Nguyễn Thị Hương', 'Bùi Thị Tâm', 'Nguyễn Văn Năm', 'Đoàn Văn Dương', 'Bùi Quang Chung', 'Nguyễn Thị Giang'];
 const day = (offset: number) => { const d = new Date(); d.setDate(d.getDate() - offset); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const DIGEST_PREV: AiDigest = {
+  weekStart: '2026-10-12', weekEnd: '2026-10-18', generatedAt: '2026-10-19T00:00:05Z', sentAt: '2026-10-19T00:00:06Z', recipients: 3,
+  picks: [
+    { key: 'ai_errors', score: 95, title: 'Kiểm cổng AI: 5 lượt lỗi trong tuần', detail: 'AI_TIMEOUT ×5 — xem kết nối / model ở Cài đặt → Kết nối, thử lại bộ kiểm.', link: '/settings?tab=ai-gateway' },
+    { key: 'approvals_stale', score: 84, title: 'Nhắc duyệt việc treo', detail: '4 đơn phép chờ > 3 ngày · 37 phiếu quy trình > 7 ngày không động · 2 phiếu yêu cầu chờ > 3 ngày.', link: '/wf' },
+    { key: 'ai_idle', score: 80, title: '10/16 người được cấp chưa hỏi Trợ lý tuần này', detail: 'Lê Thị Mơ, Nguyễn Văn Chuẩn — nhắc thử một câu hoặc thu hồi cấp để tiết kiệm.', link: '/ai' },
+  ],
+  assistant: { runs: 61, askers: 6, questions: 48, errors: 5, errorCodes: [{ code: 'AI_TIMEOUT', n: 5 }], dislikes: 0, refusals: 3, slow: 4, costUsd: 1.42, granted: 16, idleCount: 10, idle: ['Lê Thị Mơ', 'Nguyễn Văn Chuẩn'],
+    commands: { prepared: 9, done: 6, cancelled: 1, expired: 2 }, jev: { n: 40, auto: 27, autoAgree: 15 } },
+  feedback: { new: 0, fromAssistant: 0, open: 33, oldestOpenDays: 118, urgentOpen: 0 },
+  stale: { leavePending3d: 4, wfRunningStale7d: 37, captureUnreceived3d: 1, poDraft7d: 9, requestDraft7d: 9, dailyLogDraft3d: 50, requestPending3d: 2 },
+};
+let digestState: AiDigest[] = [DIGEST_PREV];
 const ACTIVITY: AiActivity = {
   days: 14, granted: 16,
   totals: { questions: 186, askers: 9, runs: 241, costUsd: 4.12, likes: 31, dislikes: 6, errors: 2, blocked: 3, withFiles: 22 },
@@ -136,7 +163,7 @@ const skillService: AiSkillCatalogService = {
 
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}</p>; };
 createRoot(document.getElementById('root')!).render(
-  <MemoryRouter initialEntries={['/ai']}>
+  <MemoryRouter initialEntries={[params.get('tab') ? `/ai?tab=${params.get('tab')}` : '/ai']}>
     <ToastProvider><ConfirmProvider>
       <Routes><Route path="/ai" element={<AiCenter service={service} skillService={skillService} />} /><Route path="*" element={<Where />} /></Routes>
     </ConfirmProvider></ToastProvider>
