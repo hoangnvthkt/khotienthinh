@@ -24,7 +24,7 @@
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
-import { REPORT_KINDS, inventoryReport, procurementReport, reportRange, workflowReport, type BuiltReport, type ReportKind } from './reports.ts';
+import { REPORT_KINDS, inventoryReport, procurementReport, reportRange, workflowReport, type BuiltReport, type ReportKind , REPORT_KINDS_A2, attendanceReport, financeReport, leaveReport, officeReport, progressReport, requestsReport, vehicleReport, type ReportKindA2 } from './reports.ts';
 import { WORK_TOOLS, WORK_TOOL_INFO, WORK_TOOL_LABEL, runWorkTool } from './workTools.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
@@ -73,7 +73,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
   phep_nhan_vien: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'list_hrm_employee_directory', 'get_hrm_leave_ledger', 'list_hrm_leave_balances'], permission: 'Của mình: ai cũng xem; người khác / toàn công ty: HR (máy chủ chặn)', result: 'Số phép năm, sổ phép gần nhất' },
   chi_tiet_ho_so: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'get_hrm_employee_overview', 'get_hrm_employee_work_organization', 'get_hrm_employee_contract_employment'],
     permission: 'Mức xem hồ sơ: danh bạ / chính mình / quản lý trực tiếp / HR. Không bao giờ có lương, CCCD, số tài khoản, SĐT cá nhân', result: 'Chức danh, phòng ban, quản lý, ngày vào, hợp đồng + nút mở hồ sơ' },
-  bao_cao: { kind: 'bieu_do', rpcs: ['assistant_report_workflow_v1', 'assistant_report_inventory_v1', 'assistant_report_procurement_v1'], permission: 'Theo đúng quyền xem dữ liệu của người hỏi (RLS): phiếu quy trình có tên mình / mẫu mình quản lý, kho mình được vào, đơn hàng mình được xem', result: 'Thẻ biểu đồ: cột theo tuần / tháng, tròn theo mẫu / NCC / dự án / vật tư, ô số, nút Bảng' },
+  bao_cao: { kind: 'bieu_do', rpcs: ['assistant_report_workflow_v1', 'assistant_report_inventory_v1', 'assistant_report_procurement_v1', 'assistant_report_progress_v1', 'assistant_report_finance_v1', 'assistant_report_attendance_v1', 'assistant_report_leave_v1', 'assistant_report_requests_v1', 'assistant_report_vehicle_v1', 'assistant_report_office_v1'], permission: 'Theo đúng quyền xem dữ liệu của người hỏi (RLS): phiếu quy trình, kho, đơn hàng, nhật ký / hạng mục dự án, chấm công, đơn nghỉ, phiếu yêu cầu, chuyến xe, văn bản mình được xem; Tài chính cần quyền xem Tài chính (công nợ NCC cần quản lý)', result: 'Thẻ biểu đồ: cột / cột chồng / đường theo tuần / tháng, tròn theo mẫu / NCC / dự án / vật tư / loại / đơn vị, ô số, nút Bảng' },
   bien_dong_nhan_su: { kind: 'bieu_do', rpcs: ['get_hrm_headcount_trend_v1'], permission: 'Xem tổ chức (BLĐ, HR, trưởng bộ phận)', result: 'Thẻ biểu đồ: ô số, số người cuối tháng, vào làm / nghỉ việc, nút Bảng' },
   chuan_bi_don_nghi_phep: { kind: 'chuan_bi', rpcs: ['assistant_leave_types_v1', 'preview_my_leave_request', 'assistant_command_create_v1'], permission: 'Chỉ đơn của chính người hỏi', result: 'Thẻ đơn nghỉ nháp → người dùng bấm Gửi đơn', commandKind: 'leave_request' },
   chuan_bi_de_xuat_vat_tu: { kind: 'chuan_bi', rpcs: ['assistant_mr_projects_v1', 'assistant_command_create_v1'], permission: 'Dự án người hỏi được lập đề xuất', result: 'Form đề xuất gọn trong chat → Gửi duyệt / Lưu nháp', commandKind: 'material_request' },
@@ -141,14 +141,15 @@ export const TOOLS: ToolSpec[] = [
   // Biểu đồ (chủ SP 19/10): công cụ lấy số từ máy chủ rồi hiện thẻ biểu đồ; AI chỉ nhận xét, không tự vẽ, không tự cộng.
   {
     name: 'bao_cao',
-    description: 'BÁO CÁO / THỐNG KÊ / BIỂU ĐỒ theo kỳ (tuần hoặc tháng) và HIỆN THẺ BIỂU ĐỒ trong chat. loai: "phieu_quy_trinh" = phiếu quy trình tạo mới / hoàn thành / trả lại theo kỳ + theo mẫu; "kho_nhap_xuat" = nhập xuất kho theo kỳ (có vat_tu → số lượng + tồn hiện tại của vật tư đó; không → giá trị nhập / xuất và vật tư xuất nhiều), lọc theo kho; "don_mua" = đơn mua hàng theo kỳ, theo nhà cung cấp, theo dự án. Dùng khi hỏi báo cáo, thống kê, biểu đồ, bao nhiêu phiếu / đơn / giá trị theo tuần, tháng, quý, "tháng này", "quý 3", "3 tháng gần đây". Số theo đúng quyền xem của người hỏi. Nhân sự thì dùng bien_dong_nhan_su.',
+    description: 'BÁO CÁO / THỐNG KÊ / BIỂU ĐỒ theo kỳ (tuần hoặc tháng) và HIỆN THẺ BIỂU ĐỒ trong chat. loai: "phieu_quy_trinh" = phiếu quy trình tạo mới / hoàn thành / trả lại + theo mẫu; "kho_nhap_xuat" = nhập xuất kho (có vat_tu → số lượng + tồn của vật tư đó), lọc theo kho; "don_mua" = đơn mua theo kỳ / NCC / dự án; "tien_do_du_an" = tiến độ MỘT dự án theo tuần (% cuối kỳ từ nhật ký duyệt, hạng mục chậm kế hoạch, lý do chậm) — bắt buộc du_an; "tai_chinh" = thu / chi theo kỳ, chi theo hạng mục, theo dự án, công nợ NCC (du_an tùy chọn); "cham_cong" = lượt chấm công, người đi làm, nghỉ, công tác theo kỳ và theo công trường; "nghi_phep" = đơn nghỉ, ngày phép duyệt theo kỳ, theo loại, theo đơn vị; "yeu_cau" = phiếu yêu cầu tạo mới / duyệt / trả lại theo kỳ, theo mẫu, theo dự án; "dat_xe" = chuyến đặt xe theo kỳ, đơn vị, loại chuyến; "van_ban" = văn bản đến / đi / thông báo theo kỳ, theo loại, quá hạn xử lý. Dùng khi hỏi báo cáo, thống kê, biểu đồ, bao nhiêu… theo tuần, tháng, quý, "tháng này", "quý 3", "3 tháng gần đây". Số theo đúng quyền xem của người hỏi. Biến động quân số (vào / nghỉ việc) thì dùng bien_dong_nhan_su.',
     parameters: { type: 'object', additionalProperties: false, required: ['loai'], properties: {
-      loai: { type: 'string', enum: ['phieu_quy_trinh', 'kho_nhap_xuat', 'don_mua'], description: 'Loại báo cáo.' },
+      loai: { type: 'string', enum: ['phieu_quy_trinh', 'kho_nhap_xuat', 'don_mua', 'tien_do_du_an', 'tai_chinh', 'cham_cong', 'nghi_phep', 'yeu_cau', 'dat_xe', 'van_ban'], description: 'Loại báo cáo.' },
       tu_ngay: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD, VD "quý 3/2026" → 2026-07-01, "tháng này" → ngày 1 tháng này. Bỏ trống = 3 tháng gần nhất.' },
       den_ngay: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD; bỏ trống = hôm nay.' },
       nhom_theo: { type: 'string', enum: ['tuan', 'thang'], description: 'Nhóm theo tuần hay tháng; bỏ trống = tự chọn (≤ 70 ngày theo tuần).' },
       kho: { type: 'string', description: 'Tên kho (kho_nhap_xuat), VD "kho SMB". Bỏ trống = mọi kho được xem.' },
       vat_tu: { type: 'string', description: 'Tên / mã vật tư (kho_nhap_xuat) để xem số lượng nhập xuất và tồn của đúng vật tư đó.' },
+      du_an: { type: 'string', description: 'Mã / tên dự án: bắt buộc với tien_do_du_an (VD "SMB", "DA29"), tùy chọn với tai_chinh (bỏ trống = toàn công ty).' },
     } },
   },
   {
@@ -870,13 +871,67 @@ async function headcountTrend(args: Record<string, unknown>, ctx: ToolContext): 
 
 /** Báo cáo đợt A1: RPC tổng hợp (security invoker → theo quyền xem của chính người hỏi) → thẻ biểu đồ dùng chung. */
 async function report(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
-  const kind = str(args.loai, 40) as ReportKind | null;
-  if (!kind || !REPORT_KINDS.includes(kind)) return JSON.stringify({ loi: 'loai phải là phieu_quy_trinh | kho_nhap_xuat | don_mua. Nhân sự dùng bien_dong_nhan_su.' });
+  const kind = str(args.loai, 40) as ReportKind | ReportKindA2 | null;
+  if (!kind || !(REPORT_KINDS as string[]).includes(kind) && !(REPORT_KINDS_A2 as readonly string[]).includes(kind)) return JSON.stringify({ loi: 'loai phải là phieu_quy_trinh | kho_nhap_xuat | don_mua | tien_do_du_an | tai_chinh | cham_cong | nghi_phep | yeu_cau | dat_xe | van_ban. Biến động quân số dùng bien_dong_nhan_su.' });
   const range = reportRange(args, vnToday());
   if ('loi' in range) return JSON.stringify(range);
   const common = { p_from: range.from, p_to: range.to, p_group: range.group };
   let built: BuiltReport | null = null; let what = 'báo cáo';
-  if (kind === 'phieu_quy_trinh') {
+  // A2 (22/10): dự án theo mã / tên — một kết quả rõ thì lấy; nhiều kết quả sát nhau thì hỏi lại bằng gợi ý bấm.
+  const resolveProject = async (): Promise<{ id: string | null } | { reply: string }> => {
+    const q = str(args.du_an, 80);
+    if (!q) return { id: null };
+    const found = await searchRecords(ctx, q, ['project'], 5);
+    if (found.error) return { reply: toolError(found.error, 'dự án') };
+    if (found.denied.includes('project')) return { reply: JSON.stringify(outOfScope('dự án')) };
+    if (!found.records.length) return { reply: JSON.stringify({ loi: `Không thấy dự án "${q}" trong phạm vi người hỏi được xem. Hỏi lại mã / tên dự án.` }) };
+    if (found.records.length > 1 && (found.records[0].rank as number) < 80) {
+      return { reply: JSON.stringify({ can_chon_du_an: found.records.slice(0, 5).map(rec => compact({ ma: str(rec.code), ten: str(rec.title, 120) })),
+        ghi_chu: 'Nhiều dự án khớp — hỏi lại người dùng bằng gợi ý bấm [[goi_y:…]] với mã dự án, rồi gọi lại với du_an đúng mã.' }) };
+    }
+    return { id: String(found.records[0].id) };
+  };
+  if (kind === 'tien_do_du_an' || kind === 'tai_chinh') {
+    const project = await resolveProject();
+    if ('reply' in project) return project.reply;
+    if (kind === 'tien_do_du_an') {
+      what = 'tiến độ dự án';
+      if (!project.id) return JSON.stringify({ loi: 'Báo cáo tiến độ cần một dự án. Hỏi lại người dùng dự án nào (mã / tên), hoặc gợi ý bấm các dự án họ đang theo.' });
+      const r = await ctx.rpc('assistant_report_progress_v1', { ...common, p_project_id: project.id });
+      if (r.error) return toolError(r.error, what);
+      built = progressReport(r.data, range);
+    } else {
+      what = 'thu chi';
+      const r = await ctx.rpc('assistant_report_finance_v1', { ...common, p_project_id: project.id });
+      if (r.error) return toolError(r.error, 'tài chính');
+      built = financeReport(r.data, range);
+    }
+  } else if (kind === 'cham_cong') {
+    what = 'chấm công';
+    const r = await ctx.rpc('assistant_report_attendance_v1', common);
+    if (r.error) return toolError(r.error, what);
+    built = attendanceReport(r.data, range);
+  } else if (kind === 'nghi_phep') {
+    what = 'nghỉ phép';
+    const r = await ctx.rpc('assistant_report_leave_v1', common);
+    if (r.error) return toolError(r.error, what);
+    built = leaveReport(r.data, range);
+  } else if (kind === 'yeu_cau') {
+    what = 'phiếu yêu cầu';
+    const r = await ctx.rpc('assistant_report_requests_v1', common);
+    if (r.error) return toolError(r.error, what);
+    built = requestsReport(r.data, range);
+  } else if (kind === 'dat_xe') {
+    what = 'đặt xe';
+    const r = await ctx.rpc('assistant_report_vehicle_v1', common);
+    if (r.error) return toolError(r.error, what);
+    built = vehicleReport(r.data, range);
+  } else if (kind === 'van_ban') {
+    what = 'văn bản';
+    const r = await ctx.rpc('assistant_report_office_v1', common);
+    if (r.error) return toolError(r.error, what);
+    built = officeReport(r.data, range);
+  } else if (kind === 'phieu_quy_trinh') {
     what = 'phiếu quy trình';
     const r = await ctx.rpc('assistant_report_workflow_v1', common);
     if (r.error) return toolError(r.error, what);
