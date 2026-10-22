@@ -244,6 +244,22 @@ export const getRuntimeWorkflowFlowNodes = (context: Pick<ProjectWorkflowRuntime
   return ordered;
 };
 
+/**
+ * Board lanes a running snapshot still needs: the step the request sits on plus the
+ * step(s) it can be moved to next. Steps already passed — or removed from the template
+ * since (e.g. "Phòng QLDA duyệt" on DA29's older shared template) — must not come back
+ * as empty columns. Finished subjects add no lanes.
+ */
+export const getRuntimeWorkflowLaneNodes = (context: ProjectWorkflowRuntimeContext): WorkflowRuntimeNode[] => {
+  if (context.subject.status !== 'RUNNING') return [];
+  const currentId = context.subject.currentInstanceNodeId;
+  if (!currentId) return [];
+  const nextIds = new Set(context.edges
+    .filter(edge => edge.sourceInstanceNodeId === currentId)
+    .map(edge => edge.targetInstanceNodeId));
+  return context.nodes.filter(node => node.id === currentId || nextIds.has(node.id));
+};
+
 export const projectWorkflowService = {
   async getConfiguration(
     subjectType: ProjectWorkflowSubjectType,

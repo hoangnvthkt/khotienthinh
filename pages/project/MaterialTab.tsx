@@ -20,7 +20,7 @@ import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import type { ProjectMaterialTabKey, ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
 import { getMaterialRequestWorkflowLaneId, materialRequestService, type MaterialRequestAggregateRow } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
-import { getRuntimeWorkflowFlowNodes, projectWorkflowService } from '../../lib/projectWorkflowService';
+import { getRuntimeWorkflowFlowNodes, getRuntimeWorkflowLaneNodes, projectWorkflowService } from '../../lib/projectWorkflowService';
 import { projectWorkflowBoardService } from '../../lib/projectWorkflowBoardService';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -705,8 +705,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => new Map(workflowNodes.map(node => [node.id, node])),
         [workflowNodes],
     );
+    // Chỉ bước phiếu đang đứng + bước kế tiếp; bước đã qua / đã bỏ khỏi mẫu không thành cột trống.
     const requestWorkflowRuntimeNodes = useMemo(
-        () => Object.values(requestWorkflowRuntimeContexts).flatMap(getRuntimeWorkflowFlowNodes),
+        () => Object.values(requestWorkflowRuntimeContexts).flatMap(getRuntimeWorkflowLaneNodes),
         [requestWorkflowRuntimeContexts],
     );
     const workflowEdgesBySource = useMemo(() => {
