@@ -33,7 +33,7 @@ export const getApiErrorMessage = (
   if (!rawMessage) return fallbackMessage;
 
   // Lỗi nghiệp vụ có câu tiếng Việt sau mã (vd. "BUSINESS_DATE_BACKDATE: Ngày … cần quyền …") — hiện đúng câu đó.
-  const coded = originalMessage?.match(/^(?:BUSINESS_DATE_[A-Z_]+|PURCHASE_RECEIPT_RECON_OPEN|WMS_[A-Z_]+|INVENTORY_NEGATIVE_STOCK): (.+)$/s);
+  const coded = originalMessage?.match(/^(?:BUSINESS_DATE_[A-Z_]+|PURCHASE_RECEIPT_RECON_OPEN|WMS_[A-Z_]+|INVENTORY_NEGATIVE_STOCK|LOCKED_[A-Z_]+): (.+)$/s);
   if (coded) return coded[1].trim();
 
   if (rawMessage.includes('purchase_order_create_moved_to_procurement')) {
