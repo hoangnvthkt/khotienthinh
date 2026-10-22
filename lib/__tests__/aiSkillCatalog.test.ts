@@ -13,7 +13,8 @@ describe('Trung tâm AI · xem bên trong skill — danh mục từ mã cổng',
     for (const t of TOOLS) {
       const info = TOOL_INFO[t.name];
       expect(info, t.name).toBeTruthy();
-      expect(info.permission && info.result && info.rpcs.length, t.name).toBeTruthy();
+      // so_tay (B3) không đọc dữ liệu: rpcs rỗng là đúng; công cụ khác phải khai lệnh máy chủ.
+      expect(info.permission && info.result && (info.rpcs.length || t.name === 'so_tay'), t.name).toBeTruthy();
       expect(info.kind === 'chuan_bi', t.name).toBe(t.name.startsWith('chuan_bi_'));
       if (info.kind === 'chuan_bi') expect(info.commandKind, t.name).toBeTruthy();
     }

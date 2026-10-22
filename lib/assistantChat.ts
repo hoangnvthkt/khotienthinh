@@ -13,7 +13,9 @@ export const CHAT_SKILL = 'assistant_chat';
 /** Nguồn của câu trả lời: khóa dòng số liệu bản tin, hồ sơ công cụ tìm được (màn hình tự biết mở màn nào) hoặc một việc. */
 /** Thẻ biểu đồ (19/10) công cụ dựng từ số máy chủ — đi kèm câu trả lời, không phải nút mở. */
 export type ChatSource = string | { ref: string; type: 'record'; record: ServerRecord } | { ref: string; type: 'work'; item: WorkItem }
-  | { ref: string; type: 'chart'; chart: ChartSpec };
+  | { ref: string; type: 'chart'; chart: ChartSpec }
+  /** B3 (22/10): màn hình / thao tác từ sổ tay — nút mở đường dẫn. */
+  | { ref: string; type: 'page'; page: { route: string; label: string; title: string | null } };
 export type ChartSource = Extract<ChatSource, { type: 'chart' }>;
 export const isChartSource = (s: ChatSource): s is ChartSource => typeof s !== 'string' && s.type === 'chart';
 export interface ChatToolUse { name: string; label: string; query: string }
@@ -74,6 +76,11 @@ export const parseSources = (raw: unknown): ChatSource[] => (Array.isArray(raw) 
   if (o.type === 'chart') {
     const chart = parseChart(o.chart);
     return chart ? [{ ref, type: 'chart', chart }] : [];
+  }
+  if (o.type === 'page') {
+    const p = (o.page && typeof o.page === 'object' ? o.page : {}) as Record<string, unknown>;
+    const route = str(p.route);
+    return route.startsWith('/') ? [{ ref, type: 'page', page: { route, label: str(p.label) || route, title: str(p.title) || null } }] : [];
   }
   return [];
 });

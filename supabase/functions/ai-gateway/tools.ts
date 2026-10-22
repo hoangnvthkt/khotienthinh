@@ -19,12 +19,14 @@
 //   chuan_bi_don_mua         list_procurement_proactive_options_v1 + list_procurement_vendors_v1 → lệnh nháp purchase_order (form đơn mua trong chat)
 //   chuan_bi_nhat_ky         assistant_daily_log_projects_v1 → lệnh nháp daily_log (thẻ đọc báo cáo bằng bộ của màn Nhật ký, tạo phiếu nháp)
 //   chuan_bi_ghi_nho         → lệnh nháp memory_note (T4b: thẻ sửa chữ, người dùng bấm Lưu ghi nhớ)
+//   so_tay                   sổ tay Vioo (B3 22/10): "làm sao để…" → mục hướng dẫn sinh từ docs/so-tay + hướng dẫn Dự án + danh mục màn / thao tác; nút mở màn
 //   chuan_bi_su_co                → lệnh nháp issue_report (B2 21/10: phiếu sự cố → người dùng bấm Gửi Admin → Góp ý; Jev chọn loại + mức khẩn)
 //   viec_giao · tom_tat_viec · chuan_bi_giao_viec  Vioo Work (workTools.ts) — lệnh nháp work_task (thẻ form giao việc, người dùng bấm Giao)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
 // Tệp này không dùng API Deno để vitest kiểm thử được (lệnh máy chủ truyền vào qua `rpc`).
 import type { SourceBook, ToolSpec } from './agent.ts';
 import { REPORT_KINDS, inventoryReport, procurementReport, reportRange, workflowReport, type BuiltReport, type ReportKind , REPORT_KINDS_A2, attendanceReport, financeReport, leaveReport, officeReport, progressReport, requestsReport, vehicleReport, type ReportKindA2 } from './reports.ts';
+import { searchHandbook } from './handbook.ts';
 import { WORK_TOOLS, WORK_TOOL_INFO, WORK_TOOL_LABEL, runWorkTool } from './workTools.ts';
 
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string; code?: string } | null }>;
@@ -55,6 +57,7 @@ export const KIND_LABEL: Record<string, string> = {
 const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
+  so_tay: 'Sổ tay Vioo',
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   bien_dong_nhan_su: 'Biến động nhân sự', bao_cao: 'Báo cáo',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ', chuan_bi_su_co: 'Chuẩn bị phiếu sự cố',
@@ -73,6 +76,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
   phep_nhan_vien: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'list_hrm_employee_directory', 'get_hrm_leave_ledger', 'list_hrm_leave_balances'], permission: 'Của mình: ai cũng xem; người khác / toàn công ty: HR (máy chủ chặn)', result: 'Số phép năm, sổ phép gần nhất' },
   chi_tiet_ho_so: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'get_hrm_employee_overview', 'get_hrm_employee_work_organization', 'get_hrm_employee_contract_employment'],
     permission: 'Mức xem hồ sơ: danh bạ / chính mình / quản lý trực tiếp / HR. Không bao giờ có lương, CCCD, số tài khoản, SĐT cá nhân', result: 'Chức danh, phòng ban, quản lý, ngày vào, hợp đồng + nút mở hồ sơ' },
+  so_tay: { kind: 'tra_cuu', rpcs: [], permission: 'Không đọc dữ liệu nghiệp vụ — chỉ sổ tay dựng sẵn (docs/so-tay, hướng dẫn Dự án, danh mục màn hình / thao tác); mở được màn hay không vẫn do quyền của người dùng khi bấm', result: 'Các bước làm + nút mở màn hình / thao tác' },
   bao_cao: { kind: 'bieu_do', rpcs: ['assistant_report_workflow_v1', 'assistant_report_inventory_v1', 'assistant_report_procurement_v1', 'assistant_report_progress_v1', 'assistant_report_finance_v1', 'assistant_report_attendance_v1', 'assistant_report_leave_v1', 'assistant_report_requests_v1', 'assistant_report_vehicle_v1', 'assistant_report_office_v1'], permission: 'Theo đúng quyền xem dữ liệu của người hỏi (RLS): phiếu quy trình, kho, đơn hàng, nhật ký / hạng mục dự án, chấm công, đơn nghỉ, phiếu yêu cầu, chuyến xe, văn bản mình được xem; Tài chính cần quyền xem Tài chính (công nợ NCC cần quản lý)', result: 'Thẻ biểu đồ: cột / cột chồng / đường theo tuần / tháng, tròn theo mẫu / NCC / dự án / vật tư / loại / đơn vị, ô số, nút Bảng' },
   bien_dong_nhan_su: { kind: 'bieu_do', rpcs: ['get_hrm_headcount_trend_v1'], permission: 'Xem tổ chức (BLĐ, HR, trưởng bộ phận)', result: 'Thẻ biểu đồ: ô số, số người cuối tháng, vào làm / nghỉ việc, nút Bảng' },
   chuan_bi_don_nghi_phep: { kind: 'chuan_bi', rpcs: ['assistant_leave_types_v1', 'preview_my_leave_request', 'assistant_command_create_v1'], permission: 'Chỉ đơn của chính người hỏi', result: 'Thẻ đơn nghỉ nháp → người dùng bấm Gửi đơn', commandKind: 'leave_request' },
@@ -139,6 +143,14 @@ export const TOOLS: ToolSpec[] = [
     } },
   },
   // Biểu đồ (chủ SP 19/10): công cụ lấy số từ máy chủ rồi hiện thẻ biểu đồ; AI chỉ nhận xét, không tự vẽ, không tự cộng.
+  // B3 (22/10): sổ tay — câu "làm sao / cách / ở đâu / hướng dẫn" về cách dùng phần mềm.
+  {
+    name: 'so_tay',
+    description: 'SỔ TAY VIOO: tra cách dùng phần mềm khi người dùng hỏi "làm sao để…", "cách…", "ở đâu…", "hướng dẫn…", "không biết làm thế nào…" về một việc trong Vioo (xin nghỉ phép, chấm công, lập đề xuất vật tư, lập đơn hàng, nhận hàng, xuất kho, nhật ký, phiếu quy trình, đặt xe, đề nghị chi, văn bản, góp ý, Trợ lý, tìm kiếm…). Trả về các bước đúng màn hình thật và mã hN của màn để chèn nút mở. KHÔNG dùng để tra số liệu / hồ sơ (dùng công cụ khác).',
+    parameters: { type: 'object', additionalProperties: false, required: ['cau_hoi'], properties: {
+      cau_hoi: { type: 'string', description: 'Việc người dùng muốn làm, viết gọn bằng từ khóa nghiệp vụ, VD "xin nghỉ phép", "chụp phiếu giao nhận hàng", "chấm công bù khi quên chấm".' },
+    } },
+  },
   {
     name: 'bao_cao',
     description: 'BÁO CÁO / THỐNG KÊ / BIỂU ĐỒ theo kỳ (tuần hoặc tháng) và HIỆN THẺ BIỂU ĐỒ trong chat. loai: "phieu_quy_trinh" = phiếu quy trình tạo mới / hoàn thành / trả lại + theo mẫu; "kho_nhap_xuat" = nhập xuất kho (có vat_tu → số lượng + tồn của vật tư đó), lọc theo kho; "don_mua" = đơn mua theo kỳ / NCC / dự án; "tien_do_du_an" = tiến độ MỘT dự án theo tuần (% cuối kỳ từ nhật ký duyệt, hạng mục chậm kế hoạch, lý do chậm) — bắt buộc du_an; "tai_chinh" = thu / chi theo kỳ, chi theo hạng mục, theo dự án, công nợ NCC (du_an tùy chọn); "cham_cong" = lượt chấm công, người đi làm, nghỉ, công tác theo kỳ và theo công trường; "nghi_phep" = đơn nghỉ, ngày phép duyệt theo kỳ, theo loại, theo đơn vị; "yeu_cau" = phiếu yêu cầu tạo mới / duyệt / trả lại theo kỳ, theo mẫu, theo dự án; "dat_xe" = chuyến đặt xe theo kỳ, đơn vị, loại chuyến; "van_ban" = văn bản đến / đi / thông báo theo kỳ, theo loại, quá hạn xử lý. Dùng khi hỏi báo cáo, thống kê, biểu đồ, bao nhiêu… theo tuần, tháng, quý, "tháng này", "quý 3", "3 tháng gần đây". Số theo đúng quyền xem của người hỏi. Biến động quân số (vào / nghỉ việc) thì dùng bien_dong_nhan_su.',
@@ -1074,6 +1086,16 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
   if (name === 'chuan_bi_de_xuat_vat_tu') return prepareMaterialRequest(args, ctx);
   if (name === 'chuan_bi_don_mua') return prepareOrder(args, ctx);
   if (name === 'chuan_bi_nhat_ky') return prepareDailyLog(args, ctx);
+  if (name === 'so_tay') {
+    const q = str(args.cau_hoi, 200) || str(ctx.question, 200) || '';
+    const hits = searchHandbook(q, 3);
+    if (!hits.length) return JSON.stringify({ ket_qua: [], ghi_chu: `Sổ tay chưa có mục cho "${q}". Nói rõ với người dùng là chưa có hướng dẫn sẵn cho việc này, gợi ý thử ô Tìm kiếm với tên màn / thao tác, hoặc gửi góp ý để bổ sung. Không bịa bước.` });
+    const ket_qua = hits.map(h => {
+      const refs = h.entry.routes.slice(0, 2).map(r => ({ ma: ctx.book.page(r.route, r.label, h.entry.title), nhan: r.label }));
+      return compact({ tieu_de: h.entry.title, phan_he: h.entry.module, quyen: h.entry.permission, noi_dung: h.entry.body, mo_man: refs });
+    });
+    return JSON.stringify({ ket_qua, ghi_chu: 'Trả lời bằng các bước ngắn đúng theo noi_dung của mục khớp nhất (không thêm bước, không đổi tên nút); chèn [[hN]] của mo_man ngay sau câu nhắc mở màn để hiện nút. Nếu 2 mục cùng khớp, hỏi lại một câu bằng gợi ý bấm [[goi_y:…]] thay vì trả lời cả hai. Nhắc quyền nếu mục ghi quyen.' });
+  }
   if (name === 'chuan_bi_ghi_nho') return prepareMemoryNote(args, ctx);
   if (name === 'chuan_bi_su_co') return prepareIssueReport(args, ctx);
 

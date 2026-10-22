@@ -17,6 +17,8 @@ export interface ToolSpec { name: string; description: string; parameters: Recor
 export type SourceRef =
   | { ref: string; type: 'record'; record: Record<string, unknown> }
   | { ref: string; type: 'work'; item: Record<string, unknown> }
+  /** B3 (22/10): màn hình / thao tác từ sổ tay — client vẽ nút mở đường dẫn. */
+  | { ref: string; type: 'page'; page: { route: string; label: string; title?: string } }
   /** Thẻ biểu đồ công cụ dựng từ số máy chủ (lib/assistantChart.ts đọc lại) — luôn đi kèm câu trả lời, không cần AI dẫn. */
   | { ref: string; type: 'chart'; chart: Record<string, unknown> };
 
@@ -104,6 +106,17 @@ export class SourceBook {
     if (hit) return hit;
     const ref = `h${this.items.length + 1}`;
     this.items.push({ ref, type: 'work', item });
+    this.byKey.set(key, ref);
+    return ref;
+  }
+
+  /** Màn hình / thao tác (sổ tay): mã hN như hồ sơ; cùng đường dẫn thì dùng lại mã. */
+  page(route: string, label: string, title?: string): string {
+    const key = `p:${route}`;
+    const hit = this.byKey.get(key);
+    if (hit) return hit;
+    const ref = `h${this.items.length + 1}`;
+    this.items.push({ ref, type: 'page', page: { route, label, ...(title ? { title } : {}) } });
     this.byKey.set(key, ref);
     return ref;
   }
