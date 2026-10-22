@@ -432,6 +432,10 @@ const AssistantView: React.FC<{
       const item = source.item;
       return [{ key: `w:${item.source}:${item.id}`, label: displayCode(item), title: item.title, disabled: false, open: () => onOpenItem(item) }];
     }
+    if (source.type === 'page') {
+      const { route, label, title } = source.page;
+      return [{ key: `p:${route}`, label, title: title || label, disabled: false, open: () => { if (onOpenRoute) onOpenRoute(route, label); else onDrill({ kind: 'route', path: route, title: label }); } }];
+    }
     const record = source.record;
     const label = record.code || record.title || 'Hồ sơ';
     return [{ key: `r:${record.kind}:${record.id}`, label, title: [record.title, record.subtitle].filter(Boolean).join(' · '), disabled: false, open: () => {

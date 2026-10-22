@@ -21,7 +21,8 @@
     "smoke:project": "supabase db query --linked -f scripts/smoke-project-construction-flow.sql",
     "smoke:procurement": "npx supabase db query --linked --agent=no -f supabase/tests/company_procurement_flow_smoke.sql",
     "smoke:vehicle-booking-phase3": "npx --yes supabase@2.110.0 db query --linked --file supabase/tests/vehicle_booking_phase3_smoke.sql",
-    "smoke:hrm-workforce": "npx supabase db query --linked --agent=no --file supabase/tests/hrm_workforce_planning_smoke.sql"
+    "smoke:hrm-workforce": "npx supabase db query --linked --agent=no --file supabase/tests/hrm_workforce_planning_smoke.sql",
+    "handbook:build": "node scripts/handbook/build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
