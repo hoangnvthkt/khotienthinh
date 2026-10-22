@@ -27,6 +27,17 @@ const getSignedUrl = async (attachmentId: string, variant = 'original') => {
   return url;
 };
 
+// "Edge Function returned a non-2xx status code" tells the user nothing; say what to do instead.
+const describeProcessError = async (error: unknown) => {
+  const context = (error as { context?: { json?: () => Promise<unknown> } })?.context;
+  let code = '';
+  if (typeof context?.json === 'function') {
+    try { code = String((await context.json() as { error?: unknown })?.error || ''); } catch { /* keep default */ }
+  }
+  if (code === 'REQUEST_INVALID_FILE') return 'Tệp không đọc được hoặc ảnh quá lớn (tối đa 4.096 px mỗi cạnh, 4 triệu điểm ảnh).';
+  return 'Máy chủ chưa xử lý được tệp. Bấm × rồi đính kèm lại.';
+};
+
 export const requestAttachmentService = {
   async upload(requestId: string, file: File, idempotencyKey: string): Promise<string> {
     const kind = validateRequestAttachment(file);
@@ -36,7 +47,7 @@ export const requestAttachmentService = {
     const { error: uploadError } = await supabase.storage.from('request-attachments').upload(reservation.storagePath, file, { contentType: file.type, upsert: false });
     if (uploadError) throw uploadError;
     const { error: processError } = await supabase.functions.invoke('request-attachment-processor', { body: { attachmentId: reservation.attachmentId } });
-    if (processError) throw processError;
+    if (processError) throw new Error(await describeProcessError(processError));
     return reservation.attachmentId;
   },
   async open(attachmentId: string, variant = 'original') {
