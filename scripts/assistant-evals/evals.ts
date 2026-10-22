@@ -31,6 +31,17 @@ const PO646_DETAIL = { poNumber: 'PO-646', status: 'confirmed', vendorName: 'CÔ
   totalAmount: 632000000, vatRate: 8, deliveries: [{}, {}], lines: [{ name: 'Thép hình H300', unit: 'tấn', qty: 40, receivedQty: 32, remainingToDeliver: 8, unitPrice: 15800000 }] };
 const PO646_PAYMENT = { 'po-646': { status: 'partial', recognized: 505600000, paid: 300000000, outstanding: 205600000, overdue: false } };
 const ITEM_D16 = { kind: 'item', id: 'it-d16', code: 'VT0000116', title: 'Thép vằn D16 CB400', subtitle: 'Thép', extra: { unit: 'kg' } };
+const PROJECT_SMB = { kind: 'project', id: 'p-smb', code: 'SMB-2026', title: 'Nhà máy SMB Hưng Yên', subtitle: 'Công ty CP SMB', status: 'active', rank: 100 };
+// Báo cáo A2 (22/10): số giả cho tiến độ / thu chi / nghỉ phép — ghi lại tham số để kiểm dự án, khoảng ngày.
+const REPORT_PROGRESS = { project: { id: 'p-smb', code: 'SMB-2026', name: 'Nhà máy SMB Hưng Yên' },
+  buckets: [{ start: '2026-09-28', logs: 5, logsVerified: 5, tasksUpdated: 6, progressEnd: 61.2 }, { start: '2026-10-05', logs: 6, logsVerified: 5, tasksUpdated: 7, progressEnd: 64.9 }, { start: '2026-10-12', logs: 6, logsVerified: 6, tasksUpdated: 8, progressEnd: 67.1 }, { start: '2026-10-19', logs: 1, logsVerified: 1, tasksUpdated: 2, progressEnd: 68 }],
+  now: { tasks: 300, done: 120, late: 45, progress: 68, tracked: 40 }, lateTasks: [{ name: 'Xây tường tầng 4 + tầng tum', end: '2026-10-10', progress: 45, days: 10, reason: null }, { name: 'Sơn tường trong nhà tầng 1', end: '2026-10-15', progress: 30, days: 5, reason: 'Thiếu thợ sơn' }],
+  delays: [{ category: 'material', count: 3, days: 6 }] };
+const REPORT_FIN = { canManage: true, project: null, buckets: [{ start: '2026-08-01', in: 2_000_000_000, out: 1_500_000_000 }, { start: '2026-09-01', in: 500_000_000, out: 1_200_000_000 }, { start: '2026-10-01', in: 0, out: 300_000_000 }],
+  totalIn: 2_500_000_000, totalOut: 3_000_000_000, byCategory: [{ name: 'Vật tư', amount: 2_000_000_000 }, { name: 'Nhân công', amount: 1_000_000_000 }], byProject: [{ code: 'SMB-2026', in: 2_500_000_000, out: 2_000_000_000 }, { code: 'DA29', in: 0, out: 1_000_000_000 }],
+  payable: { outstanding: 4_200_000_000, overdue: 800_000_000, soon: 300_000_000, docs: 12, top: [{ name: 'Hanaka', outstanding: 1_500_000_000 }] } };
+const REPORT_LEAVE = { total: 24, people: 15, pendingNow: 3, buckets: [{ start: '2026-08-01', requests: 8, approvedDays: 12.5, pending: 0 }, { start: '2026-09-01', requests: 10, approvedDays: 9, pending: 1 }, { start: '2026-10-01', requests: 6, approvedDays: 4, pending: 2 }],
+  byType: [{ name: 'Nghỉ phép năm', count: 15, days: 20 }, { name: 'Nghỉ không lương', count: 9, days: 5.5 }], byUnit: [{ name: 'Phòng Kỹ thuật', count: 10, days: 14 }, { name: 'Phòng Kế toán', count: 6, days: 7 }], byStatus: { approved: 19, pending: 3, rejected: 2 } };
 const STOCK_D16 = [{ itemId: 'it-d16', warehouseId: 'wh-smb', warehouseName: 'Kho SMB', qty: 12400, unit: 'kg' }, { itemId: 'it-d16', warehouseId: 'wh-hq', warehouseName: 'Kho tổng Hưng Yên', qty: 3000, unit: 'kg' }];
 const HUONG_LEDGER = { balance: { year: 2026, accruedDays: 12, usedPaidDays: 2.5, usedUnpaidDays: 0, carriedDays: 0, carryUsedDays: 0, carryExpiredDays: 0, carryExpiresOn: null, carryLeft: 0, availableDays: 9.5, pendingDays: 1 },
   entries: [{ id: 'l1', kind: 'leave', days: -1.5, balanceAfter: 9.5, createdAt: '2026-10-02T03:00:00Z', leaveCode: 'NP-2026-031', leaveStart: '2026-10-06', leaveEnd: '2026-10-07' }] };
@@ -70,6 +81,9 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
   if (fn === 'assistant_report_workflow_v1') { created.push({ p_kind: 'rpc:report', p_title: 'workflow', p_payload: args }); return { data: REPORT_WF, error: null }; }
   if (fn === 'assistant_report_inventory_v1') { created.push({ p_kind: 'rpc:report', p_title: 'inventory', p_payload: args }); return { data: args.p_item_id ? REPORT_INV_ITEM : REPORT_INV, error: null }; }
   if (fn === 'assistant_report_procurement_v1') { created.push({ p_kind: 'rpc:report', p_title: 'procurement', p_payload: args }); return { data: REPORT_PO, error: null }; }
+  if (fn === 'assistant_report_progress_v1') { created.push({ p_kind: 'rpc:report', p_title: 'progress', p_payload: args }); return { data: args.p_project_id === 'p-smb' ? REPORT_PROGRESS : null, error: null }; }
+  if (fn === 'assistant_report_finance_v1') { created.push({ p_kind: 'rpc:report', p_title: 'finance', p_payload: args }); return deny.includes(fn) ? { data: null, error: { message: 'FINANCE_VIEW_DENIED', code: '42501' } } : { data: REPORT_FIN, error: null }; }
+  if (fn === 'assistant_report_leave_v1') { created.push({ p_kind: 'rpc:report', p_title: 'leave', p_payload: args }); return { data: REPORT_LEAVE, error: null }; }
   if (fn === 'get_hrm_leave_ledger') return { data: args.p_employee_id === 'e-huong' ? HUONG_LEDGER : { balance: null, entries: [] }, error: null };
   if (fn === 'assistant_leave_types_v1') return { data: LEAVE_TYPES, error: null };
   if (fn === 'preview_my_leave_request') return { data: { days: 1, annualRemaining: 6, steps: [{ label: 'Quản lý trực tiếp', name: 'Hà Đức Chuẩn' }], problems: [] }, error: null };
@@ -81,7 +95,7 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
     const kinds = (args.p_kinds as string[] | null) || ['employee', 'purchase_order', 'item'];
     const terms = JSON.stringify(args.p_terms);
     const want = (kind: string, re: RegExp) => kinds.includes(kind) && !hidden.includes(kind) && re.test(terms);
-    const records = [...(want('employee', /huong/) ? [HUONG] : []), ...(want('purchase_order', /646/) ? [PO646] : []), ...(want('item', /thep|d16/) ? [ITEM_D16] : [])];
+    const records = [...(want('employee', /huong/) ? [HUONG] : []), ...(want('purchase_order', /646/) ? [PO646] : []), ...(want('item', /thep|d16/) ? [ITEM_D16] : []), ...(want('project', /smb/i) ? [PROJECT_SMB] : [])];
     return { data: { records, denied: [], failed: [] }, error: null };
   }
   if (fn === 'vcc_my_work_items_v1') return { data: [], error: null };
@@ -264,6 +278,25 @@ export const CASES: EvalCase[] = [
       return firstFail(fail(!o.tools.includes('Báo cáo'), `không gọi bao_cao (gọi: ${o.tools.join(', ') || 'không gì'})`), fail(!call, 'không gọi RPC sổ kho'),
         fail(!a.p_item_id, 'không lọc theo vật tư (vat_tu)'), fail(!/smb/i.test(a.p_warehouse || ''), `không lọc kho SMB (kho=${a.p_warehouse})`), fail(a.p_from !== '2026-10-01', `ngày bắt đầu phải 2026-10-01 (được ${a.p_from})`),
         fail(!/6[.,]300/.test(o.text) || !/2[.,]200/.test(o.text), 'không nêu nhập 6.300 / tồn 2.200')); } },
+  { id: 'report-progress-smb', bug: 'Báo cáo A2: "tiến độ SMB 4 tuần gần đây" → bao_cao tien_do_du_an với du_an SMB, nhóm tuần; nêu 68 % hiện tại, 45 hạng mục chậm, nhắc lý do chậm vật tư', q: 'Tiến độ dự án SMB 4 tuần gần đây thế nào, hạng mục nào chậm?',
+    check: o => {
+      const r = o.created.find(x => x.p_kind === 'rpc:report' && x.p_title === 'progress');
+      return firstFail(fail(!r, 'không gọi assistant_report_progress_v1'), fail(r?.p_payload.p_project_id !== 'p-smb', `dự án = ${r?.p_payload.p_project_id}`), fail(r?.p_payload.p_group !== 'week', `nhóm = ${r?.p_payload.p_group}`),
+        fail(!/68/.test(o.text), 'không nêu 68 %'), fail(!/45/.test(o.text) && !/xây tường/i.test(o.text), 'không nêu hạng mục chậm'), fail(/\|.*\|.*\|/.test(o.text), 'vẽ bảng'));
+    } },
+  { id: 'report-finance-q3', bug: 'Báo cáo A2: "thu chi quý 3" → bao_cao tai_chinh 01/07–30/09, nêu thu 2,5 tỷ / chi 3 tỷ và công nợ NCC 4,2 tỷ', q: 'Thu chi quý 3 năm nay của công ty thế nào, công nợ nhà cung cấp còn bao nhiêu?',
+    check: o => {
+      const r = o.created.find(x => x.p_kind === 'rpc:report' && x.p_title === 'finance');
+      return firstFail(fail(!r, 'không gọi assistant_report_finance_v1'), fail(r?.p_payload.p_from !== '2026-07-01' || r?.p_payload.p_to !== '2026-09-30', `khoảng ${r?.p_payload.p_from} → ${r?.p_payload.p_to}`),
+        fail(!/2[,.]5|2\.500|2500/.test(o.text), 'không nêu thu 2,5 tỷ'), fail(!/4[,.]2|4\.200|4200/.test(o.text), 'không nêu công nợ 4,2 tỷ'));
+    } },
+  { id: 'report-finance-denied', bug: 'Báo cáo A2: nhân viên không có quyền Tài chính hỏi thu chi → RPC chặn 42501 → nói ngoài quyền, không bịa số', q: 'Thu chi tháng này của công ty bao nhiêu?', deny: ['assistant_report_finance_v1'],
+    check: deniedAnswerCheck('bao_cao', /\d[\d.,]*\s*(tỷ|triệu|đ\b|đồng)/i) },
+  { id: 'report-leave-unit', bug: 'Báo cáo A2: "nghỉ phép 3 tháng gần đây theo phòng" → bao_cao nghi_phep, nêu 24 đơn, 25,5 ngày, Phòng Kỹ thuật nhiều nhất', q: 'Thống kê nghỉ phép 3 tháng gần đây theo phòng ban giúp anh',
+    check: o => {
+      const r = o.created.find(x => x.p_kind === 'rpc:report' && x.p_title === 'leave');
+      return firstFail(fail(!r, 'không gọi assistant_report_leave_v1'), fail(!/24/.test(o.text), 'không nêu 24 đơn'), fail(!/kỹ thuật/i.test(o.text), 'không nêu phòng nhiều nhất'));
+    } },
   { id: 'report-po-vendor', bug: 'Báo cáo A1: "giá trị đơn mua 3 tháng gần đây theo NCC" → bao_cao don_mua mặc định 3 tháng, nêu tổng 7,5 tỷ và NCC lớn nhất Hợp Thành', q: 'Giá trị đơn mua 3 tháng gần đây theo nhà cung cấp thế nào?',
     check: o => { const call = o.created.find(c => c.p_kind === 'rpc:report' && c.p_title === 'procurement');
       return firstFail(fail(!o.tools.includes('Báo cáo'), `không gọi bao_cao (gọi: ${o.tools.join(', ') || 'không gì'})`), fail(!call, 'không gọi RPC đơn mua'),

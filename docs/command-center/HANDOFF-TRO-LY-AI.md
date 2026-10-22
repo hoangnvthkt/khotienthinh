@@ -70,6 +70,10 @@ ai-gateway (supabase/functions/ai-gateway)
              AI_TIMEOUT / AI_UNREACHABLE / AI_HTTP_<mã> → lib/aiGateway.ts aiFailureMessage nói đúng chuyện ở mọi màn (Kho, Lập đơn, Đề xuất, Trợ lý)
   chat.ts    (19/10) parseChatHits / foundLines: hồ sơ ô tìm ngay gửi kèm → <du_lieu loai="tim_thay"> với mã hN (SourceBook) — AI dùng trước, không gọi tim_ho_so
   reports.ts (20/10) bao_cao: 3 RPC assistant_report_{workflow,inventory,procurement}_v1 (security invoker → theo quyền xem RLS) → thẻ biểu đồ cột / cột chồng / tròn (lib/assistantChart.ts kinds line|bar|stacked|donut, nhãn riêng từng khung)
+             A2 (22/10) thêm 7 loại: tien_do_du_an (assistant_report_progress_v1, bắt buộc du_an — % cuối tuần từ nhật ký duyệt × trọng số ngày KH, hạng mục quá hạn, project_delay_events),
+             tai_chinh (assistant_report_finance_v1: DEFINER + finance_can('view'); thu / chi từ project_transactions; công nợ NCC khi finance_can('manage')), cham_cong, nghi_phep (đơn vị qua
+             app_private.assistant_employee_unit_names vì employees không mở cho authenticated), yeu_cau (requests), dat_xe, van_ban — invoker theo RLS. Thẻ tối đa 3 khung / 4 ô số.
+             Migration 20261027090000_assistant_reports_a2; smoke supabase/tests/assistant_reports_a2_smoke.sql (Admin thấy số, nhân viên mới 0 / 42501 tài chính).
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
              B2 (21/10) buildIssueRequest / askJevIssue: Choice loại góp ý (8) + mức khẩn (4) cho công cụ chuan_bi_su_co; ≥ 0,85 lấy của Jev, không thì giữ của
              model; ghi ai_decisions kind issue_class (predicted Jev / actual model, agree theo loại). Không gán kết nối → bỏ qua, thẻ vẫn ra.
@@ -165,7 +169,7 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 7. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
 8. **Trợ lý "sống trong phần mềm"** (chủ SP 21/10, doc `14-tro-ly-song-trong-phan-mem-2026-10-21.md`): B1 đường đọc ảnh chung — XONG (#302, deployed 21/10);
    B2 phiếu sự cố — XONG (PR B2: dùng module Góp ý thay bảng mới; 4 câu doc 14 mục 5 em tự chốt, chủ SP duyệt "đề xuất rồi làm theo");
-   tiếp A2 báo cáo, B3 sổ tay Vioo, B4 bản tin Admin tuần (Thứ Hai 7h, app + web push như bản tin BLĐ), B5 OCR hợp đồng / văn bản. Chưa làm: tab Sự cố riêng ở Trung tâm AI (Admin dùng /feedback lọc nguồn Trợ lý); mục "Hoạt động" chưa đếm thẻ issue_report (hàm SQL ai_activity map theo tên công cụ).
+   A2 báo cáo 7 loại — XONG (PR A2); tiếp B3 sổ tay Vioo, B4 bản tin Admin tuần (Thứ Hai 7h, app + web push như bản tin BLĐ), B5 OCR hợp đồng / văn bản. Chưa làm: tab Sự cố riêng ở Trung tâm AI (Admin dùng /feedback lọc nguồn Trợ lý); mục "Hoạt động" chưa đếm thẻ issue_report (hàm SQL ai_activity map theo tên công cụ).
 
 ## 9. Memory liên quan
 
