@@ -391,7 +391,8 @@
     "20261025120000_daily_log_gantt_backfill.sql",
     "20261025200000_contract_files_select_scope.sql",
     "20261025210000_hrm_import_file_cleanup.sql",
-    "20261025220000_realtime_wms_broadcast.sql"
+    "20261025220000_realtime_wms_broadcast.sql",
+    "20261026100000_assistant_issue_report.sql"
   ],
   "forbidIncludeAll": true
 }

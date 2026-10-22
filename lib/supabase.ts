@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { recordHttpError } from './clientErrorLog';
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -116,6 +117,7 @@ const fetchWithRetry = async (input: FetchInput, init?: FetchInit): Promise<Resp
         try {
             const response = await fetchWithTimeout(input, init);
             if (response.ok) notifyRecovered();
+            else recordHttpError(getRequestMethod(input, init), getRequestUrl(input), response.status);
             if (!shouldRetryResponse(response) || attempt === MAX_ATTEMPTS - 1) {
                 return response;
             }

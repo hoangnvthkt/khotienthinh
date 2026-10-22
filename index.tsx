@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installClientErrorLog } from './lib/clientErrorLog';
 
 type PwaUpdateEventDetail = {
   registration: ServiceWorkerRegistration;
@@ -29,6 +30,7 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+installClientErrorLog();
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>

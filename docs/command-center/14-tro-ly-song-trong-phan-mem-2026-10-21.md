@@ -21,7 +21,7 @@ Kết luận: không phải "AI không nhận diện được", mà RevidAPI đ�
 
 | # | Khả năng | Khả thi | Đã có | Cần thêm |
 |---|---|---|---|---|
-| K1 | Người dùng vướng → chụp ảnh gửi Trợ lý → AI trả lời cách làm hoặc lập **phiếu sự cố** gửi Admin | **Cao** | ảnh trong chat (#244), ai_runs, Trung tâm AI, thông báo app/web push | bảng `ai_issues` + RPC; skill `bao_su_co` (ảnh + màn hình đang mở + lỗi gần nhất của người đó từ `app_error_log`/console); tab Sự cố ở Trung tâm AI; Jev phân loại + mức khẩn |
+| K1 | Người dùng vướng → chụp ảnh gửi Trợ lý → AI trả lời cách làm hoặc lập **phiếu sự cố** gửi Admin | **Cao** — **ĐÃ LÀM (B2, 21/10)** | ảnh trong chat (#244), ai_runs, Trung tâm AI, thông báo app/web push, **module Góp ý** (feedback_items, ảnh, trạng thái, người xử lý, thông báo) | Không dựng bảng mới: công cụ `chuan_bi_su_co` → thẻ phiếu (tiêu đề, mô tả, loại, mức khẩn, phân hệ, ảnh) → người dùng bấm Gửi Admin → góp ý loại lỗi ở /feedback kèm ảnh + màn hình đang mở + 10 lỗi gần nhất trên máy (lib/clientErrorLog.ts, chỉ giữ trong tab, chỉ gửi khi người dùng bấm); Jev chọn loại + mức khẩn (≥ 0,85), ghi ai_decisions kind issue_class |
 | K2 | AI "biết" phần mềm từng ngõ ngách, trả lời "làm sao để…" | **Cao** (dạng sổ tay, không phải huấn luyện) | danh sách màn hình + thao tác (tìm ngay #258), mẫu quy trình, quyền; docs/training, docs/ui | **Sổ tay Vioo**: mỗi màn hình 1 đoạn (mục đích, bước, quyền, lỗi hay gặp) sinh từ code + docs, nạp vào công cụ `so_tay`; Trợ lý trích đoạn đúng thay vì bịa |
 | K3 | Theo dõi hoạt động, phát hiện chỗ yếu, gợi ý Admin nâng cấp | **Trung bình–cao** cho tín hiệu đo được; **thấp** cho "tự tìm lỗ hổng bảo mật" | ai_runs (👎 + lý do), ai_decisions, outOfScope, PT409/42501 trong log, nháp bỏ dở, phiếu trả lại, bản tin BLĐ | **Bản tin Admin hằng tuần**: gom tín hiệu (câu Trợ lý không trả lời được, lỗi lặp, màn chậm, thao tác bỏ dở, quyền hỏi nhiều) → AI viết 3 việc nên làm; bảo mật vẫn phải audit tay như 20/10. Chỉ ghi sự kiện nghiệp vụ, không ghi phím/màn hình |
 | K4 | Nhập liệu / OCR: đơn hàng, phiếu giao, văn bản, hợp đồng, hóa đơn | **Cao** | báo giá → PO, viết tay → đề xuất, phiếu giao → kho, Zalo → nhật ký | đường đọc tệp chung (§1) + 3 mẫu mới: hợp đồng (bên, giá trị, mốc thanh toán, điều khoản phạt → nháp hợp đồng/hàng HĐ), văn bản đến (số, ngày, trích yếu, hạn), hóa đơn NCC (K3c) |
@@ -52,9 +52,9 @@ Không dùng Jev để viết câu trả lời hay đọc ảnh (không phải v
 
 Chạy song song với A2 báo cáo (tiến độ, tài chính, nhân sự…). Đề nghị thứ tự: B1 (đang đau) → B2 → A2 → B3 → B4 → B5.
 
-## 5. Câu cần chủ SP chốt
+## 5. 4 câu — chủ SP 21/10: "em đề xuất rồi làm theo" → đã chốt
 
-1. Phiếu sự cố gửi ai: Admin Hoàng, hay thêm người phụ trách module?
-2. Trợ lý được đọc lỗi kỹ thuật của người dùng (console / lỗi RPC gần nhất) để chẩn đoán — đồng ý ghi lại ở máy chủ 7 ngày?
-3. Model đọc ảnh riêng: anh có model nhìn ảnh nhanh ở RevidAPI (gemini-2.5-flash) để gán cho `ai.vision` không?
-4. Bản tin Admin: tuần 1 lần sáng thứ Hai, gửi qua app + web push như bản tin BLĐ?
+1. Phiếu sự cố gửi ai → **mọi Admin đang hoạt động** (3 người, như góp ý thường); Admin chuyển người xử lý / trạng thái ngay trong Góp ý.
+2. Lỗi kỹ thuật → **không ghi máy chủ 7 ngày**; máy người dùng giữ 10 lỗi gần nhất trong tab (lệnh máy chủ trả mã lỗi, lỗi JS), chỉ đính vào phiếu khi họ bấm Gửi Admin.
+3. Model đọc ảnh riêng → đã có từ B1: dòng "Đọc ảnh chứng từ · Kho, Lập đơn, Đề xuất" ở Cài đặt → Kết nối; Admin gán model nhìn ảnh nhanh hơn khi có.
+4. Bản tin Admin → để B4: Thứ Hai 7h, app + web push như bản tin BLĐ.

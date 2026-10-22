@@ -71,6 +71,12 @@ ai-gateway (supabase/functions/ai-gateway)
   chat.ts    (19/10) parseChatHits / foundLines: hồ sơ ô tìm ngay gửi kèm → <du_lieu loai="tim_thay"> với mã hN (SourceBook) — AI dùng trước, không gọi tim_ho_so
   reports.ts (20/10) bao_cao: 3 RPC assistant_report_{workflow,inventory,procurement}_v1 (security invoker → theo quyền xem RLS) → thẻ biểu đồ cột / cột chồng / tròn (lib/assistantChart.ts kinds line|bar|stacked|donut, nhãn riêng từng khung)
   jev.ts     J1 chạy bóng: hỏi Jev (TypeSafe, kết nối tính năng ai.decisions) ý định + câu đòi thao tác cấm song song model chính → ai_decision_log_v1
+             B2 (21/10) buildIssueRequest / askJevIssue: Choice loại góp ý (8) + mức khẩn (4) cho công cụ chuan_bi_su_co; ≥ 0,85 lấy của Jev, không thì giữ của
+             model; ghi ai_decisions kind issue_class (predicted Jev / actual model, agree theo loại). Không gán kết nối → bỏ qua, thẻ vẫn ra.
+  tools.ts   chuan_bi_su_co (B2): kể lỗi / gửi ảnh màn hình → thẻ issue_report {title, description, type, priority, module, screen, modelType, modelPriority, jev}
+             → lib/assistantIssue.ts: người dùng bấm Gửi Admin → feedbackService.createItem (module Góp ý sẵn có, visibility private, metadata.source
+             'assistant' + 10 lỗi gần nhất trên máy từ lib/clientErrorLog.ts) + ảnh đã gửi trong chat → feedback-attachments + thông báo mọi Admin
+             (feedbackNotificationService.notifyCreated) → assistant_command_finish_v1. Admin xử lý ở /feedback như góp ý thường.
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
 ```
@@ -157,8 +163,9 @@ Script vận hành đã chạy (giữ lịch sử): `supabase/operations/center_
 5. Trước 31/12/2026: hỏi chủ SP gia hạn / mở rộng thí điểm Trung tâm + nhóm AI.
 6. **Jev J2** (sau 1 tuần chạy bóng, cần số từ `shadow-report.mjs` và chủ SP OK): dùng tầng auto để `forceTool`, tầng ask để hỏi lại bằng nút, Noul cấm ≥ 0,7 từ chối sớm; rồi J3 trọng tài khớp mã / NCC / dự án.
 7. Lộ trình gốc còn: T5 báo cáo theo lịch; tri thức / gói skill (T4 mở rộng); OA Zalo cho nhật ký (để sau).
-8. **Trợ lý "sống trong phần mềm"** (chủ SP 21/10, doc `14-tro-ly-song-trong-phan-mem-2026-10-21.md`): B1 đường đọc ảnh chung — XONG (PR này);
-   tiếp B2 phiếu sự cố từ Trợ lý (ảnh + ngữ cảnh → `ai_issues` → Admin, Jev phân loại), A2 báo cáo, B3 sổ tay Vioo, B4 bản tin Admin tuần, B5 OCR hợp đồng / văn bản. Chờ 4 câu ở doc 14 mục 5.
+8. **Trợ lý "sống trong phần mềm"** (chủ SP 21/10, doc `14-tro-ly-song-trong-phan-mem-2026-10-21.md`): B1 đường đọc ảnh chung — XONG (#302, deployed 21/10);
+   B2 phiếu sự cố — XONG (PR B2: dùng module Góp ý thay bảng mới; 4 câu doc 14 mục 5 em tự chốt, chủ SP duyệt "đề xuất rồi làm theo");
+   tiếp A2 báo cáo, B3 sổ tay Vioo, B4 bản tin Admin tuần (Thứ Hai 7h, app + web push như bản tin BLĐ), B5 OCR hợp đồng / văn bản. Chưa làm: tab Sự cố riêng ở Trung tâm AI (Admin dùng /feedback lọc nguồn Trợ lý); mục "Hoạt động" chưa đếm thẻ issue_report (hàm SQL ai_activity map theo tên công cụ).
 
 ## 9. Memory liên quan
 

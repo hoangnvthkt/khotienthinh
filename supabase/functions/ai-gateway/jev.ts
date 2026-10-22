@@ -56,13 +56,75 @@ export const parseIntentAnswer = (data: unknown): JevIntentAnswer => {
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 /** Gọi POST {baseUrl}/v1/systemone. Lỗi HTTP → ném "JEV_HTTP_<mã>"; quá JEV_TIMEOUT_MS → ném lỗi timeout của fetch. */
-export const askJev = async (target: Pick<AiTarget, 'baseUrl' | 'apiKey'>, body: JevRequest, fetchFn: FetchFn, timeoutMs = JEV_TIMEOUT_MS): Promise<JevIntentAnswer & { ms: number }> => {
+const postJev = async (target: Pick<AiTarget, 'baseUrl' | 'apiKey'>, body: JevRequest, fetchFn: FetchFn, timeoutMs: number): Promise<{ data: unknown; ms: number }> => {
   const started = Date.now();
   const res = await fetchFn(`${target.baseUrl.replace(/\/+$/, '')}/v1/systemone`, {
     method: 'POST', headers: { Authorization: `Bearer ${target.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`JEV_HTTP_${res.status}`);
-  return { ...parseIntentAnswer(await res.json()), ms: Date.now() - started };
+  return { data: await res.json(), ms: Date.now() - started };
+};
+export const askJev = async (target: Pick<AiTarget, 'baseUrl' | 'apiKey'>, body: JevRequest, fetchFn: FetchFn, timeoutMs = JEV_TIMEOUT_MS): Promise<JevIntentAnswer & { ms: number }> => {
+  const { data, ms } = await postJev(target, body, fetchFn, timeoutMs);
+  return { ...parseIntentAnswer(data), ms };
+};
+
+// ── B2 (chủ SP 21/10): phiếu sự cố — Jev chọn loại góp ý + mức khẩn (Choice có tiêu chí), model chính cũng đề xuất; ≥ JEV_AUTO lấy của Jev. ──
+export const ISSUE_TYPES = ['bug', 'ui', 'feature', 'workflow', 'performance', 'permission', 'data', 'other'] as const;
+export type IssueType = typeof ISSUE_TYPES[number];
+export const ISSUE_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
+export type IssuePriority = typeof ISSUE_PRIORITIES[number];
+export const ISSUE_TYPE_CRITERIA: Record<IssueType, string> = {
+  bug: 'Phần mềm báo lỗi, không lưu / không gửi được, màn hình trắng, số liệu không hiện dù thao tác đúng',
+  ui: 'Hiển thị sai, lệch, chữ tràn, nút khó bấm — vẫn làm được việc',
+  feature: 'Muốn thêm tính năng hoặc cách làm mới chưa có trong phần mềm',
+  workflow: 'Luồng duyệt, bước quy trình, người duyệt, trạng thái chưa đúng ý',
+  performance: 'Chậm, treo, tải lâu, hết giờ',
+  permission: 'Không thấy nút / màn hình / dữ liệu vì chưa được cấp quyền; bị báo "không có quyền" hoặc "ngoài phạm vi"',
+  data: 'Số liệu sai, thiếu, trùng, lệch giữa hai màn (mã vật tư, tồn kho, tiền, ngày phép)',
+  other: 'Không thuộc các loại trên, hoặc chỉ là câu hỏi cách dùng',
+};
+export const ISSUE_PRIORITY_CRITERIA: Record<IssuePriority, string> = {
+  urgent: 'Chặn công việc ngay hôm nay của nhiều người: không xuất / nhận kho được, không chấm công, không đăng nhập được',
+  high: 'Chặn một việc quan trọng của người báo, chưa có cách làm khác',
+  medium: 'Vẫn làm được bằng cách khác hoặc nhập tay, nhưng phiền hoặc tốn thời gian',
+  low: 'Góp ý nhỏ, không gấp, chỉ để cải thiện',
+};
+export const buildIssueRequest = (title: string, description: string, screen: string | null, model: string): JevRequest => ({
+  state: { tieu_de: title.slice(0, 200), mo_ta: description.slice(0, 3000), man_hinh: screen ? screen.slice(0, 120) : 'chưa rõ' },
+  model,
+  questions: {
+    loai: { type: 'choice', instructions: 'Phiếu sự cố / góp ý này của nhân viên công ty xây dựng thuộc loại nào?', criteria: ISSUE_TYPE_CRITERIA },
+    muc_khan: { type: 'choice', instructions: 'Mức khẩn của sự cố này?', criteria: ISSUE_PRIORITY_CRITERIA },
+  },
+});
+export interface JevIssueAnswer { type: IssueType; typeConfidence: number; priority: IssuePriority; priorityConfidence: number; model: string; tokensIn: number | null }
+export const parseIssueAnswer = (data: unknown): JevIssueAnswer => {
+  const o = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  const answers = (o.answers && typeof o.answers === 'object' ? o.answers : {}) as Record<string, Record<string, unknown>>;
+  const t = answers.loai || {}; const p = answers.muc_khan || {};
+  const type = String(t.choice || '') as IssueType; const priority = String(p.choice || '') as IssuePriority;
+  if (!(ISSUE_TYPES as readonly string[]).includes(type) || !(ISSUE_PRIORITIES as readonly string[]).includes(priority)) throw new Error('AI_BAD_JSON');
+  const usage = (o.usage && typeof o.usage === 'object' ? o.usage : {}) as Record<string, unknown>;
+  const r3 = (v: unknown) => Math.round((num(v) ?? 0) * 1000) / 1000;
+  return { type, typeConfidence: r3(t.confidence), priority, priorityConfidence: r3(p.confidence), model: String(o.model || ''), tokensIn: num(usage.input_tokens) };
+};
+export const askJevIssue = async (target: Pick<AiTarget, 'baseUrl' | 'apiKey'>, body: JevRequest, fetchFn: FetchFn, timeoutMs = JEV_TIMEOUT_MS): Promise<JevIssueAnswer & { ms: number }> => {
+  const { data, ms } = await postJev(target, body, fetchFn, timeoutMs);
+  return { ...parseIssueAnswer(data), ms };
+};
+/** Ghi vào ai_decisions kind issue_class: dự đoán của Jev cạnh lựa chọn của model chính (agree = cùng loại). */
+export const issueDecisionLog = (jev: { ok: true; answer: JevIssueAnswer & { ms: number } } | { ok: false; error: string; ms?: number }, actual: { type: string; priority: string }, configuredModel: string) => {
+  if (!('answer' in jev)) {
+    const failed = jev as { ok: false; error: string; ms?: number };
+    return { kind: 'issue_class', status: 'error', model: configuredModel, error: failed.error.slice(0, 200), durationMs: failed.ms ?? null, predicted: null, actual, agree: null };
+  }
+  const a = jev.answer;
+  return {
+    kind: 'issue_class', status: 'ok', model: a.model || configuredModel, durationMs: a.ms, tokensIn: a.tokensIn,
+    predicted: { type: a.type, typeConfidence: a.typeConfidence, priority: a.priority, priorityConfidence: a.priorityConfidence, tier: a.typeConfidence >= JEV_AUTO ? 'auto' : a.typeConfidence >= JEV_VERIFY ? 'verify' : 'ask' },
+    actual, agree: a.type === actual.type, camAgree: null,
+  };
 };
 
 /** Model chính thực làm gì trong lượt: công cụ chuẩn bị nháp → ý định tương ứng; từ chối → khac; chỉ tra đọc → tra_cuu; không gì → chưa rõ (null). */
