@@ -338,9 +338,140 @@ const dailyLogFromReport: SkillDef = {
   summary: (input, output) => `báo cáo ${input.pages} ảnh + ${input.text.length} ký tự, ${input.tasks.split('\n').length} hạng mục → ${(output.days as unknown[]).length} ngày`,
 };
 
+// ── B5 (chủ SP 22/10/2026): đọc chứng từ qua đường đọc tệp chung — hợp đồng NCC, hóa đơn NCC, văn bản đến. Chỉ CHÉP LẠI để người dùng kiểm ──
+// Đầu vào: chữ (PDF có chữ đọc trên máy) và / hoặc ảnh (ảnh chụp, PDF scan → ảnh trang). Số giữ dạng máy; ngày YYYY-MM-DD; không chắc → null + warnings.
+const DOC_READ_RULES = 'Chỉ chép đúng những gì thấy trên chứng từ, không suy luận, không tính thêm; ô không thấy thì null và ghi vào warnings (một câu tiếng Việt). Số tiền trả dạng số máy (6300000, không dấu chấm nghìn, không "đ"); phần trăm trả số (8, không "8%"); ngày trả YYYY-MM-DD (ngày tháng kiểu Việt dd/mm/yyyy → yyyy-mm-dd). Chữ tiếng Việt giữ dấu. Không bịa tên công ty, mã số thuế.';
+const docReadInput = (max: number) => (raw: unknown): { text: string; images: ImagePart[] } => {
+  const o = asObject(raw);
+  const text = clampText(o.text, max).trim();
+  const images = Array.isArray(o.images) && o.images.length ? mrImages(raw) : [];
+  if (!images.length && text.length < 20) throw new Error('AI_BAD_INPUT');
+  return { text, images };
+};
+const DAY10 = (v: unknown) => { const d = strOrNull(v, 10); return d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) ? d : null; };
+const taxCode = (v: unknown) => strOrNull(v, 20)?.replace(/[^0-9-]/g, '') || null;
+const pct = (v: unknown) => { const n = numOrNull(v); return n != null && n <= 100 ? n : null; };
+const DOC_LINE_SCHEMA = { type: 'object', additionalProperties: false, required: ['name', 'unit', 'qty', 'unitPrice', 'amount'], properties: {
+  name: { type: 'string' }, unit: { type: ['string', 'null'] }, qty: { type: ['number', 'null'] }, unitPrice: { type: ['number', 'null'] }, amount: { type: ['number', 'null'] } } };
+const docLines = (raw: unknown, max: number) => (Array.isArray(raw) ? raw : []).slice(0, max).flatMap(l => {
+  const x = asObject(l); const name = strOrNull(x.name, 200);
+  return name ? [{ name, unit: strOrNull(x.unit, 20), qty: numOrNull(x.qty), unitPrice: numOrNull(x.unitPrice), amount: numOrNull(x.amount) }] : [];
+});
+const contractInput = docReadInput(14000);
+const contractRead: SkillDef = {
+  code: 'contract_read',
+  maxInputChars: 14000,
+  maxOutputTokens: 4000,
+  parseInput: raw => { const q = contractInput(raw); return { text: q.text, pages: String(q.images.length) }; },
+  images: raw => contractInput(raw).images,
+  noThinking: true,
+  system: `Đọc hợp đồng mua bán / dịch vụ / thầu phụ / thuê giữa công ty Tiến Thịnh và nhà cung cấp (ảnh chụp hoặc chữ PDF) thành dữ liệu để lập hồ sơ hợp đồng. ${DOC_READ_RULES} Bên A thường là bên mua / Tiến Thịnh, bên B là nhà cung cấp — ghi đúng như hợp đồng. value = tổng giá trị hợp đồng (đã gồm VAT nếu hợp đồng ghi "đã bao gồm VAT", ghi rõ ở warnings nếu không rõ). paymentTerms = tóm tắt điều khoản thanh toán 1–3 câu; milestones = các đợt thanh toán (tạm ứng, theo tiến độ, quyết toán, bảo hành) với percent / amount / dueText đúng chữ hợp đồng. guarantee = bảo hành / bảo lãnh; penalty = phạt chậm / vi phạm. items = bảng hàng hóa / hạng mục nếu có (tối đa 40 dòng).`,
+  user: input => `${input.text ? wrapData('hop_dong', input.text) + '\n' : ''}${Number(input.pages) ? `Ảnh: ${input.pages} trang hợp đồng.\n` : ''}Trả JSON: {"contractNo", "name", "contractType": "purchase|service|subcontract|lease|other", "partyA": {"name", "taxCode", "representative"}, "partyB": {"name", "taxCode", "representative"}, "signedDate", "effectiveDate", "expiryDate", "value", "currency", "vatRate", "paymentMethod": "bank_transfer|cash|other", "paymentTerms", "milestones": [{"label", "percent", "amount", "dueText"}], "guarantee", "penalty", "items": [{"name", "unit", "qty", "unitPrice", "amount"}], "warnings": []}`,
+  schema: {
+    type: 'object', additionalProperties: false,
+    required: ['contractNo', 'name', 'contractType', 'partyA', 'partyB', 'signedDate', 'effectiveDate', 'expiryDate', 'value', 'currency', 'vatRate', 'paymentMethod', 'paymentTerms', 'milestones', 'guarantee', 'penalty', 'items', 'warnings'],
+    properties: {
+      contractNo: { type: ['string', 'null'] }, name: { type: ['string', 'null'] }, contractType: { type: ['string', 'null'] },
+      partyA: { type: 'object', additionalProperties: false, required: ['name', 'taxCode', 'representative'], properties: { name: { type: ['string', 'null'] }, taxCode: { type: ['string', 'null'] }, representative: { type: ['string', 'null'] } } },
+      partyB: { type: 'object', additionalProperties: false, required: ['name', 'taxCode', 'representative'], properties: { name: { type: ['string', 'null'] }, taxCode: { type: ['string', 'null'] }, representative: { type: ['string', 'null'] } } },
+      signedDate: { type: ['string', 'null'] }, effectiveDate: { type: ['string', 'null'] }, expiryDate: { type: ['string', 'null'] },
+      value: { type: ['number', 'null'] }, currency: { type: ['string', 'null'] }, vatRate: { type: ['number', 'null'] }, paymentMethod: { type: ['string', 'null'] }, paymentTerms: { type: ['string', 'null'] },
+      milestones: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'percent', 'amount', 'dueText'], properties: { label: { type: 'string' }, percent: { type: ['number', 'null'] }, amount: { type: ['number', 'null'] }, dueText: { type: ['string', 'null'] } } } },
+      guarantee: { type: ['string', 'null'] }, penalty: { type: ['string', 'null'] }, items: { type: 'array', items: DOC_LINE_SCHEMA }, warnings: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(Array.isArray(raw) ? raw[0] : raw);
+    const party = (v: unknown) => { const x = asObject(v); return { name: strOrNull(x.name, 200), taxCode: taxCode(x.taxCode), representative: strOrNull(x.representative, 120) }; };
+    const type = strOrNull(o.contractType, 20)?.toLowerCase();
+    const method = strOrNull(o.paymentMethod, 20)?.toLowerCase();
+    return {
+      contractNo: strOrNull(o.contractNo, 80), name: strOrNull(o.name, 240),
+      contractType: type && ['purchase', 'service', 'subcontract', 'lease'].includes(type) ? type : 'other',
+      partyA: party(o.partyA), partyB: party(o.partyB),
+      signedDate: DAY10(o.signedDate), effectiveDate: DAY10(o.effectiveDate), expiryDate: DAY10(o.expiryDate),
+      value: numOrNull(o.value), currency: (strOrNull(o.currency, 8) || 'VND').toUpperCase(), vatRate: pct(o.vatRate),
+      paymentMethod: method === 'cash' ? 'cash' : method === 'bank_transfer' || method === 'transfer' ? 'bank_transfer' : 'other',
+      paymentTerms: strOrNull(o.paymentTerms, 600),
+      milestones: (Array.isArray(o.milestones) ? o.milestones : []).slice(0, 12).flatMap(m => { const x = asObject(m); const label = strOrNull(x.label, 120); return label ? [{ label, percent: pct(x.percent), amount: numOrNull(x.amount), dueText: strOrNull(x.dueText, 160) }] : []; }),
+      guarantee: strOrNull(o.guarantee, 400), penalty: strOrNull(o.penalty, 400), items: docLines(o.items, 40),
+      warnings: strings(o.warnings, 10).map(w => w.slice(0, 240)),
+    };
+  },
+  summary: (input, output) => `hợp đồng ${input.pages} ảnh + ${input.text.length} ký tự → ${(output.milestones as unknown[]).length} đợt thanh toán, ${(output.items as unknown[]).length} dòng`,
+};
+
+const invoiceInput = docReadInput(8000);
+const supplierInvoiceRead: SkillDef = {
+  code: 'supplier_invoice_read',
+  maxInputChars: 8000,
+  maxOutputTokens: 3000,
+  parseInput: raw => { const q = invoiceInput(raw); return { text: q.text, pages: String(q.images.length) }; },
+  images: raw => invoiceInput(raw).images,
+  noThinking: true,
+  system: `Đọc hóa đơn giá trị gia tăng / hóa đơn bán hàng của nhà cung cấp (ảnh chụp, ảnh hóa đơn điện tử, chữ PDF) thành dữ liệu để ghi hóa đơn NCC. ${DOC_READ_RULES} Người bán = nhà cung cấp (seller), người mua = Tiến Thịnh (buyer). symbol = ký hiệu hóa đơn (VD 1C25TAA), number = số hóa đơn (chỉ chữ số, bỏ số 0 đầu), date = ngày lập. net = tiền hàng chưa VAT, vatRate = thuế suất %, vat = tiền thuế, gross = tổng thanh toán. Hóa đơn nhiều thuế suất thì vatRate null và ghi warnings. lines = dòng hàng (tối đa 60).`,
+  user: input => `${input.text ? wrapData('hoa_don', input.text) + '\n' : ''}${Number(input.pages) ? `Ảnh: ${input.pages} trang hóa đơn.\n` : ''}Trả JSON: {"sellerName", "sellerTaxCode", "buyerName", "buyerTaxCode", "symbol", "number", "date", "net", "vatRate", "vat", "gross", "lines": [{"name", "unit", "qty", "unitPrice", "amount"}], "warnings": []}`,
+  schema: {
+    type: 'object', additionalProperties: false,
+    required: ['sellerName', 'sellerTaxCode', 'buyerName', 'buyerTaxCode', 'symbol', 'number', 'date', 'net', 'vatRate', 'vat', 'gross', 'lines', 'warnings'],
+    properties: {
+      sellerName: { type: ['string', 'null'] }, sellerTaxCode: { type: ['string', 'null'] }, buyerName: { type: ['string', 'null'] }, buyerTaxCode: { type: ['string', 'null'] },
+      symbol: { type: ['string', 'null'] }, number: { type: ['string', 'null'] }, date: { type: ['string', 'null'] },
+      net: { type: ['number', 'null'] }, vatRate: { type: ['number', 'null'] }, vat: { type: ['number', 'null'] }, gross: { type: ['number', 'null'] },
+      lines: { type: 'array', items: DOC_LINE_SCHEMA }, warnings: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(Array.isArray(raw) ? raw[0] : raw);
+    const number = strOrNull(o.number, 20)?.replace(/\D/g, '').replace(/^0+(?=\d)/, '') || null;
+    const net = numOrNull(o.net); const vat = numOrNull(o.vat); const gross = numOrNull(o.gross);
+    const warnings = strings(o.warnings, 10).map(w => w.slice(0, 240));
+    if (net != null && vat != null && gross != null && Math.abs(net + vat - gross) > 1) warnings.push(`Tiền hàng ${net} + VAT ${vat} ≠ tổng ${gross} — kiểm lại số đọc.`);
+    return {
+      sellerName: strOrNull(o.sellerName, 200), sellerTaxCode: taxCode(o.sellerTaxCode), buyerName: strOrNull(o.buyerName, 200), buyerTaxCode: taxCode(o.buyerTaxCode),
+      symbol: strOrNull(o.symbol, 20)?.toUpperCase() || null, number, date: DAY10(o.date), net, vatRate: pct(o.vatRate), vat, gross,
+      lines: docLines(o.lines, 60), warnings: warnings.slice(0, 10),
+    };
+  },
+  summary: (input, output) => `hóa đơn ${input.pages} ảnh + ${input.text.length} ký tự → ${output.number ? 'có số' : 'thiếu số'}, ${(output.lines as unknown[]).length} dòng`,
+};
+
+const officeInput = docReadInput(12000);
+const officeDocRead: SkillDef = {
+  code: 'office_doc_read',
+  maxInputChars: 12000,
+  maxOutputTokens: 2500,
+  parseInput: raw => { const q = officeInput(raw); return { text: q.text, pages: String(q.images.length) }; },
+  images: raw => officeInput(raw).images,
+  noThinking: true,
+  system: `Đọc văn bản hành chính (công văn, quyết định, thông báo, tờ trình, giấy mời… ảnh chụp hoặc chữ PDF) gửi tới công ty Tiến Thịnh thành dữ liệu để tiếp nhận văn bản đến. ${DOC_READ_RULES} sourceOrganization = cơ quan / đơn vị ban hành (dòng đầu, dấu / chữ ký); sourceDocumentNumber = số ký hiệu văn bản (VD 125/CV-UBND); documentDate = ngày ban hành; sender = người ký (họ tên, chức vụ); title = trích yếu "V/v …" hoặc tên văn bản; summary = tóm tắt nội dung 2–3 câu, nêu yêu cầu / việc phải làm; dueDate = hạn phải trả lời / thực hiện nếu văn bản ghi; urgency theo dấu "Khẩn" / "Hỏa tốc" (VERY_URGENT) hoặc hạn gấp (URGENT), còn lại NORMAL; docType = loại văn bản (Công văn, Quyết định, Thông báo, Tờ trình, Giấy mời, Hợp đồng, Khác).`,
+  user: input => `${input.text ? wrapData('van_ban', input.text) + '\n' : ''}${Number(input.pages) ? `Ảnh: ${input.pages} trang văn bản.\n` : ''}Trả JSON: {"docType", "sourceOrganization", "sourceDocumentNumber", "documentDate", "sender", "title", "summary", "dueDate", "urgency": "NORMAL|URGENT|VERY_URGENT", "recipients", "warnings": []}`,
+  schema: {
+    type: 'object', additionalProperties: false,
+    required: ['docType', 'sourceOrganization', 'sourceDocumentNumber', 'documentDate', 'sender', 'title', 'summary', 'dueDate', 'urgency', 'recipients', 'warnings'],
+    properties: {
+      docType: { type: ['string', 'null'] }, sourceOrganization: { type: ['string', 'null'] }, sourceDocumentNumber: { type: ['string', 'null'] }, documentDate: { type: ['string', 'null'] },
+      sender: { type: ['string', 'null'] }, title: { type: ['string', 'null'] }, summary: { type: ['string', 'null'] }, dueDate: { type: ['string', 'null'] },
+      urgency: { type: ['string', 'null'] }, recipients: { type: ['string', 'null'] }, warnings: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  parseOutput: raw => {
+    const o = asObject(Array.isArray(raw) ? raw[0] : raw);
+    const u = strOrNull(o.urgency, 20)?.toUpperCase();
+    return {
+      docType: strOrNull(o.docType, 60), sourceOrganization: strOrNull(o.sourceOrganization, 200), sourceDocumentNumber: strOrNull(o.sourceDocumentNumber, 60),
+      documentDate: DAY10(o.documentDate), sender: strOrNull(o.sender, 160), title: strOrNull(o.title, 300), summary: strOrNull(o.summary, 1200), dueDate: DAY10(o.dueDate),
+      urgency: u === 'VERY_URGENT' || u === 'URGENT' ? u : 'NORMAL', recipients: strOrNull(o.recipients, 300),
+      warnings: strings(o.warnings, 10).map(w => w.slice(0, 240)),
+    };
+  },
+  summary: (input, output) => `văn bản ${input.pages} ảnh + ${input.text.length} ký tự → ${output.sourceDocumentNumber ? 'có số' : 'thiếu số'}, ${output.dueDate ? 'có hạn' : 'không hạn'}`,
+};
+
 export const SKILLS: Record<string, SkillDef> = {
   [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
   [poReviewBrief.code]: poReviewBrief, [mrTextLines.code]: mrTextLines, [mrPhotoLines.code]: mrPhotoLines,
   [poQuoteLines.code]: poQuoteLines, [dailyLogFromReport.code]: dailyLogFromReport,
+  [contractRead.code]: contractRead, [supplierInvoiceRead.code]: supplierInvoiceRead, [officeDocRead.code]: officeDocRead,
   ...Object.fromEntries(WORK_SKILLS.map(def => [def.code, def])),
 };

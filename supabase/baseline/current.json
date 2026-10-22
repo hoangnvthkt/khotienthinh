@@ -394,7 +394,8 @@
     "20261025220000_realtime_wms_broadcast.sql",
     "20261026100000_assistant_issue_report.sql",
     "20261027090000_assistant_reports_a2.sql",
-    "20261027120000_ai_admin_weekly_digest.sql"
+    "20261027120000_ai_admin_weekly_digest.sql",
+    "20261027150000_ai_skills_doc_read.sql"
   ],
   "forbidIncludeAll": true
 }

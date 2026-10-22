@@ -10,6 +10,8 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { canManageContracts } from '../../lib/permissions/contractPermissions';
 import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
+import AiDocReadButton from '../../components/ai/AiDocReadButton';
+import { contractToForm } from '../../lib/aiDocRead';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
@@ -577,6 +579,9 @@ const SupplierContracts: React.FC = () => {
             </div>
 
             <div className="overflow-y-auto flex-1 p-6 space-y-4">
+              {/* B5 (22/10): chụp / tải hợp đồng → AI điền ô trống (số, tên, NCC theo MST, giá trị, ngày, điều khoản + đợt thanh toán, bảo hành). */}
+              <AiDocReadButton skill="contract_read" label="Đọc hợp đồng (AI)" hint="Điền số, tên, nhà cung cấp, giá trị, ngày ký / hiệu lực / hết hạn, điều khoản thanh toán, bảo hành." screen="supplier_contract"
+                onResult={read => { const { patch, filled } = contractToForm(read, form as unknown as Record<string, unknown>, suppliers || []); setForm(f => ({ ...f, ...patch })); return filled; }} />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mã hợp đồng *</label>

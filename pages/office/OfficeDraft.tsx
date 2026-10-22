@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import AiDocReadButton from "../../components/ai/AiDocReadButton";
+import { officeDocToDraft } from "../../lib/aiDocRead";
 import {
   Link,
   useNavigate,
@@ -581,6 +583,10 @@ function OfficeDraftForm({
           {draft.document_group === "INCOMING" && (
             <div className="office-incoming-fields">
               <h3>Thông tin tiếp nhận</h3>
+              {/* B5 (22/10): chụp / tải văn bản đến → AI điền ô trống phần tiếp nhận (đơn vị gửi, số, ngày, người ký, trích yếu, tóm tắt, hạn, mức khẩn). */}
+              <AiDocReadButton skill="office_doc_read" label="Đọc từ ảnh / PDF (AI)" hint="Điền đơn vị gửi, số văn bản, ngày, người ký, trích yếu, tóm tắt, hạn xử lý, mức khẩn." screen="office_incoming" compact
+                onResult={d => { const today = new Date(); const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+                  const { patch: p, filled } = officeDocToDraft(d, draft as unknown as Record<string, unknown>, iso); patch(p); return filled; }} />
               <div className="office-form-grid">
                 <OfficeField label="Đơn vị gửi" required>
                   <input
