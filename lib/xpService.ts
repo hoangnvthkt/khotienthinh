@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from './supabase';
+import { supabase } from './supabase';
 import { getSupabaseProjection } from './supabaseProjections';
 
 // ══════════════════════════════════════════
@@ -33,15 +33,6 @@ export interface XPEvent {
   description: string;
   metadata: Record<string, any>;
   createdAt: string;
-}
-
-export type DailyXPEventType = 'daily_login' | 'daily_checkin';
-
-export interface XPAwardResult {
-  awarded: boolean;
-  xpGained: number;
-  profile: UserXP;
-  newBadges: Badge[];
 }
 
 // ═════════ XP Rules ═════════
@@ -121,25 +112,6 @@ export const xpService = {
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
-  },
-
-  /** Award daily XP atomically. The server derives actor, amount and idempotency. */
-  async awardDailyXP(
-    eventType: DailyXPEventType,
-    sourceId?: string,
-  ): Promise<XPAwardResult> {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured; daily XP awards are disabled in mock mode.');
-    }
-
-    const { data, error } = await supabase.rpc('award_my_daily_xp', {
-      p_event_type: eventType,
-      p_source_id: sourceId ?? null,
-    });
-
-    if (error) throw error;
-    if (!data) throw new Error('Daily XP RPC returned no award result.');
-    return data as XPAwardResult;
   },
 
   /** Get recent XP events */

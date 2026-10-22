@@ -179,11 +179,17 @@ const ERROR_MESSAGES: Record<string, string> = {
   MR_SUPPLY_STOCK_INSUFFICIENT: 'Kho gửi không còn đủ hàng khả dụng (đã trừ phiếu chuyển đang chờ xuất). Tải lại.',
 };
 
+// Postgres hủy lệnh vì vượt statement_timeout (8 s với người dùng đăng nhập).
+const STATEMENT_TIMEOUT = '57014';
+
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
   if (error) {
     const code = Object.keys(ERROR_MESSAGES).find(key => error.message?.includes(key));
-    const mapped = new Error(code ? ERROR_MESSAGES[code] : 'Không tải được dữ liệu Mua hàng. Thử lại sau.');
+    const fallback = error.code === STATEMENT_TIMEOUT
+      ? 'Máy chủ xử lý quá lâu nên chưa lưu được. Thử lại; nếu vẫn lỗi, tách thành vài đơn nhỏ hơn.'
+      : 'Không tải được dữ liệu Mua hàng. Thử lại sau.';
+    const mapped = new Error(code ? ERROR_MESSAGES[code] : fallback);
     (mapped as Error & { code?: string }).code = code || error.code;
     throw mapped;
   }
