@@ -7,33 +7,10 @@ type PermissionUser = Parameters<typeof canPerform>[0];
 const can = (user: PermissionUser, permissionCode: string): boolean =>
   canPerform(user, permissionCode, GLOBAL_SCOPE);
 
-export const getAiExecutiveCapabilities = (user: PermissionUser) => {
-  const canView = can(user, 'ai.executive.view');
-  return {
-    canView: canViewRoute(user, '/ai/executive', GLOBAL_SCOPE) || canView,
-  };
-};
-
-export const getAiReportCapabilities = (user: PermissionUser) => {
-  const canGenerate = can(user, 'ai.report.generate');
-  return {
-    canView: canViewRoute(user, '/ai/reports', GLOBAL_SCOPE) || canGenerate,
-    canGenerate,
-  };
-};
-
 export const getStorageCapabilities = (user: PermissionUser) => {
   const canManage = can(user, 'storage.manage');
   return {
     canView: canViewRoute(user, '/storage', GLOBAL_SCOPE) || canManage,
-    canManage,
-  };
-};
-
-export const getKnowledgeBaseCapabilities = (user: PermissionUser) => {
-  const canManage = can(user, 'kb.manage');
-  return {
-    canView: canViewRoute(user, '/knowledge-base', GLOBAL_SCOPE) || canManage,
     canManage,
   };
 };

@@ -6,7 +6,7 @@ import {
   GitBranch, Inbox, MoreHorizontal, Settings, Plus, X,
   GripVertical, EyeOff, RotateCcw, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot,
-  CheckCircle, HardDrive, BookOpen, MapPin, MessageSquarePlus
+  CheckCircle, HardDrive, MapPin, MessageSquarePlus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
@@ -28,7 +28,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>
   LayoutDashboard, Package, BarChart3, Landmark, Briefcase,
   GitBranch, Inbox, MoreHorizontal, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot, Settings,
-  HardDrive, BookOpen, MapPin,
+  HardDrive, MapPin,
   MessageSquarePlus,
 };
 
@@ -47,7 +47,6 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { key: 'FEEDBACK', to: '/feedback', iconName: 'MessageSquarePlus', label: 'Góp ý', shortLabel: 'GY', matchPrefix: '/feedback', color: 'text-blue-500' },
   { key: 'SET', to: '/settings', iconName: 'Settings', label: 'Cài đặt', shortLabel: 'CĐ', matchPrefix: '/settings', color: 'text-slate-500' },
   { key: 'STORAGE', to: '/storage', iconName: 'HardDrive', label: 'Kho dữ liệu', shortLabel: 'DL', matchPrefix: '/storage', color: 'text-violet-500' },
-  { key: 'KB', to: '/knowledge-base', iconName: 'BookOpen', label: 'Kho Kiến Thức', shortLabel: 'KT', matchPrefix: '/knowledge-base', color: 'text-amber-500' },
   { key: 'AI', to: '/ai', iconName: 'Bot', label: 'Trợ lý AI', shortLabel: 'AI', matchPrefix: '/ai', color: 'text-fuchsia-500' },
   { key: 'TENDER_AI', to: '/tender-ai/boq', iconName: 'Bot', label: 'Tender AI', shortLabel: 'TAI', matchPrefix: '/tender-ai', color: 'text-fuchsia-500' },
 ];

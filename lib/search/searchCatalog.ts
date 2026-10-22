@@ -73,7 +73,6 @@ export const ROUTE_KEYWORDS: Record<string, string> = {
   '/booking/vehicle/my': 'don dat xe cua toi',
   '/booking/vehicle/approvals': 'duyet dat xe',
   '/ai': 'tro ly ai chatbot hoi dap',
-  '/knowledge-base': 'kho kien thuc tai lieu huong dan quy dinh',
   '/storage': 'kho du lieu file tai lieu luu tru',
   '/audit-trail': 'nhat ky thay doi lich su thao tac',
 };

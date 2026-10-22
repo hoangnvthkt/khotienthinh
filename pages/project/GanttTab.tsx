@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import AiInsightPanel from '../../components/AiInsightPanel';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import {
     Plus, Edit2, Trash2, X, Save, ChevronRight, ChevronDown, Flag,

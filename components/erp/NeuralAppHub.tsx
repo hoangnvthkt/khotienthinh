@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   Bell,
-  BookOpen,
   Bot,
   Briefcase,
   ChevronRight,
@@ -162,18 +161,6 @@ const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
     glowColor: 'rgba(59, 130, 246, 0.4)',
     strokeColor: '#3b82f6',
     badgeTone: 'blue',
-  },
-  {
-    key: 'KB',
-    label: 'Kho Kiến thức',
-    shortLabel: 'KT',
-    description: 'Quy trình chuẩn & tài liệu kỹ thuật',
-    route: '/knowledge-base',
-    icon: BookOpen,
-    gradient: 'from-teal-500 to-cyan-600',
-    glowColor: 'rgba(20, 184, 166, 0.4)',
-    strokeColor: '#14b8a6',
-    badgeTone: 'cyan',
   },
   {
     key: 'AI',

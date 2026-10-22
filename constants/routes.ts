@@ -38,7 +38,6 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/hrm/contracts':   'HRM',
   '/hrm/documents':   'HRM',
   '/hrm/reports':     'HRM',
-  '/hrm/ranking':     'HRM',
   '/settings/hrm-shared-catalog': 'HRM',
 
   // ── WORKFLOW ──────────────────────────────────────────
@@ -129,10 +128,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/settings/permission-health': 'SETTINGS',
   '/users': 'SETTINGS',
   '/storage': 'STORAGE',
+  // Màn Kho kiến thức đã gỡ (đường dẫn chuyển về /ai); giữ dòng này tới khi dọn quyền system.kb.* bằng migration.
   '/knowledge-base': 'KB',
   '/ai': 'AI',
-  '/ai/executive': 'AI',
-  '/ai/reports': 'AI',
   '/trace': 'AUDIT_TRAIL',
   '/audit-trail': 'AUDIT_TRAIL',
   '/admin/activity': 'SETTINGS',

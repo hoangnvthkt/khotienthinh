@@ -2,7 +2,6 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart3,
-  BookOpen,
   Bot,
   Briefcase,
   DollarSign,
@@ -145,16 +144,6 @@ const DOCK_MODULE_DEFS: DockModuleItem[] = [
     icon: HardDrive,
     gradient: 'from-blue-500 to-indigo-600',
     glowColor: 'rgba(59, 130, 246, 0.4)',
-  },
-  {
-    key: 'KB',
-    label: 'Kho Kiến thức',
-    shortLabel: 'KT',
-    description: 'Quy trình & tài liệu kỹ thuật',
-    route: '/knowledge-base',
-    icon: BookOpen,
-    gradient: 'from-teal-500 to-cyan-600',
-    glowColor: 'rgba(20, 184, 166, 0.4)',
   },
   {
     key: 'AI',

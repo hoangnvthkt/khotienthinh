@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import {
-  getAiReportCapabilities,
   getAnalyticsCapabilities,
-  getKnowledgeBaseCapabilities,
   getStorageCapabilities,
 } from '../permissions/globalModulePermissions';
 
@@ -24,28 +22,6 @@ const user = (permissionCodes: string[] = [], overrides: Partial<User> = {}): Us
 });
 
 describe('Phase 4 global module permission capabilities', () => {
-  it('separates AI route view from assistant use and report generation', () => {
-    expect(getAiReportCapabilities(user(['ai.report.view']))).toEqual({
-      canView: true,
-      canGenerate: false,
-    });
-    expect(getAiReportCapabilities(user(['ai.report.generate']))).toEqual({
-      canView: true,
-      canGenerate: true,
-    });
-  });
-
-  it('separates KB view from KB management', () => {
-    expect(getKnowledgeBaseCapabilities(user(['kb.view']))).toEqual({
-      canView: true,
-      canManage: false,
-    });
-    expect(getKnowledgeBaseCapabilities(user(['kb.manage']))).toEqual({
-      canView: true,
-      canManage: true,
-    });
-  });
-
   it('separates analytics view from export', () => {
     expect(getAnalyticsCapabilities(user(['analytics.view']))).toEqual({
       canView: true,
@@ -71,13 +47,9 @@ describe('Phase 4 global module permission capabilities', () => {
   it('requires explicit canonical capabilities for global-module admins', () => {
     const admin = user([
       'ai.assistant.use',
-      'ai.report.generate',
-      'kb.manage',
       'storage.manage',
       'analytics.export',
     ], { role: Role.ADMIN });
-    expect(getAiReportCapabilities(admin).canGenerate).toBe(true);
-    expect(getKnowledgeBaseCapabilities(admin).canManage).toBe(true);
     expect(getStorageCapabilities(admin).canManage).toBe(true);
     expect(getAnalyticsCapabilities(admin).canExport).toBe(true);
   });

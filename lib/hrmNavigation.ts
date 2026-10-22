@@ -25,7 +25,6 @@ const HRM_NAVIGATION_ITEMS = [
   { to: '/hrm/contracts', employeeLabel: 'Hợp đồng LĐ', hrLabel: 'Hợp đồng LĐ' },
   { to: '/hrm/documents', employeeLabel: 'Hồ sơ & Công văn', hrLabel: 'Hồ sơ & Công văn' },
   { to: '/hrm/reports', employeeLabel: 'Báo cáo NS', hrLabel: 'Báo cáo NS' },
-  { to: '/hrm/ranking', employeeLabel: 'Xếp hạng NV', hrLabel: 'Xếp hạng NV' },
 ] as const;
 
 const EMPLOYEE_DASHBOARD_QUICK_LINKS = [

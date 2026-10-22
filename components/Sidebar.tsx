@@ -9,7 +9,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
+  IdCard, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
   PanelsTopLeft, Search, Paperclip
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -65,7 +65,6 @@ const MODULE_CONFIG = [
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
   { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' },
-  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
   { key: 'AI' as const, icon: Bot, label: 'Trung tâm AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/25' },
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners', gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
@@ -109,7 +108,6 @@ const HRM_NAV_ICONS: Record<string, LucideIcon> = {
   '/hrm/contracts': FileSignature,
   '/hrm/documents': FolderOpen,
   '/hrm/reports': BarChart3,
-  '/hrm/ranking': Award,
 };
 
 // Sidebar states: 'home' | 'apps' | AppKey
@@ -189,13 +187,8 @@ export const useModuleNavigation = () => {
     STORAGE: [
       { to: '/storage', icon: HardDrive, label: 'Kho dữ liệu' },
     ],
-    KB: [
-      { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
-    ],
     AI: [
       { to: '/ai', icon: Bot, label: 'Trung tâm AI' },
-      { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
-      { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
     ],
     EP: [
       { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
@@ -291,7 +284,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
     if (p.startsWith('/storage')) return 'STORAGE';
-    if (p.startsWith('/knowledge-base')) return 'KB';
     if (p.startsWith('/ai')) return 'AI';
     if (p.startsWith('/ep')) return 'EP';
     if (p.startsWith('/hd')) return 'HD';

@@ -81,7 +81,6 @@ describe('HRM navigation', () => {
     expect(routes).not.toContain('/hrm/contracts');
     expect(routes).not.toContain('/hrm/documents');
     expect(routes).not.toContain('/hrm/reports');
-    expect(routes).not.toContain('/hrm/ranking');
   });
 
   it('returns the approved Employee self-service menu in order', () => {
@@ -115,7 +114,6 @@ describe('HRM navigation', () => {
       '/hrm/contracts',
       '/hrm/documents',
       '/hrm/reports',
-      '/hrm/ranking',
     ]));
   });
 
