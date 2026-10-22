@@ -9,6 +9,8 @@ import {
 } from '../../lib/financeService';
 import { partnerService } from '../../lib/partnerService';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
+import AiDocReadButton from '../ai/AiDocReadButton';
+import { matchPartner } from '../../lib/aiDocRead';
 import { AttachmentPicker, ENT, FieldError, NUM, moneyInput, parseMoney, shortMoney, viDate } from './financeUi';
 import {
   AdjustmentInvoiceDrawer, CreditRefundDrawer, PriceAgreementDrawer, PriceLinesEditor, RoutePreview, SettlementCard, StepChips, SupplierCreditsSection,
@@ -259,6 +261,22 @@ const InvoiceDrawer: React.FC<{ suppliers: FinanceInvoices['suppliers']; approva
     <input ref={xmlRef} type="file" accept=".xml,text/xml,application/xml" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readXml(f); }} />
     {!invoice && <button type="button" onClick={() => xmlRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl border border-dashed border-teal-300 bg-teal-50/40 px-3 py-2.5 text-left text-sm hover:bg-teal-50 dark:border-teal-900 dark:bg-teal-950/20">
       <FileCode2 size={18} className="shrink-0 text-teal-700" /><span><b>Đọc file XML hóa đơn điện tử</b><span className="block text-xs text-muted-foreground">Tự điền ký hiệu, số, ngày, tiền hàng, VAT, tổng và tìm NCC theo mã số thuế; file XML được đính kèm luôn.</span></span></button>}
+    {!invoice && <AiDocReadButton skill="supplier_invoice_read" label="Đọc ảnh / PDF hóa đơn (AI)" hint="Hóa đơn giấy hoặc PDF không có XML: điền ký hiệu, số, ngày, tiền hàng, VAT, tổng, tìm NCC theo MST; tệp đính kèm luôn." screen="supplier_invoice" compact
+      onResult={async (x, ctx) => {
+        const filled: string[] = [];
+        const put = (cur: string, set: (v: string) => void, v: string | null | undefined, label: string) => { if (v && !cur.trim()) { set(v); filled.push(label); } };
+        put(symbol, setSymbol, x.symbol, 'ký hiệu'); put(no, setNo, x.number, 'số'); put(date, setDate, x.date, 'ngày');
+        if (x.vatRate != null) { setRate(String(x.vatRate)); filled.push('thuế suất'); }
+        put(net, setNet, x.net != null ? moneyInput(x.net) : null, 'tiền hàng'); put(vat, setVat, x.vat != null ? moneyInput(x.vat) : null, 'VAT'); put(gross, setGross, x.gross != null ? moneyInput(x.gross) : null, 'tổng');
+        try { const att = await financeService.upload(`invoice/${x.sellerTaxCode || 'ai'}`, ctx.files); setFiles(f => [...f, ...att]); filled.push(`${att.length} tệp đính kèm`); } catch { setXmlNote('Chưa tải được tệp đính kèm — đính kèm tay bên dưới.'); }
+        if (!sup) {
+          const byTax = x.sellerTaxCode ? await financeService.findSupplierByTax(x.sellerTaxCode).catch(() => null) : null;
+          const best = byTax?.find(f => suppliers.some(x2 => x2.id === f.id)) || byTax?.[0] || matchPartner(partners, { name: x.sellerName, taxCode: x.sellerTaxCode });
+          if (best) { setPartners(ps => (ps.some(p => p.id === best.id) ? ps : [...ps, best])); setSup(best.id); filled.push('nhà cung cấp'); setXmlNote(`Người bán ${x.sellerTaxCode ? `MST ${x.sellerTaxCode}` : x.sellerName || ''} → ${best.name}.`); setPick({}); }
+          else setXmlNote(`Không tìm thấy NCC ${x.sellerTaxCode ? `có MST ${x.sellerTaxCode}` : ''} (${x.sellerName || 'không rõ tên'}) — chọn NCC tay, hoặc bổ sung MST ở danh mục đối tác.`);
+        }
+        return filled;
+      }} />}
     {xmlNote && <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs">{xmlNote}</p>}
     <div className="grid gap-3 md:grid-cols-3">
       <label className="block text-sm font-medium md:col-span-3">Nhà cung cấp
