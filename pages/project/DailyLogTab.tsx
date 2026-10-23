@@ -1610,8 +1610,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const openSummaryForDate = useCallback(async (date: string, revision?: DailyLog) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'tổng hợp nhật ký'))) return;
         const dayLogs = logs.filter(log => log.date === date);
-        const existingSummary = revision || dayLogs.filter(isSummaryDailyLog)
+        const localSummary = revision || dayLogs.filter(isSummaryDailyLog)
             .sort((a, b) => (b.revisionNo || 1) - (a.revisionNo || 1))[0];
+        // Danh sách trên máy có thể cũ (mở ở tab / máy khác): hỏi máy chủ trước khi tạo bản mới để không sinh bản trùng.
+        const existingSummary = localSummary || await dailyLogService
+            .findSummaryForDate(projectId || effectiveId, constructionSiteId || null, date).catch(() => null) || undefined;
+        if (!revision && existingSummary && ['submitted', 'verified'].includes(getLogStatus(existingSummary))) {
+            // Đã gửi CHT / đã duyệt thì không còn gì để tổng hợp: mở bản xem.
+            if (!logs.some(log => log.id === existingSummary.id)) await reloadDailyLogRecords();
+            openView(existingSummary);
+            return;
+        }
         const id = existingSummary?.id || crypto.randomUUID();
         const metadata = existingSummary?.summarySourceMetadata || {};
         const metadataLegacyLogIds = toStringArray(metadata.legacyDailyLogIds);
@@ -1676,7 +1685,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         } finally {
             setSummaryWbsLoading(false);
         }
-    }, [constructionSiteId, effectiveId, logs, projectId, requireDailyLogAction]);
+    }, [constructionSiteId, effectiveId, logs, projectId, reloadDailyLogRecords, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
@@ -2659,7 +2668,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             createdById: user?.id,
             createdAt: now,
         };
-        await dailyLogService.upsert(item);
+        try {
+            await dailyLogService.upsert(item);
+        } catch (caught) {
+            // Chỉ mục daily_logs_member_summary_day_uidx: ngày này vừa có bản tổng hợp khác (tab / máy khác).
+            if (String((caught as { message?: string })?.message || '').includes('daily_logs_member_summary_day_uidx')) {
+                throw new Error('Ngày này đã có bản tổng hợp (vừa tạo ở tab hoặc máy khác). Đóng rồi mở lại ngày này để làm tiếp trên bản đó.');
+            }
+            throw caught;
+        }
         const fresh = await dailyLogWbsService.getBundle({
             projectId: projectId || effectiveId,
             constructionSiteId: constructionSiteId || null,

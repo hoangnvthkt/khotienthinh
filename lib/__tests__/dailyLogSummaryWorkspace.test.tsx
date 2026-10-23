@@ -74,6 +74,22 @@ describe('DailyLogSummaryWorkspace', () => {
     expect(html).toContain('Khối lượng trong ngày chính thức');
     expect(html).toContain('Chưa xác định');
   });
+  it('says why an already approved summary cannot be saved instead of blaming permissions', () => {
+    const approved = { ...bundle, rollout: { ...bundle.rollout, mode: 'enforced' as const }, summaryLog: { ...bundle.summaryLog!, status: 'verified' as const },
+      permissions: { ...bundle.permissions, canSummarize: true } };
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={approved} mode="summarize" />);
+    expect(html).toContain('Đã xác nhận');
+    expect(html).toContain('Bản tổng hợp đã được duyệt. Muốn sửa, mở bản đã duyệt và tạo bản điều chỉnh.');
+    expect(html).not.toContain('Bạn chưa có quyền');
+  });
+  it('keeps one summary per day and revision in the database', () => {
+    const sql = readFileSync('supabase/migrations/20261029120000_daily_log_one_summary_per_day.sql', 'utf8');
+    expect(sql).toContain("left(date, 10), coalesce(revision_no, 1))");
+    expect(sql).toContain("where summary_source_type = 'member_contributions'");
+    const tab = readFileSync('pages/project/DailyLogTab.tsx', 'utf8');
+    expect(tab).toContain('.findSummaryForDate(projectId || effectiveId, constructionSiteId || null, date)');
+    expect(tab).toContain('daily_logs_member_summary_day_uidx');
+  });
   it('renders four area cards and a useful operational overview', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
     expect((html.match(/data-testid="daily-log-area-card"/g) || [])).toHaveLength(4);
