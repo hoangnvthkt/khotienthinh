@@ -3,7 +3,7 @@ import type { BankStatementRow } from './bankStatementImport';
 
 // Module Tài chính (K3a): công nợ NCC toàn công ty. Mọi ghi chép đi qua RPC; server kiểm quyền và tách nhiệm.
 
-export type FinanceCan = { view: boolean; record: boolean; confirm: boolean; manage: boolean };
+export type FinanceCan = { view: boolean; record: boolean; confirm: boolean; configure: boolean; manage: boolean };
 export type FinanceTone = 'overdue' | 'soon' | 'later';
 export type FinanceOpeningStatus = 'not_needed' | 'todo' | 'pending' | 'done';
 export type FinanceIssue = 'internal_partner' | 'tiny_amount' | 'same_person_statement' | 'after_opening' | 'pending_cancel';
@@ -613,7 +613,7 @@ export interface FinanceForecast {
   cash: { start: number; known: boolean; accounts: number } | null;
   rows: ForecastRow[];
   missing: Array<{ code: string; text: string; target: string; projectId?: string | null }>;
-  can: { manage: boolean; record: boolean };
+  can: { manage: boolean; configure?: boolean; record: boolean };
   loans: ForecastLoan[] | null; items: ForecastItem[]; projects: Array<{ id: string; code: string; name: string }>;
 }
 

@@ -105,7 +105,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     try {
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
-      setSectionState(cur => (cur === 'auto' ? (r.can.manage ? 'overview' : 'todo') : cur));
+      setSectionState(cur => (cur === 'auto' ? (r.can.configure || r.can.manage ? 'overview' : 'todo') : cur));
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
       financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
       financeService.advances().then(d => setAdvances(d.totals)).catch(() => setAdvances(null));

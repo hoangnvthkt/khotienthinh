@@ -12,11 +12,12 @@ import { CostCutoverSection } from './CostCutoverSection';
 // Admin / Quản trị Tài chính sửa; mỗi lần sửa bắt buộc lý do, ghi nhật ký và báo cho Admin, Quản trị Tài chính.
 
 type AdminTab = 'general' | 'approval' | 'advance' | 'cost' | 'roles';
-const ROLE_ROWS: Array<{ key: 'view' | 'record' | 'confirm' | 'manage'; label: string; work: string }> = [
+const ROLE_ROWS: Array<{ key: 'view' | 'record' | 'confirm' | 'configure' | 'manage'; label: string; work: string }> = [
   { key: 'view', label: 'Xem Tài chính toàn công ty', work: 'Xem Tổng quan, Phải thu, Phải trả, Thu chi & quỹ, Chi phí & ngân sách, quỹ dự án, phân bổ tháng mọi dự án' },
   { key: 'record', label: 'Ghi nhận', work: 'Ghi nợ phiếu nhập / bảng đối soát, lập đề nghị chi và tạm ứng, đối chiếu đầu kỳ, ghi chi ngoài, NCC hoàn tạm ứng, cấn trừ tay, lập ngân sách dự án, khai đầu kỳ quỹ dự án, lập phân bổ tháng, duyệt / trả lại khoản chi quỹ công trường' },
   { key: 'confirm', label: 'Xác nhận', work: 'Xác nhận đã chi (UNC), xác nhận chi ngoài, chốt đầu kỳ (cả đầu kỳ quỹ dự án), chốt / đảo phân bổ tháng, đảo khoản chi quỹ công trường, hủy công nợ, xác nhận hoàn / chuyển tạm ứng — luôn khác người lập' },
-  { key: 'manage', label: 'Quản trị Tài chính', work: 'Xem Tổng quan Ban giám đốc, duyệt ngân sách dự án, sửa hạn thanh toán, ma trận duyệt, thông số tạm ứng / ngân sách / cấp vốn, mốc chi phí MISA' },
+  { key: 'configure', label: 'Cấu hình Tài chính', work: 'Xem Tổng quan Ban giám đốc và dự báo toàn công ty, sửa điều khoản thanh toán NCC / khách hàng / thầu phụ, hạn thanh toán, số ngày mặc định, tồn quỹ tối thiểu, tham số dự báo' },
+  { key: 'manage', label: 'Quản trị Tài chính', work: 'Mọi việc của Cấu hình, cộng: duyệt ngân sách dự án, ma trận duyệt chi, ủy quyền thay người khác, thông số tạm ứng / ngân sách / cấp vốn, mốc chi phí MISA, công tắc xem tài chính dự án' },
 ];
 const RULES: Array<{ group: string; items: Array<{ text: string; where?: AdminTab }> }> = [
   { group: 'Đề nghị chi & tạm ứng', items: [
@@ -201,6 +202,7 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
   if (error) return <StateBox kind="error" message={error} onRetry={load} />;
   if (!data) return <StateBox kind="loading" title="Đang tải thiết lập…" />;
   const manage = data.can.manage;
+  const configure = data.can.configure || manage;
   const userName = (id: string) => data.users.find(u => u.id === id)?.name || id;
   const startEditMatrix = () => {
     setTiers(data.matrix.rules.map(r => ({ max: r.maxAmount == null ? '' : moneyInput(r.maxAmount), steps: r.steps.map(s => ({ label: s.label, approverIds: s.approvers.map(a => a.id) })) })));
@@ -230,7 +232,7 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
       {TABS.map(([k, l, I, h]) => <button key={k} type="button" aria-current={tab === k ? 'page' : undefined} onClick={() => { setTab(k); setFormError(null); }}
         className={`flex min-w-[11rem] items-start gap-2 rounded-xl border px-3 py-2 text-left transition lg:min-w-0 ${tab === k ? 'border-teal-500 bg-teal-50/70 ring-2 ring-teal-500/20 dark:bg-teal-950/30' : 'border-border bg-card hover:border-teal-300'}`}>
         <I size={16} className="mt-0.5 shrink-0 text-teal-700" /><span><b className="block text-sm">{l}</b><span className="text-xs text-muted-foreground">{h}</span></span></button>)}
-      {!manage && <p className="hidden rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted-foreground lg:block"><Lock size={12} className="mr-1 inline" />Bạn chỉ xem. Admin / Quản trị Tài chính sửa được.</p>}
+      {!manage && <p className="hidden rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted-foreground lg:block"><Lock size={12} className="mr-1 inline" />{configure ? 'Bạn sửa được hạn thanh toán và tồn quỹ. Ma trận duyệt, tạm ứng, ngân sách do Quản trị Tài chính sửa.' : 'Bạn chỉ xem. Admin / Quản trị Tài chính sửa được.'}</p>}
     </nav>
     <div className="min-w-0 space-y-4">
     {tab === 'general' && <>
@@ -246,10 +248,10 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
         <button type="button" className={secondaryBtn} onClick={() => setDays(null)}>Thôi</button>
       </div> : <p className="mt-2 text-sm"><b className={NUM}>{data.settings.defaultPaymentDays} ngày</b> từ ngày ghi nợ
         {data.settings.updatedByName && <span className="text-muted-foreground"> · sửa bởi {data.settings.updatedByName} {viDate(data.settings.updatedAt)}</span>}
-        {manage && <button type="button" onClick={() => setDays({ value: String(data.settings.defaultPaymentDays), reason: '', apply: false })} className="ml-2 font-semibold text-teal-700 hover:underline">Sửa</button>}</p>}
+        {configure && <button type="button" onClick={() => setDays({ value: String(data.settings.defaultPaymentDays), reason: '', apply: false })} className="ml-2 font-semibold text-teal-700 hover:underline">Sửa</button>}</p>}
     </section>
 
-    <CashMinSection data={data} manage={manage} onSaved={load} />
+    <CashMinSection data={data} manage={configure} onSaved={load} />
     <CostCutoverSection canManage={manage} />
     </>}
 

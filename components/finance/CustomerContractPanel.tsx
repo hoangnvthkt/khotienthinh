@@ -104,7 +104,7 @@ export const CustomerContractPanel: React.FC<{ contractId: string; onBack: () =>
           <p className="text-xs text-muted-foreground">Thu hồi tạm ứng {Number(m.recoveryPercent).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%{m.recoveryPercentSource === 'auto' ? ' (tự tính)' : ''}
             {' '}· giữ lại {Number(m.retentionPercent)}%{m.retentionPercentSource === 'default' ? ' (mặc định)' : ''} · hạn {m.paymentTermDays} ngày{m.paymentTermSource === 'default' ? ' (mặc định)' : ''}
             {' '}· bảo hành {m.warrantyMonths ? `${m.warrantyMonths} tháng` : 'chưa khai'}
-            {can.manage && <> · <button type="button" onClick={() => setDrawer({ kind: 'terms' })} className="font-semibold text-teal-700 hover:underline"><Settings2 size={11} className="mr-0.5 inline" />Khai điều khoản</button></>}</p></div>
+            {can.configure && <> · <button type="button" onClick={() => setDrawer({ kind: 'terms' })} className="font-semibold text-teal-700 hover:underline"><Settings2 size={11} className="mr-0.5 inline" />Khai điều khoản</button></>}</p></div>
         {can.record && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setDrawer({ kind: 'receipt' })} className={secondaryBtn}><Banknote size={15} />Ghi CĐT trả tiền</button>
           <button type="button" onClick={() => setDrawer({ kind: 'round' })} className={primaryBtn}><Plus size={15} />Lập đợt đề nghị thanh toán</button></div>}
       </div>

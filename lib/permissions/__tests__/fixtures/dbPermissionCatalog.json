@@ -2588,6 +2588,12 @@
       ]
     },
     {
+      "permissionCode": "system.finance.configure",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "system.finance.confirm",
       "scopeTypes": [
         "global"

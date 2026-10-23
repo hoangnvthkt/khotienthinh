@@ -60,7 +60,7 @@ const ProjectSensitiveAccessRoomCard: React.FC<Props> = ({ projectId }) => {
         </div>
         <ChevronRight size={17} className="mt-1 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-500" />
       </div>
-      <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-300">Công tắc xem dòng tiền, chi phí, tạm ứng và hợp đồng chủ đầu tư của dự án. Chỉ Admin thay đổi.</p>
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-300">Công tắc xem dòng tiền, chi phí, tạm ứng và hợp đồng chủ đầu tư của dự án. Admin hoặc Quản trị Tài chính thay đổi.</p>
       {summary.status === 'loading' && <div className="mt-4 h-7 w-40 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-700" />}
       {summary.status === 'error' && <p className="mt-4 text-xs font-bold text-red-700">Không tải được số người xem · mở để thử lại</p>}
       {summary.status === 'ready' && <div className="mt-4 flex items-center justify-between">
