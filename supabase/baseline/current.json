@@ -398,7 +398,8 @@
     "20261027150000_ai_skills_doc_read.sql",
     "20261027180000_drop_legacy_ai_query_functions.sql",
     "20261027210000_procurement_save_po_snapshot_sources.sql",
-    "20261028130000_daily_log_summary_percent_rounding.sql"
+    "20261028130000_daily_log_summary_percent_rounding.sql",
+    "20261028135000_procurement_p0_backdoor_lock.sql"
   ],
   "forbidIncludeAll": true
 }
