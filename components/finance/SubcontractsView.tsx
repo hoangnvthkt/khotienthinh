@@ -225,7 +225,7 @@ export const SubcontractPanel: React.FC<{ id: string; onBack: () => void; onChan
           <p className="mt-0.5 text-xs text-muted-foreground">Giá trị {(c.value || 0) > 0 ? `${money(c.value)} đ trước VAT` : 'khoán theo khối lượng thực tế'} · ký {viDate(c.signedDate)} · hoàn thành {viDate(c.completionDate)}
             {c.partner ? ` · TK ${c.partner.bankAccount || 'chưa có'}` : ''}</p></div>
         <div className="flex flex-wrap gap-2">
-          {can.manage && <button type="button" className={secondaryBtn} onClick={() => setDrawer({ kind: 'terms' })}><Settings2 size={15} />Điều khoản</button>}
+          {can.configure && <button type="button" className={secondaryBtn} onClick={() => setDrawer({ kind: 'terms' })}><Settings2 size={15} />Điều khoản</button>}
           {can.record && m.opening === 'todo' && <button type="button" className={secondaryBtn} disabled={!c.partnerId} title={!c.partnerId ? 'Gắn đối tác ở Điều khoản trước' : undefined} onClick={() => setDrawer({ kind: 'opening' })}><ClipboardCheck size={15} />Khai đầu kỳ</button>}
           {can.record && <button type="button" className={secondaryBtn} disabled={advanceBlockers.length > 0} title={advanceBlockers.join(' · ') || undefined} onClick={() => setDrawer({ kind: 'advance' })}><HandCoins size={15} />Tạm ứng</button>}
           {can.record && <button type="button" className={primaryBtn} disabled={roundBlockers.length > 0} title={roundBlockers.join(' · ') || undefined} onClick={() => setDrawer({ kind: 'round', round: null })}><Plus size={15} />Lập đợt nghiệm thu</button>}

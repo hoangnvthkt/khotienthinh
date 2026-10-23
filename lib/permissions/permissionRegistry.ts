@@ -151,6 +151,7 @@ const financeModule: PermissionModuleDefinition = {
     ['view', 'Xem Tài chính toàn công ty', 10],
     ['record', 'Ghi nhận', 20],
     ['confirm', 'Xác nhận', 30],
+    ['configure', 'Cấu hình Tài chính', 35],
     ['manage', 'Quản trị Tài chính', 40],
   ] as const).map(([action, label, sortOrder]) => ({
     action,
