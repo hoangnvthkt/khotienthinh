@@ -397,7 +397,8 @@
     "20261027120000_ai_admin_weekly_digest.sql",
     "20261027150000_ai_skills_doc_read.sql",
     "20261027180000_drop_legacy_ai_query_functions.sql",
-    "20261027210000_procurement_save_po_snapshot_sources.sql"
+    "20261027210000_procurement_save_po_snapshot_sources.sql",
+    "20261028130000_daily_log_summary_percent_rounding.sql"
   ],
   "forbidIncludeAll": true
 }
