@@ -281,8 +281,11 @@ where d.id = x.id and d.due_date is null and d.document_date is not null and d.s
 update public.supplier_payable_documents set due_date_source = 'manual' where due_date is not null and due_date_source is null;
 
 -- Đơn vị nội bộ: "Công trình RICO" là công trình của công ty, không phải NCC (chủ sản phẩm xác nhận 02/10).
+-- Chỉ ghi khi đối tác có thật (DB xem thử dựng từ trống không có dữ liệu prod).
 insert into public.finance_internal_partners (supplier_id, reason)
-values ('5ecf36bb-ab2c-42fc-874b-4950859a91d7', 'Công trình của công ty — PO-462 là điều chuyển nội bộ RICO → DA29 (chủ sản phẩm xác nhận 02/10/2026)');
+select bp.id, 'Công trình của công ty — PO-462 là điều chuyển nội bộ RICO → DA29 (chủ sản phẩm xác nhận 02/10/2026)'
+from public.business_partners bp
+where bp.id = '5ecf36bb-ab2c-42fc-874b-4950859a91d7';
 
 -- Ma trận duyệt chi ban đầu (chủ sản phẩm duyệt 01–02/10). Admin / Quản trị Tài chính sửa được.
 with v as (insert into public.finance_approval_matrix_versions (version_no, is_current, note)
