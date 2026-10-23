@@ -77,7 +77,29 @@ Luật K0 đi cùng: `statement_price_no_reason` miễn khi đúng giá HĐ; `le
 
 Kiểm: `supabase/tests/control_k2_save_guards_smoke.sql` (giao dịch tự hủy, dữ liệu thật: PO-609, MR-2026-9885 / PO-696, PO-701, PO-272), `lib/__tests__/controlK2SaveGuards.test.ts`. (`control_findings_k0_smoke.sql` đã cũ từ K1 — mở RPC cho người dùng.)
 
-Còn chờ chủ SP: 32 đợt VAT lệch cũ (13 chưa nhận → đưa về VAT đơn; 18 đã nhận ≈ 48 tr VAT thiếu → điều chỉnh công nợ hay ghi lý do cũ; PO-439 VAT đơn 0% có thể sai).
+### Dọn 32 đợt VAT lệch cũ (chủ SP 23/10 chọn "Sửa theo đơn + điều chỉnh nợ", migration `20261030110000_control_k2_vat_cleanup`)
+
+- **12 đợt chưa ghi nhận hàng / công nợ → VAT theo đơn**: PO-315, PO-384 (lập), PO-259 đợt 1–3, PO-263, PO-281, PO-387, PO-446-01, PO-499, PO-116, PO-163. PO-259 đợt 1 đã duyệt chất lượng: giá trị 776.583.237 → 854.241.561 đ (VAT 10%).
+- **12 đợt đã nhận có giá trị → kế toán ghi điều chỉnh công nợ có chứng từ** (VAT thiếu = tiền hàng × VAT đơn):
+
+| Đơn · đợt | Tiền hàng | VAT đơn | VAT thiếu |
+|---|---:|---:|---:|
+| PO-145 · 1 | 198.965.403 | 10% | 19.896.540 |
+| PO-272 · 2 | 117.600.000 | 8% | 9.408.000 |
+| PO-265 · 1 | 62.284.250 | 8% | 4.982.740 |
+| PO-272 · 1 | 52.080.000 | 8% | 4.166.400 |
+| PO-272 · 3 | 33.600.000 | 8% | 2.688.000 |
+| PO-324 · 1 | 19.334.000 | 8% | 1.546.720 |
+| PO-270 · 1 | 18.360.000 | 8% | 1.468.800 |
+| PO-449 · 1 | 21.175.000 | 6% | 1.270.500 |
+| PO-143 · 1 | 10.095.177 | 10% | 1.009.518 |
+| PO-477 · 1 | 8.600.000 | 10% | 860.000 |
+| PO-217 · 1 (chưa có chứng từ nợ) | 5.525.000 | 8% | 442.000 |
+| PO-375 · 1 | 3.400.150 | 8% | 272.012 |
+| **Cộng** | | | **48.011.230** |
+
+  Đối chiếu hóa đơn NCC trước: hóa đơn thực tế không VAT thì ghi lý do VAT ở đợt thay vì điều chỉnh. Bật **Báo người xử lý** cho luật `batch_vat_differs` thì từng đợt vào Việc của tôi của người quyền Tài chính.
+- **Không sửa**: PO-439 (đơn 0%, đợt 10% — Mua hàng kiểm VAT đơn), PO-373 (đã hủy), 6 đợt cũ PO-038/044/054/057/089/110 (nhận ngoài kho, tiền hàng 0).
 
 ## Việc tiếp (K3)
 
