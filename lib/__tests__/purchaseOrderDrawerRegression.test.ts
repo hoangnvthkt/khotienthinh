@@ -118,4 +118,9 @@ describe('purchase order drawer regression guard', () => {
     expect(cockpitSource).toContain('practicalQuantitySummary.groups.length} nhóm vật tư');
     expect(cockpitSource).toContain('practicalQuantitySummary.counts.receivedLines} dòng đã nhận');
   });
+
+  it('hides per-delivery legacy receipt buttons (Tạo WMS, Hủy, Clone, Xóa đợt) for Mua hàng orders', () => {
+    expect(source).toContain('canConfirmPo={effectivePoCapabilities.canConfirmPo && !isHubPo}');
+    expect(source).not.toContain('canConfirmPo={effectivePoCapabilities.canConfirmPo}');
+  });
 });

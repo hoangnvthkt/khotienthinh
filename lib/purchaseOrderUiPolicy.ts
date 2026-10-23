@@ -107,7 +107,7 @@ const hasActiveDeliveryBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =
 const firstPlannedBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => batch.status === 'planned');
 
-/** Đơn lập tại màn Mua hàng (01/10/2026): tab dự án chỉ lập đợt giao và nhận hàng. */
+/** Đơn lập tại màn Mua hàng (01/10/2026): tab dự án chỉ nhận hàng theo phiếu giao. */
 export const isProcurementHubPurchaseOrder = (po: Pick<PurchaseOrder, 'metadata'>) =>
   (po.metadata as { channel?: unknown } | null | undefined)?.channel === 'procurement_hub';
 
@@ -325,6 +325,14 @@ export const getPurchaseOrderUiPolicy = ({
       primaryAction = { id: 'approve_po', label: 'Duyệt PO', intent: 'success' };
       secondaryActions.push({ id: 'request_revision', label: 'Yêu cầu chỉnh sửa', intent: 'neutral' });
       nextStep = 'Kiểm tra thông tin đặt hàng rồi duyệt hoặc yêu cầu chỉnh sửa.';
+    } else if (isProcurementHubPurchaseOrder(po) && mayReceivePo && ['confirmed', 'in_transit', 'partial', 'delivered'].includes(po.status)) {
+      // Đơn lập tại Mua hàng: đợt giao, kết thúc thiếu, đóng đơn làm ở màn Mua hàng / Kho; máy chủ chặn lệnh cũ.
+      if (po.status === 'delivered') {
+        secondaryActions.push({ id: 'print_purchase_order', label: 'In chứng từ', intent: 'neutral' });
+        nextStep = 'Đơn đã giao đủ, chỉ còn đối chiếu và in chứng từ.';
+      } else {
+        nextStep = 'Phòng Mua hàng lập đợt giao; khi có phiếu giao, công trường nhận hàng tại đây.';
+      }
     } else if (po.status === 'confirmed' && mayReceivePo && canCreateDeliveryDraft(po.status, deliveryBatches, receiptStats, isCompanyConsolidatedPo)) {
       primaryAction = { id: 'create_delivery', label: 'Tạo đợt giao', intent: 'primary' };
       nextStep = 'Lập đợt giao để chuyển PO sang bước thực hiện giao nhận.';

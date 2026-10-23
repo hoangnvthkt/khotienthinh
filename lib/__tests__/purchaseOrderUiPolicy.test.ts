@@ -410,4 +410,80 @@ describe('Mua hàng orders in the project tab', () => {
     expect(ids).not.toContain('close_short');
     expect(policy.nextStep).toContain('Phòng Mua hàng lập đợt giao');
   });
+
+  const LEGACY_RECEIPT_ACTIONS = ['create_delivery', 'create_supplemental_delivery', 'create_receipt', 'close_partial', 'close_po'];
+  const hubPo = (patch: Partial<PurchaseOrder>) => makePo({ sourceMode: 'proactive_project', metadata: { channel: 'procurement_hub' }, ...patch });
+  const hubPolicy = (patch: Partial<Parameters<typeof getPurchaseOrderUiPolicy>[0]> & { po: PurchaseOrder }) => getPurchaseOrderUiPolicy(baseInput({
+    canEditPoDocument: false,
+    canSubmitPoDocument: false,
+    canApprovePoDocument: false,
+    canDeletePoDocument: false,
+    canRunRestrictedPoActions: false,
+    ...patch,
+  }));
+  const allIds = (policy: ReturnType<typeof getPurchaseOrderUiPolicy>) => [
+    policy.primaryAction?.id,
+    ...policy.secondaryActions.map(action => action.id),
+    ...policy.menuActions.map(action => action.id),
+  ];
+
+  it('hides legacy receive / close actions from the warehouse keeper on proactive Mua hàng orders', () => {
+    const cases = [
+      hubPolicy({ po: hubPo({ status: 'confirmed' }) }),
+      hubPolicy({ po: hubPo({ status: 'in_transit' }), deliveryBatches: [plannedBatch()] }),
+      hubPolicy({ po: hubPo({ status: 'in_transit' }) }),
+      hubPolicy({ po: hubPo({ status: 'partial' }), receiptStats: { orderedQty: 100, receivedQty: 40, remainingQty: 60 } }),
+      hubPolicy({ po: hubPo({ sourceMode: 'proactive_stock', status: 'partial' }), receiptStats: { orderedQty: 100, receivedQty: 40, remainingQty: 60 } }),
+      hubPolicy({ po: hubPo({ status: 'delivered' }), receiptStats: { orderedQty: 100, receivedQty: 100, remainingQty: 0 } }),
+    ];
+
+    for (const policy of cases) {
+      for (const id of LEGACY_RECEIPT_ACTIONS) expect(allIds(policy)).not.toContain(id);
+      expect(policy.nextStep).not.toMatch(/đóng đơn|kết thúc thiếu|Tạo phiếu nhận/i);
+    }
+  });
+
+  it('keeps printing and supplier return on delivered / partial Mua hàng orders', () => {
+    const delivered = hubPolicy({
+      po: hubPo({ status: 'delivered' }),
+      receiptStats: { orderedQty: 100, receivedQty: 100, remainingQty: 0 },
+      supplierReturnableQty: 10,
+      canReturnSupplier: true,
+    });
+    const partial = hubPolicy({
+      po: hubPo({ status: 'partial' }),
+      receiptStats: { orderedQty: 100, receivedQty: 40, remainingQty: 60 },
+      supplierReturnableQty: 40,
+      canReturnSupplier: true,
+    });
+
+    expect(delivered.primaryAction).toBeUndefined();
+    expect(delivered.secondaryActions.map(action => action.id)).toEqual(['print_purchase_order', 'supplier_return']);
+    expect(partial.secondaryActions.map(action => action.id)).toEqual(['supplier_return']);
+    expect(allIds(partial)).toContain('print_purchase_order');
+  });
+
+  it('still opens the pending warehouse receipt for a Mua hàng order', () => {
+    const policy = hubPolicy({
+      po: hubPo({ status: 'in_transit' }),
+      deliveryBatches: [plannedBatch({ status: 'wms_pending' })],
+      pendingWmsTransactionId: 'tx-1',
+    });
+
+    expect(policy.primaryAction).toMatchObject({ id: 'open_wms_transaction', transactionId: 'tx-1' });
+  });
+
+  it('leaves the old receive / close actions on project-tab orders', () => {
+    const legacyPo = (patch: Partial<PurchaseOrder>) => makePo({ sourceMode: 'proactive_project', ...patch });
+
+    expect(getPurchaseOrderUiPolicy(baseInput({ po: legacyPo({ status: 'delivered' }) })).primaryAction?.id).toBe('close_po');
+    expect(getPurchaseOrderUiPolicy(baseInput({
+      po: legacyPo({ status: 'partial' }),
+      receiptStats: { orderedQty: 100, receivedQty: 40, remainingQty: 60 },
+    })).secondaryActions.map(action => action.id)).toContain('close_partial');
+    expect(getPurchaseOrderUiPolicy(baseInput({
+      po: legacyPo({ status: 'in_transit' }),
+      deliveryBatches: [plannedBatch()],
+    })).primaryAction?.id).toBe('create_receipt');
+  });
 });
