@@ -132,6 +132,25 @@ const canViewWorkflowInstances = (user: Parameters<typeof canPerform>[0]): boole
     canPerform(user, 'workflow.instance.view', scope)
   );
 
+const REQUEST_STATIC_ROUTES = new Set(['/rq/dashboard', '/rq/templates', '/rq/categories']);
+
+const isRequestListRoute = (pathname: string): boolean =>
+  pathname === '/rq' || pathname === '/rq/dashboard';
+
+// Một phiếu mở cho mọi người có tên trên phiếu (người lập, người duyệt, người theo dõi);
+// máy chủ (request_instance_can_select) quyết từng phiếu.
+const isRequestTicketRoute = (pathname: string): boolean =>
+  !!matchPath({ path: '/rq/:requestId', end: true }, pathname)
+  && !REQUEST_STATIC_ROUTES.has(pathname);
+
+// Mẫu cơ bản cấp "xem phiếu của mình" ở phạm vi own; trước đây màn đòi phạm vi toàn công ty.
+const canViewRequestInstances = (user: Parameters<typeof canPerform>[0]): boolean =>
+  [OWN_SCOPE, ASSIGNED_SCOPE, GLOBAL_SCOPE].some(scope =>
+    canPerform(user, 'request.instance.view_own', scope)
+    || canPerform(user, 'request.instance.view_all', scope)
+    || canPerform(user, 'request.instance.act_assigned', scope)
+  );
+
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
   return path || '/';
@@ -182,6 +201,8 @@ export const canAccessRoute = (
   if (isRequestTemplateEditorRoute(pathname)) {
     return canPerform(user, 'request.template.manage', GLOBAL_SCOPE);
   }
+  if (isRequestTicketRoute(pathname)) return true;
+  if (isRequestListRoute(pathname)) return canViewRequestInstances(user);
   if (isWorkflowTicketRoute(pathname)) return true;
   if (isWorkflowListRoute(pathname)) {
     return canViewWorkflowInstances(user);
