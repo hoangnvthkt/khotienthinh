@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261028140000_procurement_p0b_statement_reverse_wms_insert_lock.sql'), 'utf8');
+const sql = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261028160000_procurement_p0b_statement_reverse_wms_insert_lock.sql'), 'utf8');
 
 const section = (marker: string, end: string) => {
   const start = sql.indexOf(marker);

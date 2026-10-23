@@ -7,6 +7,19 @@ export const stripAccents = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').re
 export const slug = (s) => stripAccents(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 const squeeze = (s) => s.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 export const MAX_BODY = 1200;
+/** Từ đệm bỏ khi khớp — PHẢI giống STOP trong supabase/functions/ai-gateway/handbook.ts (test assistantHandbook so khớp). */
+export const STOP_WORDS = ['lam', 'sao', 'de', 'the', 'nao', 'cach', 'o', 'dau', 'toi', 'anh', 'em', 'chi', 'giup', 'voi', 'nhu', 'la', 'cua', 'cho', 'va', 'bi', 'duoc', 'khong', 'co', 'muon', 'can', 'thi', 'ma', 'a', 'oi', 'nhe', 'nha', 'ban', 'minh', 'huong', 'dan', 'huongdan', 'phan', 'mem', 'vioo', 'app', 'thao', 'tac', 'nay', 'kia', 'do', 'gi', 'vay', 'roi', 'hay', 'hoac', 'tren', 'trong', 'bang', 'tu', 'den', 'mot', 'cai', 'xin', 'hoi', 'biet', 'xem', 'lai', 'moi', 'thu', 'kieu'];
+const STOP = new Set(STOP_WORDS);
+/** Từ đệm trùng chữ nghiệp vụ khi bỏ dấu — PHẢI giống HANDBOOK_AMBIGUOUS ở handbook.ts. */
+export const AMBIGUOUS_STOP = { chi: ['chị'], de: ['để'], tu: ['từ'], thu: ['thử'], dau: ['đâu'], do: ['đó', 'do'], the: ['thế', 'thể'], bang: ['bằng'], lai: ['lại'], cai: ['cái'], ban: ['bạn'], dan: ['dẫn'], phan: ['phần'], hoi: ['hỏi'], ma: ['mà'], can: ['cần'], cho: ['cho'], thi: ['thì'], muon: ['muốn'], nha: ['nhá', 'nha'] };
+const isStop = (word) => { const f = stripAccents(word); if (!STOP.has(f)) return false; const forms = AMBIGUOUS_STOP[f]; return !forms || forms.includes(word.toLowerCase()); };
+/** Câu hỏi mẫu (frontmatter questions: a | b | c) → từ khóa: bỏ từ đệm, bỏ dấu như lúc khớp câu hỏi (để cụm 2 từ liền nhau khớp được). */
+const KEEP_AFTER = { cach: 'quy' };
+export const questionKeywords = (raw) => String(raw || '').split('|').map(q => {
+  const words = q.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}\s/-]+/gu, ' ').split(/\s+/).filter(Boolean);
+  return words.filter((t, i) => !isStop(t) || KEEP_AFTER[stripAccents(t)] === stripAccents(words[i - 1] || ''))
+    .map(t => stripAccents(t).replace(/[^a-z0-9/-]+/g, '')).filter(t => t.length >= 2).join(' ');
+}).filter(Boolean).join(' · ');
 
 /** Frontmatter đơn giản `key: value` giữa hai dòng ---. */
 export const parseFrontmatter = (md) => {
@@ -23,7 +36,7 @@ export const entriesFromDocs = (files) => files.filter(f => !/readme\.md$/i.test
   const { meta, body } = parseFrontmatter(f.text);
   const id = `so-tay-${slug(f.name.replace(/\.md$/i, ''))}`;
   return { id, title: meta.title || f.name, module: meta.module || 'Chung', routes: parseRoutes(meta.routes), permission: meta.permission || null,
-    keywords: squeeze(stripAccents(`${meta.keywords || ''} ${meta.title || ''}`)), body: squeeze(body).slice(0, MAX_BODY), source: 'docs' };
+    keywords: squeeze(stripAccents(`${meta.keywords || ''} ${meta.title || ''}`)), questions: questionKeywords(meta.questions), body: squeeze(body).slice(0, MAX_BODY), source: 'docs' };
 });
 
 /** Hướng dẫn Dự án: mục ## N. / ### N.M. có "Các bước thực hiện" → một mục sổ tay (mục đích + bước + lưu ý + lỗi hay gặp). */
@@ -57,7 +70,7 @@ export const entriesFromGuide = (text, guideName = 'huong-dan-su-dung-phong-quan
     const routeMatch = /route `(\/[a-z0-9/_-]*)`/i.exec(allText);
     const body = squeeze([purpose ? `**Khi nào:** ${purpose}` : '', `**Các bước:**\n${steps}`, notes ? `**Lưu ý:**\n${notes}` : '', errors ? `**Lỗi hay gặp:**\n${errors}` : ''].filter(Boolean).join('\n')).slice(0, MAX_BODY);
     out.push({ id: `du-an-${sec.num.replace('.', '-')}-${slug(sec.title)}`, title: `Dự án: ${title}`, module: 'Dự án', routes: [{ route: routeMatch ? routeMatch[1] : '/da', label: 'Dự án' }],
-      permission: null, keywords: squeeze(stripAccents(`${title} ${sec.parent || ''} du an`)), body, source: guideName });
+      permission: null, keywords: squeeze(stripAccents(`${title} ${sec.parent || ''} du an`)), questions: '', body, source: guideName });
   }
   return out;
 };
@@ -66,13 +79,13 @@ export const entriesFromGuide = (text, guideName = 'huong-dan-su-dung-phong-quan
 export const entriesFromCatalog = ({ quickActions, extraPages, routeKeywords }) => {
   const actions = quickActions.map(a => ({
     id: `thao-tac-${slug(a.id)}`, title: a.title, module: a.context, routes: [{ route: a.route || a.gate, label: a.title }], permission: null,
-    keywords: squeeze(stripAccents(`${a.keywords} ${a.title} ${a.subtitle}`)),
+    keywords: squeeze(stripAccents(`${a.keywords} ${a.title} ${a.subtitle}`)), questions: '',
     body: `**${a.title}** — ${a.subtitle}.\n**Cách mở:** gõ "${a.title.toLowerCase()}" vào ô Tìm kiếm rồi chọn thao tác${a.needsProject ? ' (chọn dự án trước)' : ''}${a.modal ? ' — form mở ngay tại chỗ' : ''}${a.route ? `, hoặc mở màn ${a.route}` : ''}.`,
     source: 'catalog',
   }));
   const pages = extraPages.map(p => ({
     id: `man-${slug(p.route) || 'home'}`, title: `Màn hình ${p.title}`, module: p.context, routes: [{ route: p.route, label: p.title }], permission: null,
-    keywords: squeeze(stripAccents(`${routeKeywords[p.route] || ''} ${p.title} ${p.context}`)),
+    keywords: squeeze(stripAccents(`${routeKeywords[p.route] || ''} ${p.title} ${p.context}`)), questions: '',
     body: `**${p.title}** (${p.context}) — mở từ thanh bên hoặc gõ "${p.title.toLowerCase()}" ở ô Tìm kiếm.`, source: 'catalog',
   }));
   return [...actions, ...pages];
@@ -90,7 +103,9 @@ export const renderGenerated = (entries) => `// SINH TỰ ĐỘNG bởi scripts/
 export interface HandbookEntry {
   id: string; title: string; module: string; routes: Array<{ route: string; label: string }>; permission: string | null;
   /** Từ khóa + tiêu đề đã bỏ dấu, chữ thường — để khớp câu hỏi. */
-  keywords: string; body: string; source: string;
+  keywords: string;
+  /** Câu hỏi mẫu (frontmatter questions) đã bỏ dấu + bỏ từ đệm, ngăn bằng " · " — chỉ tính khi trùng cụm 2 từ. */
+  questions: string; body: string; source: string;
 }
 export const HANDBOOK: HandbookEntry[] = ${JSON.stringify(entries, null, 1)};
 `;

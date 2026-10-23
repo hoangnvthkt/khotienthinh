@@ -25,6 +25,8 @@ import CenterRail from './center/CenterRail';
 import MacOSDockLauncher from './common/MacOSDockLauncher';
 import FloatingChatBubble from './common/FloatingChatBubble';
 import PrivateStorageLinkResolver from './storage/PrivateStorageLinkResolver';
+import ScreenTracker from './ai/ScreenTracker';
+import { useRouteTitle } from './center/useRouteTitle';
 
 
 const Layout: React.FC = () => {
@@ -62,6 +64,7 @@ const Layout: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const titleForRoute = useRouteTitle();
 
   const chrome = getRouteChrome(pathname);
   const outletContext: LayoutOutletContext = { openSidebar: () => setSidebarOpen(true) };
@@ -123,6 +126,7 @@ const Layout: React.FC = () => {
     <div className={`flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden relative transparent`}>
       <CommandPalette />
       <PrivateStorageLinkResolver />
+      <ScreenTracker titleOf={titleForRoute} />
       {(systemSlowMessage || connectionError) && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[120] max-w-[calc(100vw-1.5rem)]">
           <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-2 text-xs font-bold text-amber-800 shadow-xl backdrop-blur dark:border-amber-900/50 dark:bg-amber-950/90 dark:text-amber-200">

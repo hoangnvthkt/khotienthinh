@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
+import { recordUiMessage } from '../lib/clientErrorLog';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -110,6 +111,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     const addToast = useCallback((type: ToastType, title: string, message?: string, duration?: number) => {
+        // Lời báo lỗi / cảnh báo vừa hiện → sổ lỗi trên máy, để Trợ lý giải thích khi người dùng hỏi "sao không lưu được".
+        if (type === 'error' || type === 'warning') recordUiMessage(title, message);
         const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
         setToasts(prev => appendToastUnlessDuplicate(prev, { id, type, title, message, duration }));
     }, []);

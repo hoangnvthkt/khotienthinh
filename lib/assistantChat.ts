@@ -7,6 +7,7 @@ import type { ServerRecord } from './search/searchTypes';
 import { parseWorkItem, type WorkItem } from './center/workItemsService';
 import { parseCommand, parseCommands, type AssistantCommand } from './assistantCommands';
 import { parseChart, type ChartSpec } from './assistantChart';
+import type { ScreenContext } from './assistantScreen';
 
 export const CHAT_SKILL = 'assistant_chat';
 
@@ -46,6 +47,8 @@ export interface ChatSendInput {
   files?: Array<{ name: string; text: string }>;
   /** 19/10: hồ sơ ô tìm ngay vừa thấy khớp câu (≤ 5) — cổng đưa vào ngữ cảnh để AI khỏi gọi công cụ tìm. */
   hits?: ServerRecord[];
+  /** Đợt 1 hỗ trợ (23/10): màn vừa mở + lỗi gần đây trên máy (lib/assistantScreen) — để trả lời "sao không làm được". */
+  screen?: ScreenContext | null;
 }
 export interface ChatHandlers {
   onStart?: (info: { runId: string; model: string }) => void; onDelta: (text: string) => void; onTool?: (tool: ChatToolUse) => void;
@@ -179,7 +182,8 @@ export const assistantChat = {
       res = await fetch(`${supabaseUrl}/functions/v1/ai-gateway`, {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
-        body: JSON.stringify({ skill: CHAT_SKILL, input: { threadId: input.threadId, question: input.question, facts: input.facts, pronoun: input.pronoun, ...(input.images?.length ? { images: input.images } : {}), ...(input.files?.length ? { files: input.files } : {}) }, context: input.context }),
+        body: JSON.stringify({ skill: CHAT_SKILL, input: { threadId: input.threadId, question: input.question, facts: input.facts, pronoun: input.pronoun, ...(input.images?.length ? { images: input.images } : {}), ...(input.files?.length ? { files: input.files } : {}),
+          ...(input.hits?.length ? { hits: input.hits } : {}), ...(input.screen ? { screen: input.screen } : {}) }, context: input.context }),
       });
     } catch (e) {
       return { code: 'AI_FAILED', error: signal?.aborted ? 'AI_ABORTED' : e instanceof Error ? e.message : 'AI_FAILED' };

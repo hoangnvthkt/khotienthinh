@@ -4,6 +4,7 @@
 import type { ImageAttachment } from './assistantFiles';
 import { finishCommand, issueView, type AssistantCommand } from './assistantCommands';
 import { clientErrorsText, recentClientErrors } from './clientErrorLog';
+import { lastScreen } from './assistantScreen';
 import { FEEDBACK_MODULES, FEEDBACK_PRIORITIES, FEEDBACK_TYPES, captureFeedbackContext, feedbackService, getCurrentFeedbackActorUserId, type FeedbackModule, type FeedbackPriority, type FeedbackType } from './feedbackService';
 import { feedbackNotificationService } from './feedbackNotificationService';
 import { supabase } from './supabase';
@@ -33,9 +34,9 @@ export const imageToFile = (image: ImageAttachment, index: number): File => {
 };
 
 /** Mô tả gửi Admin = lời người dùng + khối ngữ cảnh kỹ thuật (màn hình đang mở, bản app, lỗi gần nhất trên máy). */
-export const issueDescription = (v: { description: string; screen: string | null }, ctx: { route: string; version: string }, errorsText: string, now: Date) => {
+export const issueDescription = (v: { description: string; screen: string | null }, ctx: { route: string; version: string; lastScreen?: string | null }, errorsText: string, now: Date) => {
   const lines = [v.description.trim(), '', '—', `Gửi từ Trợ lý AI lúc ${now.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}`,
-    `Màn hình liên quan: ${v.screen || 'chưa rõ'} · đang mở: ${ctx.route || '/'} · bản: ${ctx.version}`];
+    `Màn hình liên quan: ${v.screen || 'chưa rõ'} · đang mở: ${ctx.route || '/'}${ctx.lastScreen ? ` · màn vừa làm: ${ctx.lastScreen}` : ''} · bản: ${ctx.version}`];
   if (errorsText) lines.push('Lỗi gần nhất trên máy người báo:', errorsText);
   return lines.join('\n');
 };
@@ -56,8 +57,9 @@ export const defaultIssueActions: IssueActions = {
     if (title.length < 5) throw new Error('Tiêu đề cần ít nhất 5 ký tự.');
     if (description.length < 10) throw new Error('Mô tả cần ít nhất 10 ký tự.');
     const actorId = await getCurrentFeedbackActorUserId(null);
-    const ctx = captureFeedbackContext();
     const now = new Date();
+    const recent = lastScreen();
+    const ctx = { ...captureFeedbackContext(), lastScreen: recent ? `${recent.title ? `${recent.title} ` : ''}${recent.path}` : null };
     const errors = recentClientErrors(now);
     let item;
     try {
@@ -65,7 +67,7 @@ export const defaultIssueActions: IssueActions = {
         title, description: issueDescription({ description, screen: v.screen }, ctx, clientErrorsText(errors), now),
         type: asType(edits.type), module: asModule(edits.module), impactLevel: asPriority(edits.priority), priority: asPriority(edits.priority),
         visibility: 'private', createdBy: actorId, relatedRoute: ctx.route, deviceInfo: ctx.deviceInfo, appVersion: ctx.version,
-        metadata: { source: 'assistant', commandId: command.id, screen: v.screen, modelType: v.modelType, modelPriority: v.modelPriority, jev: v.jev, recentErrors: errors },
+        metadata: { source: 'assistant', commandId: command.id, screen: v.screen, lastScreen: ctx.lastScreen, modelType: v.modelType, modelPriority: v.modelPriority, jev: v.jev, recentErrors: errors },
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Chưa gửi được phiếu.';
