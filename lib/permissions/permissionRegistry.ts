@@ -96,6 +96,14 @@ const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
     legacyModuleKey: moduleKey,
     sortOrder: (index + 1) * 10,
     actions: moduleKey === 'PROCUREMENT' ? [...baseActions(moduleKey), {
+      // Đợt 2 audit mẫu quyền (23/10/2026): người được chọn duyệt PO / đơn gọi hàng vượt hạn mức, tách khỏi Quản trị Mua hàng.
+      action: 'approve',
+      label: 'Duyệt PO',
+      permissionCode: 'system.procurement.approve',
+      legacyModuleKey: moduleKey,
+      scopeTypes: ['global'],
+      sortOrder: 30,
+    } as PermissionActionDefinition, {
       // Ngày nghiệp vụ (08/10/2026): ghi ngày đặt hàng / hàng về / chứng từ kho lùi quá 7 ngày. Cấp khi nhập bù lịch sử, gỡ khi xong.
       action: 'backdate',
       label: 'Nhập dữ liệu quá khứ',
