@@ -2636,6 +2636,12 @@
       ]
     },
     {
+      "permissionCode": "system.procurement.approve",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "system.procurement.backdate",
       "scopeTypes": [
         "global"
