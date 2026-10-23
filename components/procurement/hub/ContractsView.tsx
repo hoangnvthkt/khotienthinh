@@ -55,13 +55,19 @@ const STATEMENT_TONE: Record<string, string> = {
 interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string;
   /** Tiền hàng theo hóa đơn NCC ('' = SL × đơn giá). */
   amount: string }
-// Giá khác giá HĐ tại ngày giao → phải ghi lý do.
+// Giá khác giá HĐ tại ngày giao, hoặc (HĐ chưa có giá) khác giá NCC ghi trên phiếu giao → phải ghi lý do (máy chủ kiểm lại, K2).
 /** Tên dòng kèm quy cách — hai dòng cùng mã khác quy cách phải phân biệt được. */
 const lineLabel = (l: { name: string; specification?: string | null }) => l.specification ? `${l.name} (${l.specification})` : l.name;
 /** Tách theo quy cách chỉ khi có quy cách (mã chỉ một dòng không quy cách thì không cần). */
 const specRows = (specs?: Array<{ specification: string | null; qty: number; value: number | null }>) =>
   specs && specs.some(s => s.specification) ? specs : [];
-const priceDiffers = (r: StmtRow) => { const p = parseQty(r.price); return r.line.contractPrice != null && p != null && !Number.isNaN(p) && Math.abs(p - r.line.contractPrice) > 0.005; };
+const priceDiffers = (r: StmtRow) => {
+  const p = parseQty(r.price);
+  if (p == null || Number.isNaN(p)) return false;
+  if (r.line.contractPrice != null) return Math.abs(p - r.line.contractPrice) > 0.005;
+  return (r.line.notePrice ?? 0) > 0 && Math.abs(p - (r.line.notePrice as number)) > 0.005;
+};
+const NOTE_PRICE_REASONS = ['NCC báo giá mới', 'Phiếu giao ghi sai giá'];
 
 const StatementEditor: React.FC<{ contract: ContractDetail; month: string; statement?: ContractStatement | null; onClose: () => void; onSaved: () => void }> = ({ contract, month, statement = null, onClose, onSaved }) => {
   const toast = useToast();
@@ -113,7 +119,7 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
     if (totals.invalid) { setError('Còn dòng chưa có đơn giá hoặc VAT / thành tiền không hợp lệ.'); return; }
     if (totals.overLimit) { setError('Tiền theo hóa đơn lệch quá dung sai làm tròn — kiểm tra lại số hoặc sửa đơn giá kèm lý do.'); return; }
     if (!totals.count) { setError('Chọn ít nhất một dòng giao nhận.'); return; }
-    if (missingReason) { setError(`Còn ${missingReason} dòng giá khác giá HĐ chưa ghi lý do.`); return; }
+    if (missingReason) { setError(`Còn ${missingReason} dòng giá khác giá HĐ / phiếu giao chưa ghi lý do.`); return; }
     setSaving(true);
     try {
       const r = await procurementContractService.saveStatement({ contractId: contract.id, month, statementId: statement?.id, note: note.trim(),
@@ -165,9 +171,18 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
                 <input inputMode="decimal" value={r.vat} onChange={e => patch(r.line.lineId, { vat: e.target.value })} aria-label={`VAT ${lineLabel(r.line)}`} className={`w-14 text-right ${inputCls}`} /></label>
               {r.line.priceSource === 'missing' && r.price === '' && <span className="text-rose-700 dark:text-rose-300">HĐ chưa có giá vật tư này</span>}
               {r.line.priceSource === 'contract' && !priceDiffers(r) && <span>theo giá HĐ</span>}
-              {priceDiffers(r) && <label className="flex min-w-[16rem] flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">Giá HĐ {money(r.line.contractPrice)} · lý do
-                <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${lineLabel(r.line)}`}
-                  className={`min-w-0 flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></label>}
+              {priceDiffers(r) && (r.line.contractPrice != null
+                ? <label className="flex min-w-[16rem] flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">Giá HĐ {money(r.line.contractPrice)} · lý do
+                  <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${lineLabel(r.line)}`}
+                    className={`min-w-0 flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></label>
+                : <span className="flex min-w-[16rem] flex-1 flex-wrap items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                  <span title="HĐ chưa có giá vật tư này — giá đối soát khác giá NCC ghi trên phiếu giao cần lý do">Phiếu giao {money(r.line.notePrice)}</span>
+                  <button type="button" onClick={() => patch(r.line.lineId, { price: qtyInput(r.line.notePrice as number), reason: '' })}
+                    className="rounded-full border border-amber-300 bg-card px-2 py-0.5 font-semibold hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-950/40">Dùng giá phiếu giao</button>
+                  {NOTE_PRICE_REASONS.map(t => <button key={t} type="button" aria-pressed={r.reason === t} onClick={() => patch(r.line.lineId, { reason: t })}
+                    className={`rounded-full border px-2 py-0.5 ${r.reason === t ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card hover:bg-muted'}`}>{t}</button>)}
+                  <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="hoặc ghi lý do" aria-label={`Lý do giá ${lineLabel(r.line)}`}
+                    className={`min-w-[8rem] flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></span>)}
               {(() => {
                 const computed = price != null && !Number.isNaN(price) ? Math.round(r.line.qty * price) : null;
                 if (!canInvoice || computed == null) return <span className="ml-auto font-semibold tabular-nums text-foreground">{computed != null ? `${money(computed)} đ` : ''}</span>;

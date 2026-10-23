@@ -34,7 +34,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   MR_SUPPLY_STATE: 'Đề xuất không còn ở bước Đang cung ứng. Tải lại.',
   MR_SUPPLY_END_DENIED: 'Chỉ chỉ huy trưởng (quyền Duyệt đề xuất) hoặc người lập phiếu được kết thúc đề xuất.',
   MR_SUPPLY_REASON_REQUIRED: 'Nhập lý do kết thúc.',
+  MR_SUPPLY_OPEN_PO: 'Còn đơn mua đang mở cho đề xuất — xác nhận từng đơn trước khi kết thúc.',
 };
+
+/** Đơn mua còn mở của đề xuất (K2): kết thúc phải xác nhận đúng các đơn này. */
+export interface MaterialRequestOpenOrder { id: string; poNumber: string | null; status: string }
+/** Trạng thái đơn còn mở (chưa nhận đủ, chưa hủy). */
+export const OPEN_PO_STATUSES = ['draft', 'sent', 'returned', 'confirmed', 'in_transit', 'partial'];
+/** Đơn đã duyệt vẫn giao tiếp (hàng về thành tồn kho công trường); đơn chưa duyệt không duyệt được nữa. */
+export const APPROVED_PO_STATUSES = ['confirmed', 'in_transit', 'partial'];
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
@@ -42,6 +50,8 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
     const code = Object.keys(ERROR_MESSAGES).find(key => error.message?.includes(key));
     const mapped = new Error(code ? ERROR_MESSAGES[code] : 'Không tải được tiến độ cung ứng. Thử lại sau.');
     (mapped as Error & { code?: string }).code = code || error.code;
+    // MR_SUPPLY_OPEN_PO: máy chủ gửi danh sách đơn còn mở ở details (JSON).
+    try { (mapped as Error & { details?: unknown }).details = error.details ? JSON.parse(error.details) : undefined; } catch { /* details không phải JSON */ }
     throw mapped;
   }
   return data as T;
@@ -56,7 +66,7 @@ export const materialRequestSupplyService = {
       p_project_id: projectId, p_construction_site_id: constructionSiteId || null,
     });
   },
-  end(input: { requestIds: string[]; reason: string }) {
+  end(input: { requestIds: string[]; reason: string; openPoAck?: string[] }) {
     return call<{ ended: number; closedLines: number }>('end_material_request_supply_v1', { p_input: input });
   },
 };

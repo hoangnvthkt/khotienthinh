@@ -1,4 +1,4 @@
-# Kiểm soát viên K0–K1 — bộ luật, sổ phát hiện, đưa lệch tới đúng người (23/10/2026)
+# Kiểm soát viên K0–K2 — bộ luật, sổ phát hiện, đưa lệch tới đúng người, chặn lúc lưu (23/10/2026)
 
 Chủ SP 22/10: muốn AI trong Vioo tự theo dõi dữ liệu như chuyên viên kiểm soát, phát hiện lệch, báo Admin. Đánh giá + lộ trình K0–K5:
 artifact "Kiểm soát viên AI Vioo" (https://claude.ai/artifact/GHfZTprBFqy85g9SMDYzpc). K0 = nền + 18 luật Mua hàng → Kho → Công nợ → Đề xuất,
@@ -60,6 +60,25 @@ Màn: `/kiem-soat` **Lệch cần sửa** (mọi người dùng; máy chủ ch�
 
 Kết quả giao người trên dữ liệu thật (smoke 23/10): PO-609 → 4 người quyền Tài chính; MR-2026-9833 → người lập PO-671; lệch kho → thủ kho; lệch không rõ người (đơn cũ, đề xuất chưa có đơn) → Admin.
 
-## Việc tiếp (K2)
+## K2 — chặn lúc lưu (chủ SP 23/10 "làm cả 6 ca", migration `20261030100000_control_k2_save_guards`)
 
-Chặn từ gốc các lệch P0 sửa được tại chỗ (bắt lý do khi giá đối soát khác giá phiếu giao, không cho kết thúc đề xuất khi PO còn mở…) — phối hợp phiên rà soát Mua hàng (#314, #316 đã khóa cửa sau). Dải cảnh báo ngay trên chứng từ (ngăn đơn Mua hàng).
+Nguyên tắc: người thao tác sửa được ngay thì **bắt lý do / xác nhận**, không chặn cứng việc đúng; đợt / đơn cũ đang chạy không bị kẹt.
+
+| Ca (lệch thật) | Chặn ở đâu | Người dùng thấy gì |
+|---|---|---|
+| 1. Giá đối soát ≠ giá NCC ghi trên phiếu giao, HĐ chưa có giá (PO-609) | `save_procurement_contract_statement_v1` + `post_supplier_delivery_statement` → `PROCUREMENT_STATEMENT_NOTE_PRICE_REASON`; đúng giá HĐ thì miễn | Bảng đối soát: "Phiếu giao X" + chip **Dùng giá phiếu giao** / lý do nhanh |
+| 2. Kết thúc đề xuất khi đơn mua còn mở (MR-2026-9833 / PO-671) | `end_material_request_supply_v1`, `procurement_legacy_close_v1` → `MR_SUPPLY_OPEN_PO` (details = danh sách đơn), gửi lại kèm `openPoAck`; `transition_procurement_hub_po_v1` gửi / duyệt đơn mà mọi đề xuất đã kết thúc → `PROCUREMENT_PO_NEED_ENDED` | Hộp Kết thúc liệt kê đơn mở + ô **Vẫn kết thúc** (đơn đã duyệt vẫn giao thành tồn kho công trường; đơn chưa duyệt không duyệt được); người lập đơn được báo |
+| 3. VAT đợt ≠ VAT đơn không lý do (32/137 đợt) | trigger `trg_delivery_vat_reason_guard` (cột mới `vat_reason`): chỉ khi lập đợt / đổi VAT; lập đợt không truyền VAT (mặc định 0) mà đơn có VAT → lấy VAT đơn; giao tiếp cùng VAT → kế thừa lý do. `save_procurement_delivery_v1` mặc định VAT đơn, nhận `vatReason` → `PURCHASE_DELIVERY_VAT_REASON` | Lập đợt giao: chọn VAT khác đơn → ô lý do + chip |
+| 4. Đặt vượt nhu cầu không lý do (PO-694) | `transition_procurement_hub_po_v1`: gửi duyệt → `PROCUREMENT_PO_EXCESS_REASON_REQUIRED` (details = dòng vượt); duyệt nhận `excessReason` ghi vào dòng. Vượt = SL đơn này + các đơn lập TRƯỚC > cần × 1,02. `procurement_legacy_save_po_v1` nhận `allocations[].excessReason`. Chỉ đơn lập tại Mua hàng (đơn cũ ở dự án: luật vẫn báo) | Lập đơn: dòng "Vượt … · lý do" + chip; người duyệt gặp đơn vượt → hộp ghi lý do chấp nhận rồi duyệt |
+| 5. Sửa số nhận thấp hơn số đang trả NCC | `correct_purchase_receipt_v1` → `PURCHASE_FIX_RETURN_PENDING` (so receivedQty sau sửa với trả chờ + xong) | Câu báo trong hộp Sửa số nhận |
+| 6. Sửa số nhận không giảm giá trị đợt (PO-272 đợt 2 ghi 201,2 tr) | `correct_purchase_receipt_v1` giảm `accepted_gross_amount` bằng câu lệnh riêng (không đụng status → trigger ghi nợ không chạy lại); `post_purchase_receipt_finance_v2` so chi phí / công nợ gốc với giá trị đợt + phần đã sửa (`purchase_receipt_corrected_amount`); sửa dữ liệu PO-272 đợt 2 → 117,6 tr | — |
+
+Luật K0 đi cùng: `statement_price_no_reason` miễn khi đúng giá HĐ; `ledger_vs_accepted` trừ phần xuất điều chỉnh khi sửa số nhận (ca Sika PO-272 hết báo nhầm); `ap_vs_accepted` trừ phần giảm do sửa số nhận; `batch_vat_differs` bỏ đợt có lý do; `order_over_need` cộng các đơn trước, dung sai 2%. Trợ lý: 6 mã lỗi mới trong `errorGuide.ts`.
+
+Kiểm: `supabase/tests/control_k2_save_guards_smoke.sql` (giao dịch tự hủy, dữ liệu thật: PO-609, MR-2026-9885 / PO-696, PO-701, PO-272), `lib/__tests__/controlK2SaveGuards.test.ts`. (`control_findings_k0_smoke.sql` đã cũ từ K1 — mở RPC cho người dùng.)
+
+Còn chờ chủ SP: 32 đợt VAT lệch cũ (13 chưa nhận → đưa về VAT đơn; 18 đã nhận ≈ 48 tr VAT thiếu → điều chỉnh công nợ hay ghi lý do cũ; PO-439 VAT đơn 0% có thể sai).
+
+## Việc tiếp (K3)
+
+Phủ luật sang các phân hệ khác (~80 luật), dải cảnh báo ngay trên chứng từ.

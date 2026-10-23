@@ -25,6 +25,19 @@ const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/
 
 const RULES: Rule[] = [
   // ── Mã cụ thể (đọc từ hàm máy chủ) ──────────────────────────────────────────────────────────────────────────────
+  // K2 (23/10): chặn lúc lưu — bắt lý do / xác nhận.
+  { id: 'statement_note_price', test: /PROCUREMENT_STATEMENT_NOTE_PRICE_REASON/i, title: 'Giá đối soát khác giá phiếu giao',
+    meaning: 'Đơn giá trên bảng đối soát HĐ nguyên tắc khác giá NCC ghi trên phiếu giao (HĐ chưa có giá vật tư này) mà chưa ghi lý do.', fix: 'Ở dòng đó bấm "Dùng giá phiếu giao", hoặc chọn / ghi lý do (VD NCC báo giá mới) rồi lưu lại. Kế toán gặp lỗi khi ghi nợ thì trả lại cho Mua hàng.', who: 'Mua hàng' },
+  { id: 'mr_open_po', test: /MR_SUPPLY_OPEN_PO/i, title: 'Đề xuất còn đơn mua đang mở',
+    meaning: 'Đề xuất bạn muốn kết thúc còn đơn mua đang mở cho các dòng chưa nhận đủ.', fix: 'Trong hộp Kết thúc, xem danh sách đơn và tích "Vẫn kết thúc" (đơn đã duyệt vẫn giao, hàng thành tồn kho công trường; đơn chưa duyệt không duyệt được nữa), hoặc nhờ Mua hàng hủy / kết thúc thiếu đơn trước.', who: 'Chỉ huy trưởng / người lập đề xuất' },
+  { id: 'po_need_ended', test: /PROCUREMENT_PO_NEED_ENDED/i, title: 'Đề xuất của đơn đã kết thúc',
+    meaning: 'Mọi đề xuất mà đơn này mua cho đã kết thúc, nên không gửi / duyệt mua thêm.', fix: 'Trả lại hoặc hủy đơn. Vẫn cần hàng thì lập đơn dự trữ hoặc đề xuất mới.', who: 'Mua hàng / người duyệt đơn' },
+  { id: 'po_excess_reason', test: /PROCUREMENT_PO_EXCESS_REASON_REQUIRED/i, title: 'Đặt vượt nhu cầu chưa ghi lý do',
+    meaning: 'Đơn đặt nhiều hơn số đề xuất cần (cộng các đơn trước, quá 2%) mà dòng vượt chưa có lý do.', fix: 'Người lập: bấm Sửa đơn, ghi lý do ở dòng "Vượt…" (VD hao hụt thi công, NCC bán theo cuộn) rồi gửi lại. Người duyệt: ghi lý do chấp nhận khi duyệt, hoặc Trả lại.', who: 'Mua hàng' },
+  { id: 'delivery_vat_reason', test: /PURCHASE_DELIVERY_VAT_REASON/i, title: 'VAT đợt giao khác VAT đơn',
+    meaning: 'VAT của đợt giao khác VAT của đơn hàng mà chưa ghi lý do — sai VAT làm lệch công nợ.', fix: 'Để VAT theo đơn, hoặc ghi lý do (VD NCC xuất hóa đơn không VAT) ở ô ngay dưới VAT của đợt.', who: 'Mua hàng' },
+  { id: 'receipt_fix_return_pending', test: /PURCHASE_FIX_RETURN_PENDING/i, title: 'Sửa số nhận thấp hơn số đang trả NCC',
+    meaning: 'Số nhận đúng bạn nhập nhỏ hơn số đã / đang trả lại NCC của dòng đó.', fix: 'Hủy phiếu trả NCC đang chờ (nếu trả nhầm) rồi sửa số, hoặc sửa số nhận lớn hơn.', who: 'Thủ kho / Mua hàng' },
   { id: 'finance_period_locked', test: /FINANCE_PERIOD_LOCKED|ky (tai chinh )?da khoa/i, title: 'Kỳ tài chính đã khóa',
     meaning: 'Ngày chứng từ rơi vào kỳ kế toán đã khóa sổ nên không ghi thêm / sửa được.', fix: 'Đổi ngày chứng từ sang kỳ đang mở, hoặc nhờ kế toán trưởng mở lại kỳ nếu thật sự cần ghi vào kỳ cũ.', who: 'Kế toán trưởng' },
   { id: 'payable_direct_write', test: /SUPPLIER_PAYABLE_DIRECT_WRITE/i, title: 'Không sửa thẳng công nợ',

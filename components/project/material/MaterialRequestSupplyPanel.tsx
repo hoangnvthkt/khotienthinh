@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowRight, CircleSlash, Loader2, ShoppingCart, Truck } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import {
-  MATERIAL_REQUEST_END_REASONS, materialRequestSupplyService,
-  type MaterialRequestSupply, type MaterialRequestSupplyLineState,
+  APPROVED_PO_STATUSES, MATERIAL_REQUEST_END_REASONS, OPEN_PO_STATUSES, materialRequestSupplyService,
+  type MaterialRequestOpenOrder, type MaterialRequestSupply, type MaterialRequestSupplyLineState,
 } from '../../../lib/materialRequestSupplyService';
-import { Badge, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
+import { Badge, PoStatusChip, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import { TRANSFER_STATUS_LABELS } from '../../procurement/hub/SupplyFromStockDrawer';
 import { fmt } from '../work-plan/workPlanUi';
 
@@ -26,24 +26,39 @@ export const SUPPLY_PHASE_BADGE = {
   supplying: ['Đang cung ứng', TEAL], completed: ['Hoàn tất', OK], ended: ['Đã kết thúc', GREY],
 } as const;
 
-/** Hộp xác nhận kết thúc: lý do chọn nhanh + ô lý do bắt buộc. */
+/** Hộp xác nhận kết thúc: lý do chọn nhanh + ô lý do bắt buộc; còn đơn mua mở thì phải tích xác nhận từng đơn (K2). */
 export const EndSupplyDialog: React.FC<{
-  title: string; openLines?: number; busy?: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
-}> = ({ title, openLines, busy, onCancel, onConfirm }) => {
+  title: string; openLines?: number; openOrders?: MaterialRequestOpenOrder[]; busy?: boolean; onCancel: () => void; onConfirm: (reason: string, openPoAck: string[]) => void;
+}> = ({ title, openLines, openOrders = [], busy, onCancel, onConfirm }) => {
   const [reason, setReason] = useState('');
+  const [ack, setAck] = useState(false);
+  const ackKey = openOrders.map(o => o.id).join();
+  useEffect(() => setAck(false), [ackKey]);
+  const approved = openOrders.filter(o => APPROVED_PO_STATUSES.includes(o.status));
+  const pending = openOrders.filter(o => !APPROVED_PO_STATUSES.includes(o.status));
   return <div className="fixed inset-0 z-[1030] grid place-items-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-lg rounded-2xl bg-card p-5 text-foreground shadow-2xl">
+    <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-5 text-foreground shadow-2xl">
       <h3 className="font-bold">{title}</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        {openLines != null ? `${openLines} dòng còn thiếu sẽ đóng và rời khỏi Cần mua.` : 'Các dòng còn thiếu sẽ đóng và rời khỏi Cần mua.'} Hàng đã nhận giữ nguyên.
-        PO đang chờ hàng vẫn giao bình thường (phần giao về thành tồn kho công trường).</p>
+        {openLines != null ? `${openLines} dòng còn thiếu sẽ đóng và rời khỏi Cần mua.` : 'Các dòng còn thiếu sẽ đóng và rời khỏi Cần mua.'} Hàng đã nhận giữ nguyên.</p>
+      {openOrders.length > 0 && <div role="alert" className="mt-3 space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+        <p className="font-semibold">Còn {openOrders.length} đơn mua đang mở</p>
+        <ul className="flex flex-wrap gap-1.5">{openOrders.map(o => <li key={o.id} className="flex items-center gap-1 rounded-lg border border-amber-200 bg-card px-2 py-1 dark:border-amber-900">
+          <b className={ENT}>{o.poNumber || 'PO'}</b><PoStatusChip status={o.status} /></li>)}</ul>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} className="mt-0.5 h-4 w-4 accent-teal-600" />
+          <span>Vẫn kết thúc{approved.length > 0 ? ` — ${approved.map(o => o.poNumber).join(', ')} đã duyệt vẫn giao, hàng về thành tồn kho công trường` : ''}
+            {pending.length > 0 ? `${approved.length ? ';' : ' —'} ${pending.map(o => o.poNumber).join(', ')} chưa duyệt sẽ không duyệt được nữa` : ''}. Người lập đơn được báo.</span>
+        </label>
+      </div>}
       <div className="mt-3 flex flex-wrap gap-2">{MATERIAL_REQUEST_END_REASONS.map(x =>
         <button key={x} type="button" onClick={() => setReason(x)} aria-pressed={reason === x}
           className={`rounded-full border px-3 py-1 text-xs font-semibold ${reason === x ? 'border-teal-600 bg-teal-600 text-white' : 'border-border hover:border-teal-300'}`}>{x}</button>)}</div>
       <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Lý do (bắt buộc)" aria-label="Lý do kết thúc" className={`mt-2 w-full ${inputCls}`} />
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <button type="button" className={secondaryBtn} onClick={onCancel} disabled={busy}>Hủy, giữ lại</button>
-        <button type="button" disabled={!reason.trim() || busy} className={primaryBtn} onClick={() => onConfirm(reason.trim())}>
+        <button type="button" disabled={!reason.trim() || busy || (openOrders.length > 0 && !ack)} className={primaryBtn}
+          onClick={() => onConfirm(reason.trim(), openOrders.length > 0 && ack ? openOrders.map(o => o.id) : [])}>
           {busy ? <Loader2 size={15} className="animate-spin" /> : <CircleSlash size={15} />}Kết thúc đề xuất</button>
       </div>
     </div>
@@ -56,6 +71,8 @@ export const MaterialRequestSupplyPanel: React.FC<{ requestId: string; requestCo
   const [error, setError] = useState<string | null>(null);
   const [ending, setEnding] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Đơn mở do máy chủ báo (MR_SUPPLY_OPEN_PO) khi số liệu trên màn đã cũ.
+  const [serverOpen, setServerOpen] = useState<MaterialRequestOpenOrder[] | null>(null);
   const load = useCallback(() => {
     setError(null);
     materialRequestSupplyService.get(requestId).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
@@ -69,13 +86,20 @@ export const MaterialRequestSupplyPanel: React.FC<{ requestId: string; requestCo
   const open = data.lines.filter(l => l.state === 'waiting' || l.state === 'none');
   const done = data.lines.length - open.length;
   const [phaseLabel, phaseTone] = SUPPLY_PHASE_BADGE[data.phase];
-  const end = async (reason: string) => {
+  // Đơn mua còn mở của các dòng còn chờ hàng (máy chủ kiểm lại).
+  const openOrders = serverOpen ?? Array.from(new Map(data.lines.filter(l => l.state === 'waiting').flatMap(l => l.orders)
+    .filter(o => OPEN_PO_STATUSES.includes(o.status)).map(o => [o.id, { id: o.id, poNumber: o.poNumber, status: o.status }])).values());
+  const end = async (reason: string, openPoAck: string[]) => {
     setBusy(true);
     try {
-      const r = await materialRequestSupplyService.end({ requestIds: [requestId], reason });
+      const r = await materialRequestSupplyService.end({ requestIds: [requestId], reason, openPoAck });
       toast.success(`Đã kết thúc ${requestCode}`, r.closedLines > 0 ? `${r.closedLines} dòng còn thiếu đã rời Cần mua.` : undefined);
-      setEnding(false); onEnded();
-    } catch (e) { toast.error('Chưa kết thúc được', e instanceof Error ? e.message : ''); } finally { setBusy(false); }
+      setEnding(false); setServerOpen(null); onEnded();
+    } catch (e) {
+      const err = e as Error & { code?: string; details?: { orders?: MaterialRequestOpenOrder[] } };
+      if (err.code === 'MR_SUPPLY_OPEN_PO' && err.details?.orders?.length) { setServerOpen(err.details.orders); return; }
+      toast.error('Chưa kết thúc được', err.message || '');
+    } finally { setBusy(false); }
   };
 
   const sources = (l: MaterialRequestSupply['lines'][number]) => <>
@@ -143,7 +167,8 @@ export const MaterialRequestSupplyPanel: React.FC<{ requestId: string; requestCo
       <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{open.length} dòng còn thiếu — Mua hàng đang xử lý ở Cần mua. Đủ hàng thì đề xuất tự hoàn tất.</span>
       {data.canEnd && <button type="button" className={secondaryBtn} onClick={() => setEnding(true)}><CircleSlash size={15} />Kết thúc đề xuất</button>}
     </div>}
-    {ending && <EndSupplyDialog title={`Kết thúc đề xuất ${requestCode}?`} openLines={open.length} busy={busy} onCancel={() => setEnding(false)} onConfirm={reason => void end(reason)} />}
+    {ending && <EndSupplyDialog title={`Kết thúc đề xuất ${requestCode}?`} openLines={open.length} openOrders={openOrders} busy={busy}
+      onCancel={() => { setEnding(false); setServerOpen(null); }} onConfirm={(reason, ack) => void end(reason, ack)} />}
   </section>;
 };
 

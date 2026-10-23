@@ -23,7 +23,12 @@ import { recordSuggestionEvent } from '../../../lib/uiSuggestionEvents';
 // theo dự án nhận (việc 2).
 
 interface Row { key: string; sourceType: ProcurementSourceRef['sourceType']; sourceId: string; code: string; lineId: string; needQty: number; orderedElsewhere: number; available: number; qty: string;
-  projectCode: string | null; warehouseName: string | null }
+  projectCode: string | null; warehouseName: string | null;
+  /** Lý do đặt vượt phần còn thiếu — bắt buộc khi gửi duyệt (K2, máy chủ kiểm cộng các đơn trước, dung sai 2%). */
+  excessReason: string }
+const EXCESS_REASONS = ['Hao hụt thi công', 'NCC bán theo cuộn / bó', 'Dự phòng đợt sau'];
+/** Đặt vượt phần còn thiếu của dòng nhu cầu. */
+const rowOver = (row: Pick<Row, 'qty' | 'available'>) => { const q = parseQty(row.qty); return q != null && !Number.isNaN(q) && q > row.available * 1.0001 + 0.001; };
 interface Item {
   /** Dòng đơn: mã + quy cách (hoặc dòng của đơn đang sửa, hoặc dòng người mua tách ra). */
   key: string; specification: string;
@@ -42,8 +47,8 @@ const purchaseQtyOf = (item: Item, stockQty: number) => {
 };
 
 const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null, include?: ReadonlySet<string>): Item[] => {
-  const mine = new Map<string, { qty: number; price: number; poLineId: string }>();
-  order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice, poLineId: line.lineId })));
+  const mine = new Map<string, { qty: number; price: number; poLineId: string; excessReason: string }>();
+  order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice, poLineId: line.lineId, excessReason: a.excessReason || '' })));
   const ownLineById = new Map((order?.lines || []).map(line => [line.lineId, line]));
   const ownLineByItem = new Map((order?.lines || []).map(line => [line.itemId, line]));
   const byItem = new Map<string, Item>();
@@ -67,7 +72,7 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
     if (own && !item.price) item.price = qtyInput(own.price);
     item.rows.push({ key, sourceType: doc.sourceType, sourceId: doc.sourceId, code: doc.code, lineId: line.lineId,
       needQty: line.needQty, orderedElsewhere, available, qty: qtyInput(own ? own.qty : available),
-      projectCode: doc.projectCode, warehouseName: doc.warehouseName });
+      projectCode: doc.projectCode, warehouseName: doc.warehouseName, excessReason: own?.excessReason || '' });
     byItem.set(groupKey, item);
   }));
   return Array.from(byItem.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi') || a.specification.localeCompare(b.specification, 'vi'));
@@ -145,13 +150,13 @@ export const OrderEditor: React.FC<{
   }, [items]);
 
   const totals = useMemo(() => {
-    let subtotal = 0; let invalid = 0; let over = 0; let lines = 0; let unpriced = 0;
+    let subtotal = 0; let invalid = 0; let over = 0; let overNoReason = 0; let lines = 0; let unpriced = 0;
     items.forEach(item => {
       const price = parseQty(item.price);
       const stockQty = item.rows.reduce((sum, row) => {
         const q = parseQty(row.qty);
         if (q != null && Number.isNaN(q)) invalid += 1;
-        if (q != null && q > row.available * 1.0001 + 0.001) over += 1;
+        if (rowOver(row)) { over += 1; if (!row.excessReason.trim()) overNoReason += 1; }
         return sum + (q && q > 0 ? q : 0);
       }, 0);
       const qty = purchaseQtyOf(item, stockQty);
@@ -159,11 +164,12 @@ export const OrderEditor: React.FC<{
       if (stockQty > 0 && qty > 0) { lines += 1; if (price != null && (Number.isNaN(price) || price < 0)) invalid += 1; else if (!price) unpriced += 1; else subtotal += qty * price; }
     });
     const vatRate = parseQty(vat) ?? 0;
-    return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, over, lines, unpriced };
+    return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, over, overNoReason, lines, unpriced };
   }, [items, vat]);
 
-  const setRowQty = (itemKey: string, key: string, qty: string) =>
-    setItems(cur => cur.map(i => i.key !== itemKey ? i : { ...i, rows: i.rows.map(r => r.key === key ? { ...r, qty } : r) }));
+  const patchRow = (itemKey: string, key: string, patch: Partial<Row>) =>
+    setItems(cur => cur.map(i => i.key !== itemKey ? i : { ...i, rows: i.rows.map(r => r.key === key ? { ...r, ...patch } : r) }));
+  const setRowQty = (itemKey: string, key: string, qty: string) => patchRow(itemKey, key, { qty });
   const setPrice = (itemKey: string, price: string) => setItems(cur => cur.map(i => i.key === itemKey ? { ...i, price } : i));
   const patchItem = (itemKey: string, patch: Partial<Item>) => setItems(cur => cur.map(i => i.key === itemKey ? { ...i, ...patch } : i));
   // Tách một dòng nhu cầu ra dòng đơn riêng (quy cách + giá riêng), đặt ngay dưới dòng gốc.
@@ -191,7 +197,8 @@ export const OrderEditor: React.FC<{
         purchaseUnit: item.purchaseUnit.trim() || undefined,
         purchaseQty: purchaseQtyOf(item, item.rows.reduce((sum, r) => sum + Math.max(0, parseQty(r.qty) || 0), 0)),
       } : {}),
-      allocations: item.rows.map(r => ({ sourceType: r.sourceType, sourceId: r.sourceId, lineId: r.lineId, qty: parseQty(r.qty) || 0 })).filter(a => a.qty > 0),
+      allocations: item.rows.map(r => ({ sourceType: r.sourceType, sourceId: r.sourceId, lineId: r.lineId, qty: parseQty(r.qty) || 0,
+        excessReason: rowOver(r) ? r.excessReason.trim() || undefined : undefined })).filter(a => a.qty > 0),
     })).filter(item => item.allocations.length > 0);
     setSaving(true);
     try {
@@ -313,7 +320,7 @@ export const OrderEditor: React.FC<{
                     <ul className="divide-y divide-border">{item.rows.map(row => {
                       const q = parseQty(row.qty);
                       const bad = q != null && Number.isNaN(q);
-                      const over = q != null && !bad && q > row.available * 1.0001 + 0.001;
+                      const over = rowOver(row);
                       return <li key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 pl-11 text-sm">
                         <span className="min-w-[8rem] font-medium text-foreground">{row.code}
                           {isGroup && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{row.projectCode} · {row.warehouseName || 'chưa có kho'}</span>}</span>
@@ -325,7 +332,13 @@ export const OrderEditor: React.FC<{
                           <span className="w-10">{item.unit}</span></label>
                         {item.rows.length > 1 && <button type="button" onClick={() => splitRow(item.key, row.key)} title="Tách dòng nhu cầu này thành dòng đơn riêng — quy cách và giá riêng"
                           className="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">Tách dòng</button>}
-                        {over && <span className="w-full text-right text-xs text-amber-700 dark:text-amber-300">Vượt phần còn thiếu {fmt((q || 0) - row.available)} {item.unit}</span>}
+                        {over && <div className="flex w-full flex-wrap items-center justify-end gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+                          <span className="font-semibold">Vượt {fmt((q || 0) - row.available)} {item.unit} · lý do</span>
+                          {EXCESS_REASONS.map(t => <button key={t} type="button" aria-pressed={row.excessReason === t} onClick={() => patchRow(item.key, row.key, { excessReason: t })}
+                            className={`rounded-full border px-2 py-0.5 ${row.excessReason === t ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card hover:bg-muted'}`}>{t}</button>)}
+                          <input value={row.excessReason} onChange={e => patchRow(item.key, row.key, { excessReason: e.target.value })} placeholder="hoặc ghi lý do"
+                            aria-label={`Lý do đặt vượt ${item.name} cho ${row.code}`} className={`w-48 ${inputCls} ${row.excessReason.trim() ? '' : 'border-amber-400'}`} />
+                        </div>}
                       </li>;
                     })}</ul>
                   </div>;
@@ -341,7 +354,7 @@ export const OrderEditor: React.FC<{
                 <div className="flex justify-between border-t border-border pt-1 font-bold"><dt>Tổng cộng</dt><dd className="tabular-nums">{money(totals.subtotal + totals.vatAmount)} đ</dd></div>
                 {isGroup && perProject.map(([code, amount]) => <div key={code} className="flex justify-between text-xs text-muted-foreground"><dt>{code} (trước VAT)</dt><dd className="tabular-nums">{money(amount)} đ</dd></div>)}
                 {totals.unpriced > 0 && <p className="pt-1 text-xs text-amber-700 dark:text-amber-300">{totals.unpriced} vật tư chưa có đơn giá — lưu nháp được, cần đủ giá mới gửi duyệt.</p>}
-                {totals.over > 0 && <p className="pt-1 text-xs text-amber-700 dark:text-amber-300">{totals.over} dòng đặt vượt phần còn thiếu — vẫn lưu được.</p>}
+                {totals.over > 0 && <p className="pt-1 text-xs text-amber-700 dark:text-amber-300">{totals.over} dòng đặt vượt phần còn thiếu{totals.overNoReason > 0 ? ` — ${totals.overNoReason} dòng chưa ghi lý do: lưu nháp được, ghi lý do mới gửi duyệt` : ''}.</p>}
                 {expected && <p className="pt-1 text-xs text-muted-foreground">Cần giao trước {dateVi(expected)}</p>}
               </dl>
             </section>

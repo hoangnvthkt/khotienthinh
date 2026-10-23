@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Printer, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
-import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine, type ProcurementPoPayment, type ProcurementPoPriceSettlement } from '../../../lib/procurementInboxService';
+import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementExcessLine, type ProcurementOrderDetail, type ProcurementOrderLine, type ProcurementPoPayment, type ProcurementPoPriceSettlement } from '../../../lib/procurementInboxService';
 import { buildPoApprovalPrintHtml, lineDisplayName } from '../../../lib/procurementApprovalPrint';
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
@@ -95,12 +95,13 @@ export const OrderDrawer: React.FC<{
   }, [orderId]);
   useEffect(load, [load]);
 
-  const act = async (action: 'submit' | 'approve' | 'return' | 'delete', reason?: string) => {
+  const act = async (action: 'submit' | 'approve' | 'return' | 'delete', reason?: string, excessReason?: string): Promise<void> => {
     if (!order) return;
     setBusy(true);
+    let retryExcess: ProcurementExcessLine[] | null = null;
     try {
       const r = await procurementInboxService.transitionOrder({ purchaseOrderId: order.id, expectedRowVersion: order.rowVersion, action,
-        approverUserId: action === 'submit' ? approver : undefined, reason });
+        approverUserId: action === 'submit' ? approver : undefined, reason, excessReason });
       const who = order.approvers.find(a => a.id === approver)?.name;
       if (r.budgetPending) toast.warning(`${order.poNumber} vượt dự toán vật tư`, `Chưa duyệt được: chờ ${(r.budgetApproverNames || []).join(', ') || 'người duyệt vượt ngân sách'} duyệt ở Tài chính → Chi phí & ngân sách. Duyệt xong bạn được báo để duyệt đơn.`);
       else toast.success({ submit: `Đã gửi ${order.poNumber} cho ${who} duyệt`, approve: `Đã duyệt ${order.poNumber}`, return: `Đã trả lại ${order.poNumber}`, delete: `Đã xóa nháp ${order.poNumber}` }[action],
@@ -108,7 +109,19 @@ export const OrderDrawer: React.FC<{
           : 'Gửi đơn cho NCC. Phiếu nhập kho (QR) đã sẵn sàng cho thủ kho.') : undefined);
       onChanged();
       if (action === 'delete') onClose(); else load();
-    } catch (e) { toast.error('Chưa thực hiện được', e instanceof Error ? e.message : ''); } finally { setBusy(false); }
+    } catch (e) {
+      const err = e as Error & { code?: string; details?: unknown };
+      // K2: người duyệt không sửa được đơn → ghi lý do chấp nhận đặt vượt rồi duyệt lại (hoặc Trả lại).
+      if (action === 'approve' && !excessReason && err.code === 'PROCUREMENT_PO_EXCESS_REASON_REQUIRED' && Array.isArray(err.details)) retryExcess = err.details as ProcurementExcessLine[];
+      else toast.error('Chưa thực hiện được', err.message || '');
+    } finally { setBusy(false); }
+    if (retryExcess) {
+      const why = await askReason({ title: 'Đơn đặt vượt nhu cầu đề xuất', targetName: order.poNumber || '',
+        subtitle: retryExcess.map(l => `${l.item}${l.requestCode ? ` (${l.requestCode})` : ''}: đặt ${fmt(l.ordered, 3)}${l.otherOrdered > 0 ? ` + đơn trước ${fmt(l.otherOrdered, 3)}` : ''}, cần ${fmt(l.need, 3)} ${l.unit || ''}`).join(' · '),
+        warningText: 'Người lập chưa ghi lý do đặt vượt. Chấp nhận thì ghi lý do; không thì Trả lại.',
+        reasonLabel: 'Lý do chấp nhận đặt vượt', reasonPlaceholder: 'VD: Hao hụt thi công, NCC bán theo cuộn…', actionLabel: 'Duyệt đơn', intent: 'warning', minLength: 5 });
+      if (why) await act('approve', undefined, why);
+    }
   };
 
   const late = order?.expectedDeliveryDate && ['ordered', 'delivering'].includes(order.stage) && order.expectedDeliveryDate < today;
