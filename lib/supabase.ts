@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { recordHttpError } from './clientErrorLog';
+import { httpErrorDetail, recordHttpError } from './clientErrorLog';
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -8,6 +8,16 @@ const REFRESH_LOCK_TIMEOUT_MS = REQUEST_TIMEOUT_MS + 2500;
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 450;
 const TRANSIENT_STATUS_CODES = new Set([500, 502, 503, 504, 522, 524]);
+
+/** Sổ lỗi trên máy (lib/clientErrorLog): đọc bản sao thân trả về (mã lỗi + câu báo của máy chủ) mà không chạm bản gốc người gọi đang đọc. */
+const recordFailedResponse = (method: string, url: string, response: Response) => {
+    if (response.status === 401) return;
+    let copy: Response | null = null;
+    try { copy = response.clone(); } catch { copy = null; }
+    if (!copy) { recordHttpError(method, url, response.status); return; }
+    copy.text().then(body => recordHttpError(method, url, response.status, httpErrorDetail(body.slice(0, 2000))))
+        .catch(() => recordHttpError(method, url, response.status));
+};
 const NON_RETRY_STATUS_CODES = new Set([400, 401, 403, 404]);
 const REFRESH_LOCK_NAME = 'vioo-supabase-refresh-token';
 
@@ -117,7 +127,7 @@ const fetchWithRetry = async (input: FetchInput, init?: FetchInit): Promise<Resp
         try {
             const response = await fetchWithTimeout(input, init);
             if (response.ok) notifyRecovered();
-            else recordHttpError(getRequestMethod(input, init), getRequestUrl(input), response.status);
+            else recordFailedResponse(getRequestMethod(input, init), getRequestUrl(input), response);
             if (!shouldRetryResponse(response) || attempt === MAX_ATTEMPTS - 1) {
                 return response;
             }

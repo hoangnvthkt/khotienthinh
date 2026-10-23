@@ -539,6 +539,7 @@ const assistantHooks: AssistantHooks = {
     const prior = input.threadId ? loadThreads().find(t => t.id === input.threadId)?.messages.length || 0 : 0;
     aiCalls.push({ skill: 'assistant_chat', question: input.question, threadId: input.threadId, prior, pronoun: input.pronoun, factLines: input.facts.split('\n').length, context: input.context,
       ...(input.hits?.length ? { hits: input.hits.map(h => h.code || h.id) } : {}),
+      ...(input.screen ? { screen: input.screen } : {}),
       ...(input.images?.length || input.files?.length ? { images: input.images?.length || 0, files: (input.files || []).map(f => ({ name: f.name, head: f.text.split('\n').slice(0, 5).join('\n') })) } : {}) });
     await sleep(60);
     if (AI === 'quota') return { code: 'AI_QUOTA', reason: 'day', usedToday: 80, dailyLimit: 80 };

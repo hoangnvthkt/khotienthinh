@@ -28,6 +28,7 @@ import AssistantMemoryPanel from './AssistantMemoryPanel';
 import AssistantModelPicker, { modelForTurn, readStoredModel, storeModel } from './AssistantModelPicker';
 import { useInstantSearch, type InstantSearchFn } from './useInstantSearch';
 import { hitsForGateway, isLookupQuery, strongTopHit, type RankedHit } from '../../lib/search/instantSearch';
+import { screenContextFor } from '../../lib/assistantScreen';
 import { openGlobalSearch, openSearchModal } from '../../lib/search/openGlobalSearch';
 import type { PreparedEntry } from '../../lib/search/searchEngine';
 import { ACCEPT, addAttachments, attachmentLabel, type ChatAttachment } from '../../lib/assistantFiles';
@@ -502,6 +503,7 @@ const AssistantView: React.FC<{
       { threadId: thread.id, question: q, facts: briefFacts(brief), pronoun: pronounOf(person.gender),
         context: { ...context, ...(useModel ? { connectionId: useModel } : {}) },
         ...(sendHits.length ? { hits: hitsForGateway(sendHits) } : {}),
+        screen: screenContextFor(),
         ...(files.length ? { images: files.flatMap(f => (f.kind === 'image' ? [{ mime: f.mime, b64: f.b64 }] : [])),
           files: files.flatMap(f => (f.kind === 'image' ? [] : [{ name: f.name, text: f.text }])) } : {}) },
       {
