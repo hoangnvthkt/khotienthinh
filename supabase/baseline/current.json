@@ -414,7 +414,8 @@
     "20261029130000_live_permission_templates.sql",
     "20261029150000_daily_log_one_summary_per_day.sql",
     "20261029160000_permission_sod_rules.sql",
-    "20261029200000_control_k1_routing.sql"
+    "20261029200000_control_k1_routing.sql",
+    "20261030090000_permission_dot3_templates.sql"
   ],
   "forbidIncludeAll": true
 }

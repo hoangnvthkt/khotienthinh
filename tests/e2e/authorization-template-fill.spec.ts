@@ -82,3 +82,18 @@ test('the user screen asks for one acknowledgement covering every warehouse befo
   await save.click();
   await expect(page.getByLabel('Sent')).toHaveText('["wh-1","wh-2"]');
 });
+
+test('a person who already holds both duties can be acknowledged from the notice', async ({ page }) => {
+  await page.goto('/tests/authorization/template-fill-fixture.html?existing=1');
+  await expect(page.getByText('Đang kiêm nhiệm: Mua hàng + Thủ kho (Kho Sơn Miền Bắc)')).toBeVisible();
+  await page.getByRole('button', { name: 'Ghi nhận', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Ghi nhận kiêm nhiệm' });
+  await expect(dialog.getByText('Bùi Thị Tâm đang kiêm 1 việc cần tách người.', { exact: false })).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Người kiểm soát' })).toHaveValue('u-huong');
+  await dialog.getByRole('textbox', { name: 'Vì sao cần kiêm nhiệm' }).fill('Kế toán kiêm thủ kho và mua hàng ở công trường');
+  await dialog.getByRole('button', { name: '+ Kế toán đối chiếu phiếu nhập kho với đơn mua hằng tháng' }).click();
+  await dialog.getByRole('button', { name: 'Ghi nhận', exact: true }).click();
+  await expect(page.getByLabel('Sent')).toHaveText('PROCUREMENT_BUY_WAREHOUSE_KEEPER|u-huong|Kế toán đối chiếu phiếu nhập kho với đơn mua hằng tháng');
+  await expect(page.getByText(/đã ghi nhận đến .*Nguyễn Thị Hương kiểm soát/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ghi nhận lại' })).toBeVisible();
+});
