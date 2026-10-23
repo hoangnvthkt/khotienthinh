@@ -5,7 +5,7 @@ import { explainError } from '../../supabase/functions/ai-gateway/errorGuide';
 // Kiểm soát viên K2 (chủ SP 23/10/2026): chặn lúc lưu 6 ca P0 — bắt lý do / xác nhận. Smoke dữ liệu thật trên Cloud:
 // supabase/tests/control_k2_save_guards_smoke.sql.
 
-const sql = readFileSync('supabase/migrations/20261029210000_control_k2_save_guards.sql', 'utf8');
+const sql = readFileSync('supabase/migrations/20261030100000_control_k2_save_guards.sql', 'utf8');
 const fn = (name: string) => {
   const start = sql.search(new RegExp(`FUNCTION ${name.replace('.', '\\.')}\\(`, 'i'));
   expect(start, name).toBeGreaterThan(-1);

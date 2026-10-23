@@ -60,7 +60,7 @@ Màn: `/kiem-soat` **Lệch cần sửa** (mọi người dùng; máy chủ ch�
 
 Kết quả giao người trên dữ liệu thật (smoke 23/10): PO-609 → 4 người quyền Tài chính; MR-2026-9833 → người lập PO-671; lệch kho → thủ kho; lệch không rõ người (đơn cũ, đề xuất chưa có đơn) → Admin.
 
-## K2 — chặn lúc lưu (chủ SP 23/10 "làm cả 6 ca", migration `20261029210000_control_k2_save_guards`)
+## K2 — chặn lúc lưu (chủ SP 23/10 "làm cả 6 ca", migration `20261030100000_control_k2_save_guards`)
 
 Nguyên tắc: người thao tác sửa được ngay thì **bắt lý do / xác nhận**, không chặn cứng việc đúng; đợt / đơn cũ đang chạy không bị kẹt.
 

@@ -791,6 +791,8 @@ const Attendance: React.FC = () => {
   };
 
   const canApprove = (proposal: AttendanceProposal): boolean => {
+    // Không tự duyệt công của chính mình (máy chủ cũng chặn): người quản lý trực tiếp hoặc HCNS duyệt.
+    if (currentEmployee && proposal.targetEmployeeId === currentEmployee.id) return false;
     if (canApproveAttendance) return true;
     if (proposal.locationType === 'construction_site' && proposal.locationId && managedSiteIds.includes(proposal.locationId)) return true;
     if (proposal.locationType === 'office' && proposal.locationId && managedOfficeIds.includes(proposal.locationId)) return true;

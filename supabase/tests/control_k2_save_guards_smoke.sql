@@ -1,5 +1,5 @@
 -- Kiểm soát viên K2: chặn lúc lưu 6 ca P0 trên dữ liệu thật (giao dịch tự hủy).
--- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261029210000_control_k2_save_guards.sql --smoke supabase/tests/control_k2_save_guards_smoke.sql
+-- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261030100000_control_k2_save_guards.sql --smoke supabase/tests/control_k2_save_guards_smoke.sql
 begin;
 create temp table k2(name text primary key, v text, n bigint) on commit drop;
 grant select on k2 to authenticated;

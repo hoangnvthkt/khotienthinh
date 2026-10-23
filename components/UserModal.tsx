@@ -443,7 +443,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>
           </div>
 
-          {userToEdit && canGrantPermissions && <SodConflictNotice userId={userToEdit.id} reloadKey={snapshotReload} />}
+          {userToEdit && canGrantPermissions && <SodConflictNotice userId={userToEdit.id} targetName={userToEdit.name} reloadKey={snapshotReload}
+            candidates={controlOwnerCandidates} actorUserId={currentUserId}
+            defaultControlOwnerId={directManager?.managerUserId || null} />}
           {userToEdit ? <AuthorizationEditor
             initialApplicationCode={permissionApplicationCode}
             targetUser={userToEdit}
