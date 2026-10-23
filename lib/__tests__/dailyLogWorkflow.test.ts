@@ -74,6 +74,10 @@ describe('daily log source workflow', () => {
     expect(mapDailyLogWbsCommandError(new Error('PERIOD_LOCKED_WITH_REOPEN_REQUIRED')).message)
       .toBe('Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.');
   });
+  it('explains an invalid summary work item instead of showing the raw code', () => {
+    expect(mapDailyLogWbsCommandError(new Error('SUMMARY_WORK_ITEM_INPUT_INVALID')).message)
+      .toMatch(/^Số liệu một hạng mục trong phiếu không khớp/);
+  });
   it('offers a summary revision only for the active verified version with dual capability and an open period', () => {
     const verified = summaryLog({ status: 'verified', revisionNo: 1 });
     expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: true, periodLocked: false })).toBe(true);

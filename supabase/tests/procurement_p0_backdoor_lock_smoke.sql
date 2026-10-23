@@ -3,7 +3,7 @@
 -- Vai thật: Linh (lập đơn), Mơ (duyệt đơn), Phương (thủ kho Kho Xin Hai Vina), Thủy (kế toán), Hương (duyệt chi),
 -- Chuẩn (xác nhận chi), Admin. Ghi thẳng = request.path '/rest/v1/…' + role authenticated; lệnh = '/rpc/…'.
 -- Mọi số chứng từ (sequence) nhảy trong lúc chạy được đặt lại ở cuối. Rollback.
--- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028090000_procurement_p0_backdoor_lock.sql --smoke supabase/tests/procurement_p0_backdoor_lock_smoke.sql
+-- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028135000_procurement_p0_backdoor_lock.sql --smoke supabase/tests/procurement_p0_backdoor_lock_smoke.sql
 begin;
 
 create temp table _seq on commit drop as

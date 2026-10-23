@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261028090000_procurement_p0_backdoor_lock.sql'), 'utf8');
+const sql = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261028135000_procurement_p0_backdoor_lock.sql'), 'utf8');
 
 const functionBody = (name: string) => {
   const start = sql.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
