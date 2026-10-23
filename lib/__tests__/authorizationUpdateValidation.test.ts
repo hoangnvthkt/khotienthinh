@@ -227,7 +227,8 @@ describe('authorization update validation', () => {
   it('nói rõ khi bộ quyền chạm luật tách nhiệm thay vì câu lỗi chung', () => {
     const error = mapAuthorizationRpcError({ code: '22023', message: 'SoD warning acknowledgement required' });
     expect(error.code).toBe('sod_warning_ack_required');
-    expect(error.message).toContain('Quản lý danh mục kho');
+    expect(error.message).toContain('Mua hàng + Duyệt PO');
+    expect(mapAuthorizationRpcError({ code: '22023', message: 'Invalid SoD warning control evidence' }).code).toBe('sod_ack_invalid');
     expect(mapAuthorizationRpcError({ code: '42501', message: 'Authorization change violates a hard SoD rule' }).code).toBe('sod_hard_deny');
   });
 });

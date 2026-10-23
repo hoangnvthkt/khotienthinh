@@ -16,6 +16,8 @@ import {
   type UserTemplateAssignment,
 } from '../../lib/userTemplateAssignmentService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { emptySodAcknowledgement, sodAcknowledgementIssue, toSodAcceptances, type SodAcknowledgement } from '../../lib/permissions/sodService';
+import { SodAcknowledgeFields, SodRuleList, type SodControlOwnerCandidate } from './SodAcknowledge';
 
 interface PermissionTemplateFillProps {
   userId: string;
@@ -30,6 +32,9 @@ interface PermissionTemplateFillProps {
   hasUnsavedChanges?: boolean;
   /** Máy chủ vừa đổi quyền của người này (gắn / bỏ mẫu): nạp lại bảng quyền. */
   onAssignmentChanged?: () => void | Promise<void>;
+  /** Người có thể làm người kiểm soát khi gắn mẫu tạo kiêm nhiệm (Đợt 2c). */
+  controlOwnerCandidates?: readonly SodControlOwnerCandidate[];
+  actorUserId?: string | null;
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every(item => b.includes(item));
@@ -44,7 +49,7 @@ type Filled = { name: string; added: number; removed: number; skipped: number; b
 // this person's own permissions; the Admin then adjusts single boxes below.
 const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
   userId, catalog, grants, inheritedCodes, reason, disabled, onGrantsChange, onReasonChange,
-  hasUnsavedChanges = false, onAssignmentChanged,
+  hasUnsavedChanges = false, onAssignmentChanged, controlOwnerCandidates = [], actorUserId = null,
 }) => {
   const [templates, setTemplates] = useState<UserPermissionTemplate[]>([]);
   const [positionId, setPositionId] = useState<string | null>(null);
@@ -61,6 +66,7 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
   const [busy, setBusy] = useState(false);
   const [assignError, setAssignError] = useState('');
   const [assignDone, setAssignDone] = useState('');
+  const [sodAck, setSodAck] = useState<SodAcknowledgement>(() => emptySodAcknowledgement());
 
   useEffect(() => {
     let cancelled = false;
@@ -103,9 +109,13 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
   const chosenOptions = selectedOptions.filter(key => selected?.options.includes(key));
   const assignmentMatches = Boolean(assignment && selected && assignment.templateCode === selected.code
     && sameSet(assignment.options, chosenOptions));
+  // Đang theo đúng mẫu + ô tùy chọn: vẫn cho cập nhật lại (ví dụ lần sửa mẫu trước bỏ qua người này vì kiêm nhiệm).
   const assignLabel = !assignment ? 'Gắn mẫu (tự cập nhật)'
-    : assignment.templateCode !== selected?.code ? 'Đổi sang mẫu này' : 'Lưu ô tùy chọn';
+    : assignment.templateCode !== selected?.code ? 'Đổi sang mẫu này'
+    : assignmentMatches ? 'Cập nhật theo mẫu' : 'Lưu ô tùy chọn';
   const blockedByEdits = hasUnsavedChanges ? 'Lưu hoặc hủy thay đổi trong bảng quyền trước.' : '';
+  const sodWarnings = preview?.sod.warnings || [];
+  const sodIssue = sodWarnings.length > 0 ? sodAcknowledgementIssue(sodAck, actorUserId, userId) : '';
 
   const toggleOption = (key: string) => {
     setPreview(null);
@@ -117,7 +127,10 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
     if (!selected) return;
     setBusy(true); setAssignError(''); setAssignDone('');
     try {
-      setPreview(await userTemplateAssignmentService.preview(userId, selected.code, chosenOptions));
+      const next = await userTemplateAssignmentService.preview(userId, selected.code, chosenOptions);
+      const owner = controlOwnerCandidates.some(candidate => candidate.id === next.sod.defaultControlOwnerId) ? next.sod.defaultControlOwnerId : null;
+      setSodAck(emptySodAcknowledgement(owner));
+      setPreview(next);
     } catch (error) {
       logApiError('permissionTemplateFill.previewAssignment', error);
       setAssignError(getApiErrorMessage(error, 'Không xem trước được thay đổi.'));
@@ -130,7 +143,8 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
     if (!selected) return;
     setBusy(true); setAssignError('');
     try {
-      const result = await userTemplateAssignmentService.save(userId, selected.code, chosenOptions, `Gắn mẫu quyền "${selected.name}"`);
+      const result = await userTemplateAssignmentService.save(userId, selected.code, chosenOptions, `Gắn mẫu quyền "${selected.name}"`,
+        preview?.sod.warnings.length ? toSodAcceptances(preview.sod.warnings, sodAck) : []);
       setAssignment(await userTemplateAssignmentService.get(userId));
       setPreview(null);
       setAssignDone(`Đã gắn mẫu "${selected.name}": thêm ${result.added}, gỡ ${result.removed} quyền. Sửa mẫu sau này sẽ tự cập nhật người này.`);
@@ -246,12 +260,10 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {!assignmentMatches && (
-          <button type="button" onClick={() => void startAssign()} disabled={disabled || busy || !selected || Boolean(blockedByEdits)} title={blockedByEdits || undefined}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
-            {busy && !confirmRemove ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />} {assignLabel}
-          </button>
-        )}
+        <button type="button" onClick={() => void startAssign()} disabled={disabled || busy || !selected || Boolean(blockedByEdits)} title={blockedByEdits || undefined}
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+          {busy && !confirmRemove ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />} {assignLabel}
+        </button>
         {assignment && !confirmRemove && (
           <button type="button" onClick={() => setConfirmRemove(true)} disabled={disabled || busy || Boolean(blockedByEdits)} title={blockedByEdits || undefined}
             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
@@ -269,8 +281,15 @@ const PermissionTemplateFill: React.FC<PermissionTemplateFillProps> = ({
           </p>
           {preview.add.length > 0 && <p><span className="font-bold text-emerald-700">Thêm:</span> {previewNames(preview.add)}</p>}
           {preview.remove.length > 0 && <p><span className="font-bold text-rose-700">Gỡ:</span> {previewNames(preview.remove)}</p>}
+          {sodWarnings.length > 0 && (
+            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+              <p className="font-black text-amber-900">Mẫu này làm người này kiêm nhiệm — ghi nhận trước khi gắn</p>
+              <SodRuleList warnings={sodWarnings} />
+              <SodAcknowledgeFields warnings={sodWarnings} value={sodAck} onChange={setSodAck} candidates={controlOwnerCandidates} disabled={busy} />
+            </div>
+          )}
           <div className="flex gap-2">
-            <button type="button" onClick={() => void confirmAssign()} disabled={busy} className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 font-black text-white hover:bg-indigo-700 disabled:opacity-50">
+            <button type="button" onClick={() => void confirmAssign()} disabled={busy || Boolean(sodIssue)} title={sodIssue || undefined} className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 font-black text-white hover:bg-indigo-700 disabled:opacity-50">
               {busy ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} {assignment?.templateCode === selected.code ? 'Xác nhận' : 'Xác nhận gắn mẫu'}
             </button>
             <button type="button" onClick={() => setPreview(null)} disabled={busy} className="rounded-md border border-slate-200 bg-white px-3 py-1.5 font-bold text-slate-600">Thôi</button>

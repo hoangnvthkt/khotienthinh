@@ -120,6 +120,7 @@ const UserManagement: React.FC = () => {
         users={users}
         canAssignAdminRole
         canGrantPermissions
+        currentUserId={currentUser.id}
       />
 
       <UserAccountStatusModal

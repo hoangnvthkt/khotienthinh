@@ -249,6 +249,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_CONFIRM_DENIED: 'Bạn chưa có quyền Tài chính — Xác nhận.',
   FINANCE_MANAGE_DENIED: 'Chỉ Admin hoặc Quản trị Tài chính được sửa phần này.',
   FINANCE_SELF_CONFIRM: 'Người xác nhận phải khác người lập, người duyệt và người đã nhận hàng / chốt đối soát — kể cả Admin.',
+  FINANCE_SELF_REVERSE: 'Bạn đã xác nhận phiếu này nên không tự đảo được. Nhờ người có quyền xác nhận khác đảo phiếu.',
   FINANCE_WITHDRAW_DENIED: 'Chỉ người lập được rút khi còn chờ xác nhận.',
   FINANCE_REASON_REQUIRED: 'Nhập lý do.',
   FINANCE_PAYMENT_DATE_INVALID: 'Ngày chi không hợp lệ (không được sau hôm nay).',

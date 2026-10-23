@@ -152,8 +152,12 @@ const SettingsUserPermissionTemplates: React.FC = () => {
         ? `${draft.name} · đã cập nhật ${result.synced.length} người đang theo mẫu`
         : draft.name);
       if (result.failed.length > 0) {
-        toast.warning(`${result.failed.length} người chưa cập nhật được`,
-          `${result.failed.map(item => item.name).join(', ')} — mở từng người ở Người dùng để xem lý do (thường do luật kiêm nhiệm cần xác nhận).`);
+        const sod = result.failed.filter(item => /SoD warning acknowledgement/i.test(item.error));
+        const other = result.failed.filter(item => !sod.includes(item));
+        toast.warning(`${result.failed.length} người chưa cập nhật được`, [
+          sod.length > 0 && `${sod.map(item => item.name).join(', ')}: mẫu mới làm họ kiêm nhiệm — mở người đó ở Người dùng, bấm Cập nhật theo mẫu để ghi nhận.`,
+          other.length > 0 && `${other.map(item => item.name).join(', ')}: mở từng người ở Người dùng để xem lý do.`,
+        ].filter(Boolean).join(' '));
       }
       await load(code);
     } catch (error) {

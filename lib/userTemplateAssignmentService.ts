@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { toSodPreview, type SodPreview, type SodWarningAcceptance } from './permissions/sodService';
 
 // Đợt 2b: một người theo một mẫu quyền ("gói sống"). Sửa mẫu là cập nhật mọi người đang theo mẫu;
 // quyền Admin bỏ riêng không bị cấp lại, quyền thêm riêng không bị gỡ (server: user_template_assignments).
@@ -27,6 +28,8 @@ export interface TemplateAssignmentPreview {
   add: TemplateAssignmentPreviewItem[];
   remove: TemplateAssignmentPreviewItem[];
   excludedCount: number;
+  /** Đợt 2c: cảnh báo kiêm nhiệm nếu gắn mẫu này. */
+  sod: SodPreview;
 }
 
 export interface TemplateAssignmentResult {
@@ -62,12 +65,17 @@ export const userTemplateAssignmentService = {
       add: (data as any)?.add || [],
       remove: (data as any)?.remove || [],
       excludedCount: Number((data as any)?.excludedCount || 0),
+      sod: toSodPreview((data as any)?.sod),
     };
   },
 
-  async save(userId: string, templateCode: string, options: readonly string[], reason: string): Promise<TemplateAssignmentResult> {
+  async save(
+    userId: string, templateCode: string, options: readonly string[], reason: string,
+    warningAcceptances: readonly SodWarningAcceptance[] = [],
+  ): Promise<TemplateAssignmentResult> {
     const { data, error } = await supabase.rpc('save_user_template_assignment_v1', {
       p_user_id: userId, p_template_code: templateCode, p_options: [...options], p_reason: reason,
+      ...(warningAcceptances.length ? { p_warning_acceptances: warningAcceptances } : {}),
     });
     if (error) throw error;
     return { added: Number((data as any)?.added || 0), removed: Number((data as any)?.removed || 0) };

@@ -4,6 +4,7 @@ import { isDirectPermissionGrantAllowed } from './permissionService';
 import { getSupabaseOrderColumns } from '../supabaseProjections';
 import { fetchAllSupabaseRows } from '../supabaseCompleteRead';
 import { mapAuthorizationRpcError } from './authorizationUpdateValidation';
+import type { SodWarningAcceptance } from './sodService';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -31,6 +32,8 @@ export interface UpdateUserAuthorizationV2Input {
   grants: readonly UserPermissionGrant[];
   reason: string;
   expectedUpdatedAt: string;
+  /** Ghi nhận kiêm nhiệm (Đợt 2c); chỉ gửi khi có. */
+  warningAcceptances?: readonly SodWarningAcceptance[];
 }
 
 export interface UserAuthorizationUpdateReceipt {
@@ -138,6 +141,7 @@ export const updateUserAuthorizationV2 = async (
     p_grants: toGrantPayload(input.grants),
     p_reason: reason,
     p_expected_updated_at: input.expectedUpdatedAt,
+    ...(input.warningAcceptances?.length ? { p_warning_acceptances: input.warningAcceptances } : {}),
   });
 
   if (error) throw mapAuthorizationRpcError(error);
