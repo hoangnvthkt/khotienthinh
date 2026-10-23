@@ -41,7 +41,15 @@ interface AuthorizationEditorProps {
   onCatalogChange?: (catalog: PermissionAdminCatalog | null) => void;
   onDirectGrantsChange: (grants: UserPermissionGrant[]) => void;
   onReasonChange: (reason: string) => void;
+  /** Gắn / bỏ mẫu quyền đã đổi quyền trên máy chủ: nạp lại quyền trực tiếp của người này. */
+  onDirectGrantsReload?: () => void | Promise<void>;
 }
+
+const grantKeys = (grants: readonly UserPermissionGrant[]) => grants
+  .filter(grant => grant.isActive !== false)
+  .map(grant => `${grant.permissionCode}|${grant.scopeType || 'global'}|${grant.scopeId || '*'}|${grant.expiresAt || ''}`)
+  .sort()
+  .join(',');
 
 type AuthorizationClipboard = {
   version: 2;
@@ -85,6 +93,7 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   onCatalogChange,
   onDirectGrantsChange,
   onReasonChange,
+  onDirectGrantsReload,
 }) => {
   const [catalog, setCatalog] = useState<PermissionAdminCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -219,6 +228,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
               disabled={disabled}
               onGrantsChange={onDirectGrantsChange}
               onReasonChange={onReasonChange}
+              hasUnsavedChanges={grantKeys(directGrants) !== grantKeys(originalDirectGrants)}
+              onAssignmentChanged={onDirectGrantsReload}
             />
             <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
             <PermissionModuleEditor
