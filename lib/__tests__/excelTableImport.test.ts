@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTableEmpty, normalizeHeader, parseLooseNumber, parseTableMatrix, tableTemplateFileName } from '../excelTableImport';
+import { isTableEmpty, normalizeHeader, parseLooseNumber, parseTableMatrix, tableTemplateFileName, tableExportFileName, buildTableSheetRows } from '../excelTableImport';
 
 const COLUMNS = ['Họ và tên', 'Ngày tháng năm sinh', 'Vị trí công việc', 'Phòng ban'];
 
@@ -57,5 +57,21 @@ describe('workflow table Excel import', () => {
     expect(parseLooseNumber('2,5')).toBe(2.5);
     expect(parseLooseNumber('0.5')).toBe(0.5);
     expect(parseLooseNumber('abc')).toBeNull();
+  });
+});
+
+describe('workflow table Excel export', () => {
+  it('builds header + non-empty rows padded to the column count', () => {
+    expect(buildTableSheetRows(['Tên', 'ĐVT', 'SL'], [['Dầu', 'Thùng', '1'], ['', '', ''], ['Vỏ']])).toEqual([
+      ['Tên', 'ĐVT', 'SL'],
+      ['Dầu', 'Thùng', '1'],
+      ['Vỏ', '', ''],
+    ]);
+    expect(buildTableSheetRows(['Tên'], null)).toEqual([['Tên']]);
+  });
+
+  it('names the file after the field and the phiếu code', () => {
+    expect(tableExportFileName('Bảng kê vật tư', 'YC-0012')).toBe('Bang_ke_vat_tu_YC-0012.xlsx');
+    expect(tableExportFileName('Bảng kê vật tư')).toBe('Bang_ke_vat_tu.xlsx');
   });
 });

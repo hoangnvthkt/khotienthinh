@@ -1,10 +1,56 @@
 import React, { useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { loadXlsx } from '../../lib/loadXlsx';
-import { isTableEmpty, parseTableMatrix, tableTemplateFileName, type TableImportResult } from '../../lib/excelTableImport';
+import { buildTableSheetRows, isTableEmpty, parseTableMatrix, tableExportFileName, tableTemplateFileName, type TableImportResult } from '../../lib/excelTableImport';
 import { btnPrimary, btnSoft } from './WorkflowInstanceRow';
 
 const PREVIEW_ROWS = 5;
+
+const saveTableXlsx = async (columns: string[], rows: string[][] | null | undefined, fileName: string) => {
+    const XLSX = await loadXlsx();
+    const sheet = XLSX.utils.aoa_to_sheet(buildTableSheetRows(columns, rows));
+    sheet['!cols'] = columns.map(column => ({ wch: Math.max(14, column.length + 4) }));
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Du lieu');
+    XLSX.writeFile(book, fileName);
+};
+
+interface ExportProps {
+    label: string;
+    columns: string[];
+    rows: string[][] | null | undefined;
+    /** Mã phiếu, nối vào tên file để biết file của phiếu nào. */
+    reference?: string;
+}
+
+/** Nút "Xuất Excel" cho bảng chỉ xem (phiếu đã gửi / đã xử lý). */
+export const WorkflowTableExportButton: React.FC<ExportProps> = ({ label, columns, rows, reference }) => {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const disabled = busy || isTableEmpty(rows);
+
+    const run = async () => {
+        setBusy(true); setError('');
+        try {
+            await saveTableXlsx(columns, rows, tableExportFileName(label, reference));
+        } catch (err) {
+            console.error('Workflow table export failed:', err);
+            setError('Chưa xuất được file. Vui lòng thử lại.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <span className="ml-auto inline-flex items-center gap-2">
+            {error && <span role="alert" className="text-[11px] font-semibold text-rose-600">{error}</span>}
+            <button type="button" onClick={() => void run()} disabled={disabled} className={`${btnSoft} !px-2.5 !py-1 !text-xs disabled:cursor-not-allowed disabled:opacity-50`}
+                title={isTableEmpty(rows) ? 'Bảng chưa có dữ liệu để xuất' : 'Tải bảng này về file Excel'}>
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}Xuất Excel
+            </button>
+        </span>
+    );
+};
 
 interface Props {
     label: string;
@@ -22,20 +68,13 @@ const WorkflowTableExcel: React.FC<Props> = ({ label, columns, rows, onImport })
     const [mode, setMode] = useState<'append' | 'replace'>('append');
     const hasData = !isTableEmpty(rows);
 
-    const downloadTemplate = async () => {
+    const download = async (withData: boolean) => {
         setBusy('export'); setError('');
         try {
-            const XLSX = await loadXlsx();
-            // Đang có dữ liệu thì xuất kèm để sửa tiếp trên Excel rồi nhập lại.
-            const body = hasData ? rows.filter(row => row.some(cell => String(cell ?? '').trim())) : [];
-            const sheet = XLSX.utils.aoa_to_sheet([columns, ...body]);
-            sheet['!cols'] = columns.map(column => ({ wch: Math.max(14, column.length + 4) }));
-            const book = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(book, sheet, 'Du lieu');
-            XLSX.writeFile(book, tableTemplateFileName(label));
+            await saveTableXlsx(columns, withData ? rows : [], withData ? tableExportFileName(label) : tableTemplateFileName(label));
         } catch (err) {
-            console.error('Workflow table template export failed:', err);
-            setError('Chưa tạo được file mẫu. Vui lòng thử lại.');
+            console.error('Workflow table export failed:', err);
+            setError('Chưa tạo được file Excel. Vui lòng thử lại.');
         } finally {
             setBusy(null);
         }
@@ -77,10 +116,16 @@ const WorkflowTableExcel: React.FC<Props> = ({ label, columns, rows, onImport })
     return (
         <>
             <div className="flex flex-wrap items-center gap-1.5">
-                <button type="button" onClick={() => void downloadTemplate()} disabled={busy !== null} className={btnSoft}
-                    title={hasData ? 'Tải bảng hiện tại ra Excel để sửa rồi nhập lại' : 'Tải file Excel có sẵn tên cột để điền'}>
+                <button type="button" onClick={() => void download(false)} disabled={busy !== null} className={btnSoft}
+                    title="Tải file Excel có sẵn tên cột để điền">
                     {busy === 'export' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}Tải mẫu Excel
                 </button>
+                {hasData && (
+                    <button type="button" onClick={() => void download(true)} disabled={busy !== null} className={btnSoft}
+                        title="Tải dữ liệu đang có ra Excel để sửa rồi nhập lại">
+                        <FileSpreadsheet size={14} />Xuất Excel
+                    </button>
+                )}
                 <button type="button" onClick={() => fileRef.current?.click()} disabled={busy !== null} className={btnSoft}>
                     {busy === 'import' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}{busy === 'import' ? 'Đang đọc file…' : 'Nhập từ Excel'}
                 </button>

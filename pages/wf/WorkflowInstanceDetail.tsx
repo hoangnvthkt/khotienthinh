@@ -40,6 +40,7 @@ import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplat
 import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
 import WorkflowFilePreview from '../../components/workflow/WorkflowFilePreview';
 import WorkflowInstanceActionDialog from '../../components/workflow/WorkflowInstanceActionDialog';
+import { WorkflowTableExportButton } from '../../components/workflow/WorkflowTableExcel';
 import { formatWorkflowFileSize, getWorkflowFileKind, normalizeWorkflowFiles, type WorkflowFileValue } from '../../lib/workflowFiles';
 import { downloadWorkflowFile, hasDownloadableFile, uploadWorkflowAttachment } from '../../lib/workflowFileTransfer';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
@@ -1160,6 +1161,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                                                     <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                                                                         {field.label}
                                                                     </span>
+                                                                    {field.type === 'table' && (
+                                                                        <WorkflowTableExportButton label={field.label} columns={field.options || []} rows={Array.isArray(value) ? value : null} reference={instance.code} />
+                                                                    )}
                                                                 </div>
 
                                                                 <div>
