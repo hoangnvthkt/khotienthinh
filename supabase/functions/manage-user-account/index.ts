@@ -1,7 +1,8 @@
 import {
   EdgeAuthorizationError,
+  assertAccountManager,
   getAdminClient,
-  requireActiveAdmin,
+  requireAccountManager,
 } from '../_shared/adminAuthorization.ts';
 import { buildRevocationPassword } from '../_shared/accountLifecyclePassword.ts';
 
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
 
   try {
     admin = getAdminClient();
-    const caller = await requireActiveAdmin(req, admin);
+    const caller = await requireAccountManager(req, admin);
     actorUserId = caller.appUser.id;
 
     const body = await req.json();
@@ -70,6 +71,8 @@ Deno.serve(async (req) => {
     if (action === 'REACTIVATE' && newPassword.length < 8) {
       throw new RequestError('A new password with at least 8 characters is required');
     }
+    // Not an Admin: no lock / reopen of an administrator account (the lifecycle RPCs check it again).
+    await assertAccountManager(admin, caller, { userId: targetUserId });
 
     const { data: prepared, error: prepareError } = await admin.rpc('prepare_user_account_lifecycle', {
       p_actor_user_id: caller.appUser.id,

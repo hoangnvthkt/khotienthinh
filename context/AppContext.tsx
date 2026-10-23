@@ -1437,12 +1437,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextUser = { ...u, isActive: u.isActive ?? true };
     const pendingAdminLoad = inflightModuleLoadsRef.current.admin;
 
-    const syncOk = await syncToSupabase('users', nextUser);
-    if (!syncOk) {
-      console.error('❌ addUser: Không thể lưu user vào Supabase:', u.email);
-      throw new Error('Không thể lưu người dùng vào Supabase. Vui lòng kiểm tra RLS/policy hoặc quyền admin.');
-    }
-
+    // The create-user Edge Function already wrote the profile (the server decides the role); only read it back.
+    // Writing it again from the browser needs Admin rights under users RLS, which a "Quản lý tài khoản" lacks.
     const persistedUser = isSupabaseConfigured
       ? await refreshManagedUser(nextUser.id)
       : nextUser;

@@ -58,6 +58,20 @@ export const getSettingsFeatureToken = (featureId: Exclude<SettingsFeatureId, 'a
 export const isSettingsUserAdmin = (user: User): boolean =>
   user.role === Role.ADMIN || canPerform(user, 'system.settings.manage');
 
+/** Tạo, khóa, mở lại, đặt lại mật khẩu tài khoản: Admin hoặc "Quản lý tài khoản" (máy chủ kiểm lại). */
+export const canManageUserAccounts = (user: User): boolean =>
+  user.role === Role.ADMIN || canPerform(user, 'settings.users.manage');
+
+/** Người không phải Admin không thao tác trên tài khoản Admin; không ai tự khóa / đặt mật khẩu mình ở đây. */
+export const canManageUserAccountOf = (actor: User, target: User): boolean =>
+  canManageUserAccounts(actor)
+  && actor.id !== target.id
+  && (actor.role === Role.ADMIN || target.role !== Role.ADMIN);
+
+/** Sửa hồ sơ + phân quyền, đổi loại tài khoản: chỉ người quản lý quyền (update_user_authorization_v2). */
+export const canEditUserAuthorization = (user: User): boolean =>
+  canPerform(user, 'system.authorization.manage_grants');
+
 export const getSettingsUserModuleKeys = (
   user: User,
   moduleKeys: string[],
