@@ -1,15 +1,18 @@
 import {
   EdgeAuthorizationError,
+  assertAccountManager,
   getAdminClient,
   requireActiveCaller,
 } from '../_shared/adminAuthorization.ts';
 
 // Sets a new password (or login email) for an account.
 // - Anyone may change their own.
-// - An Admin may change another person's, on an active account only (a
-//   disabled account is reopened through manage-user-account REACTIVATE), with
-//   a reason. Every change for someone else is recorded in audit_trail
-//   without the password.
+// - An Admin, or a holder of settings.users.manage ("Quản lý tài khoản"), may set
+//   another person's password, on an active account only (a disabled account is
+//   reopened through manage-user-account REACTIVATE), with a reason. Someone who
+//   is not an Admin cannot touch an administrator account, and only an Admin
+//   changes another person's login email. Every change for someone else is
+//   recorded in audit_trail without the password.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,7 +74,10 @@ Deno.serve(async (req) => {
 
     const isSelf = targetAuthId === caller.authUser.id;
     if (!isSelf) {
-      if (!caller.isAdmin) return json({ error: 'Chỉ Admin được đặt mật khẩu cho người khác.' }, 403);
+      if (newEmail && !caller.isAdmin) {
+        return json({ error: 'Chỉ Admin đổi được email đăng nhập của người khác.' }, 403);
+      }
+      await assertAccountManager(admin, caller, { userId: target?.id });
       if (!target || target.is_active !== true || target.account_status === 'DISABLED') {
         return json({ error: 'Tài khoản đang bị vô hiệu hoá. Dùng "Khôi phục tài khoản" để mở lại kèm mật khẩu mới.' }, 409);
       }
@@ -97,7 +103,7 @@ Deno.serve(async (req) => {
         module: 'SETTINGS',
         user_id: caller.appUser.id,
         new_data: { passwordReset: Boolean(newPassword), ...(newEmail ? { email: newEmail } : {}) },
-        description: `Admin đặt lại ${changed} cho ${target.name || target.id}: ${reason}`,
+        description: `${caller.isAdmin ? 'Admin' : 'Quản lý tài khoản'} đặt lại ${changed} cho ${target.name || target.id}: ${reason}`,
       });
       if (auditError) console.error('reset-password audit failed', auditError.message);
     }

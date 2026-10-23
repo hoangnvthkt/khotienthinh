@@ -41,7 +41,7 @@ const SECTION_META: Array<{
 ];
 
 const ACCESS_LEVEL_LABEL: Record<string, string> = {
-  SELF: 'Hồ sơ của tôi', MANAGER: 'Quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR Manage', DIRECTORY: 'Danh bạ',
+  SELF: 'Hồ sơ của tôi', MANAGER: 'Quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR Manage', HR_VIEWER: 'Chỉ xem', DIRECTORY: 'Danh bạ',
 };
 const DEFAULT_CHANGE_REASON = 'Cập nhật hồ sơ nhân sự theo giấy tờ gốc';
 const newRecordCode = (kind: string) => `${kind.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;

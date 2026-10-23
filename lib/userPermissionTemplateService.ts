@@ -22,9 +22,28 @@ export interface UserPermissionTemplate {
   description: string | null;
   items: UserPermissionTemplateItem[];
   suggestedPositionIds: string[];
+  /** Ô tùy chọn theo từng người mẫu này bật (vd 'po_approver' = Duyệt PO). */
+  options: string[];
   sortOrder: number;
   isActive: boolean;
   updatedAt?: string;
+}
+
+/** Ô tùy chọn theo từng người (server: permission_template_option_defs). */
+export interface PermissionTemplateOptionDef {
+  key: string;
+  label: string;
+  description: string | null;
+  items: UserPermissionTemplateItem[];
+}
+
+/** Một người đang theo mẫu sẽ được thêm / gỡ gì khi lưu mẫu ("mã@phạm vi"). */
+export interface TemplateChangePreviewUser { userId: string; name: string; add: string[]; remove: string[] }
+export interface TemplateChangePreview { assignees: number; changed: number; users: TemplateChangePreviewUser[] }
+export interface TemplateSaveResult {
+  template: UserPermissionTemplate;
+  synced: Array<{ userId: string; name: string; added: number; removed: number }>;
+  failed: Array<{ userId: string; name: string; error: string }>;
 }
 
 export type UserPermissionTemplateMode = 'merge' | 'replace';
@@ -35,6 +54,7 @@ const toTemplate = (row: any): UserPermissionTemplate => ({
   description: row.description,
   items: row.items || [],
   suggestedPositionIds: row.suggested_position_ids || [],
+  options: row.options || [],
   sortOrder: row.sort_order ?? 100,
   isActive: row.is_active !== false,
   updatedAt: row.updated_at,
@@ -44,24 +64,64 @@ export const userPermissionTemplateService = {
   async list(): Promise<UserPermissionTemplate[]> {
     const { data, error } = await supabase
       .from('user_permission_templates')
-      .select('code,name,description,items,suggested_position_ids,sort_order,is_active,updated_at')
+      .select('code,name,description,items,suggested_position_ids,options,sort_order,is_active,updated_at')
       .order('sort_order')
       .limit(200);
     if (error) throw error;
     return (data || []).map(toTemplate);
   },
 
-  async save(template: Omit<UserPermissionTemplate, 'sortOrder' | 'updatedAt'>): Promise<UserPermissionTemplate> {
-    const { data, error } = await supabase.rpc('save_user_permission_template', {
+  /** Lưu mẫu rồi cập nhật mọi người đang theo mẫu (người lỗi được báo lại, không chặn người khác). */
+  async save(template: Omit<UserPermissionTemplate, 'sortOrder' | 'updatedAt'>): Promise<TemplateSaveResult> {
+    const { data, error } = await supabase.rpc('save_user_permission_template_v2', {
       p_code: template.code,
       p_name: template.name,
       p_description: template.description,
       p_items: template.items,
       p_suggested_position_ids: template.suggestedPositionIds,
       p_is_active: template.isActive,
+      p_options: template.options,
     });
     if (error) throw error;
-    return toTemplate(data);
+    return {
+      template: toTemplate((data as any)?.template),
+      synced: (data as any)?.synced || [],
+      failed: (data as any)?.failed || [],
+    };
+  },
+
+  /** Ai đang theo mẫu sẽ được thêm / gỡ gì nếu lưu bản nháp này. */
+  async previewChange(template: Pick<UserPermissionTemplate, 'code' | 'items' | 'options'>): Promise<TemplateChangePreview> {
+    const { data, error } = await supabase.rpc('preview_permission_template_change_v1', {
+      p_code: template.code, p_items: template.items, p_options: template.options,
+    });
+    if (error) throw error;
+    return {
+      assignees: Number((data as any)?.assignees || 0),
+      changed: Number((data as any)?.changed || 0),
+      users: (data as any)?.users || [],
+    };
+  },
+
+  async listOptionDefs(): Promise<PermissionTemplateOptionDef[]> {
+    const { data, error } = await supabase
+      .from('permission_template_option_defs')
+      .select('key,label,description,items')
+      .eq('is_active', true)
+      .order('sort_order')
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map((row: any) => ({ key: row.key, label: row.label, description: row.description, items: row.items || [] }));
+  },
+
+  /** Số người đang theo từng mẫu. */
+  async countAssignees(): Promise<Record<string, number>> {
+    const { data, error } = await supabase.from('user_template_assignments').select('template_code').limit(2000);
+    if (error) throw error;
+    return (data || []).reduce<Record<string, number>>((acc, row: any) => {
+      acc[row.template_code] = (acc[row.template_code] || 0) + 1;
+      return acc;
+    }, {});
   },
 
   /** Position of the employee linked to a user account, or null. */

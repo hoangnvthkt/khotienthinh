@@ -83,7 +83,7 @@ describe('DailyLogSummaryWorkspace', () => {
     expect(html).not.toContain('Bạn chưa có quyền');
   });
   it('keeps one summary per day and revision in the database', () => {
-    const sql = readFileSync('supabase/migrations/20261029120000_daily_log_one_summary_per_day.sql', 'utf8');
+    const sql = readFileSync('supabase/migrations/20261029150000_daily_log_one_summary_per_day.sql', 'utf8');
     expect(sql).toContain("left(date, 10), coalesce(revision_no, 1))");
     expect(sql).toContain("where summary_source_type = 'member_contributions'");
     const tab = readFileSync('pages/project/DailyLogTab.tsx', 'utf8');

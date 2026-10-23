@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { RetiredUserFields } from './retiredUserFields';
-import { Role, User } from '../../types';
+import { Role, User, type EffectivePermissionSource } from '../../types';
 import {
   canPerform,
   canPerformHrmTemplatePermission,
+  canViewHrmTemplatePermission,
   canViewModule,
   canViewWorkflowModule,
   canViewRoute,
@@ -184,6 +185,38 @@ describe('permissionService', () => {
     expect(canPerformHrmTemplatePermission(legacyViewer, 'hrm.payroll.view')).toBe(false);
     expect(canPerformHrmTemplatePermission(hrViewer, 'hrm.payroll.view')).toBe(true);
     expect(isDirectPermissionGrantAllowed('hrm.payroll.view')).toBe(false);
+  });
+
+  it('lets the HR viewer role read sensitive HR data but never act as HR', () => {
+    const viewerSource = (permissionCode: string): EffectivePermissionSource => ({
+      permissionCode, sourceType: 'ROLE', sourceCode: 'HR_VIEWER', sourceId: `viewer-${permissionCode}`,
+      scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {},
+    });
+    const viewer = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-10-23T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        // payroll.manage is not part of the role; even if a snapshot carried it, the view check ignores it.
+        sources: ['hrm.payroll.view', 'hrm.employee.view_sensitive', 'hrm.payroll.manage'].map(viewerSource),
+        roomActions: [],
+      },
+    });
+    const directViewer = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-10-23T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [{ ...viewerSource('hrm.payroll.view'), sourceType: 'DIRECT', sourceCode: 'DIRECT' }],
+        roomActions: [],
+      },
+    });
+
+    expect(canViewHrmTemplatePermission(viewer, 'hrm.payroll.view')).toBe(true);
+    expect(canViewHrmTemplatePermission(viewer, 'hrm.employee.view_sensitive')).toBe(true);
+    expect(canViewHrmTemplatePermission(viewer, 'hrm.payroll.manage')).toBe(false);
+    expect(canViewHrmTemplatePermission(viewer, 'hrm.contract.view')).toBe(false);
+    expect(canPerformHrmTemplatePermission(viewer, 'hrm.employee.view_sensitive')).toBe(false);
+    expect(canPerformHrmTemplatePermission(viewer, 'hrm.payroll.view')).toBe(false);
+    expect(canViewHrmTemplatePermission(directViewer, 'hrm.payroll.view')).toBe(false);
   });
 
   it('uses active scoped grants before legacy fallback', () => {

@@ -29,7 +29,7 @@ const catalog = {
 } as unknown as PermissionAdminCatalog;
 
 const template = (items: UserPermissionTemplate['items'], extra: Partial<UserPermissionTemplate> = {}): UserPermissionTemplate => ({
-  code: 'tpl', name: 'Mẫu', description: null, items, suggestedPositionIds: [], sortOrder: 10, isActive: true, ...extra,
+  code: 'tpl', name: 'Mẫu', description: null, items, suggestedPositionIds: [], options: [], sortOrder: 10, isActive: true, ...extra,
 });
 
 describe('person permission templates', () => {
