@@ -4,7 +4,7 @@
 -- Hương (Tài chính — Xác nhận), Thủy (kế toán dự án, người lập + ghi nợ bảng), Phương (thủ kho Kho Xin Hai Vina), Admin.
 -- Bảng thử: DCHD-202609-E63391 (1 dòng, 1.080 đ, đã ghi nợ, chưa chi). Ghi thẳng = request.path '/rest/v1/…' + role authenticated.
 -- Chạy với migration rỗng (bản gốc Cloud): mọi thăm dò "làm được" = tái hiện lỗ hổng. Số chứng từ (sequence) đặt lại ở cuối. Rollback.
--- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028110000_procurement_p0b_statement_reverse_wms_insert_lock.sql --smoke supabase/tests/procurement_p0b_statement_reverse_wms_insert_smoke.sql
+-- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028140000_procurement_p0b_statement_reverse_wms_insert_lock.sql --smoke supabase/tests/procurement_p0b_statement_reverse_wms_insert_smoke.sql
 begin;
 
 create temp table _seq on commit drop as
