@@ -145,6 +145,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_APPROVE_DENIED: 'Bạn không phải người được giao duyệt đơn này.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại để người lập biết cần sửa gì.',
   PROCUREMENT_PO_DELETE_DENIED: 'Chỉ xóa được đơn nháp chưa từng gửi duyệt.',
+  PROCUREMENT_PO_EXCESS_REASON_REQUIRED: 'Có dòng đặt vượt nhu cầu đề xuất chưa ghi lý do — bấm Sửa, ghi lý do ở dòng vượt rồi gửi lại.',
+  PROCUREMENT_PO_NEED_ENDED: 'Đề xuất của đơn đã kết thúc — không gửi / duyệt mua nữa. Trả lại hoặc hủy đơn; vẫn cần hàng thì lập đơn dự trữ.',
+  MR_SUPPLY_OPEN_PO: 'Còn đơn mua đang mở cho đề xuất này — hủy hoặc kết thúc thiếu đơn trước khi đóng nhu cầu.',
+  PURCHASE_DELIVERY_VAT_REASON: 'VAT đợt khác VAT đơn — ghi lý do (VD NCC xuất hóa đơn không VAT) hoặc để VAT theo đơn.',
   ROW_VERSION_CONFLICT: 'Đơn hàng vừa được người khác cập nhật. Tải lại rồi thử lại.',
   PROCUREMENT_DELIVERY_PO_STATE: 'Chỉ lập đợt giao hoặc kết thúc thiếu cho đơn đã duyệt, đang giao.',
   PROCUREMENT_DELIVERY_NOT_EDITABLE: 'Đợt giao đã có phiếu nhập kho hoặc đang chờ duyệt nên không sửa được.',
@@ -191,6 +195,8 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
       : 'Không tải được dữ liệu Mua hàng. Thử lại sau.';
     const mapped = new Error(code ? ERROR_MESSAGES[code] : fallback);
     (mapped as Error & { code?: string }).code = code || error.code;
+    // Đặt vượt / đơn mở (K2): máy chủ gửi danh sách dòng ở details (JSON).
+    try { (mapped as Error & { details?: unknown }).details = error.details ? JSON.parse(error.details) : undefined; } catch { /* details không phải JSON */ }
     throw mapped;
   }
   return data as T;
@@ -280,7 +286,8 @@ export const procurementInboxService = {
   assignGroupExcess(input: { purchaseOrderId: string; warehouseId: string; poLineId: string; sourceId: string; lineId: string; qty: number; reason: string }) {
     return call<{ purchaseOrderId: string; qty: number; code: string }>('assign_group_po_excess_v1', { p_input: input });
   },
-  transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
+  transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string;
+    /** Người duyệt chấp nhận đặt vượt nhu cầu: lý do ghi vào các dòng vượt (K2). */ excessReason?: string }) {
     return call<{ purchaseOrderId: string; status: string; rowVersion: number; budgetPending?: boolean; budgetApproverNames?: string[] }>('transition_procurement_hub_po_v1', { p_input: input });
   },
 };
@@ -391,6 +398,8 @@ export interface ProcurementSupplierReturn {
 }
 export interface ProcurementDeliverySaveInput {
   purchaseOrderId: string; deliveryId?: string; plannedDate?: string | null; vatRate: number; note?: string; approverUserId?: string;
+  /** VAT đợt khác VAT đơn: bắt buộc lý do (K2). */
+  vatReason?: string;
   /** Đơn gom: công trường nhận và cách chia khi giao thiếu cho nhiều dòng nhu cầu của công trường. */
   targetWarehouseId?: string; allocationMode?: 'earliest' | 'ratio';
   lines: Array<{ purchaseOrderLineId: string; purchaseQty: number; stockQty: number; unitPrice: number }>;
@@ -407,8 +416,12 @@ export const committedDeliveryAmount = (deliveries: ProcurementDelivery[], excep
 export interface ProcurementOrderSaveInput {
   purchaseOrderId?: string; purchaseMode?: 'single' | 'multiple'; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
   expectedDeliveryDate?: string | null; vatRate: number; note?: string;
-  items: Array<{ itemId: string; unitPrice: number; note?: string; specification?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
+  items: Array<{ itemId: string; unitPrice: number; note?: string; specification?: string; purchaseQty?: number; purchaseUnit?: string;
+    /** excessReason: lý do đặt vượt nhu cầu của dòng đề xuất (bắt buộc khi gửi duyệt, K2). */
+    allocations: Array<ProcurementSourceRef & { lineId: string; qty: number; excessReason?: string }> }>;
 }
+/** Dòng đặt vượt nhu cầu chưa có lý do (máy chủ trả ở details của PROCUREMENT_PO_EXCESS_REASON_REQUIRED). */
+export interface ProcurementExcessLine { linkId: string; requestCode: string | null; item: string; unit: string | null; need: number; ordered: number; otherOrdered: number }
 
 export const PROCUREMENT_PO_STATUS_LABELS: Record<string, string> = {
   draft: 'Nháp', sent: 'Chờ duyệt', returned: 'Bị trả lại', confirmed: 'Đã duyệt · chờ giao', in_transit: 'Đang giao',

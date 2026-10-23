@@ -35,6 +35,8 @@ export interface ContractDeliveryLine {
   specification?: string | null;
   priceSource: PriceSource; amount: number | null; wmsReady: boolean; statementId: string | null; statementCode: string | null; statementStatus: string | null;
   stockState: StockState; warehouseName: string | null; contractPrice: number | null;
+  /** Giá NCC ghi trên phiếu giao (null = phiếu không ghi giá). */
+  notePrice?: number | null;
 }
 export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number;
   specification?: string | null; contractLineId?: string | null }
@@ -86,6 +88,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_STATEMENT_SELF_POST: 'Người chốt bảng đối soát không tự ghi công nợ. Nhờ kế toán khác.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại.',
   PROCUREMENT_STATEMENT_PRICE_REASON: 'Có dòng giá khác giá HĐ — ghi lý do cho từng dòng đó.',
+  PROCUREMENT_STATEMENT_NOTE_PRICE_REASON: 'Có dòng giá khác giá NCC ghi trên phiếu giao — dùng giá phiếu giao hoặc ghi lý do cho dòng đó.',
   PROCUREMENT_STATEMENT_INVOICE_DENIED: 'Chỉ kế toán (Tài chính — Ghi nhận) được sửa tiền theo hóa đơn.',
   PROCUREMENT_STATEMENT_INVOICE_LIMIT: 'Tiền theo hóa đơn lệch quá dung sai làm tròn (mỗi dòng tối đa 1.000 đ; tổng VAT / cả bảng 0,5%, tối thiểu 50.000 đ) — sửa đơn giá kèm lý do.',
   PROCUREMENT_CONTRACT_FIELDS_REQUIRED: 'Nhập số và tên hợp đồng.',

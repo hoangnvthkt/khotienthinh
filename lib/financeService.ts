@@ -363,6 +363,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_EXPENSE_INVALID: 'Nhập đối tượng nhận tiền, loại chi và nội dung.',
   ROW_VERSION_CONFLICT: 'Dữ liệu vừa được người khác cập nhật. Tải lại rồi thử lại.',
   PROCUREMENT_STATEMENT_POST_DENIED: 'Bạn chưa có quyền ghi công nợ cho dự án này.',
+  PROCUREMENT_STATEMENT_NOTE_PRICE_REASON: 'Có dòng giá khác giá NCC ghi trên phiếu giao mà chưa ghi lý do — trả lại để Mua hàng ghi lý do.',
   PROCUREMENT_STATEMENT_SELF_POST: 'Người ghi công nợ phải khác người chốt bảng đối soát.',
   PROCUREMENT_STATEMENT_STATE: 'Bảng đối soát đã đổi trạng thái. Tải lại.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại.',

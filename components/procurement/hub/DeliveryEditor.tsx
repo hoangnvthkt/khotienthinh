@@ -10,6 +10,7 @@ import { Drawer, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 interface Row { lineId: string; name: string; unit: string; stockUnit: string; factor: number; remaining: number; include: boolean; purchaseQty: string; stockQty: string; stockTyped: boolean; price: string }
 
 const today = () => new Date().toISOString().slice(0, 10);
+const VAT_REASONS = ['NCC xuất hóa đơn không VAT', 'Hàng chịu thuế suất khác'];
 
 export const DeliveryEditor: React.FC<{
   order: ProcurementOrderDetail; delivery?: ProcurementDelivery | null; onClose: () => void; onSaved: (needsApproval: boolean) => void;
@@ -62,17 +63,23 @@ export const DeliveryEditor: React.FC<{
     return { amount, invalid, count, over, committed, budget, exceeds: committed + amount > budget * 1.0001 + 1 };
   }, [rows, order, delivery]);
   const vatRate = parseQty(vat) ?? 0;
+  // K2: VAT đợt khác VAT đơn → lý do (máy chủ kiểm khi lập đợt hoặc đổi VAT).
+  const [vatReason, setVatReason] = useState('');
+  const vatDiffers = !Number.isNaN(vatRate) && Math.abs(vatRate - order.vatRate) > 0.0001;
+  const vatNeedsReason = vatDiffers && (!delivery || Math.abs(vatRate - delivery.vatRate) > 0.0001);
 
   const save = async () => {
     setError(null);
     if (calc.invalid) { setError('Còn SL hoặc đơn giá chưa hợp lệ ở các dòng đã chọn.'); return; }
     if (!calc.count) { setError('Chọn ít nhất một vật tư có SL giao.'); return; }
     if (Number.isNaN(vatRate) || vatRate < 0 || vatRate > 100) { setError('Thuế VAT phải từ 0 đến 100%.'); return; }
+    if (vatNeedsReason && !vatReason.trim()) { setError(`VAT đợt ${vatRate}% khác VAT đơn ${order.vatRate}% — ghi lý do hoặc chọn ${order.vatRate}%.`); return; }
     if (calc.exceeds && !approver) { setError('Đợt này làm vượt giá trị đơn đã duyệt — chọn người duyệt bổ sung.'); return; }
     setSaving(true);
     try {
       const result = await procurementInboxService.saveDelivery({
         purchaseOrderId: order.id, deliveryId: delivery?.id, plannedDate: date || null, vatRate, note: note.trim(),
+        vatReason: vatNeedsReason ? vatReason.trim() : undefined,
         approverUserId: calc.exceeds ? approver : undefined,
         ...(order.isGroup ? { targetWarehouseId: siteId, allocationMode: mode } : {}),
         lines: rows.filter(r => r.include).map(r => ({ purchaseOrderLineId: r.lineId, purchaseQty: parseQty(r.purchaseQty) || 0, stockQty: parseQty(r.stockQty) || 0, unitPrice: parseQty(r.price) || 0 })),
@@ -105,6 +112,13 @@ export const DeliveryEditor: React.FC<{
             className={`rounded-lg border px-2.5 py-1.5 text-sm font-semibold ${vat === String(v) ? 'border-teal-600 bg-teal-700 text-white' : 'border-border hover:bg-muted'}`}>{v}%</button>)}
           <input aria-label="VAT khác (%)" inputMode="decimal" value={['0', '8', '10'].includes(vat) ? '' : vat} onChange={e => setVat(e.target.value)} placeholder="Khác" className={`w-16 ${inputCls}`} />
         </div>
+        {vatNeedsReason && <div className="mt-1.5 space-y-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="font-semibold">Khác VAT đơn {order.vatRate}% · lý do</p>
+          <div className="flex flex-wrap gap-1">{VAT_REASONS.map(t => <button key={t} type="button" aria-pressed={vatReason === t} onClick={() => setVatReason(t)}
+            className={`rounded-full border px-2 py-0.5 ${vatReason === t ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card hover:bg-muted'}`}>{t}</button>)}</div>
+          <input value={vatReason} onChange={e => setVatReason(e.target.value)} placeholder="hoặc ghi lý do" aria-label="Lý do VAT khác đơn"
+            className={`w-full ${inputCls} ${vatReason.trim() ? '' : 'border-amber-400'}`} />
+        </div>}
       </div>
       <label className="text-xs font-semibold text-muted-foreground">Ghi chú (số phiếu NCC, xe…)
         <input value={note} onChange={e => setNote(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
