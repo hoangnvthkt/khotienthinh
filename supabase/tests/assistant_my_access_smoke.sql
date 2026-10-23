@@ -1,6 +1,6 @@
 -- Trợ lý · quyen_cua_toi: Admin → la_admin, không liệt kê quyền, màn /procurement có phân hệ, việc "duyệt đơn mua" có kết quả;
 -- nhân viên mới (không quyền) → quyen rỗng, việc cần trả về chưa có; không đăng nhập → 42501; tham số quá dài → 22023.
--- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028090000_assistant_my_access.sql --smoke supabase/tests/assistant_my_access_smoke.sql
+-- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261028150000_assistant_my_access.sql --smoke supabase/tests/assistant_my_access_smoke.sql
 begin;
 create temp table lp(name text primary key, user_id uuid, email text, auth_id uuid) on commit drop;
 grant select on lp to authenticated;

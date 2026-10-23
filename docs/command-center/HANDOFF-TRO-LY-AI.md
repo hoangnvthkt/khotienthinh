@@ -100,7 +100,7 @@ ai-gateway (supabase/functions/ai-gateway)
              máy chủ qua lib/supabase.ts recordFailedResponse, và lời báo lỗi / cảnh báo toast qua context/ToastContext) → assistantChat gửi input.screen →
              chat.ts parseChatScreen / screenBlock → <du_lieu loai="man_hinh"> (lỗi kèm giải thích). (b) Từ điển lỗi errorGuide.ts (~45 luật: mã cụ thể của hàm
              máy chủ → họ mã *_DENIED / *_STALE_VERSION / *_REQUIRED… → SQLSTATE / HTTP / mạng / phiên / AI) + công cụ giai_thich_loi. (c) Công cụ quyen_cua_toi →
-             RPC assistant_my_access_v1(p_route, p_viec) (migration 20261028090000; chỉ quyền của chính người hỏi: theo phân hệ + phạm vi, nguồn mẫu, phòng dự án,
+             RPC assistant_my_access_v1(p_route, p_viec) (migration 20261028150000; chỉ quyền của chính người hỏi: theo phân hệ + phạm vi, nguồn mẫu, phòng dự án,
              quyền ở màn vừa mở theo permission_modules.routes, quyền cần cho một việc khớp không dấu, Admin cấp được; smoke supabase/tests/assistant_my_access_smoke.sql).
              Lời nhắc: tìm nguyên nhân trước (lỗi vừa gặp → quyền → sổ tay / chi tiết chứng từ) rồi mới đề nghị phiếu sự cố bằng gợi ý bấm; người dùng bảo báo lỗi thì
              lập phiếu ngay như B2. Sổ tay thêm phần **Không làm được?** + frontmatter questions (scripts/handbook/lib.mjs questionKeywords); câu kiểm tìm mục
