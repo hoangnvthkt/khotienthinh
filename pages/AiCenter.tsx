@@ -8,6 +8,8 @@ import { ENT, Kpi } from '../components/finance/financeUi';
 import AiActivityPanel from '../components/aiCenter/AiActivityPanel';
 import AiDigestPanel from '../components/aiCenter/AiDigestPanel';
 import AiSkillsPanel from '../components/aiCenter/AiSkillsPanel';
+import AiControlPanel from '../components/aiCenter/AiControlPanel';
+import { controlService as defaultControlService, type ControlService } from '../lib/controlFindings';
 import { aiSkillCatalogService, type AiSkillCatalogService } from '../lib/aiSkillCatalog';
 import {
   aiAdminService, modelLabel, usd, usedPct, type AiAdminOverview, type AiConnectionRow, type AiAdminService, type AiGrant, type AiGrantValues, type AiPerson, type AiTemplate, type SkillAccess,
@@ -18,8 +20,8 @@ import {
 // Người không phải Admin vào đây thấy lời mời dùng Trợ lý trong Trung tâm điều hành.
 
 type Load<T> = T | 'loading' | 'error' | 'denied';
-type Tab = 'people' | 'activity' | 'digest' | 'templates' | 'models' | 'skills';
-const TABS: readonly Tab[] = ['people', 'activity', 'digest', 'templates', 'models', 'skills'];
+type Tab = 'people' | 'activity' | 'digest' | 'control' | 'templates' | 'models' | 'skills';
+const TABS: readonly Tab[] = ['people', 'activity', 'digest', 'control', 'templates', 'models', 'skills'];
 const nf = new Intl.NumberFormat('vi-VN');
 const EMPTY_GRANT: AiGrantValues = { enabled: true, templateId: null, connectionId: null, extraConnectionIds: null, monthlyCostCapUsd: null, dailyQuestionCap: null, skills: null, note: '' };
 const numOrNull = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? null : Number(v.replace(',', '.')));
@@ -305,7 +307,7 @@ const ModelCard: React.FC<{ model: AiConnectionRow; service: AiAdminService; onS
 };
 
 // ── Trang ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatalogService }> = ({ service = aiAdminService, skillService = aiSkillCatalogService }) => {
+const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatalogService; controlService?: ControlService }> = ({ service = aiAdminService, skillService = aiSkillCatalogService, controlService = defaultControlService }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -391,7 +393,7 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
       </div>
 
       <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1" role="tablist" aria-label="Trung tâm AI">
-        {([['people', 'Người dùng', Users, data.grants.length], ['activity', 'Hoạt động', Activity, null], ['digest', 'Bản tin tuần', Newspaper, null], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
+        {([['people', 'Người dùng', Users, data.grants.length], ['activity', 'Hoạt động', Activity, null], ['digest', 'Bản tin tuần', Newspaper, null], ['control', 'Kiểm soát', ShieldCheck, null], ['templates', 'Mẫu cấp phát', Layers, data.templates.length], ['models', 'Model', Cpu, data.connections.length], ['skills', 'Skill', Sparkles, data.skills.length]] as const).map(([key, label, Icon, n]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
             className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === key ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
             <Icon size={15} /> {label} {n != null && <span className={`text-xs font-medium ${tab === key ? 'text-teal-100' : 'text-muted-foreground'}`}>{n}</span>}</button>
@@ -443,6 +445,7 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
       {tab === 'activity' && <div role="tabpanel" aria-label="Hoạt động"><AiActivityPanel load={service.activity} /></div>}
       {tab === 'digest' && <AiDigestPanel list={service.digests} run={service.runDigest} onOpenRoute={route => navigate(route)} confirm={o => confirm({ title: o.title, targetName: o.targetName, warningText: o.message, actionLabel: o.confirmText, intent: 'warning', countdownSeconds: 0 })} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))} />}
 
+      {tab === 'control' && <AiControlPanel service={controlService} onOpenRoute={route => navigate(route)} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))} />}
       {tab === 'templates' && (
         <section role="tabpanel" aria-label="Mẫu cấp phát" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {data.templates.map(t => (

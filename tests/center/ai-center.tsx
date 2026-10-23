@@ -8,6 +8,7 @@ import AiCenter from '../../pages/AiCenter';
 import type { AiActivity, AiDigest, AiAdminOverview, AiAdminService, AiGrant, AiPerson } from '../../lib/aiAdmin';
 import { parseSkillCatalog, type AiSkillCatalogService, type SkillUsage } from '../../lib/aiSkillCatalog';
 import { skillCatalog } from '../../supabase/functions/ai-gateway/catalog';
+import type { ControlFinding, ControlRule, ControlService } from '../../lib/controlFindings';
 
 // Trung tâm AI · fixture (không gọi Supabase). ?role=staff: người không phải Admin. ?empty=1: chưa cấp ai.
 // Tab Skill: lời dặn / công cụ lấy từ catalog.ts thật; ?catalog=fail (cổng chưa cập nhật), ?usage=fail (lỗi đọc lượt dùng).
@@ -161,11 +162,53 @@ const skillService: AiSkillCatalogService = {
     return parseSkillCatalog(JSON.parse(JSON.stringify(skillCatalog('Chủ nhật 19/10/2026, 09:41')))); },
 };
 
+// Tab Kiểm soát (K0): số liệu giả (không phải dữ liệu thật). ?control=empty: chưa có lệch; ?control=fail: lỗi tải.
+const rule = (code: string, module: string, title: string, severity: ControlRule['severity'], fixHint: string, ownerHint: string): ControlRule => ({
+  code, module, title, severity, principle: `Nguyên tắc của luật ${title.toLowerCase()}.`, fixHint, ownerHint, mode: 'shadow', sinceDate: '2026-10-01',
+  open: 0, openLegacy: 0, accepted: 0, resolved7d: 0, amountOpen: null });
+const CONTROL_RULES: ControlRule[] = [
+  rule('statement_price_no_reason', 'Công nợ', 'Giá đối soát khác giá phiếu giao, không lý do', 'P0', 'Mở bảng đối soát: ghi lý do và chốt giá nếu đúng, hoặc đưa về giá phiếu giao.', 'Kế toán công nợ'),
+  rule('batch_wms_status', 'Kho', 'Đợt giao và phiếu nhập kho lệch trạng thái', 'P0', 'Mở Kho → Đối chiếu nhận hàng để chốt đợt theo phiếu kho.', 'Kho + Mua hàng'),
+  rule('batch_vat_differs', 'Công nợ', 'VAT đợt nhận khác VAT đơn', 'P1', 'Kế toán đối chiếu hóa đơn, điều chỉnh công nợ phần VAT thiếu.', 'Kế toán công nợ'),
+  rule('mr_ended_po_open', 'Đề xuất', 'Đề xuất đã kết thúc nhưng đơn mua còn mở', 'P1', 'Kết thúc thiếu đơn mua còn mở, hoặc mở lại đề xuất.', 'Mua hàng'),
+  rule('po_total_mismatch', 'Mua hàng', 'Tổng tiền đơn khác tổng các dòng', 'P1', 'Đối chiếu dòng và tổng; điều chỉnh bằng chứng từ có lý do.', 'Mua hàng'),
+];
+const finding = (id: string, ruleCode: string, title: string, o: Partial<ControlFinding>): ControlFinding => {
+  const r = CONTROL_RULES.find(x => x.code === ruleCode)!;
+  return { id, rule: ruleCode, ruleTitle: r.title, module: r.module, severity: r.severity, ownerHint: r.ownerHint, objectType: 'purchase_order', objectId: id, objectCode: null,
+    projectId: 'p-1', projectName: 'DA-MAU', title, detail: {}, amount: null, happenedOn: '2026-10-15', link: '/procurement?po=' + id, legacy: false, status: 'open',
+    firstSeenAt: '2026-10-23T02:00:00Z', lastSeenAt: '2026-10-23T03:00:00Z', resolvedAt: null, acceptedAt: null, acceptedReason: null, acceptedBy: null, ...o };
+};
+let controlState: ControlFinding[] = params.get('control') === 'empty' ? [] : [
+  finding('f1', 'statement_price_no_reason', 'PO-901 · Bê tông M300: giá đối soát 1.250.000 đ, giá phiếu giao 1.100.000 đ, chưa ghi lý do', { objectCode: 'PO-901', amount: 1_500_000 }),
+  finding('f2', 'batch_wms_status', 'PO-902 đợt 1: kho đã nhập xong nhưng đợt giao vẫn "receiving"', { objectCode: 'PO-902 · đợt 1', amount: 0, legacy: true, happenedOn: '2026-09-30' }),
+  finding('f3', 'batch_vat_differs', 'PO-903 đợt 2: VAT đợt 0%, VAT đơn 8% → công nợ chênh 2.400.000 đ', { objectCode: 'PO-903 · đợt 2', amount: 2_400_000 }),
+  finding('f4', 'batch_vat_differs', 'PO-904 đợt 1: VAT đợt 0%, VAT đơn 10% → công nợ chênh 1.200.000 đ', { objectCode: 'PO-904 · đợt 1', amount: 1_200_000 }),
+  finding('f5', 'mr_ended_po_open', 'MR-2026-0901 đã kết thúc nhưng PO-905 còn mở (sent)', { objectCode: 'MR-2026-0901', objectType: 'material_request' }),
+  finding('f6', 'po_total_mismatch', 'PO-906: tổng đơn 90.000.000 đ, tổng các dòng 95.000.000 đ', { objectCode: 'PO-906', amount: -5_000_000, legacy: true, happenedOn: '2026-08-12' }),
+];
+const controlRules = () => CONTROL_RULES.map(r => {
+  const mine = controlState.filter(f => f.rule === r.code);
+  return { ...r, open: mine.filter(f => f.status === 'open' && !f.legacy).length, openLegacy: mine.filter(f => f.status === 'open' && f.legacy).length,
+    accepted: mine.filter(f => f.status === 'accepted').length, resolved7d: mine.filter(f => f.status === 'resolved').length,
+    amountOpen: mine.filter(f => f.status === 'open').reduce((s, f) => s + Math.abs(f.amount ?? 0), 0) || null };
+});
+const controlService: ControlService = {
+  overview: async () => { await sleep(60); if (params.get('control') === 'fail') throw new Error('Mất kết nối');
+    return { rules: controlRules(), lastRun: { id: 7, startedAt: '2026-10-23T03:00:00Z', finishedAt: '2026-10-23T03:00:02Z', trigger: 'cron', rules: 18, opened: 0, resolved: 0, openTotal: controlState.length, errors: [] } }; },
+  findings: async (ruleCode, status, legacy) => { calls.push({ controlFindings: { ruleCode, status, legacy } }); await sleep(50);
+    return controlState.filter(f => (!ruleCode || f.rule === ruleCode) && (status === 'all' || f.status === status) && (legacy == null || f.legacy === legacy)).map(f => ({ ...f })); },
+  accept: async (id, reason) => { calls.push({ controlAccept: { id, reason } }); await sleep(40);
+    controlState = controlState.map(f => (f.id === id ? { ...f, status: 'accepted', acceptedReason: reason, acceptedBy: 'Admin Hoàng', acceptedAt: '2026-10-23T03:05:00Z' } : f)); },
+  reopen: async id => { calls.push({ controlReopen: id }); await sleep(40); controlState = controlState.map(f => (f.id === id ? { ...f, status: 'open', acceptedReason: null, acceptedBy: null, acceptedAt: null } : f)); },
+  runNow: async () => { calls.push({ controlRun: true }); await sleep(120); return { rules: 18, opened: 0, resolved: 0, errors: [] }; },
+};
+
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}</p>; };
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter initialEntries={[params.get('tab') ? `/ai?tab=${params.get('tab')}` : '/ai']}>
     <ToastProvider><ConfirmProvider>
-      <Routes><Route path="/ai" element={<AiCenter service={service} skillService={skillService} />} /><Route path="*" element={<Where />} /></Routes>
+      <Routes><Route path="/ai" element={<AiCenter service={service} skillService={skillService} controlService={controlService} />} /><Route path="*" element={<Where />} /></Routes>
     </ConfirmProvider></ToastProvider>
   </MemoryRouter>,
 );

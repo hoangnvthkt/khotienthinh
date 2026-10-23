@@ -105,6 +105,9 @@ ai-gateway (supabase/functions/ai-gateway)
              Lời nhắc: tìm nguyên nhân trước (lỗi vừa gặp → quyền → sổ tay / chi tiết chứng từ) rồi mới đề nghị phiếu sự cố bằng gợi ý bấm; người dùng bảo báo lỗi thì
              lập phiếu ngay như B2. Sổ tay thêm phần **Không làm được?** + frontmatter questions (scripts/handbook/lib.mjs questionKeywords); câu kiểm tìm mục
              lib/__tests__/assistantHandbookQuestions.test.ts. Phiếu sự cố ghi thêm "màn vừa làm". Sửa kèm: hồ sơ ô tìm ngay (#254) trước đây KHÔNG được gửi lên cổng.
+  Kiểm soát viên K0 (23/10) — không trong cổng, không gọi AI: migration 20261028190000_control_findings_k0 (control_rules / control_findings / control_runs,
+             18 luật app_private.control_rule_*, bộ chạy app_private.control_run cron 15 phút) + Trung tâm AI → tab Kiểm soát (AiControlPanel, lib/controlFindings).
+             Chi tiết, số lệch thật, cách thêm luật: docs/command-center/16-kiem-soat-vien-k0.md. K1 (đưa lệch tới người phụ trách, Trợ lý hỏi lệch) chờ chủ SP 5 câu.
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
 ```
