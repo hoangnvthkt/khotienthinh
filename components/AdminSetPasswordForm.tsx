@@ -9,7 +9,7 @@ import {
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
-// Admin sets a new password for someone who forgot theirs. The password is
+// Admin or account manager sets a new password for someone who forgot theirs. The password is
 // never stored here; the change is audited on the server.
 const AdminSetPasswordForm: React.FC<{ targetUser: User }> = ({ targetUser }) => {
   const toast = useToast();
@@ -67,7 +67,7 @@ const AdminSetPasswordForm: React.FC<{ targetUser: User }> = ({ targetUser }) =>
             <p className="text-slate-500">
               {disabled
                 ? 'Tài khoản đang bị vô hiệu hoá: dùng "Khôi phục tài khoản" để mở lại kèm mật khẩu mới.'
-                : 'Người dùng tự đổi ở Cài đặt → Tài khoản. Khi họ quên, Admin đặt mật khẩu mới tại đây.'}
+                : 'Người dùng tự đổi ở Cài đặt → Tài khoản. Khi họ quên, đặt mật khẩu mới tại đây.'}
             </p>
           </div>
         </div>

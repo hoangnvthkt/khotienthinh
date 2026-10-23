@@ -268,7 +268,7 @@ export const ForecastView: React.FC<{ projectId?: string | null }> = ({ projectI
           <span className={`w-24 text-right font-semibold tabular-nums ${p.in - p.out < -0.5 ? 'text-rose-700' : 'text-leaf-700'}`}>{sm(p.in - p.out)}</span></li>)}</ul></article>}
       <article className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <div className="flex items-center gap-2"><h3 className="mr-auto flex items-center gap-1.5 font-semibold"><SlidersHorizontal size={15} className="text-teal-700" />Giả định</h3>
-          {can.manage && company && <button type="button" onClick={() => setDrawer({ kind: 'settings' })} className="text-xs font-semibold text-teal-700 hover:underline"><Pencil size={12} className="mr-0.5 inline" />Sửa</button>}</div>
+          {can.configure && company && <button type="button" onClick={() => setDrawer({ kind: 'settings' })} className="text-xs font-semibold text-teal-700 hover:underline"><Pencil size={12} className="mr-0.5 inline" />Sửa</button>}</div>
         <dl className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
           {([['CĐT duyệt hồ sơ', `${data.params.approvalDays} ngày + hạn trên HĐ`], ['Trả NCC / thầu phụ sau khi nhận', `${data.params.payDays} ngày`],
             ['Nhân công khi chưa có HĐ thầu phụ', `${String(data.params.laborPercent).replace('.', ',')}% giá trị HĐ`], ['VAT vật tư chưa đặt', `${data.params.materialVatPercent}%`],

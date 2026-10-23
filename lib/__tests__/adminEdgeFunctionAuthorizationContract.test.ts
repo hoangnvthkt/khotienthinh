@@ -28,9 +28,25 @@ describe('shared Edge Function admin authorization', () => {
 
   it('is used by create-user and reset-password', () => {
     expect(createUser).toContain("../_shared/adminAuthorization.ts");
-    expect(createUser).toContain('requireActiveAdmin');
+    expect(createUser).toContain('requireAccountManager(req, admin)');
     expect(resetPassword).toContain("../_shared/adminAuthorization.ts");
     expect(resetPassword).toContain('requireActiveCaller');
     expect(createUser).not.toMatch(/is_active:\s*profile\.isActive/);
+  });
+
+  it('decides "Quản lý tài khoản" on the server, never from the browser (Đợt 2a-2)', () => {
+    expect(shared).not.toContain('requireActiveAdmin');
+    expect(shared).toContain("admin.rpc('account_manager_access_v1'");
+    expect(shared).toContain('p_actor_user_id: caller.appUser.id');
+    expect(shared).toContain('accountManagerDenial(parseAccountManagerAccess(data)');
+  });
+
+  it('lets an account manager set someone else\'s password, but not an Admin\'s or a login email', () => {
+    expect(resetPassword).toContain("await assertAccountManager(admin, caller, { userId: target?.id });");
+    expect(resetPassword).toMatch(/if \(newEmail && !caller\.isAdmin\)[\s\S]*?403/);
+    expect(resetPassword.indexOf('assertAccountManager(admin, caller')).toBeLessThan(
+      resetPassword.indexOf('admin.auth.admin.updateUserById'),
+    );
+    expect(resetPassword).not.toContain('Chỉ Admin được đặt mật khẩu cho người khác.');
   });
 });
