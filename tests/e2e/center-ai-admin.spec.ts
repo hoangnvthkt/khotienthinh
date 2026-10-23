@@ -149,8 +149,8 @@ test("Skill · xem bên trong: dòng có lượt 7 ngày + màn gọi; skill ch�
   await expect(panel.getByRole("listitem", { name: "Trợ lý · hội thoại" })).toContainText("142 lượt · 11 người");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt đơn trước khi duyệt" })).toContainText("Mua hàng → đơn chờ duyệt");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt văn bản" })).toContainText("Chưa gắn màn nào");
-  // 22 công cụ Trợ lý (23/10): tim_ho_so … so_tay, quyen_cua_toi, giai_thich_loi, bao_cao, bien_dong_nhan_su, 5 chuan_bi_*, chuan_bi_su_co, 4 Vioo Work.
-  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(22);
+  // 23 công cụ Trợ lý (23/10): tim_ho_so … so_tay, quyen_cua_toi, giai_thich_loi, lech_kiem_soat, bao_cao, bien_dong_nhan_su, 5 chuan_bi_*, chuan_bi_su_co, 4 Vioo Work.
+  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(23);
 
   await panel.getByRole("button", { name: "Xem công cụ Chuẩn bị đơn mua" }).click();
   const tool = page.getByRole("dialog", { name: "Công cụ Chuẩn bị đơn mua" });
@@ -193,7 +193,7 @@ test("Skill · cổng chưa cập nhật / lỗi lượt dùng: báo rõ + Thử
 test("Kiểm soát (K0): ô số + lọc theo trạng thái / phân hệ, bung luật thấy cách xử lý, chấp nhận lệch phải có lý do, Mở chứng từ; không tràn ngang", async ({ page }) => {
   await page.goto(`${base}?tab=control`);
   const panel = page.getByRole("tabpanel", { name: "Kiểm soát" });
-  await expect(panel.getByText("Chạy thử · 5 luật")).toBeVisible();
+  await expect(panel.getByText("2/5 luật đang báo")).toBeVisible();
   const group = panel.getByRole("list", { name: "Lệch theo luật" });
   await expect(group.locator("[data-rule]")).toHaveCount(3);
   await panel.getByRole("button", { name: /Dữ liệu cũ/ }).click();
@@ -226,4 +226,31 @@ test("Kiểm soát: chưa có lệch → báo yên; lỗi tải → nút thử l
   await expect(page.getByText("Không có lệch mới.")).toBeVisible();
   await page.goto(`${base}?tab=control&control=fail`);
   await expect(page.getByText("Chưa tải được kiểm soát")).toBeVisible();
+});
+
+test("Kiểm soát K1 — Admin bật / tắt Báo người xử lý từng luật (có xác nhận)", async ({ page }) => {
+  await page.goto(`${base}?tab=control`);
+  const panel = page.getByRole("tabpanel", { name: "Kiểm soát" });
+  await expect(panel.getByText("2/5 luật đang báo")).toBeVisible();
+  await panel.getByRole("button", { name: "Bật báo người xử lý: VAT đợt nhận khác VAT đơn" }).click();
+  await page.getByRole("button", { name: "Bật báo", exact: true }).click();
+  await expect(panel.getByText("3/5 luật đang báo")).toBeVisible();
+  expect((await calls(page)).find(c => c.controlMode)).toMatchObject({ controlMode: { code: "batch_vat_differs", mode: "live" } });
+});
+
+test("Kiểm soát K1 — người xử lý: chỉ lệch luật đã bật của mình, không Dữ liệu cũ / Chạy lại / bật luật / Chấp nhận; thấy người xử lý + Quá 3 ngày", async ({ page }) => {
+  await page.goto(`${base}?tab=control&control=mine`);
+  const panel = page.getByRole("tabpanel", { name: "Kiểm soát" });
+  await expect(panel.getByText("Lệch giao cho bạn hoặc bộ phận bạn")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Chạy lại" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: /Dữ liệu cũ/ })).toHaveCount(0);
+  const group = panel.getByRole("list", { name: "Lệch theo luật" });
+  await expect(group.locator("[data-rule]")).toHaveCount(2);
+  await expect(panel.getByRole("button", { name: /báo người xử lý/ })).toHaveCount(0);
+  const mr = group.locator('[data-rule="mr_ended_po_open"]');
+  await mr.getByRole("button").first().click();
+  await expect(mr).toContainText("Xử lý: Người mua C");
+  await expect(mr).toContainText("Quá 3 ngày");
+  await expect(mr.getByRole("button", { name: "Chấp nhận" })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });

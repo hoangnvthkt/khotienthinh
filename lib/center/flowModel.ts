@@ -14,7 +14,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   wf: 'Quy trình & Đề xuất', mr: 'Đề xuất vật tư', wms_tx: 'Phiếu kho', daily_log: 'Nhật ký thi công', work_plan: 'Kế hoạch tuần',
   po: 'Đơn hàng', po_delivery: 'Đợt giao', hot: 'Mua nóng / CCDC', fin_payment: 'Đề nghị chi', fin_site_expense: 'Chi quỹ công trường',
   fin_fund_opening: 'Mở quỹ công trường', leave: 'Nghỉ phép', makeup: 'Chấm công bù', site_assignment: 'Điều động', timesheet: 'Chốt công tháng',
-  profile_change: 'Hồ sơ nhân sự', office: 'Văn bản', work: 'Vioo Work', vehicle: 'Đặt xe', stock_count: 'Kiểm kê', reconciliation: 'Đối chiếu nhận hàng',
+  profile_change: 'Hồ sơ nhân sự', office: 'Văn bản', work: 'Vioo Work', vehicle: 'Đặt xe', stock_count: 'Kiểm kê', reconciliation: 'Đối chiếu nhận hàng', control: 'Lệch cần sửa',
 };
 export const sourceLabel = (source: string): string => SOURCE_LABEL[source] || source;
 

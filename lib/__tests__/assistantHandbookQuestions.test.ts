@@ -88,6 +88,8 @@ export const QUESTION_BANK: Case[] = [
   ['những việc đang chờ em xử lý xem ở đâu', 'so-tay-chung-viec-cho-toi'],
   ['báo lỗi phần mềm cho admin', 'so-tay-gop-y-bao-loi'],
   ['phím tắt tìm kiếm nhanh', 'so-tay-tim-kiem'],
+  ['em vừa nhận thông báo có lệch dữ liệu phải sửa', 'so-tay-chung-lech-can-sua'],
+  ['trưởng phòng chấp nhận lệch kiểm soát', 'so-tay-chung-lech-can-sua'],
   // Quy trình, Yêu cầu, Văn bản, Work, Đặt xe, Tài sản, VPP
   ['trình ký hồ sơ thanh toán qua phần mềm', 'so-tay-phieu-quy-trinh'],
   ['phiếu trình ký của em đang nằm ở ai', 'so-tay-quy-trinh-xem-buoc-theo-doi'],

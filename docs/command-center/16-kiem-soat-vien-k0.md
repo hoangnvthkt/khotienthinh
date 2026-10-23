@@ -1,4 +1,4 @@
-# Kiểm soát viên K0 — bộ luật + sổ phát hiện (23/10/2026)
+# Kiểm soát viên K0–K1 — bộ luật, sổ phát hiện, đưa lệch tới đúng người (23/10/2026)
 
 Chủ SP 22/10: muốn AI trong Vioo tự theo dõi dữ liệu như chuyên viên kiểm soát, phát hiện lệch, báo Admin. Đánh giá + lộ trình K0–K5:
 artifact "Kiểm soát viên AI Vioo" (https://claude.ai/artifact/GHfZTprBFqy85g9SMDYzpc). K0 = nền + 18 luật Mua hàng → Kho → Công nợ → Đề xuất,
@@ -46,8 +46,20 @@ artifact "Kiểm soát viên AI Vioo" (https://claude.ai/artifact/GHfZTprBFqy85g
 2. Thêm dòng `control_rules` (mức, nguyên tắc, cách xử lý, ai xử lý, `fn`), mặc định `shadow`.
 3. Chạy smoke trên Cloud (giao dịch tự hủy) để xem số lệch thật; luật báo sai nhiều thì sửa trước khi bật (bài học 22/10: luật giá bản đầu báo 35 dòng, 34 sai).
 
-## Việc tiếp (K1)
+## K1 — đưa lệch tới đúng người (chủ SP chốt 5 câu 23/10, migration `20261029200000_control_k1_routing`)
 
-Đưa lệch tới đúng người (dải cảnh báo trên chứng từ, mục Cần sửa ở Việc của tôi, bản tin 07:00, P0 đẩy ngay), Trợ lý trả lời "PO-609 có gì lệch?".
-Chờ chủ SP chốt 5 câu ở artifact (người xử lý, dữ liệu cũ, kênh báo, chặn hay cảnh báo, ai được chấp nhận lệch) — K0 dùng đề xuất mặc định:
-dữ liệu cũ tách riêng từ 01/10, chỉ Admin chấp nhận.
+| Câu | Cách làm |
+|---|---|
+| Ai xử lý | `control_rules.route`: `buyer` → người lập PO (đề xuất chưa có đơn → người được giao dòng ở hộp thư Mua hàng); `warehouse` → thủ kho của kho (`wms_warehouse_keepers`); `payable` → người có quyền Tài chính · Ghi nhận / Xác nhận. Không xác định được → chỉ Admin (không rải cho mọi Quản trị phân hệ). Trưởng bộ phận = quản lý trực tiếp của người xử lý (`resolve_active_direct_manager`), không có thì Quản trị phân hệ. `app_private.control_route_pending` giao lại 6 giờ một lần |
+| Dữ liệu cũ | Lệch trước `since_date` (01/10) không giao ai; Admin dọn ở tab Kiểm soát |
+| Kênh | Chỉ luật đã bật **Báo người xử lý** (`mode = live`, Admin bật từng luật ở tab Kiểm soát). P0: thông báo đẩy ngay cho người xử lý + Admin, mỗi lệch một lần (`control_notify_p0`). Mọi lệch: nguồn `control` trong Việc của tôi (`vcc_my_work_items_v1`, hạn = 3 ngày từ lúc phát hiện) và bản tin 07:00 mỗi người một tin (`control_daily_digest`, cron `control-daily-digest`). Quá 3 ngày → trưởng bộ phận cũng nhận |
+| Chặn hay cảnh báo | Chặn khi sửa được tại chỗ → K2 (chưa làm) |
+| Chấp nhận lệch | Trưởng bộ phận của lệch, người Quản trị phân hệ, Admin (`control_can_accept`); lý do ≥ 10 ký tự, `audit_trail` |
+
+Màn: `/kiem-soat` **Lệch cần sửa** (mọi người dùng; máy chủ chỉ trả lệch của người xem, Admin thấy hết) — cùng thành phần với tab Kiểm soát. Việc của tôi: bấm lệch mở thẳng đơn trong tab Mua hàng. Trợ lý: công cụ `lech_kiem_soat` ("PO-609 có gì lệch?", RPC `control_findings_for_code_v1`). Sổ tay: `docs/so-tay/chung-lech-can-sua.md`. Kiểm: `supabase/tests/control_k1_routing_smoke.sql` (giao người, P0 báo một lần, bản tin không trùng, người xử lý / người ngoài / Admin).
+
+Kết quả giao người trên dữ liệu thật (smoke 23/10): PO-609 → 4 người quyền Tài chính; MR-2026-9833 → người lập PO-671; lệch kho → thủ kho; lệch không rõ người (đơn cũ, đề xuất chưa có đơn) → Admin.
+
+## Việc tiếp (K2)
+
+Chặn từ gốc các lệch P0 sửa được tại chỗ (bắt lý do khi giá đối soát khác giá phiếu giao, không cho kết thúc đề xuất khi PO còn mở…) — phối hợp phiên rà soát Mua hàng (#314, #316 đã khóa cửa sau). Dải cảnh báo ngay trên chứng từ (ngăn đơn Mua hàng).

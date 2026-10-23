@@ -793,6 +793,22 @@ export const HANDBOOK: HandbookEntry[] = [
   "source": "catalog"
  },
  {
+  "id": "man-kiem-soat",
+  "title": "Màn hình Lệch cần sửa",
+  "module": "Kiểm soát",
+  "routes": [
+   {
+    "route": "/kiem-soat",
+    "label": "Lệch cần sửa"
+   }
+  ],
+  "permission": null,
+  "keywords": "lech can sua kiem soat sai lech du lieu chung tu khong khop canh bao lech can sua kiem soat",
+  "questions": "",
+  "body": "**Lệch cần sửa** (Kiểm soát) — mở từ thanh bên hoặc gõ \"lệch cần sửa\" ở ô Tìm kiếm.",
+  "source": "catalog"
+ },
+ {
   "id": "man-leaderboard",
   "title": "Màn hình Bảng xếp hạng",
   "module": "Cá nhân",
@@ -1194,6 +1210,22 @@ export const HANDBOOK: HandbookEntry[] = [
   "keywords": "khong thay nut duyet khong thay nut sua khong thay nut huy nut bi mo nut xam khong bam duoc khong co quyen thuc hien thao tac nay chua den buoc khong phai nguoi duyet chua den luot xac nhan khong thay nut duyet, sua, huy tren phieu",
   "questions": "thay nut duyet · nut sua mo bam · phieu nut huy · quyen thuc hien · thay nut xac nhan · da luot duyet chua",
   "body": "**Khi nào:** mở phiếu / hồ sơ nhưng thiếu nút cần bấm, hoặc nút mờ.\n**Các bước:**\n1. Xem trạng thái và bước hiện tại của phiếu: nút Duyệt / Xác nhận chỉ hiện cho người được giao ở đúng bước đang chờ.\n2. Kiểm tra phiếu có trong việc chờ bạn chưa (Hôm nay, Trung tâm điều hành → **Chờ tôi**, Thông báo → **Việc của tôi**). Chưa có là chưa tới lượt.\n3. Nút mờ: rê chuột (máy tính) lên nút để đọc lý do ghi kèm.\n4. Đúng lượt mà vẫn thiếu nút → thiếu quyền thao tác (khác quyền xem) → nhờ Admin cấp ở **Cài đặt** → **Người dùng**.\n**Không làm được?**\n- Chứng từ chưa tới bước / đã qua bước (đã duyệt, đã hủy, đã khóa kỳ) → không có nút → hỏi người đang giữ phiếu.\n- Bấm báo \"Bạn không có quyền thực hiện thao tác này.\" → máy chủ chặn: thiếu quyền hoặc không phải người được giao → Admin / người lập kiểm tra.\n- Nhiều khâu (tài chính, chốt số) không cho người lập tự xác nhận → cần người khác bấm.\n**Lưu ý:**\n- Mỗi việc có bậc quyền riêng (xem, thao tác, duyệt…): được xem chưa chắc được sửa. Có Trợ lý thì hỏi \"sao em không duyệt được phiếu này\".",
+  "source": "docs"
+ },
+ {
+  "id": "so-tay-chung-lech-can-sua",
+  "title": "Lệch cần sửa (kiểm soát dữ liệu)",
+  "module": "Chung",
+  "routes": [
+   {
+    "route": "/kiem-soat",
+    "label": "Lệch cần sửa"
+   }
+  ],
+  "permission": "Mọi nhân viên (chỉ thấy lệch giao cho mình)",
+  "keywords": "lech can sua kiem soat sai lech du lieu khong khop canh bao lech chung tu po lech gia doi soat cong no lech kho lech chap nhan lech lech can sua (kiem soat du lieu)",
+  "questions": "lech sua · bao lech du lieu · thong bao lech sua p0 · chap nhan lech · lech kiem soat xu ly the · po canh bao lech",
+  "body": "**Khi nào:** nhận thông báo \"Lệch cần sửa\" hoặc thấy mục Lệch cần sửa trong Việc của tôi.\n**Các bước:**\n1. Mở **Lệch cần sửa** (thông báo, Việc của tôi, hoặc gõ \"lệch cần sửa\" ở ô Tìm kiếm).\n2. Bấm vào luật để xem từng lệch: chứng từ, chênh bao nhiêu, **Xử lý:** làm gì, **Ai:** bộ phận nào.\n3. Bấm **Mở** để vào đúng chứng từ và sửa theo hướng dẫn (ghi lý do, chốt giá, chốt đợt giao, chứng từ điều chỉnh…).\n4. Sửa xong không cần báo: máy tự kiểm lại 15 phút một lần, hết lệch thì tự đóng.\n5. Lệch có lý do chính đáng: trưởng bộ phận bấm **Chấp nhận** và ghi lý do (ít nhất 10 ký tự).\n**Không làm được?**\n- Không thấy nút **Chấp nhận** → chỉ trưởng bộ phận, người Quản trị phân hệ hoặc Admin chấp nhận được; người xử lý sửa chứng từ.\n- Sửa rồi lệch vẫn còn → chờ lượt kiểm kế tiếp (tối đa 15 phút); vẫn còn thì sửa chưa đúng chỗ — đọc lại **Xử lý:** hoặc hỏi Trợ lý \"PO-… có gì lệch\".\n- Lệch quá 3 ngày chưa xử lý → trưởng bộ phận của bạn cũng nhận được.\n**Lưu ý:**\n- Lệch mức P0 (sai tiền hoặc tồn kho) có thông báo ngay; các lệch khác gộp vào bản tin 07:00 hằng ngày.",
   "source": "docs"
  },
  {

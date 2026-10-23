@@ -23,6 +23,8 @@
 //   quyen_cua_toi            (Đợt 1 hỗ trợ 23/10) assistant_my_access_v1: quyền CỦA CHÍNH người hỏi (tên tiếng Việt, phạm vi), quyền ở màn vừa mở,
 //                            quyền cần cho một việc, ai cấp — để trả lời "sao em không thấy / không làm được". Không xem được quyền người khác.
 //   giai_thich_loi           (Đợt 1 hỗ trợ 23/10) từ điển lỗi errorGuide.ts: câu báo lỗi người dùng dán / chụp → nghĩa, cách xử lý, ai xử lý. Không gọi máy chủ.
+//   lech_kiem_soat           (Kiểm soát viên K1 23/10) control_findings_for_code_v1: lệch dữ liệu bộ luật máy chủ tìm ra cho một mã chứng từ
+//                            (PO-609, MR-…) — người xử lý / trưởng bộ phận thấy lệch luật đã bật của mình, Admin thấy hết.
 //   chuan_bi_su_co                → lệnh nháp issue_report (B2 21/10: phiếu sự cố → người dùng bấm Gửi Admin → Góp ý; Jev chọn loại + mức khẩn)
 //   viec_giao · tom_tat_viec · chuan_bi_giao_viec  Vioo Work (workTools.ts) — lệnh nháp work_task (thẻ form giao việc, người dùng bấm Giao)
 // Kết quả gửi AI là JSON gọn (đã che SĐT / CCCD / STK ở cổng); mỗi hồ sơ có mã h1, h2… để AI dẫn nguồn.
@@ -63,7 +65,7 @@ export const KIND_LABEL: Record<string, string> = {
 const KINDS = Object.keys(KIND_LABEL);
 
 export const TOOL_LABEL: Record<string, string> = {
-  so_tay: 'Sổ tay Vioo', quyen_cua_toi: 'Quyền của tôi', giai_thich_loi: 'Giải thích lỗi',
+  so_tay: 'Sổ tay Vioo', quyen_cua_toi: 'Quyền của tôi', giai_thich_loi: 'Giải thích lỗi', lech_kiem_soat: 'Lệch kiểm soát',
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   bien_dong_nhan_su: 'Biến động nhân sự', bao_cao: 'Báo cáo',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ', chuan_bi_su_co: 'Chuẩn bị phiếu sự cố',
@@ -83,6 +85,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
   chi_tiet_ho_so: { kind: 'tra_cuu', rpcs: ['search_global_v1', 'get_hrm_employee_overview', 'get_hrm_employee_work_organization', 'get_hrm_employee_contract_employment'],
     permission: 'Mức xem hồ sơ: danh bạ / chính mình / quản lý trực tiếp / HR. Không bao giờ có lương, CCCD, số tài khoản, SĐT cá nhân', result: 'Chức danh, phòng ban, quản lý, ngày vào, hợp đồng + nút mở hồ sơ' },
   quyen_cua_toi: { kind: 'tra_cuu', rpcs: ['assistant_my_access_v1'], permission: 'Chỉ quyền của chính người hỏi (không có tham số người khác); tên quyền, phạm vi, phòng dự án, quyền ở màn vừa mở, quyền cần cho một việc, Admin cấp được', result: 'Đang có / còn thiếu quyền gì, ai cấp' },
+  lech_kiem_soat: { kind: 'tra_cuu', rpcs: ['control_findings_for_code_v1'], permission: 'Người xử lý / trưởng bộ phận: lệch của mình ở luật đã bật; Admin: mọi lệch', result: 'Lệch đang mở / đã chấp nhận của chứng từ: chênh bao nhiêu, cách xử lý, ai xử lý + nút mở chứng từ' },
   giai_thich_loi: { kind: 'tra_cuu', rpcs: [], permission: 'Không đọc dữ liệu — chỉ từ điển lỗi dựng sẵn (errorGuide.ts)', result: 'Nghĩa của câu báo lỗi, cách xử lý, ai xử lý' },
   so_tay: { kind: 'tra_cuu', rpcs: [], permission: 'Không đọc dữ liệu nghiệp vụ — chỉ sổ tay dựng sẵn (docs/so-tay, hướng dẫn Dự án, danh mục màn hình / thao tác); mở được màn hay không vẫn do quyền của người dùng khi bấm', result: 'Các bước làm + nút mở màn hình / thao tác' },
   bao_cao: { kind: 'bieu_do', rpcs: ['assistant_report_workflow_v1', 'assistant_report_inventory_v1', 'assistant_report_procurement_v1', 'assistant_report_progress_v1', 'assistant_report_finance_v1', 'assistant_report_attendance_v1', 'assistant_report_leave_v1', 'assistant_report_requests_v1', 'assistant_report_vehicle_v1', 'assistant_report_office_v1'], permission: 'Theo đúng quyền xem dữ liệu của người hỏi (RLS): phiếu quy trình, kho, đơn hàng, nhật ký / hạng mục dự án, chấm công, đơn nghỉ, phiếu yêu cầu, chuyến xe, văn bản mình được xem; Tài chính cần quyền xem Tài chính (công nợ NCC cần quản lý)', result: 'Thẻ biểu đồ: cột / cột chồng / đường theo tuần / tháng, tròn theo mẫu / NCC / dự án / vật tư / loại / đơn vị, ô số, nút Bảng' },
@@ -166,6 +169,13 @@ export const TOOLS: ToolSpec[] = [
     parameters: { type: 'object', additionalProperties: false, properties: {
       viec: { type: 'string', description: 'Việc người dùng muốn làm, viết gọn, VD "duyệt đơn mua", "xuất kho", "xem tài chính dự án", "tạo mã vật tư". Bỏ trống khi chỉ hỏi "tôi có quyền gì".' },
       man: { type: 'string', description: 'Đường dẫn màn (VD /procurement) nếu người dùng nói rõ màn khác màn vừa mở; bỏ trống = màn vừa mở.' },
+    } },
+  },
+  {
+    name: 'lech_kiem_soat',
+    description: 'LỆCH KIỂM SOÁT của một chứng từ: bộ luật máy chủ (15 phút một lượt) tìm số liệu không khớp giữa đơn mua, đợt giao, phiếu kho, công nợ, đề xuất (VD giá đối soát khác giá phiếu giao, đề xuất kết thúc khi PO còn mở, sổ kho khác số nhận). Dùng khi hỏi "PO-609 có gì lệch / sai / bất thường", "vì sao PO này bị cảnh báo", "lệch cần sửa của tôi ở PO…". Trả về lệch, chênh bao nhiêu, cách xử lý, ai xử lý, đường dẫn mở chứng từ. Theo quyền: người xử lý thấy lệch giao cho mình, Admin thấy hết.',
+    parameters: { type: 'object', additionalProperties: false, required: ['ma'], properties: {
+      ma: { type: 'string', description: 'Mã chứng từ, VD "PO-609", "MR-2026-9833".' },
     } },
   },
   {
@@ -1140,6 +1150,18 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
     return JSON.stringify({ ket_qua, ghi_chu: 'Mục tìm theo từ khóa nên có thể lệch: mục không đúng việc người dùng hỏi thì nói chưa có hướng dẫn sẵn cho việc đó, không mượn bước của việc khác. Trả lời bằng các bước ngắn đúng theo noi_dung của mục khớp nhất (không thêm bước, không đổi tên nút); câu hỏi "tại sao / không thấy / không được" thì dùng phần **Không làm được?**; chèn [[hN]] của mo_man ngay sau câu nhắc mở màn để hiện nút. Nếu 2 mục cùng khớp, hỏi lại một câu bằng gợi ý bấm [[goi_y:…]] thay vì trả lời cả hai. Nhắc quyền nếu mục ghi quyen.' });
   }
   if (name === 'quyen_cua_toi') return myAccess(args, ctx);
+  if (name === 'lech_kiem_soat') {
+    const ma = str(args.ma, 60);
+    if (!ma || ma.length < 3) return JSON.stringify({ loi: 'Cần mã chứng từ (VD PO-609) để tra lệch.' });
+    const r = await ctx.rpc('control_findings_for_code_v1', { p_code: ma });
+    if (r.error) return toolError(r.error, `lệch kiểm soát của ${ma}`);
+    const rows = asArray(r.data).map(asObject);
+    if (!rows.length) return JSON.stringify({ ket_qua: [], ghi_chu: `Không thấy lệch kiểm soát nào của ${ma} trong phạm vi người hỏi được xem (có thể chứng từ khớp, hoặc luật chưa bật báo người xử lý). Không khẳng định chắc chắn là không có lỗi.` });
+    return JSON.stringify({ ket_qua: rows.map(x => compact({ ma: str(x.ma), lech: str(x.lech, 300), luat: str(x.luat), muc: str(x.muc, 4), chenh: num(x.chenh),
+      trang_thai: x.trang_thai === 'accepted' ? 'đã chấp nhận' : 'đang mở', ly_do_chap_nhan: str(x.ly_do_chap_nhan, 200), du_lieu_cu: x.du_lieu_cu === true ? true : null,
+      cach_xu_ly: str(x.cach_xu_ly, 300), ai_xu_ly: str(x.ai_xu_ly), mo_man: typeof x.link === 'string' && /^\/[^/]/.test(x.link) ? [{ ma: ctx.book.page(x.link, str(x.ma) || ma, str(x.luat) || 'Lệch kiểm soát'), nhan: str(x.ma) || ma }] : null })),
+      ghi_chu: 'Trả lời gọn: lệch gì (1 câu, đúng số tiền / số lượng công cụ trả), cách xử lý, ai xử lý; chèn [[hN]] của mo_man để mở chứng từ. P0 = sai tiền hoặc tồn kho. Không tự sửa, không hứa đã sửa.' });
+  }
   if (name === 'giai_thich_loi') {
     const text = str(args.cau_loi, 600) || '';
     const found = explainError(text, 2);
