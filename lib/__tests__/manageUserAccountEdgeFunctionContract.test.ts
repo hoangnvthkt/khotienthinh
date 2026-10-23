@@ -9,9 +9,15 @@ const source = readFileSync(
 
 describe('manage-user-account Edge Function contract', () => {
   it('authorizes the caller and never accepts actor identity from the body', () => {
-    expect(source).toContain('requireActiveAdmin');
+    expect(source).toContain('requireAccountManager(req, admin)');
     expect(source).toContain('caller.appUser.id');
     expect(source).not.toMatch(/body\.(actor|actorUserId|requestedBy)/);
+  });
+
+  it('checks the target before any account change (no lock / reopen of an Admin by a non-Admin)', () => {
+    const targetCheck = source.indexOf('await assertAccountManager(admin, caller, { userId: targetUserId });');
+    expect(targetCheck).toBeGreaterThan(source.indexOf('isUuid(targetUserId)'));
+    expect(targetCheck).toBeLessThan(source.indexOf("admin.rpc('prepare_user_account_lifecycle'"));
   });
 
   it('prepares DB first for disable and completes DB last for reactivate', () => {

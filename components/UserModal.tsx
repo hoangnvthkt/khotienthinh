@@ -26,12 +26,16 @@ interface UserModalProps {
   permissionApplicationCode?: string;
   /** Who manages this account — read from the org chart, changed only there. */
   directManager?: UserDirectManager | null;
+  /** Only an Admin creates or picks the administrator account type (create-user checks it again). */
+  canAssignAdminRole?: boolean;
+  /** Whether the signed-in person can grant permissions after creating the account. */
+  canGrantPermissions?: boolean;
 }
 
 // The server records a reason with every change; profile-only edits get this one automatically.
 const PROFILE_EDIT_REASON = 'Cập nhật hồ sơ người dùng';
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode, directManager = null }) => {
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode, directManager = null, canAssignAdminRole = false, canGrantPermissions = false }) => {
   const toast = useToast();
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -312,7 +316,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
           assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
           permissionGrants: [],
         });
-        toast.success('Đã thêm tài khoản', 'Mở lại tài khoản để cấp quyền cho người này.');
+        toast.success('Đã thêm tài khoản', canGrantPermissions ? 'Mở lại tài khoản để cấp quyền cho người này.' : 'Tài khoản thường, chưa có quyền. Nhờ Admin cấp quyền.');
       }
       onClose();
     } catch (error: any) {
@@ -331,7 +335,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
         <header className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-black text-slate-800">{userToEdit ? 'Cập nhật người dùng & phân quyền' : 'Thêm tài khoản hệ thống'}</h2>
-            <p className="text-xs text-slate-500">{userToEdit ? 'Hồ sơ và quyền được lưu cùng lúc.' : 'Tạo tài khoản trước, sau đó mở lại để cấp quyền.'}</p>
+            <p className="text-xs text-slate-500">{userToEdit ? 'Hồ sơ và quyền được lưu cùng lúc.' : canGrantPermissions ? 'Tạo tài khoản trước, sau đó mở lại để cấp quyền.' : 'Tạo tài khoản đăng nhập cho nhân viên.'}</p>
           </div>
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
         </header>
@@ -364,8 +368,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>}
             <label className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Briefcase size={12} className="mr-1" /> Loại tài khoản</span>
-              <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} className={fieldClass}>
-                <option value={Role.ADMIN}>Quản trị viên</option>
+              <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} disabled={!canAssignAdminRole && !userToEdit} className={fieldClass}>
+                {(canAssignAdminRole || userToEdit?.role === Role.ADMIN) && <option value={Role.ADMIN}>Quản trị viên</option>}
                 {/* V1-2: thủ kho chọn ở Kho vật tư → Phân quyền kho; vai trò "Tài khoản kho" chỉ còn hiện cho tài khoản cũ. */}
                 {(formData.role === Role.WAREHOUSE_KEEPER || userToEdit?.role === Role.WAREHOUSE_KEEPER) && <option value={Role.WAREHOUSE_KEEPER}>Tài khoản kho (cũ)</option>}
                 <option value={Role.EMPLOYEE}>Tài khoản thường</option>
@@ -410,7 +414,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             onCatalogChange={setAuthorizationCatalog}
             onDirectGrantsChange={setPermissionGrants}
             onReasonChange={setAuthorizationReason}
-          /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> Quyền được cấp sau khi tạo xong tài khoản: lưu, rồi mở lại người này để cấp quyền.</div>}
+          /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> {canGrantPermissions
+            ? 'Quyền được cấp sau khi tạo xong tài khoản: lưu, rồi mở lại người này để cấp quyền.'
+            : 'Tài khoản mới là tài khoản thường, chưa có quyền. Admin cấp quyền sau.'}</div>}
           {errors.authorizationReason && <p className="text-[10px] font-bold text-red-500">{errors.authorizationReason}</p>}
           {errors.authorizationCatalog && <p className="text-[10px] font-bold text-red-500">{errors.authorizationCatalog}</p>}
 
