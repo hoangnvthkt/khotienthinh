@@ -11,7 +11,9 @@ import {
 import UserModal from '../../components/UserModal';
 import UserAccountStatusModal from '../../components/UserAccountStatusModal';
 import { isChatEnabled } from '../../lib/featureFlags';
-import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
+import {
+  canEditUserAuthorization, canManageUserAccountOf, canManageUserAccounts, getSettingsUserModuleKeys, isSettingsUserAdmin,
+} from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
 import AdminSetPasswordForm from '../../components/AdminSetPasswordForm';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
@@ -21,6 +23,7 @@ import { USER_MANAGER_SOURCE_LABEL, useUserDirectManagers } from '../../lib/user
 
 // A person counts as online while an active session was seen recently.
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const ACCOUNT_ADMIN_ONLY_HINT = 'Tài khoản quản trị: chỉ Admin khóa, mở lại hoặc đặt mật khẩu.';
 
 interface SettingsUsersProps {
   permissionApplicationCode?: string;
@@ -82,6 +85,9 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
 }) => {
   const toast = useToast();
   const { managers: directManagers } = useUserDirectManagers(users.length);
+  // Quản lý tài khoản (tạo / khóa / mở lại / đặt mật khẩu) tách khỏi sửa phân quyền (cần quyền quản lý quyền).
+  const canManageAccounts = canManageUserAccounts(currentUser);
+  const canEditAuthorization = canEditUserAuthorization(currentUser);
   
   // Filtering & Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -203,6 +209,10 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
 
   const lifecycleAction = selectedUserForPopover ? getUserLifecycleAction(selectedUserForPopover) : 'DISABLE';
   const isLifecycleReactivate = lifecycleAction === 'REACTIVATE';
+  const popoverAccountLocked = !selectedUserForPopover || !canManageUserAccountOf(currentUser, selectedUserForPopover);
+  const popoverAccountLockReason = selectedUserForPopover?.id === currentUser.id
+    ? 'Không đổi trạng thái tài khoản đang đăng nhập.'
+    : ACCOUNT_ADMIN_ONLY_HINT;
 
   return (
     <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
@@ -243,7 +253,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
           </div>
 
           {/* Right: Primary Action Button "Thêm tài khoản v" */}
-          <div className="relative shrink-0" ref={addMenuRef}>
+          {canManageAccounts && <div className="relative shrink-0" ref={addMenuRef}>
             <div className="inline-flex rounded-xl shadow-md shadow-teal-500/10 overflow-hidden">
               <button
                 onClick={handleAddUser}
@@ -282,7 +292,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                 </button>
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Row 2: Filter Tabs (TẤT CẢ, QUẢN TRỊ HỆ THỐNG, ONLINE, VÔ HIỆU HOÁ, LỊCH SỬ ĐĂNG NHẬP) */}
@@ -549,56 +559,68 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
             </button>
 
             {/* Role changes use the audited atomic command in UserModal. */}
-            <div className="pt-2 border-t border-slate-100 space-y-1">
-              <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Phân vai trò tài khoản</p>
-              <button
-                onClick={() => {
-                  handleEditUser(selectedUserForPopover);
-                  setSelectedUserForPopover(null);
-                }}
-                className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Đổi vai trò trong màn hình Chỉnh sửa
-              </button>
-            </div>
+            {canEditAuthorization && (
+              <div className="pt-2 border-t border-slate-100 space-y-1">
+                <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Phân vai trò tài khoản</p>
+                <button
+                  onClick={() => {
+                    handleEditUser(selectedUserForPopover);
+                    setSelectedUserForPopover(null);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Đổi vai trò trong màn hình Chỉnh sửa
+                </button>
+              </div>
+            )}
 
             {/* Edit / Account Actions */}
-            <div className="pt-2 border-t border-slate-100 space-y-0.5">
-              <button
-                onClick={() => {
-                  handleEditUser(selectedUserForPopover);
-                  setSelectedUserForPopover(null);
-                }}
-                className="w-full text-left px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-2.5 font-medium transition"
-              >
-                <Edit className="w-3.5 h-3.5 text-slate-500" /> Chỉnh sửa thông tin cá nhân
-              </button>
-              
-              <button
-                onClick={() => {
-                  const targetUser = selectedUserForPopover;
-                  setSelectedUserForPopover(null);
-                  openAccountAction(
-                    targetUser,
-                    lifecycleAction
-                  );
-                }}
-                disabled={selectedUserForPopover.id === currentUser.id}
-                className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2.5 font-medium transition ${
-                  selectedUserForPopover.id === currentUser.id
-                    ? 'text-slate-300 cursor-not-allowed'
-                    : isLifecycleReactivate
-                    ? 'text-emerald-600 hover:bg-emerald-50'
-                    : 'text-red-600 hover:bg-red-50'
-                }`}
-              >
-                {isLifecycleReactivate ? (
-                  <><RotateCcw className="w-3.5 h-3.5" /> Khôi phục tài khoản này</>
-                ) : (
-                  <><UserX className="w-3.5 h-3.5" /> Vô hiệu hoá tài khoản này</>
+            {(canEditAuthorization || canManageAccounts) && (
+              <div className="pt-2 border-t border-slate-100 space-y-0.5">
+                {canEditAuthorization && (
+                  <button
+                    onClick={() => {
+                      handleEditUser(selectedUserForPopover);
+                      setSelectedUserForPopover(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-2.5 font-medium transition"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-slate-500" /> Chỉnh sửa thông tin cá nhân
+                  </button>
                 )}
-              </button>
-            </div>
+
+                {canManageAccounts && (
+                  <button
+                    onClick={() => {
+                      const targetUser = selectedUserForPopover;
+                      setSelectedUserForPopover(null);
+                      openAccountAction(
+                        targetUser,
+                        lifecycleAction
+                      );
+                    }}
+                    disabled={popoverAccountLocked}
+                    title={popoverAccountLocked ? popoverAccountLockReason : undefined}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2.5 font-medium transition ${
+                      popoverAccountLocked
+                        ? 'text-slate-300 cursor-not-allowed'
+                        : isLifecycleReactivate
+                        ? 'text-emerald-600 hover:bg-emerald-50'
+                        : 'text-red-600 hover:bg-red-50'
+                    }`}
+                  >
+                    {isLifecycleReactivate ? (
+                      <><RotateCcw className="w-3.5 h-3.5" /> Khôi phục tài khoản này</>
+                    ) : (
+                      <><UserX className="w-3.5 h-3.5" /> Vô hiệu hoá tài khoản này</>
+                    )}
+                  </button>
+                )}
+                {canManageAccounts && popoverAccountLocked && selectedUserForPopover.id !== currentUser.id && (
+                  <p className="px-3 pb-1 text-[10px] text-slate-400">{popoverAccountLockReason}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -622,15 +644,17 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      handleEditUser(drawerUser);
-                      setDrawerUser(null);
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20 transition"
-                  >
-                    <Edit className="w-3.5 h-3.5" /> Chỉnh sửa & phân quyền
-                  </button>
+                  {canEditAuthorization && (
+                    <button
+                      onClick={() => {
+                        handleEditUser(drawerUser);
+                        setDrawerUser(null);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20 transition"
+                    >
+                      <Edit className="w-3.5 h-3.5" /> Chỉnh sửa & phân quyền
+                    </button>
+                  )}
                   <button
                     onClick={() => setDrawerUser(null)}
                     aria-label="Đóng"
@@ -712,7 +736,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                       </div>
                     </div>
 
-                    {isSettingsUserAdmin(currentUser) && drawerUser.id !== currentUser.id ? (
+                    {canManageUserAccountOf(currentUser, drawerUser) ? (
                       <AdminSetPasswordForm targetUser={drawerUser} />
                     ) : (
                       <div className="rounded-2xl border border-slate-100 p-4 text-xs text-slate-500 flex items-start gap-2">
@@ -721,7 +745,9 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                           <span className="font-bold text-slate-700">Mật khẩu: </span>
                           {drawerUser.id === currentUser.id
                             ? 'đổi mật khẩu của bạn ở Cài đặt → Tài khoản.'
-                            : 'người dùng tự đổi ở Cài đặt → Tài khoản; khi quên, nhờ Admin đặt mật khẩu mới.'}
+                            : canManageAccounts
+                              ? ACCOUNT_ADMIN_ONLY_HINT
+                              : 'người dùng tự đổi ở Cài đặt → Tài khoản; khi quên, nhờ người quản lý tài khoản đặt mật khẩu mới.'}
                         </p>
                       </div>
                     )}
@@ -752,6 +778,8 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
       {/* User Modal for Create / Edit */}
       <UserModal
         permissionApplicationCode={permissionApplicationCode}
+        canAssignAdminRole={currentUser.role === Role.ADMIN}
+        canGrantPermissions={canEditAuthorization}
         isOpen={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
         onSave={handleSaveUser}

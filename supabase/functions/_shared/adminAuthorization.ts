@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User as AuthUser } from '@supabase/supabase-js';
+import { accountManagerDenial, parseAccountManagerAccess } from './accountManagerPolicy.ts';
 
 export class EdgeAuthorizationError extends Error {
   constructor(message: string, public readonly status = 403) {
@@ -82,11 +83,34 @@ export const requireActiveCaller = async (
   };
 };
 
-export const requireActiveAdmin = async (
+export type AccountManagerTarget = { userId?: string | null; email?: string | null };
+
+// Quản lý tài khoản = Admin hoặc settings.users.manage toàn công ty. Có tài khoản đích (theo id, hoặc
+// email của hồ sơ sẽ gắn vào tài khoản mới) thì người không phải Admin không đụng tài khoản quản trị.
+export const assertAccountManager = async (
+  admin: SupabaseClient,
+  caller: ActiveAppCaller,
+  target: AccountManagerTarget = {},
+): Promise<void> => {
+  const { data, error } = await admin.rpc('account_manager_access_v1', {
+    p_actor_user_id: caller.appUser.id,
+    p_target_user_id: target.userId || null,
+    p_target_email: target.email || null,
+  });
+  if (error) throw error;
+  const denial = accountManagerDenial(parseAccountManagerAccess(data), {
+    isAdmin: caller.isAdmin,
+    hasTarget: Boolean(target.userId || target.email),
+  });
+  if (denial) throw new EdgeAuthorizationError(denial);
+};
+
+export const requireAccountManager = async (
   req: Request,
   admin: SupabaseClient,
+  target: AccountManagerTarget = {},
 ): Promise<ActiveAppCaller> => {
   const caller = await requireActiveCaller(req, admin);
-  if (!caller.isAdmin) throw new EdgeAuthorizationError('Admin permission required');
+  await assertAccountManager(admin, caller, target);
   return caller;
 };

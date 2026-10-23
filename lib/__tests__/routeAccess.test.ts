@@ -316,6 +316,28 @@ describe('HRM employee self-service route access', () => {
     }
   });
 
+  it('opens the HR read-only pages for the HR viewer role (Ban lãnh đạo, kế toán)', () => {
+    const viewer: User = {
+      ...persona(Role.EMPLOYEE, []),
+      authorizationSnapshot: {
+        generatedAt: '2026-10-23T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [
+          'hrm.employee.view_directory', 'hrm.employee.view_sensitive', 'hrm.payroll.view',
+          'hrm.contract.view', 'hrm.document.view', 'hrm.attendance.view', 'hrm.leave.view',
+        ].map(permissionCode => ({
+          permissionCode, sourceType: 'ROLE', sourceCode: 'HR_VIEWER', sourceId: `viewer-${permissionCode}`,
+          scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {},
+        })),
+        roomActions: [],
+      },
+    };
+
+    for (const route of ['/hrm/dashboard', '/hrm/payroll', '/hrm/contracts', '/hrm/documents', '/hrm/reports', '/hrm/employees']) {
+      expect(canAccessRoute(viewer, route), route).toBe(true);
+    }
+  });
+
   it('does not open payroll administration from a non-template payroll grant', () => {
     const directPayrollViewer = persona(Role.EMPLOYEE, [
       ['hrm.payroll.view', 'global'],

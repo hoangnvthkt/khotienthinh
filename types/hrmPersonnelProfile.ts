@@ -11,7 +11,7 @@ export const HRM_PERSONNEL_SECTION_KEYS = [
 
 export type HrmPersonnelSectionKey = typeof HRM_PERSONNEL_SECTION_KEYS[number];
 export type HrmPersonnelDetailSectionKey = Exclude<HrmPersonnelSectionKey, 'overview'>;
-export type HrmPersonnelAccessLevel = 'NONE' | 'DIRECTORY' | 'SELF' | 'MANAGER' | 'HR' | 'HR_MANAGE';
+export type HrmPersonnelAccessLevel = 'NONE' | 'DIRECTORY' | 'SELF' | 'MANAGER' | 'HR' | 'HR_MANAGE' | 'HR_VIEWER';
 
 export interface HrmPersonnelOverview {
   employeeId: string;

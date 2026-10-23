@@ -118,6 +118,8 @@ const UserManagement: React.FC = () => {
         userToEdit={editingUser}
         warehouses={warehouses}
         users={users}
+        canAssignAdminRole
+        canGrantPermissions
       />
 
       <UserAccountStatusModal
