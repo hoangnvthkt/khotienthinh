@@ -7,6 +7,8 @@ import { userPermissionTemplateService } from '../../lib/userPermissionTemplateS
 import { userTemplateAssignmentService, type UserTemplateAssignment } from '../../lib/userTemplateAssignmentService';
 import type { PermissionAdminCatalog } from '../../lib/permissions/permissionTypes';
 import type { UserPermissionGrant } from '../../types';
+import { SodAcknowledgeDialog, SodConflictNotice } from '../../components/permissions/SodAcknowledge';
+import { emptySodAcknowledgement, sodService, toSodAcceptances, type SodWarning } from '../../lib/permissions/sodService';
 
 const act = (permissionCode: string, label: string, extra: Record<string, unknown> = {}) => ({
   action: permissionCode.split('.').pop()!, label, permissionCode, scopeTypes: ['global', 'own', 'assigned'], sortOrder: 1,
@@ -53,8 +55,22 @@ userTemplateAssignmentService.preview = async (_userId, code, options) => ({
   remove: fakeAssignment && fakeAssignment.templateCode !== code
     ? [{ permissionCode: 'wms.request.approve', scopeType: 'global', label: 'Duyệt', moduleCode: 'wms.request', moduleLabel: 'Đề xuất vật tư' }] : [],
   excludedCount: 0,
+  // Đợt 2c: tích Duyệt PO cho người đang Quản trị Mua hàng = kiêm nhiệm Mua hàng + Duyệt PO.
+  sod: {
+    warnings: code === 'warehouse_manager' && options.includes('po_approver') ? [{
+      ruleCode: 'PROCUREMENT_BUY_APPROVE_PO', name: 'Mua hàng + Duyệt PO',
+      description: 'Người mua hàng cũng duyệt đơn mua. Hệ thống vẫn chặn duyệt đơn do chính mình lập.',
+      scopeType: 'global', scopeId: '*', scopeLabel: null,
+      permissions: [{ code: 'system.procurement.manage', label: 'Quản trị', moduleLabel: 'Mua hàng' },
+        { code: 'system.procurement.approve', label: 'Duyệt PO', moduleLabel: 'Mua hàng' }],
+      controls: ['Không duyệt đơn do chính mình lập (hệ thống đã chặn)', 'Ban lãnh đạo xem lại đơn mua lớn hằng tuần'],
+    }] : [],
+    hardDenies: [],
+    defaultControlOwnerId: 'u-thinh',
+  },
 });
-userTemplateAssignmentService.save = async (_userId, code, options) => {
+userTemplateAssignmentService.save = async (_userId, code, options, _reason, acceptances = []) => {
+  (window as unknown as { __sodAcceptances: unknown }).__sodAcceptances = acceptances;
   fakeAssignment = { userId: 'fixture', templateCode: code, templateName: code === 'warehouse_manager' ? 'Quản lý kho' : 'Nhân viên cơ bản',
     options: [...options], excludedCount: 0, appliedCount: 4, assignedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), assignedByName: 'Admin Hoàng' };
   return { added: code === 'warehouse_manager' ? 2 + (options.includes('po_approver') ? 1 : 0) : 0, removed: 0 };
@@ -70,7 +86,8 @@ const Fixture = () => {
   return <div className="mx-auto max-w-4xl space-y-3 p-4">
     <PermissionTemplateFill userId="fixture" catalog={catalog} grants={grants} inheritedCodes={[]} reason={reason}
       disabled={false} onGrantsChange={setGrants} onReasonChange={setReason}
-      hasUnsavedChanges={JSON.stringify(grants) !== JSON.stringify(initial)} onAssignmentChanged={() => undefined} />
+      hasUnsavedChanges={JSON.stringify(grants) !== JSON.stringify(initial)} onAssignmentChanged={() => undefined}
+      controlOwnerCandidates={[{ id: 'u-thinh', name: 'Dương Xuân Thịnh' }, { id: 'u-mo', name: 'Nguyễn Thị Mơ' }]} actorUserId="u-admin" />
     <PermissionModuleEditor catalog={catalog} grants={grants} targetUserId="fixture" onChange={setGrants}
       initialExpandedApplicationCodes={['wms', 'kb']} initialExpandedAdvancedModuleCodes={['kb.articles', 'hrm.payroll']}
       inheritedSources={[{ permissionCode: 'kb.view', sourceType: 'ROLE', sourceCode: 'HR', scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {} }]} />
@@ -78,4 +95,27 @@ const Fixture = () => {
     <output aria-label="Reason">{reason}</output>
   </div>;
 };
-createRoot(document.getElementById('root')!).render(<Fixture />);
+// ?dialog=1: hộp ghi nhận kiêm nhiệm ở màn Người dùng (thủ kho 2 kho được thêm Mua hàng + Duyệt PO).
+sodService.listConflicts = async () => [{ userId: 'fixture', name: 'Đặng Thị Hương', email: 'huongdt@example.com', conflicts: [{
+  ruleCode: 'PROCUREMENT_BUY_WAREHOUSE_KEEPER', name: 'Mua hàng + Thủ kho', description: '',
+  scopes: [{ scopeType: 'warehouse', scopeId: 'wh-1', scopeLabel: 'Kho Tổng Hưng Yên' }], acceptance: null,
+}] }];
+const keeperWarning = (scopeId: string, scopeLabel: string): SodWarning => ({
+  ruleCode: 'PROCUREMENT_BUY_WAREHOUSE_KEEPER', name: 'Mua hàng + Thủ kho', description: 'Người mua hàng cũng là thủ kho, tự nhận hàng mình mua.',
+  scopeType: 'warehouse', scopeId, scopeLabel,
+  permissions: [{ code: 'system.procurement.manage', label: 'Quản trị', moduleLabel: 'Mua hàng' }, { code: 'wms.transaction.keeper', label: 'Thủ kho', moduleLabel: 'Phiếu kho' }],
+  controls: ['Kế toán đối chiếu phiếu nhập kho với đơn mua hằng tháng', 'Kiểm kê kho định kỳ có người thứ hai'],
+});
+const dialogWarnings = [keeperWarning('wh-1', 'Kho Tổng Hưng Yên'), keeperWarning('wh-2', 'Kho VPP Hưng Yên')];
+const DialogFixture = () => {
+  const [ack, setAck] = useState(emptySodAcknowledgement('u-thinh'));
+  const [sent, setSent] = useState<string | null>(null);
+  return <div className="mx-auto max-w-4xl space-y-3 p-4">
+    <SodConflictNotice userId="fixture" />
+    {sent ? <output aria-label="Sent">{sent}</output> : <SodAcknowledgeDialog targetName="Đặng Thị Hương" targetUserId="fixture" actorUserId="u-admin"
+      warnings={dialogWarnings} value={ack} onChange={setAck}
+      candidates={[{ id: 'u-thinh', name: 'Dương Xuân Thịnh' }, { id: 'u-mo', name: 'Nguyễn Thị Mơ' }]}
+      onConfirm={() => setSent(JSON.stringify(toSodAcceptances(dialogWarnings, ack).map(row => row.scopeId)))} onCancel={() => setSent('cancel')} />}
+  </div>;
+};
+createRoot(document.getElementById('root')!).render(new URLSearchParams(window.location.search).has('dialog') ? <DialogFixture /> : <Fixture />);
