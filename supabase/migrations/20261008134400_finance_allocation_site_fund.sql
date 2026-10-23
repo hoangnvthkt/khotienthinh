@@ -1,3 +1,7 @@
+-- DB dựng từ trống chạy file này trước H4 (20261008160000 tạo hrm_timesheet_periods/snapshots); trên prod H4 áp trước.
+-- Tắt kiểm thân hàm như baseline để hàm tạo được; bảng có thật lúc hàm chạy.
+set check_function_bodies = off;
+
 -- ===========================================================================
 -- Tài chính đợt 3b-2: Phân bổ tháng + Quỹ công trường / hoàn ứng (chủ SP duyệt 8 câu, 04/10/2026)
 --   * Phân bổ tháng (từ 10/2026, trước đó MISA đã phân bổ): (1) lương nhân viên = lương gộp bảng lương đã duyệt × số công ở
@@ -826,3 +830,5 @@ $function$;
 
 
 notify pgrst, 'reload schema';
+
+reset check_function_bodies;

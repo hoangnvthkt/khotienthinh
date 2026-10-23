@@ -36,9 +36,14 @@ revoke all on public.finance_project_cost_cutovers from anon;
 revoke insert, update, delete on public.finance_project_cost_cutovers from authenticated;
 grant select on public.finance_project_cost_cutovers to authenticated;
 
-insert into public.finance_project_cost_cutovers (project_id, cutover_date, note) values
+-- Chỉ ghi cho dự án có thật (DB xem thử dựng từ trống không có dữ liệu prod).
+insert into public.finance_project_cost_cutovers (project_id, cutover_date, note)
+select v.project_id, v.cutover_date, v.note
+from (values
   ('b4ce0810-2cac-44af-a83f-8bb1a361567a', date '2026-08-01', 'Số MISA đã nhập vào Vioo đến 31/07/2026 (nhập ngày 17/08/2026)'),
-  ('d3d25b49-0623-40eb-99ac-b96f6ac0855a', date '2026-08-20', 'Số MISA đã nhập vào Vioo đến 19/08/2026 (nhập ngày 04/09/2026)');
+  ('d3d25b49-0623-40eb-99ac-b96f6ac0855a', date '2026-08-20', 'Số MISA đã nhập vào Vioo đến 19/08/2026 (nhập ngày 04/09/2026)')
+) v(project_id, cutover_date, note)
+where exists (select 1 from public.projects p where p.id::text = v.project_id);
 
 alter table public.project_transactions add column misa_overlap_amount numeric(18,2);
 
