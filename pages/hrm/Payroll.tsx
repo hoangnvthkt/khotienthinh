@@ -581,7 +581,7 @@ const Payroll: React.FC = () => {
                                     </button>
                                   </>
                                 )}
-                                {p.status === 'confirmed' && (
+                                {p.status === 'confirmed' && canCRUD && (
                                   <button onClick={() => markPaid(p)} className="p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition" title="Đánh dấu đã trả">
                                     <DollarSign size={14} />
                                   </button>
@@ -596,7 +596,7 @@ const Payroll: React.FC = () => {
                                 <div className="max-w-2xl">
                                   <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
                                     <FileText size={12} /> Chi ti\u1ebft phi\u1ebfu l\u01b0\u01a1ng \u2014 M\u1eabu: {tpl.name}
-                                    {p.status === 'draft' && <span className="ml-2 text-blue-500">(click s\u1ed1 \u0111\u1ec3 s\u1eeda)</span>}
+                                    {p.status === 'draft' && canCRUD && <span className="ml-2 text-blue-500">(click s\u1ed1 \u0111\u1ec3 s\u1eeda)</span>}
                                   </p>
                                   <div className="grid grid-cols-1 gap-1">
                                     {tpl.fields.sort((a, b) => a.order - b.order).map(field => {
@@ -606,7 +606,7 @@ const Payroll: React.FC = () => {
                                         : rawVal;
                                       const isFormula = field.type === 'formula';
                                       const isDeduction = field.type === 'deduction' || (isFormula && field.name.toLowerCase().includes('kh\u1ea5u tr\u1eeb'));
-                                      const isEditable = p.status === 'draft' && !isFormula;
+                                      const isEditable = canCRUD && p.status === 'draft' && !isFormula;
                                       return (
                                         <div key={field.id} className={`flex justify-between items-center px-3 py-1.5 rounded-lg text-xs ${
                                           isFormula ? 'bg-blue-50/60 dark:bg-blue-950/20 font-black' : ''
@@ -632,7 +632,7 @@ const Payroll: React.FC = () => {
                                       );
                                     })}
                                   </div>
-                                  {p.status === 'draft' && Object.keys(editingPayrollValues).length > 0 && (
+                                  {canCRUD && p.status === 'draft' && Object.keys(editingPayrollValues).length > 0 && (
                                     <button onClick={() => savePayrollEdit(p)}
                                       className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
                                       L\u01b0u thay \u0111\u1ed5i
@@ -828,20 +828,22 @@ const Payroll: React.FC = () => {
             /* ===== TEMPLATE LIST ===== */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold text-slate-500">Tạo và quản lý cấu trúc bảng lương cho từng chính sách lương</p>
-                <button onClick={openNewTemplate} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
+                <p className="text-xs font-bold text-slate-500">{canCRUD ? 'Tạo và quản lý cấu trúc bảng lương cho từng chính sách lương' : 'Cấu trúc bảng lương theo từng chính sách lương'}</p>
+                {canCRUD && <button onClick={openNewTemplate} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
                   <Plus size={14} /> Tạo mẫu mới
-                </button>
+                </button>}
               </div>
 
               {payrollTemplates.length === 0 ? (
                 <div className="glass-panel rounded-2xl p-16 text-center">
                   <FileText size={48} className="mx-auto text-slate-300 mb-4" />
                   <p className="text-sm font-black text-slate-400 mb-2">Chưa có mẫu bảng lương</p>
+                  {canCRUD && <>
                   <p className="text-xs text-slate-400 mb-4">Tạo mẫu để định nghĩa cấu trúc bảng lương</p>
                   <button onClick={openNewTemplate} className="px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition inline-flex items-center gap-1.5">
                     <Plus size={14} /> Tạo mẫu đầu tiên
                   </button>
+                  </>}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -851,20 +853,20 @@ const Payroll: React.FC = () => {
                     const deductionFields = tpl.fields.filter(f => f.type === 'deduction').length;
                     const formulaFields = tpl.fields.filter(f => f.type === 'formula').length;
                     return (
-                      <div key={tpl.id} className="glass-card rounded-2xl p-5 hover:shadow-lg transition group cursor-pointer" onClick={() => openEditTemplate(tpl)}>
+                      <div key={tpl.id} className={`glass-card rounded-2xl p-5 transition group ${canCRUD ? 'hover:shadow-lg cursor-pointer' : ''}`} onClick={canCRUD ? () => openEditTemplate(tpl) : undefined}>
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <h3 className="text-sm font-black text-slate-800 dark:text-white">{tpl.name}</h3>
                             {policy && <p className="text-[10px] font-bold text-emerald-500 mt-0.5">{policy.name}</p>}
                           </div>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition" onClick={e => e.stopPropagation()}>
+                          {canCRUD && <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition" onClick={e => e.stopPropagation()}>
                             <button onClick={() => openEditTemplate(tpl)} className="p-1.5 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition">
                               <Edit3 size={12} />
                             </button>
                             <button onClick={() => deleteTemplate(tpl.id)} className="p-1.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 transition">
                               <Trash2 size={12} />
                             </button>
-                          </div>
+                          </div>}
                         </div>
                         <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
                           <span>{tpl.fields.length} dòng</span>
