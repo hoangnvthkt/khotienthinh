@@ -403,7 +403,8 @@
     "20261028150000_assistant_my_access.sql",
     "20261028160000_procurement_p0b_statement_reverse_wms_insert_lock.sql",
     "20261028170000_daily_log_progress_issues.sql",
-    "20261028190000_control_findings_k0.sql"
+    "20261028190000_control_findings_k0.sql",
+    "20261028200000_wf_process_handler_guard.sql"
   ],
   "forbidIncludeAll": true
 }
