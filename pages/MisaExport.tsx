@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, Role } from '../types';
 import { loadXlsx } from '../lib/loadXlsx';
+import { canPerform } from '../lib/permissions/permissionService';
 import { useModuleData } from '../hooks/useModuleData';
 
 type XlsxModule = Awaited<ReturnType<typeof loadXlsx>>;
@@ -179,7 +180,8 @@ const MisaExport: React.FC = () => {
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
 
     const isAdmin = user.role === Role.ADMIN;
-    const canExport = isAdmin;
+    // Xuất MISA là việc kế toán kho: Admin hoặc người có Kế toán kho (toàn công ty).
+    const canExport = isAdmin || canPerform(user, 'wms.accounting.manage', { scopeType: 'global', scopeId: '*' });
 
     // Lọc giao dịch dùng để export
     const filteredTx = useMemo(() => {

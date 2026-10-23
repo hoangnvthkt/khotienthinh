@@ -11,7 +11,7 @@ import {
 import { GREY, OK, TEAL, WARN, dateVi } from './wmsUi';
 
 // Kho vật tư → Phân quyền kho: giao 8 việc (Xem kho, Đề xuất mã, Thủ kho, Cấp mã, Duyệt ngoại lệ, Kế toán kho, Khóa kỳ, Quản lý danh sách kho).
-// Ai xem được kho đều xem; chỉ Admin sửa. Lưu một lần, có nhật ký. Thay màn Người phụ trách (V1-2).
+// Ai xem được kho đều xem; Admin hoặc người có Quản trị Kho vật tư (system.wms.manage) sửa. Lưu một lần, có nhật ký. Thay màn Người phụ trách (V1-2).
 
 const ICON: Record<WmsJob, React.ElementType> = { view: Eye, propose: Send, keeper: Warehouse, code: Hash, exception: ShieldCheck, accounting: BookOpen, closer: Lock, whAdmin: Settings2 };
 const TABLE_JOBS: WmsJob[] = ['propose', 'code', 'exception', 'accounting', 'closer', 'whAdmin'];
@@ -184,7 +184,7 @@ export const WmsAccessView: React.FC = () => {
     <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex max-w-full overflow-x-auto rounded-xl bg-muted p-1 scrollbar-hide" role="tablist" aria-label="Cách xem">{([['jobs', 'Theo việc'], ['people', 'Theo người'], ['old', `Quyền cũ cần dọn (${openGroups.length})`]] as const).map(([k, l]) =>
         <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${view === k ? 'bg-card text-teal-800 shadow-sm dark:text-teal-200' : 'text-muted-foreground'}`}>{l}</button>)}</div>
-      <p className="mr-auto text-xs text-muted-foreground">{canEdit ? 'Xanh lá = sẽ thêm · gạch đỏ = sẽ gỡ. Lưu một lần, có nhật ký.' : 'Bạn đang xem — chỉ Admin sửa.'}</p>
+      <p className="mr-auto text-xs text-muted-foreground">{canEdit ? 'Xanh lá = sẽ thêm · gạch đỏ = sẽ gỡ. Lưu một lần, có nhật ký.' : 'Bạn đang xem — Admin hoặc người có Quản trị Kho vật tư sửa.'}</p>
       {canEdit && <PersonPick users={data.users} label="Phân quyền cho một người" exclude={[]} onPick={id => setPerson(id)} btnCls={`${secondaryBtn} bg-card`}><UserPlus size={15} />Phân quyền cho một người</PersonPick>}
       <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => void load()}><RefreshCw size={15} />Làm mới</button>
     </div>
@@ -208,7 +208,7 @@ export const WmsAccessView: React.FC = () => {
             onChange={ids => set(a => ({ ...a, [J.k]: ids, ...(J.k === 'accounting' && a.closer && !ids.includes(a.closer) ? { closer: null } : {}) }))} />
             {J.k === 'propose' && <p className="mt-1.5 text-xs text-muted-foreground">Thủ kho, người Cấp mã tự có. Thêm ở đây cho người khác (chỉ huy, mua hàng) muốn gửi đề xuất.</p>}
             {J.k === 'exception' && <p className="mt-1.5 text-xs text-muted-foreground">Admin luôn có.</p>}
-            {J.k === 'whAdmin' && <p className="mt-1.5 text-xs text-muted-foreground">Tạo / sửa / xóa kho. Thủ kho không tự sửa được thông tin kho mình giữ. Riêng màn Phân quyền kho luôn chỉ Admin.</p>}</div>}
+            {J.k === 'whAdmin' && <p className="mt-1.5 text-xs text-muted-foreground">Tạo / sửa / xóa kho. Thủ kho không tự sửa được thông tin kho mình giữ. Riêng màn Phân quyền kho cần Admin hoặc Quản trị Kho vật tư.</p>}</div>}
       </article>; })}</div></section>)}
       {sod.length > 0 && <div className={`rounded-2xl border px-4 py-3 text-sm ${WARN}`}><p className="font-semibold"><AlertTriangle size={14} className="mr-1 inline" />Tách nhiệm — hệ thống tự chặn khi thao tác</p><ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">{sod.map(s => <li key={s}>{s}</li>)}</ul></div>}
     </div>}

@@ -167,7 +167,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
           if (reason) void run(() => financeService.requestCancel({ documentId: d.id, reason }), `Đã gửi đề xuất hủy ${d.documentNo} — chờ người khác xác nhận.`);
         }}><Ban size={14} />Đề xuất hủy</button>}
       </>}
-      {can.manage && (dueEdit?.id === d.id
+      {can.configure && (dueEdit?.id === d.id
         ? <span className="flex w-full flex-wrap items-center gap-2">
           <input type="date" value={dueEdit.date} min={d.documentDate} onChange={e => setDueEdit({ ...dueEdit, date: e.target.value })} className={inputCls} />
           <input value={dueEdit.reason} onChange={e => setDueEdit({ ...dueEdit, reason: e.target.value })} placeholder="Lý do sửa hạn (bắt buộc)" className={`min-w-[12rem] flex-1 ${inputCls}`} />
@@ -220,7 +220,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
       <p className="text-xs text-muted-foreground">{[detail.supplier.taxCode && `MST ${detail.supplier.taxCode}`, detail.supplier.bankAccount && `${detail.supplier.bankName || 'TK'} ${detail.supplier.bankAccount}`].filter(Boolean).join(' · ')}
         {' '}· Hạn: {detail.supplier.terms ? `${detail.supplier.terms.paymentDays} ngày (theo NCC)` : `mặc định ${detail.defaultPaymentDays} ngày`}
         {detail.contracts.some(c => c.paymentTermDays != null) && `, ${detail.contracts.filter(c => c.paymentTermDays != null).length} HĐ có hạn riêng`}
-        {can.manage && <> · <button type="button" onClick={() => setDrawer({ kind: 'terms' })} className="font-semibold text-teal-700 hover:underline">Khai hạn thanh toán</button></>}</p>
+        {can.configure && <> · <button type="button" onClick={() => setDrawer({ kind: 'terms' })} className="font-semibold text-teal-700 hover:underline">Khai hạn thanh toán</button></>}</p>
       {detail.supplier.internal && <p className="mt-2 flex gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-900"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{detail.supplier.internalReason} — không chi tiền; đề xuất hủy công nợ.</p>}
       <dl className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
         {([['Đang nợ', shortMoney(owed), NUM], ['Quá hạn', shortMoney(overdue), `font-semibold tabular-nums ${overdue > 0 ? 'text-rose-700' : 'text-muted-foreground'}`],
