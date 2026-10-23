@@ -137,8 +137,14 @@ export const ContractOrderEditor: React.FC<{
       vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0, specification: x.spec.trim() || undefined,
         contractLineId: x.contractPrice != null ? x.contractLineId : null, unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined,
         vatRate: x.contractPrice == null ? manualVatNum ?? 0 : undefined })) });
-    if (orderDateTouched) { await procurementInboxService.setOrderDate(r.purchaseOrderId, orderDate); setOrderDateTouched(false); }
-    const next = { id: r.purchaseOrderId, rowVersion: r.rowVersion };
+    let rowVersion = r.rowVersion;
+    if (orderDateTouched) {
+      await procurementInboxService.setOrderDate(r.purchaseOrderId, orderDate);
+      setOrderDateTouched(false);
+      // Đổi ngày đặt hàng tăng phiên bản đơn: gửi NCC phải dùng phiên bản mới, nếu không máy chủ báo xung đột (23/10, PO-700/702).
+      rowVersion = (await procurementInboxService.getOrder(r.purchaseOrderId)).rowVersion;
+    }
+    const next = { id: r.purchaseOrderId, rowVersion };
     setSaved(next);
     return { ...r, next };
   };

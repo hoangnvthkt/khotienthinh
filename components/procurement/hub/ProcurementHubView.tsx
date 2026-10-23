@@ -1,5 +1,6 @@
 import { RequestPurchaseLines } from './RequestPurchaseLines';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Layers, Link2, Loader2, PackageCheck,
   Hand, RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
@@ -389,6 +390,23 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const [editor, setEditor] = useState<{ sources: ProcurementSourceRef[]; order: ProcurementOrderDetail | null; lineKeys?: string[] } | null>(null);
   const [proactive, setProactive] = useState<{ order: ProcurementOrderDetail | null; seed?: ProactiveOrderSeed } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(initialOrderId);
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Link "Mở đơn" (?po=…) bấm khi đang ở sẵn trang Mua hàng: trang không mở lại nên phải tự mở đơn khi tham số đổi.
+  useEffect(() => {
+    if (!initialOrderId) return;
+    setMode('orders');
+    setOrderId(initialOrderId);
+  }, [initialOrderId]);
+  // Đóng đơn thì bỏ ?po để lần bấm "Mở đơn" sau (kể cả cùng đơn) vẫn đổi địa chỉ và mở được.
+  const closeOrder = () => {
+    setOrderId(null);
+    const params = new URLSearchParams(location.search);
+    if (!params.has('po')) return;
+    params.delete('po');
+    const search = params.toString();
+    navigate({ search: search ? `?${search}` : '' }, { replace: true });
+  };
   const [ordersReload, setOrdersReload] = useState(0);
 
   const load = useCallback(async (quiet = false) => {
@@ -628,7 +646,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
         setProactive(null); setStage('drafting'); setOrderId(id); refreshAll();
       }} />}
 
-    {orderId && !editor && !proactive && inbox && <OrderDrawer orderId={orderId} today={inbox.today} currentUserId={currentUserId} onClose={() => setOrderId(null)} onChanged={refreshAll}
+    {orderId && !editor && !proactive && inbox && <OrderDrawer orderId={orderId} today={inbox.today} currentUserId={currentUserId} onClose={closeOrder} onChanged={refreshAll}
       onEdit={order => order.kind === 'proactive' ? setProactive({ order }) : setEditor({
         order, sources: Array.from(new Map(order.lines.flatMap(l => l.allocations).map(a => [docKey(a), refOf(a)])).values()),
       })} />}
