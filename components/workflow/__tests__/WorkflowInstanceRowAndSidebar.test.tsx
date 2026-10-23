@@ -128,4 +128,24 @@ describe('WorkflowSidebar', () => {
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('aria-pressed="true"');
   });
+
+  it('hides "Tạo phiếu mới" for people who cannot create a ticket', () => {
+    expect(html).toContain('aria-label="Tạo phiếu mới"');
+    const withoutCreate = renderToStaticMarkup(
+      <WorkflowSidebar
+        activeNav="pending"
+        counts={{ pending: 0, mine: 0, watching: 0 }}
+        onNav={() => undefined}
+        onCreate={() => undefined}
+        canCreate={false}
+        templates={templates}
+        categories={categories}
+        userId="u-1"
+        selectedTemplateId="t1"
+        onSelectTemplate={() => undefined}
+        getTemplateCount={() => 0}
+      />,
+    );
+    expect(withoutCreate).not.toContain('aria-label="Tạo phiếu mới"');
+  });
 });

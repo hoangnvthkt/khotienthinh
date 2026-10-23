@@ -4,7 +4,7 @@ import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
     AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
-    Search, Edit2, Bookmark, AtSign, Copy, Loader2
+    Search, Edit2, Bookmark, AtSign, Copy, Loader2, Ban
 } from 'lucide-react';
 import { getClipboardFiles } from '../../lib/clipboardFiles';
 import { useWorkflow } from '../../context/WorkflowContext';
@@ -155,7 +155,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const {
         templates, instances, nodes, edges, logs, loadInstanceById, loadInstanceFormData,
         processInstance, getInstanceLogs, refreshData, updateInstanceWatchers,
-        updateInstance,
+        updateInstance, cancelInstance,
     } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
 
@@ -178,6 +178,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     // Watchers selection modal state
     const [showWatchersModal, setShowWatchersModal] = useState(false);
+    const [watcherError, setWatcherError] = useState('');
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [cancelError, setCancelError] = useState('');
+    const [isCancelling, setIsCancelling] = useState(false);
     const [watcherSearchTerm, setWatcherSearchTerm] = useState('');
     const [tempSelectedWatcherIds, setTempSelectedWatcherIds] = useState<string[]>([]);
 
@@ -307,6 +312,17 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     const canAdministerInstance = user.role === Role.ADMIN
         || canPerform(user, 'workflow.instance.administer', { scopeType: 'global', scopeId: '*' });
+    const isInstanceCreator = !!instance && instance.createdBy === user.id;
+    const isCurrentHandler = !!instance && instance.status === WorkflowInstanceStatus.RUNNING
+        && getEffectiveStepAssigneeIds(instance, currentNode).includes(user.id);
+    // Khớp máy chủ (update_workflow_instance_watchers): người lập, người đang xử lý, quản lý mẫu thêm được
+    // người theo dõi; gỡ người khác cần quyền quản trị phiếu.
+    const canAddWatchers = canAdministerInstance || isInstanceCreator || isCurrentHandler
+        || !!template?.managers?.includes(user.id);
+    // Khớp cancel_workflow_instance: người lập hủy được phiếu đang chạy của mình.
+    const canCancelInstance = !!instance && instance.status === WorkflowInstanceStatus.RUNNING
+        && (isInstanceCreator || canAdministerInstance
+            || canPerform(user, 'workflow.instance.cancel', { scopeType: 'global', scopeId: '*' }));
 
     // ========== timing / SLA calculation ==========
     const stepTimings = useMemo(() => {
@@ -627,8 +643,29 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     const handleSaveWatchers = async () => {
         if (!instance) return;
-        await updateInstanceWatchers(instance.id, tempSelectedWatcherIds);
+        setWatcherError('');
+        const saved = await updateInstanceWatchers(instance.id, tempSelectedWatcherIds);
+        if (!saved) {
+            setWatcherError('Không lưu được người theo dõi. Thử lại hoặc nhờ người lập phiếu.');
+            return;
+        }
         setShowWatchersModal(false);
+    };
+
+    const handleCancelInstance = async () => {
+        if (!instance) return;
+        setIsCancelling(true);
+        setCancelError('');
+        const reason = cancelReason.trim();
+        const cancelled = await cancelInstance(instance.id, user.id, reason ? `Hủy phiếu: ${reason}` : 'Người lập hủy phiếu');
+        setIsCancelling(false);
+        if (!cancelled) {
+            setCancelError('Không hủy được phiếu. Tải lại trang rồi thử lại.');
+            return;
+        }
+        setShowCancelDialog(false);
+        setCancelReason('');
+        await reloadInstance();
     };
 
     if (directLoadState !== 'resolved') {
@@ -675,6 +712,17 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             title="Tạo phiếu mới giống phiếu này"
         >
             <Copy size={13} className="shrink-0" /> <span className="whitespace-nowrap">Nhân bản</span>
+        </button>
+    ) : null;
+
+    const cancelButton = canCancelInstance ? (
+        <button
+            type="button"
+            onClick={() => { setCancelError(''); setShowCancelDialog(true); }}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-red-200 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
+            title="Dừng phiếu này; phiếu chuyển sang Đã hủy"
+        >
+            <Ban size={13} className="shrink-0" /> <span className="whitespace-nowrap">Hủy phiếu</span>
         </button>
     ) : null;
 
@@ -893,6 +941,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     <XCircle size={13} /> <span>Từ chối</span>
                                 </button>}
                                 {cloneButton}
+                                {cancelButton}
                                 <button
                                     onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[42px] sm:min-h-0"
@@ -904,6 +953,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         ) : (
                             <div className="flex justify-end gap-2">
                                 {cloneButton}
+                                {cancelButton}
                                 <button
                                     onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
@@ -1425,8 +1475,12 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                             <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">NGƯỜI THEO DÕI</h4>
                             <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                <span onClick={() => { setTempSelectedWatcherIds(instance.watchers || []); setShowWatchersModal(true); }} className="hover:underline cursor-pointer">Thêm người</span>
-                                <span>•</span>
+                                {canAddWatchers && (
+                                    <>
+                                        <span onClick={() => { setTempSelectedWatcherIds(instance.watchers || []); setWatcherError(''); setShowWatchersModal(true); }} className="hover:underline cursor-pointer">Thêm người</span>
+                                        <span>•</span>
+                                    </>
+                                )}
                                 <span onClick={handleToggleWatch} className="hover:underline cursor-pointer">{isCustomWatcher ? 'Bỏ theo dõi' : 'Theo dõi'}</span>
                             </div>
                         </div>
@@ -1553,11 +1607,15 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 return filteredUsers.map(u => {
                                     const isDefault = (template?.defaultWatchers || []).includes(u.id);
                                     const isChecked = isDefault || tempSelectedWatcherIds.includes(u.id);
+                                    // Gỡ người khác khỏi danh sách đã lưu cần quyền quản trị phiếu (máy chủ chặn).
+                                    const isLockedWatcher = !canAdministerInstance && u.id !== user.id
+                                        && (instance.watchers || []).includes(u.id);
                                     return (
                                         <button
                                             key={u.id}
                                             type="button"
-                                            disabled={isDefault}
+                                            disabled={isDefault || isLockedWatcher}
+                                            title={isLockedWatcher ? 'Chỉ người quản trị phiếu gỡ được người theo dõi đã có' : undefined}
                                             onClick={() => {
                                                 if (tempSelectedWatcherIds.includes(u.id)) {
                                                     setTempSelectedWatcherIds(tempSelectedWatcherIds.filter(id => id !== u.id));
@@ -1568,7 +1626,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                             className={`flex items-center justify-between w-full p-2.5 rounded-xl border text-left transition ${isChecked
                                                 ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20'
                                                 : 'border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50'
-                                                } ${isDefault ? 'opacity-75 cursor-not-allowed' : ''}`}
+                                                } ${isDefault || isLockedWatcher ? 'opacity-75 cursor-not-allowed' : ''}`}
                                         >
                                             <div className="flex items-center gap-3">
                                                 {(() => {
@@ -1605,6 +1663,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             })()}
                         </div>
 
+                        {watcherError && (
+                            <p className="px-4 pt-3 text-xs font-bold text-red-600 dark:text-red-400">{watcherError}</p>
+                        )}
                         <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 flex gap-3">
                             <button
                                 type="button"
@@ -1619,6 +1680,41 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold rounded-xl text-white shadow-md shadow-indigo-500/20 transition"
                             >
                                 Lưu thay đổi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCancelDialog && (
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="wf-cancel-title">
+                    <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 shadow-2xl p-5 space-y-3">
+                        <h3 id="wf-cancel-title" className="text-sm font-black text-slate-800 dark:text-white">Hủy phiếu {instance.code}?</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Phiếu dừng ở bước hiện tại và chuyển sang Đã hủy. Người xử lý không còn phải duyệt.</p>
+                        <textarea
+                            value={cancelReason}
+                            onChange={event => setCancelReason(event.target.value)}
+                            rows={3}
+                            placeholder="Lý do hủy (không bắt buộc)"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-400"
+                        />
+                        {cancelError && <p className="text-xs font-bold text-red-600 dark:text-red-400">{cancelError}</p>}
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowCancelDialog(false)}
+                                disabled={isCancelling}
+                                className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            >
+                                Giữ phiếu
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleCancelInstance()}
+                                disabled={isCancelling}
+                                className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-red-600 hover:bg-red-700 py-2 text-xs font-bold text-white disabled:opacity-60"
+                            >
+                                {isCancelling ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Hủy phiếu
                             </button>
                         </div>
                     </div>

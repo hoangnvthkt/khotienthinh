@@ -194,6 +194,30 @@ describe('request detail route access', () => {
       '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a',
     )).toBe(true);
   });
+
+  it('opens the request list for the basic template (view own, act on assigned)', () => {
+    const basic = persona(Role.EMPLOYEE, [
+      ['request.instance.view_own', 'own'],
+      ['request.instance.act_assigned', 'assigned'],
+      ['request.template.view', 'global'],
+    ]);
+    const approverOnly = persona(Role.EMPLOYEE, [['request.instance.act_assigned', 'assigned']]);
+
+    for (const route of ['/rq', '/rq/dashboard']) {
+      expect(canAccessRoute(basic, route), route).toBe(true);
+      expect(canAccessRoute(approverOnly, route), route).toBe(true);
+    }
+    expect(getAuthorizedModuleRoute(basic, 'RQ', '/rq')).toBe('/rq');
+  });
+
+  it('opens a single request link for people named on it; the database decides per request', () => {
+    const noRequestPermission = persona(Role.EMPLOYEE, []);
+    expect(canAccessRoute(noRequestPermission, '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe(true);
+    expect(canAccessRoute(noRequestPermission, '/rq')).toBe(false);
+    expect(canAccessRoute(noRequestPermission, '/rq/dashboard')).toBe(false);
+    expect(canAccessRoute(noRequestPermission, '/rq/templates')).toBe(false);
+    expect(canAccessRoute(noRequestPermission, '/rq/categories')).toBe(false);
+  });
 });
 
 describe('workflow route access', () => {

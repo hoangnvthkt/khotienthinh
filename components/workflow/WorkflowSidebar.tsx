@@ -11,6 +11,8 @@ interface Props {
     onNav: (id: WorkflowNavId) => void;
     onCreate: () => void;
     createDisabled?: boolean;
+    /** false = người dùng không có quyền tạo phiếu: ẩn nút thay vì để bấm rồi báo lỗi. */
+    canCreate?: boolean;
     templates: WorkflowTemplate[];
     categories: WorkflowTemplateCategory[];
     userId: string;
@@ -30,7 +32,7 @@ const NAV_ITEMS: Array<{ id: WorkflowNavId; label: string; icon: React.ReactNode
  * readable; the active item is a white card; "Chờ tôi duyệt" breathes while something waits.
  */
 const WorkflowSidebar: React.FC<Props> = ({
-    activeNav, counts, onNav, onCreate, createDisabled, templates, categories, userId, selectedTemplateId, onSelectTemplate, getTemplateCount,
+    activeNav, counts, onNav, onCreate, createDisabled, canCreate = true, templates, categories, userId, selectedTemplateId, onSelectTemplate, getTemplateCount,
 }) => (
     <aside className="hidden w-72 shrink-0 flex-col border-r border-[var(--wf-side-border)] bg-[var(--wf-side-bg)] text-[var(--wf-side-text)] lg:flex">
         <div className="flex h-16 shrink-0 items-center justify-between px-4">
@@ -38,16 +40,18 @@ const WorkflowSidebar: React.FC<Props> = ({
                 <GitBranch size={18} className="shrink-0 text-[var(--wf-green)]" />
                 <span className="truncate">Quy trình duyệt</span>
             </span>
-            <button
-                type="button"
-                onClick={onCreate}
-                disabled={createDisabled}
-                title="Tạo phiếu mới"
-                aria-label="Tạo phiếu mới"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--wf-green)] text-white shadow-sm transition hover:bg-[var(--wf-green-hover)] disabled:opacity-40"
-            >
-                <Plus size={16} />
-            </button>
+            {canCreate && (
+                <button
+                    type="button"
+                    onClick={onCreate}
+                    disabled={createDisabled}
+                    title="Tạo phiếu mới"
+                    aria-label="Tạo phiếu mới"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--wf-green)] text-white shadow-sm transition hover:bg-[var(--wf-green-hover)] disabled:opacity-40"
+                >
+                    <Plus size={16} />
+                </button>
+            )}
         </div>
 
         <nav className="space-y-0.5 px-3 pb-3" aria-label="Phiếu của bạn">

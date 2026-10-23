@@ -68,7 +68,7 @@ interface WorkflowContextType {
     updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any>; initialAssigneeUserIds?: string[] }) => Promise<boolean>;
     submitDraft: (instanceId: string, firstAssigneeUserIds?: string[]) => Promise<boolean>;
     deleteDraft: (instanceId: string) => Promise<boolean>;
-    cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
+    cancelInstance: (instanceId: string, userId: string, comment?: string) => Promise<boolean>;
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserIds?: string | string[]) => Promise<WorkflowProcessResult>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
@@ -1107,10 +1107,10 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return true;
     };
 
-    const cancelInstance = async (instanceId: string, userId: string): Promise<boolean> => {
+    const cancelInstance = async (instanceId: string, userId: string, comment?: string): Promise<boolean> => {
         const { data, error } = await supabase.rpc('cancel_workflow_instance', {
             p_instance_id: instanceId,
-            p_comment: 'Phiếu đã bị hủy bởi người có thẩm quyền',
+            p_comment: comment || 'Phiếu đã bị hủy bởi người có thẩm quyền',
             p_idempotency_key: crypto.randomUUID(),
         });
         if (error) { console.error(error); return false; }

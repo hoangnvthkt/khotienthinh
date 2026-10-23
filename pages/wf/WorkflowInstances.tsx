@@ -635,6 +635,11 @@ const WorkflowInstances: React.FC = () => {
         setInitialAssigneeIds([]);
     };
 
+    // Máy chủ (workflow_actor_can_create_instance) cần quyền Tạo ở phạm vi của mình hoặc toàn công ty.
+    const canCreateInstance = user.role === Role.ADMIN
+        || canPerform(user, 'workflow.instance.create', { scopeType: 'own', scopeId: user.id })
+        || canPerform(user, 'workflow.instance.create', { scopeType: 'global', scopeId: '*' });
+
     const openCreateModal = () => {
         setSelectedTemplateId('');
         setNewTitle('');
@@ -1043,7 +1048,9 @@ const WorkflowInstances: React.FC = () => {
         const firstTaskNodeId = startNode
             ? edges.find(edge => edge.templateId === instance.templateId && edge.sourceNodeId === startNode.id)?.targetNodeId
             : null;
+        // Người đang xử lý bước duyệt được dù không có quyền riêng (khớp máy chủ, PR #322).
         const hasAssignedAction = user.role === Role.ADMIN
+            || (!!currentNode && isWorkflowStepAssignedToUser(instance, currentNode, user))
             || canPerform(user, 'workflow.instance.act_assigned', {
                 scopeType: 'assigned',
                 scopeId: user.id,
@@ -1317,6 +1324,7 @@ const WorkflowInstances: React.FC = () => {
                 onNav={goToNav}
                 onCreate={openCreateModal}
                 createDisabled={nonMaterialActiveTemplates.length === 0}
+                canCreate={canCreateInstance}
                 templates={viewMode === 'board' ? boardTemplates : nonMaterialActiveTemplates}
                 categories={categories}
                 userId={user.id}
@@ -1363,9 +1371,11 @@ const WorkflowInstances: React.FC = () => {
                                         </button>
                                     ))}
                                 </div>
-                                <button type="button" onClick={openCreateModal} disabled={nonMaterialActiveTemplates.length === 0} className={`${btnPrimary} disabled:opacity-50`}>
-                                    <Plus size={15} />Tạo phiếu
-                                </button>
+                                {canCreateInstance && (
+                                    <button type="button" onClick={openCreateModal} disabled={nonMaterialActiveTemplates.length === 0} className={`${btnPrimary} disabled:opacity-50`}>
+                                        <Plus size={15} />Tạo phiếu
+                                    </button>
+                                )}
                             </div>
 
                             {/* Phone navigation: the sidebar is hidden below lg */}
