@@ -18,5 +18,6 @@ begin
     and b.status in ('planned', 'receiving', 'quality_approved')
     and not exists (select 1 from public.supplier_payable_documents d where d.source_type = 'purchase_delivery_receipt' and d.source_id = b.id::text);
   get diagnostics v_n = row_count;
-  if v_n <> 12 then raise exception 'VAT cleanup: sửa % đợt, cần đúng 12 — dữ liệu đã đổi, kiểm lại trước khi áp', v_n; end if;
+  -- CSDL không có các đơn này (nhánh xem thử, dựng mới) → bỏ qua; có dữ liệu thì phải khớp đúng 12.
+  if v_n <> 12 and exists (select 1 from public.purchase_orders where po_number = 'PO-259') then raise exception 'VAT cleanup: sửa % đợt, cần đúng 12 — dữ liệu đã đổi, kiểm lại trước khi áp', v_n; end if;
 end $$;
