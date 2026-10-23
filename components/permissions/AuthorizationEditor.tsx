@@ -21,6 +21,7 @@ import SensitiveViewSummary from './SensitiveViewSummary';
 import SpecialRolesEditor from './SpecialRolesEditor';
 import PermissionGuide from './PermissionGuide';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
+import type { SodControlOwnerCandidate } from './SodAcknowledge';
 
 interface AuthorizationEditorProps {
   targetUser: User;
@@ -43,6 +44,9 @@ interface AuthorizationEditorProps {
   onReasonChange: (reason: string) => void;
   /** Gắn / bỏ mẫu quyền đã đổi quyền trên máy chủ: nạp lại quyền trực tiếp của người này. */
   onDirectGrantsReload?: () => void | Promise<void>;
+  /** Người có thể làm người kiểm soát khi ghi nhận kiêm nhiệm (Đợt 2c). */
+  controlOwnerCandidates?: readonly SodControlOwnerCandidate[];
+  actorUserId?: string | null;
 }
 
 const grantKeys = (grants: readonly UserPermissionGrant[]) => grants
@@ -94,6 +98,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   onDirectGrantsChange,
   onReasonChange,
   onDirectGrantsReload,
+  controlOwnerCandidates = [],
+  actorUserId = null,
 }) => {
   const [catalog, setCatalog] = useState<PermissionAdminCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -230,6 +236,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
               onReasonChange={onReasonChange}
               hasUnsavedChanges={grantKeys(directGrants) !== grantKeys(originalDirectGrants)}
               onAssignmentChanged={onDirectGrantsReload}
+              controlOwnerCandidates={controlOwnerCandidates}
+              actorUserId={actorUserId}
             />
             <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
             <PermissionModuleEditor

@@ -6,7 +6,7 @@ import {
   FileSpreadsheet, Eye, X, CheckCircle2, ShieldCheck,
   Building, Package, Briefcase, GitBranch, BarChart3, ShoppingCart, Landmark,
   Inbox, IdCard, FileSignature, Bot, Settings as SettingsIcon,
-  UserCheck, ShieldAlert, Clock, History
+  UserCheck, ShieldAlert, Clock, History, AlertTriangle
 } from 'lucide-react';
 import UserModal from '../../components/UserModal';
 import UserAccountStatusModal from '../../components/UserAccountStatusModal';
@@ -20,6 +20,7 @@ import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { useNavigate } from 'react-router-dom';
 import { userActivityService } from '../../lib/userActivityService';
 import { USER_MANAGER_SOURCE_LABEL, useUserDirectManagers } from '../../lib/userDirectManagerService';
+import { sodService, type UserSodConflict } from '../../lib/permissions/sodService';
 
 // A person counts as online while an active session was seen recently.
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -92,7 +93,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   // Filtering & Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [matchMode, setMatchMode] = useState<'exact' | 'contains'>('contains');
-  const [activeTab, setActiveTab] = useState<'all' | 'admin' | 'online' | 'disabled' | 'logs'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'admin' | 'sod' | 'online' | 'disabled' | 'logs'>('all');
   const accountFilter = activeTab === 'disabled' ? 'disabled' : 'all';
   
   // Interactive UI Popover & Drawer states
@@ -118,6 +119,17 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
       .catch(() => { if (!cancelled) setOnlineUserIds(null); });
     return () => { cancelled = true; };
   }, []);
+
+  // Đợt 2c: người đang kiêm nhiệm — chỉ người quản lý quyền xem. null = đang tải hoặc không đọc được (không hiện 0).
+  const [sodConflicts, setSodConflicts] = useState<Map<string, UserSodConflict> | null>(null);
+  useEffect(() => {
+    if (!canEditAuthorization || isUserModalOpen) return;
+    let cancelled = false;
+    sodService.listConflicts()
+      .then(rows => { if (!cancelled) setSodConflicts(new Map(rows.map(row => [row.userId, row]))); })
+      .catch(() => { if (!cancelled) setSodConflicts(null); });
+    return () => { cancelled = true; };
+  }, [canEditAuthorization, isUserModalOpen]);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -156,6 +168,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
       // Tab filter
       if (accountFilter === 'disabled' && !isDisabled) return false;
       if (activeTab === 'admin' && !isAdmin) return false;
+      if (activeTab === 'sod' && !sodConflicts?.has(u.id)) return false;
       if (activeTab === 'online' && !isOnline) return false;
 
       // Search query filter
@@ -178,7 +191,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         position.includes(q)
       );
     });
-  }, [users, activeTab, accountFilter, searchQuery, matchMode, onlineUserIds]);
+  }, [users, activeTab, accountFilter, searchQuery, matchMode, onlineUserIds, sodConflicts]);
 
   // Open Popover
   const handleOpenPopover = (e: React.MouseEvent, u: User) => {
@@ -300,13 +313,17 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
           {([
             ['all', `TẤT CẢ (${stats.active}/${stats.total})`],
             ['admin', `QUẢN TRỊ HỆ THỐNG (${stats.admin})`],
+            ...(canEditAuthorization ? [['sod', `KIÊM NHIỆM (${sodConflicts ? sodConflicts.size : '…'})`] as const] : []),
             ['online', `ĐANG ONLINE (${stats.online ?? '…'})`],
             ['disabled', `VÔ HIỆU HOÁ (${stats.disabled})`],
             ['logs', `LỊCH SỬ ĐĂNG NHẬP ↗`],
           ] as const).map(([tabKey, tabLabel]) => (
             <button
               key={tabKey}
-              title={tabKey === 'logs' ? 'Mở trang Hoạt động người dùng' : tabKey === 'online' ? 'Có phiên đăng nhập hoạt động trong 5 phút gần nhất' : undefined}
+              title={tabKey === 'logs' ? 'Mở trang Hoạt động người dùng'
+                : tabKey === 'online' ? 'Có phiên đăng nhập hoạt động trong 5 phút gần nhất'
+                : tabKey === 'sod' ? 'Người giữ cặp quyền cần tách người: Mua hàng + Duyệt PO, Mua hàng + Thủ kho, Xác nhận chi + Quản trị Tài chính'
+                : undefined}
               onClick={() => {
                 if (tabKey === 'logs') {
                   navigate('/admin/activity');
@@ -407,6 +424,18 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                                   Đã vô hiệu hóa
                                 </span>
                               )}
+                              {sodConflicts?.get(u.id) && (() => {
+                                const sod = sodConflicts.get(u.id)!;
+                                const accepted = sod.conflicts.every(item => item.acceptance);
+                                return (
+                                  <span
+                                    title={sod.conflicts.map(item => `${item.name}: ${item.acceptance ? `đã ghi nhận đến ${new Date(item.acceptance.expiresAt).toLocaleDateString('vi-VN')}` : 'chưa ghi nhận'}`).join('\n')}
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${accepted ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}
+                                  >
+                                    <AlertTriangle className="w-3 h-3" /> Kiêm nhiệm: {sod.conflicts.map(item => item.name).join(', ')}
+                                  </span>
+                                );
+                              })()}
                             </div>
 
                             {/* Handle & Title */}
@@ -780,6 +809,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         permissionApplicationCode={permissionApplicationCode}
         canAssignAdminRole={currentUser.role === Role.ADMIN}
         canGrantPermissions={canEditAuthorization}
+        currentUserId={currentUser.id}
         isOpen={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
         onSave={handleSaveUser}

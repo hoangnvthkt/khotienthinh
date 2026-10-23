@@ -14,6 +14,8 @@ import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpd
 import { saveAuthorizationAndRefresh } from '../lib/permissions/authorizationSaveOutcome';
 import { DEFAULT_AVATAR_URL } from '../lib/defaultAvatar';
 import { USER_MANAGER_SOURCE_LABEL, type UserDirectManager } from '../lib/userDirectManagerService';
+import { emptySodAcknowledgement, sodService, toSodAcceptances, type SodAcknowledgement, type SodWarning, type SodWarningAcceptance } from '../lib/permissions/sodService';
+import { SodAcknowledgeDialog, SodConflictNotice } from './permissions/SodAcknowledge';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -30,12 +32,14 @@ interface UserModalProps {
   canAssignAdminRole?: boolean;
   /** Whether the signed-in person can grant permissions after creating the account. */
   canGrantPermissions?: boolean;
+  /** Người đang đăng nhập: không được tự làm người kiểm soát kiêm nhiệm. */
+  currentUserId?: string | null;
 }
 
 // The server records a reason with every change; profile-only edits get this one automatically.
 const PROFILE_EDIT_REASON = 'Cập nhật hồ sơ người dùng';
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode, directManager = null, canAssignAdminRole = false, canGrantPermissions = false }) => {
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode, directManager = null, canAssignAdminRole = false, canGrantPermissions = false, currentUserId = null }) => {
   const toast = useToast();
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,6 +53,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const [targetSnapshot, setTargetSnapshot] = useState<AuthorizationSnapshot | null>(null);
   const [snapshotState, setSnapshotState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [snapshotReload, setSnapshotReload] = useState(0);
+  // Đợt 2c: bộ quyền tạo kiêm nhiệm mới thì hỏi ghi nhận trước khi lưu.
+  const [sodWarnings, setSodWarnings] = useState<SodWarning[] | null>(null);
+  const [sodAck, setSodAck] = useState<SodAcknowledgement>(() => emptySodAcknowledgement());
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +81,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
 
   useEffect(() => {
     setSavedUserId(null);
+    setSodWarnings(null);
   }, [isOpen, userToEdit?.id]);
 
   useEffect(() => {
@@ -119,6 +127,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     }
     setSnapshotReload(value => value + 1);
   };
+
+  const controlOwnerCandidates = useMemo(() => users
+    .filter(candidate => candidate.isActive !== false && candidate.accountStatus !== 'DISABLED'
+      && candidate.id !== userToEdit?.id && candidate.id !== currentUserId)
+    .map(candidate => ({ id: candidate.id, name: candidate.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi')), [users, userToEdit?.id, currentUserId]);
 
   const inheritedPermissionCodes = useMemo(
     () => getInheritedPermissionCodes(userToEdit || ({ role: Role.EMPLOYEE } as User)),
@@ -233,6 +247,10 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!validate()) return;
+    await submit();
+  };
+
+  const submit = async (warningAcceptances?: SodWarningAcceptance[]) => {
     setSaving(true);
 
     try {
@@ -266,6 +284,19 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             onClose();
             return;
           }
+          if (!warningAcceptances && authorizationChanges && authorizationChanges.grantsChanged) {
+            // Xem trước để hỏi ghi nhận kiêm nhiệm; lỗi xem trước thì cứ lưu, máy chủ báo lỗi đúng.
+            const sod = await sodService.previewUserGrants(userToEdit.id, permissionGrants).catch(error => {
+              logApiError('userModal.previewSod', error);
+              return null;
+            });
+            if (sod && sod.warnings.length > 0) {
+              const owner = controlOwnerCandidates.some(candidate => candidate.id === sod.defaultControlOwnerId) ? sod.defaultControlOwnerId : null;
+              setSodAck(emptySodAcknowledgement(owner));
+              setSodWarnings(sod.warnings);
+              return;
+            }
+          }
           const outcome = await saveAuthorizationAndRefresh(() => updateUserAuthorizationV2({
             userId: userToEdit.id,
             profile: {
@@ -278,7 +309,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             grants: permissionGrants,
             reason: authorizationReason.trim() || PROFILE_EDIT_REASON,
             expectedUpdatedAt: userToEdit.updatedAt || '',
+            warningAcceptances,
           }), async receipt => { await onAuthorizationSaved(receipt.userId); });
+          setSodWarnings(null);
           if (outcome.status === 'saved_refresh_pending') {
             setSavedUserId(outcome.receipt.userId);
             return;
@@ -410,6 +443,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>
           </div>
 
+          {userToEdit && canGrantPermissions && <SodConflictNotice userId={userToEdit.id} reloadKey={snapshotReload} />}
           {userToEdit ? <AuthorizationEditor
             initialApplicationCode={permissionApplicationCode}
             targetUser={userToEdit}
@@ -428,6 +462,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             onDirectGrantsChange={setPermissionGrants}
             onReasonChange={setAuthorizationReason}
             onDirectGrantsReload={reloadDirectGrants}
+            controlOwnerCandidates={controlOwnerCandidates}
+            actorUserId={currentUserId}
           /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> {canGrantPermissions
             ? 'Quyền được cấp sau khi tạo xong tài khoản: lưu, rồi mở lại người này để cấp quyền.'
             : 'Tài khoản mới là tài khoản thường, chưa có quyền. Admin cấp quyền sau.'}</div>}
@@ -442,6 +478,20 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
           </div>
         </form>
       </div>
+      {userToEdit && sodWarnings && (
+        <SodAcknowledgeDialog
+          targetName={userToEdit.name}
+          targetUserId={userToEdit.id}
+          actorUserId={currentUserId}
+          warnings={sodWarnings}
+          value={sodAck}
+          onChange={setSodAck}
+          candidates={controlOwnerCandidates}
+          busy={saving}
+          onConfirm={() => void submit(toSodAcceptances(sodWarnings, sodAck))}
+          onCancel={() => setSodWarnings(null)}
+        />
+      )}
     </div>
   );
 };

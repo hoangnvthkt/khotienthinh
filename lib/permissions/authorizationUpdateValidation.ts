@@ -287,8 +287,16 @@ export const mapAuthorizationRpcError = (error: RpcErrorLike): AuthorizationComm
   // Luật tách nhiệm (SoD): server không gửi kèm mã chi tiết nên phải nhận theo câu lỗi.
   if (/SoD warning acknowledgement required/i.test(error.message || '')) {
     return new AuthorizationCommandError(
-      'Bộ quyền này chạm luật tách nhiệm, ví dụ "Quản lý danh mục kho" cùng "Duyệt phiếu kho", hoặc "Tạo PO" cùng "Duyệt PO". Màn này chưa hỗ trợ xác nhận ngoại lệ: bỏ một trong hai quyền rồi lưu lại.',
+      'Bộ quyền này tạo kiêm nhiệm mới (ví dụ Mua hàng + Duyệt PO, Mua hàng + Thủ kho). Bấm Lưu lại để ghi nhận ngoại lệ, hoặc bỏ một trong hai quyền.',
       'sod_warning_ack_required',
+      undefined,
+      'permissionCode',
+    );
+  }
+  if (/Invalid SoD warning control evidence/i.test(error.message || '')) {
+    return new AuthorizationCommandError(
+      'Ghi nhận kiêm nhiệm chưa đủ: lý do và cách kiểm soát bù từ 10 ký tự, người kiểm soát khác người cấp và người được cấp, hạn ở tương lai.',
+      'sod_ack_invalid',
       undefined,
       'permissionCode',
     );
