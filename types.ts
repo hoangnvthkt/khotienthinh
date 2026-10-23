@@ -137,7 +137,7 @@ export interface User {
   updatedAt?: string;
 }
 
-export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE';
+export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE' | 'HR_VIEWER';
 
 export interface EffectivePermissionSource {
   permissionCode: string;

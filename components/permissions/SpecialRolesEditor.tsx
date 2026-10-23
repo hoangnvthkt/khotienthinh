@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { Role } from '../../types';
+import { Role, type HrmBusinessRoleCode } from '../../types';
 import {
   assignBusinessRole,
   getBusinessRoleAdminSnapshot,
@@ -80,7 +80,7 @@ const SpecialRolesEditor: React.FC<SpecialRolesEditorProps> = ({ userId }) => {
       const info = specialRoleInfo(change.role);
       const expiresAt = change.kind === 'revoke' ? null : endOfDayIso(draft.until);
       if (info?.channel === 'hr') {
-        const target = change.kind === 'revoke' ? 'NONE' : change.role as 'HR' | 'HR_MANAGE';
+        const target = change.kind === 'revoke' ? 'NONE' : change.role as HrmBusinessRoleCode;
         const preview = await previewUserHrmBusinessRole(userId, target, expiresAt);
         if (preview.hardDenies.length > 0) {
           throw new Error(String(preview.hardDenies[0]?.message || 'Máy chủ không cho phép thay đổi này.'));

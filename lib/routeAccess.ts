@@ -3,7 +3,7 @@ import { ROUTE_TO_MODULE } from '../constants/routes';
 import { User } from '../types';
 import {
   canPerform,
-  canPerformHrmTemplatePermission,
+  canViewHrmTemplatePermission,
   canViewModule,
   canViewRoute,
 } from './permissions/permissionService';
@@ -226,7 +226,7 @@ export const canAccessRoute = (
   const requirement = HRM_ROUTE_PERMISSION_REQUIREMENTS[pathname];
   if (requirement) {
     return requirement.templateOnly
-      ? canPerformHrmTemplatePermission(user, requirement.permissionCode, requirement.scope)
+      ? canViewHrmTemplatePermission(user, requirement.permissionCode, requirement.scope)
       : canPerform(user, requirement.permissionCode, requirement.scope);
   }
 

@@ -55,7 +55,7 @@ import {
 } from '../lib/projectTransactionMapping';
 import {
   canPerform,
-  canPerformHrmTemplatePermission,
+  canViewHrmTemplatePermission,
 } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
@@ -1055,7 +1055,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (positionsData) setHrmPositions(positionsData);
           setOrgUnits(requireModuleData(module, 'org_units', orgUnitsData).map(mapOrgUnitFromDb));
         } else if (module === 'hrm') {
-          const canViewPayroll = canPerformHrmTemplatePermission(user, 'hrm.payroll.view');
+          const canViewPayroll = canViewHrmTemplatePermission(user, 'hrm.payroll.view');
           const canViewContracts = canPerform(user, 'hrm.contract.view');
           const canViewCompensation = canPerform(user, 'hrm.compensation.view');
           const [

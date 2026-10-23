@@ -3,12 +3,12 @@ import type { UserSpecialRole } from './businessRoleAdminService';
 /**
  * Special roles: permissions that are not given box by box but as a whole role,
  * because they open sensitive data (HR) or control data (audit).
- * HR and HR Manage go through the HR role commands (one of the two at a time);
+ * HR viewer, HR and HR Manage go through the HR role commands (one of the three at a time);
  * Auditor goes through the business-role commands.
  * System Admin and Permission Admin are only held by Admin accounts and cannot be
  * given anew (their permissions are not enforced yet), so they are shown, not offered.
  */
-export type SpecialRoleCode = 'HR' | 'HR_MANAGE' | 'AUDITOR' | 'SYSTEM_ADMIN' | 'PERMISSION_ADMIN';
+export type SpecialRoleCode = 'HR_VIEWER' | 'HR' | 'HR_MANAGE' | 'AUDITOR' | 'SYSTEM_ADMIN' | 'PERMISSION_ADMIN';
 
 export interface SpecialRoleInfo {
   code: SpecialRoleCode;
@@ -19,6 +19,13 @@ export interface SpecialRoleInfo {
 }
 
 export const SPECIAL_ROLES: readonly SpecialRoleInfo[] = [
+  {
+    code: 'HR_VIEWER',
+    label: 'Xem nhân sự & lương',
+    forWho: 'Ban lãnh đạo, kế toán chi lương',
+    meaning: 'Chỉ xem: Dashboard nhân sự, hồ sơ đầy đủ, hợp đồng lao động, tài liệu, lương và đãi ngộ, bảng lương, chấm công, nghỉ phép của toàn công ty. Không sửa, không duyệt được gì.',
+    channel: 'hr',
+  },
   {
     code: 'HR',
     label: 'Nhân sự',
