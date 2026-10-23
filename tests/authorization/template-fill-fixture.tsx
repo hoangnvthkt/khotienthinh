@@ -118,4 +118,21 @@ const DialogFixture = () => {
       onConfirm={() => setSent(JSON.stringify(toSodAcceptances(dialogWarnings, ack).map(row => row.scopeId)))} onCancel={() => setSent('cancel')} />}
   </div>;
 };
-createRoot(document.getElementById('root')!).render(new URLSearchParams(window.location.search).has('dialog') ? <DialogFixture /> : <Fixture />);
+// ?existing=1: người đang kiêm nhiệm sẵn, Admin bấm Ghi nhận ở dòng nhắc.
+const ExistingFixture = () => {
+  const [sent, setSent] = useState<string | null>(null);
+  sodService.recordExisting = async (_userId, ruleCode, ack) => { setSent(`${ruleCode}|${ack.controlOwnerUserId}|${ack.compensatingControls}`); };
+  sodService.listConflicts = async () => [{ userId: 'fixture', name: 'Bùi Thị Tâm', email: 'tamtt@example.com', conflicts: [{
+    ruleCode: 'PROCUREMENT_BUY_WAREHOUSE_KEEPER', name: 'Mua hàng + Thủ kho', description: 'Người mua hàng cũng là thủ kho, tự nhận hàng mình mua.',
+    scopes: [{ scopeType: 'warehouse', scopeId: 'wh-smb', scopeLabel: 'Kho Sơn Miền Bắc' }],
+    permissions: keeperWarning('wh-smb', 'Kho Sơn Miền Bắc').permissions, controls: keeperWarning('wh-smb', 'Kho Sơn Miền Bắc').controls,
+    acceptance: sent ? { expiresAt: '2027-04-23T00:00:00Z', reason: 'x', compensatingControls: 'y', controlOwnerName: 'Nguyễn Thị Hương', acceptedAt: '2026-10-23T00:00:00Z' } : null,
+  }] }];
+  return <div className="mx-auto max-w-4xl space-y-3 p-4">
+    <SodConflictNotice userId="fixture" targetName="Bùi Thị Tâm" reloadKey={sent ? 1 : 0} actorUserId="u-admin" defaultControlOwnerId="u-huong"
+      candidates={[{ id: 'u-huong', name: 'Nguyễn Thị Hương' }, { id: 'u-mo', name: 'Nguyễn Thị Mơ' }]} />
+    {sent && <output aria-label="Sent">{sent}</output>}
+  </div>;
+};
+const mode = new URLSearchParams(window.location.search);
+createRoot(document.getElementById('root')!).render(mode.has('existing') ? <ExistingFixture /> : mode.has('dialog') ? <DialogFixture /> : <Fixture />);

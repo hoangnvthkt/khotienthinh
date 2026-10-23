@@ -53,6 +53,8 @@ export interface UserSodConflict {
     name: string;
     description: string;
     scopes: { scopeType: string; scopeId: string; scopeLabel?: string | null }[];
+    permissions?: SodWarning['permissions'];
+    controls?: string[];
     acceptance: { expiresAt: string; reason: string; compensatingControls: string; controlOwnerName: string | null; acceptedAt: string } | null;
   }[];
 }
@@ -112,6 +114,18 @@ export const groupSodWarnings = (warnings: readonly SodWarning[]): SodRuleGroup[
   return [...groups.values()];
 };
 
+/** Cặp kiêm nhiệm đang có → dạng cảnh báo để mở hộp ghi nhận (mỗi phạm vi một dòng). */
+export const conflictToSodWarnings = (conflict: UserSodConflict['conflicts'][number]): SodWarning[] => conflict.scopes.map(scope => ({
+  ruleCode: conflict.ruleCode,
+  name: conflict.name,
+  description: conflict.description,
+  scopeType: scope.scopeType,
+  scopeId: scope.scopeId,
+  scopeLabel: scope.scopeLabel ?? null,
+  permissions: conflict.permissions || [],
+  controls: conflict.controls || [],
+}));
+
 export const toSodPreview = (data: unknown): SodPreview => {
   const row = (data || {}) as Partial<SodPreview>;
   return {
@@ -143,6 +157,19 @@ export const sodService = {
     });
     if (error) throw error;
     return toSodPreview(data);
+  },
+
+  /** Ghi nhận cặp kiêm nhiệm người đó đang giữ (Đợt 3). */
+  async recordExisting(userId: string, ruleCode: string, ack: SodAcknowledgement): Promise<void> {
+    const { error } = await supabase.rpc('record_existing_sod_acceptance_v1', {
+      p_user_id: userId,
+      p_rule_code: ruleCode,
+      p_reason: ack.reason.trim(),
+      p_control_owner_user_id: ack.controlOwnerUserId,
+      p_compensating_controls: ack.compensatingControls.trim(),
+      p_expires_at: ack.expiresAt,
+    });
+    if (error) throw error;
   },
 
   async listConflicts(userId?: string): Promise<UserSodConflict[]> {

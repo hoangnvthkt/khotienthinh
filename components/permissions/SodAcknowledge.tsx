@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, X } from 'lucide-react';
 import {
+  conflictToSodWarnings,
+  emptySodAcknowledgement,
   groupSodWarnings,
   SOD_EXPIRY_MONTHS,
   sodAcknowledgementIssue,
@@ -10,7 +12,7 @@ import {
   type SodWarning,
   type UserSodConflict,
 } from '../../lib/permissions/sodService';
-import { logApiError } from '../../lib/apiError';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 export interface SodControlOwnerCandidate {
   id: string;
@@ -128,13 +130,17 @@ interface SodAcknowledgeDialogProps {
   onChange: (value: SodAcknowledgement) => void;
   candidates: readonly SodControlOwnerCandidate[];
   busy?: boolean;
+  /** Người đã giữ sẵn cặp quyền (ghi nhận lại), không phải cấp mới. */
+  existing?: boolean;
+  error?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-/** Hộp ghi nhận khi bấm Lưu ở màn Người dùng và bộ quyền tạo kiêm nhiệm mới. */
+/** Hộp ghi nhận khi bấm Lưu ở màn Người dùng và bộ quyền tạo kiêm nhiệm mới, hoặc ghi nhận kiêm nhiệm đang có. */
 export const SodAcknowledgeDialog: React.FC<SodAcknowledgeDialogProps> = ({
-  targetName, targetUserId, actorUserId = null, warnings, value, onChange, candidates, busy = false, onConfirm, onCancel,
+  targetName, targetUserId, actorUserId = null, warnings, value, onChange, candidates, busy = false, existing = false, error = '',
+  onConfirm, onCancel,
 }) => {
   const issue = sodAcknowledgementIssue(value, actorUserId, targetUserId);
   useEffect(() => {
@@ -151,7 +157,7 @@ export const SodAcknowledgeDialog: React.FC<SodAcknowledgeDialogProps> = ({
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><ShieldAlert size={20} /></div>
             <div>
               <h3 id="sod-ack-title" className="text-base font-black text-slate-800">Ghi nhận kiêm nhiệm</h3>
-              <p className="text-xs text-slate-500">{targetName} sẽ kiêm {groupSodWarnings(warnings).length} việc cần tách người. Lưu lại ai cho phép, ai kiểm soát, đến bao giờ.</p>
+              <p className="text-xs text-slate-500">{targetName} {existing ? 'đang' : 'sẽ'} kiêm {groupSodWarnings(warnings).length} việc cần tách người. Lưu lại ai cho phép, ai kiểm soát, đến bao giờ.</p>
             </div>
           </div>
           <button type="button" onClick={onCancel} disabled={busy} aria-label="Đóng" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -159,12 +165,13 @@ export const SodAcknowledgeDialog: React.FC<SodAcknowledgeDialogProps> = ({
         <div className="flex-1 space-y-4 overflow-y-auto bg-amber-50/40 px-5 py-4">
           <SodRuleList warnings={warnings} />
           <SodAcknowledgeFields warnings={warnings} value={value} onChange={onChange} candidates={candidates} disabled={busy} />
+          {error && <p role="alert" className="text-xs font-bold text-rose-700">{error}</p>}
         </div>
         <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 px-5 py-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} disabled={busy} className="min-h-10 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50">Quay lại sửa quyền</button>
+          <button type="button" onClick={onCancel} disabled={busy} className="min-h-10 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50">{existing ? 'Để sau' : 'Quay lại sửa quyền'}</button>
           <button type="button" onClick={onConfirm} disabled={busy || Boolean(issue)} title={issue || undefined}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50">
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Ghi nhận và lưu
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} {existing ? 'Ghi nhận' : 'Ghi nhận và lưu'}
           </button>
         </footer>
       </div>
@@ -172,25 +179,63 @@ export const SodAcknowledgeDialog: React.FC<SodAcknowledgeDialogProps> = ({
   );
 };
 
-/** Dòng nhắc ở đầu phần quyền khi người này đang kiêm nhiệm (theo quyền đã lưu). */
-export const SodConflictNotice: React.FC<{ userId: string; reloadKey?: number }> = ({ userId, reloadKey = 0 }) => {
+interface SodConflictNoticeProps {
+  userId: string;
+  targetName?: string;
+  reloadKey?: number;
+  /** Có thì hiện nút Ghi nhận cho cặp chưa ghi nhận (người quản lý phân quyền). */
+  candidates?: readonly SodControlOwnerCandidate[];
+  actorUserId?: string | null;
+  defaultControlOwnerId?: string | null;
+}
+
+/** Dòng nhắc ở đầu phần quyền khi người này đang kiêm nhiệm (theo quyền đã lưu); bấm Ghi nhận để lưu ngoại lệ. */
+export const SodConflictNotice: React.FC<SodConflictNoticeProps> = ({
+  userId, targetName = '', reloadKey = 0, candidates, actorUserId = null, defaultControlOwnerId = null,
+}) => {
   const [conflict, setConflict] = useState<UserSodConflict | null>(null);
+  const [reload, setReload] = useState(0);
+  const [recording, setRecording] = useState<UserSodConflict['conflicts'][number] | null>(null);
+  const [ack, setAck] = useState<SodAcknowledgement>(() => emptySodAcknowledgement());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
     setConflict(null);
     sodService.listConflicts(userId)
       .then(rows => { if (!cancelled) setConflict(rows[0] || null); })
-      .catch(error => { logApiError('sodConflictNotice.load', error); });
+      .catch(loadError => { logApiError('sodConflictNotice.load', loadError); });
     return () => { cancelled = true; };
-  }, [userId, reloadKey]);
+  }, [userId, reloadKey, reload]);
+
+  const startRecord = (item: UserSodConflict['conflicts'][number]) => {
+    const owner = candidates?.some(candidate => candidate.id === defaultControlOwnerId) ? defaultControlOwnerId : null;
+    setAck(emptySodAcknowledgement(owner));
+    setError('');
+    setRecording(item);
+  };
+  const confirmRecord = async () => {
+    if (!recording) return;
+    setBusy(true); setError('');
+    try {
+      await sodService.recordExisting(userId, recording.ruleCode, ack);
+      setRecording(null);
+      setReload(value => value + 1);
+    } catch (recordError) {
+      logApiError('sodConflictNotice.record', recordError);
+      setError(getApiErrorMessage(recordError, 'Không ghi nhận được.'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (!conflict) return null;
   return (
-    <div role="status" className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+    <div role="status" className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
       {conflict.conflicts.map(item => {
         const scopes = item.scopes.filter(scope => scope.scopeType !== 'global').map(scope => scope.scopeLabel || scope.scopeId);
         return (
-          <div key={item.ruleCode} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <div key={item.ruleCode} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <AlertTriangle size={13} className="shrink-0" />
             <span className="font-black">Đang kiêm nhiệm: {item.name}{scopes.length > 0 ? ` (${scopes.join(', ')})` : ''}</span>
             <span className="font-semibold text-amber-800">
@@ -198,9 +243,20 @@ export const SodConflictNotice: React.FC<{ userId: string; reloadKey?: number }>
                 ? `· đã ghi nhận đến ${viDate(item.acceptance.expiresAt)}${item.acceptance.controlOwnerName ? `, ${item.acceptance.controlOwnerName} kiểm soát` : ''}`
                 : '· chưa ghi nhận ngoại lệ'}
             </span>
+            {candidates && (
+              <button type="button" onClick={() => startRecord(item)}
+                className="ml-auto inline-flex min-h-8 items-center rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-black text-amber-900 hover:bg-amber-100">
+                {item.acceptance ? 'Ghi nhận lại' : 'Ghi nhận'}
+              </button>
+            )}
           </div>
         );
       })}
+      {recording && candidates && (
+        <SodAcknowledgeDialog existing targetName={targetName || conflict.name} targetUserId={userId} actorUserId={actorUserId}
+          warnings={conflictToSodWarnings(recording)} value={ack} onChange={setAck} candidates={candidates}
+          busy={busy} error={error} onConfirm={() => void confirmRecord()} onCancel={() => setRecording(null)} />
+      )}
     </div>
   );
 };
