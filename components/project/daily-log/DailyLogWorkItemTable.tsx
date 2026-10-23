@@ -4,7 +4,7 @@ import type { DailyLogLaborInput, DailyLogMachineInput } from '../../../types';
 import { deriveWorkItemProgress } from '../../../lib/dailyLogWorkItemRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import type { DailyLogBaselineQuantityState, DailyLogEntryMode, DailyLogSourceItemV2 } from '../../../types';
-import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
+import { deriveDailyLogEntry, type DailyLogApprovedBound } from '../../../lib/dailyLogEntryRules';
 import { formatDailyLogDate, formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
 import { bulletLines } from '../../../lib/dailyLogItemNotes';
 import { DailyLogBulletTextarea } from './DailyLogBulletTextarea';
@@ -64,6 +64,9 @@ export interface DailyLogEngineerRow extends DailyLogSourceItemV2 {
   previousCumulativeQuantity: number | null; baselineQuantityState: DailyLogBaselineQuantityState;
   allowOver100: boolean; scheduleFinishDate: string | null;
   snapshot: { dailyQuantity: number | null; cumulativeQuantity: number | null; cumulativePercent: number | null } | null;
+  /** Mốc tiến độ hạng mục đã ghi nhận trước / sau ngày phiếu (chỉ khi hạng mục chưa chia mũi). */
+  approvedBefore?: DailyLogApprovedBound | null;
+  approvedAfter?: DailyLogApprovedBound | null;
 }
 
 interface DailyLogEngineerWorkTableProps {

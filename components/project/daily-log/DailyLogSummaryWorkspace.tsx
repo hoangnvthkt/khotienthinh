@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { DailyLog, DailyLogContribution, DailyLogPhoto, DailyLogResourceProvider, DailyLogSummarySource, DailyLogWbsDecisionDraft, DailyLogWorkItem } from '../../../types';
 import { aggregateAreaWorkItems } from '../../../lib/dailyLogWorkItemRules';
@@ -8,6 +8,8 @@ import { DailyLogAreaCard, hasAreaForecastDelay, type DailyLogAreaCardModel, typ
 import { DailyLogConsolidatedWbsTable, hasUnresolvedWbsDecision, type ConsolidatedTaskGroup } from './DailyLogConsolidatedWbsTable';
 import { DailyLogSourcePicker } from './DailyLogSourcePicker';
 import { DailyLogDocumentHeader } from './DailyLogDocumentHeader';
+import { DailyLogProgressIssuesPanel } from './DailyLogProgressIssuesPanel';
+import type { DailyLogProgressIssue } from '../../../lib/dailyLogProgressIssues';
 import { formatDailyLogDate, formatDailyLogTime, formatDailyLogQuantity, summarizeDailyLogPhysicalRows } from '../../../lib/dailyLogPresentation';
 import { Link } from 'react-router-dom';
 import { DayReportBody } from './DailyLogTodayBoard';
@@ -231,6 +233,17 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const photoViewer = useDailyLogPhotoViewer();
   const [returning, setReturning] = useState<string | null>(null);
   const [returnText, setReturnText] = useState('');
+  // Lệch lũy kế theo đúng điều kiện chặn của Duyệt & công bố, đọc theo bản đã lưu.
+  const [progressIssues, setProgressIssues] = useState<DailyLogProgressIssue[]>([]);
+  const summaryId = bundle.summaryLog?.id;
+  const summaryOpen = Boolean(summaryId) && ['draft', 'submitted', 'rejected'].includes(bundle.summaryLog?.status || '');
+  const summaryVersion = bundle.summaryLog?.lastActionAt || bundle.summaryLog?.createdAt || '';
+  const loadProgressIssues = useCallback(async () => {
+    if (!summaryId || !summaryOpen) { setProgressIssues([]); return; }
+    try { setProgressIssues(await dailyLogWbsService.getProgressIssues(summaryId)); }
+    catch { setProgressIssues([]); /* Không đọc được thì để bước duyệt tự báo, không chặn nhầm. */ }
+  }, [summaryId, summaryOpen]);
+  useEffect(() => { void loadProgressIssues(); }, [loadProgressIssues, summaryVersion]);
   const groups = useMemo(() => {
     const items = cards.flatMap(card => card.editedItems);
     return addForecastConflicts(items, aggregateAreaWorkItems(items.map(item => ({ id: item.sourceWorkItemId || item.id || '', taskId: item.taskId, workAreaCode: item.workAreaCode, areaPlannedQuantity: item.areaPlannedQuantity ?? null, plannedQuantity: item.plannedQuantity ?? null, cumulativePercent: item.cumulativeProgressPercent, dailyQuantity: item.dailyQuantityDone ?? null }))))
@@ -241,7 +254,8 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const physical = summarizeDailyLogPhysicalRows({ workItems: cards.flatMap(card => card.editedItems), labor: lines.filter(line => line.kind === 'labor').map(line => ({peopleCount:line.count,totalLaborHours:line.totalHours})), machines: lines.filter(line => line.kind === 'machine').map(line => ({machineCount:line.count,totalMachineHours:line.totalHours})) });
   const sourceBlockers = cards.filter(card => ['missing', 'returned', 'changed'].includes(card.source.sourceState || '') || card.source.reviewStatus === 'change_requested').length;
   const unresolved = groups.filter(group => hasUnresolvedWbsDecision(group.aggregate, decisions[group.aggregate.taskId])).length;
-  const warningCount = sourceBlockers + unresolved;
+  const issueBlockers = progressIssues.length;
+  const warningCount = sourceBlockers + unresolved + issueBlockers;
   const verified = mode === 'verified' || bundle.summaryLog?.status === 'verified';
   const missingSavedCopies = verified && cards.some(card => card.editedItems.length === 0);
   const historicalQualityCount = cards.filter(card => card.editedItems.length === 0).length
@@ -251,7 +265,8 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const pilot = bundle.rollout.mode === 'pilot';
   const periodLocked = bundle.periodState?.isLocked === true;
   const canReview = mode === 'review' && !verified && bundle.rollout.enabled && bundle.summaryLog?.status === 'submitted' && bundle.permissions.canApprove;
-  const canSubmit = bundle.rollout.enabled && bundle.permissions.canSummarize && canSendSummary && sourceBlockers === 0 && unresolved === 0 && cards.length > 0 && groups.length > 0;
+  const canSubmit = bundle.rollout.enabled && bundle.permissions.canSummarize && canSendSummary && sourceBlockers === 0 && unresolved === 0 && cards.length > 0 && groups.length > 0
+    && (dirty || issueBlockers === 0);
   const safeDraft = cards.every(card => card.editedItems.every(item => Number.isFinite(item.cumulativeProgressPercent) && item.cumulativeProgressPercent >= item.baselineProgressPercent && item.cumulativeProgressPercent <= 100)
     && (!card.source.hasAdjustments || Boolean(card.source.adjustmentReason?.trim()))) && lines.every(line => line.count != null && line.count > 0 && line.totalHours != null && line.totalHours > 0)
     && Object.values(decisions).every(decision => (decision.officialCumulativePercent == null || Number.isFinite(decision.officialCumulativePercent) && decision.officialCumulativePercent >= 0 && decision.officialCumulativePercent <= 100)
@@ -324,14 +339,14 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   };
 
   const publish = async () => {
-    if (busyRef.current || !onPublish || !canReview || periodLocked || sourceBlockers || unresolved || delayBlocker) return;
+    if (busyRef.current || !onPublish || !canReview || periodLocked || sourceBlockers || unresolved || issueBlockers || delayBlocker) return;
     setWorking(true,'primary'); setError(null);
     try {
       await onPublish(delayActive ? { delayReasons: delayState.entries } : undefined);
       // Pilot: the comparison above is kept as evidence; approving closes the day.
       if (pilot && onVerifyPilot) await onVerifyPilot();
     }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể công bố tiến độ.'); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể công bố tiến độ.'); void loadProgressIssues(); }
     finally { setWorking(false); }
   };
   const returnSummary = async () => {
@@ -418,13 +433,13 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       statusLabel={bundle.summaryLog?.status === 'rejected' ? 'Cần sửa' : 'Nháp tổng hợp'} statusTone={bundle.summaryLog?.status === 'rejected' ? 'returned' : 'neutral'}
       mode="summarize" busyAction={busyAction} onClose={onClose} closeDisabled={busy}
       secondaryAction={{label:'Lưu tổng hợp',disabled:!canSave,onClick:()=>save(false),disabledReason:!safeDraft?'Kiểm tra số liệu vật lý và lý do chỉnh bản sao trước khi lưu.':!editable?'Bạn chưa có quyền chỉnh bản tổng hợp này.':undefined}}
-      primaryAction={{label:'Gửi CHT',disabled:!canSave || !canSubmit,onClick:()=>save(true),disabledReason:!canSendSummary?sendDisabledReason || 'Hoàn thiện thông tin gửi trước khi gửi CHT.':!canSubmit?'Chọn phiếu và xử lý các mục còn vướng trước khi gửi CHT.':undefined}} />}
+      primaryAction={{label:'Gửi CHT',disabled:!canSave || !canSubmit,onClick:()=>save(true),disabledReason:!canSendSummary?sendDisabledReason || 'Hoàn thiện thông tin gửi trước khi gửi CHT.':!canSubmit?(issueBlockers && !dirty?`Còn ${issueBlockers} hạng mục lệch lũy kế — xử lý trước khi gửi CHT.`:'Chọn phiếu và xử lý các mục còn vướng trước khi gửi CHT.'):undefined}} />}
     {report && <DailyLogDocumentHeader title="Bản tổng hợp thi công ngày" date={date} authorName={summaryAuthor}
       mode={verified?'verified':'review'} statusLabel={verified?'Đã xác nhận':bundle.summaryLog?.status==='submitted'?'Chờ CHT duyệt':bundle.summaryLog?.status==='rejected'?'Cần sửa':'Nháp tổng hợp'}
       statusTone={verified?'verified':bundle.summaryLog?.status==='rejected'?'returned':'pending'}
       busyAction={busyAction} onClose={onClose} closeDisabled={busy}
       secondaryAction={canReview && onReturnAll?{label:'Trả bản tổng hợp',tone:'return',disabled:busy,onClick:returnSummary}:undefined}
-      primaryAction={publishAllowed && !periodLocked && onPublish?{label:pilot?(onVerifyPilot?'Duyệt (thí điểm)':'Đối chiếu thử nghiệm'):'Duyệt & công bố',tone:pilot && !onVerifyPilot?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved || delayBlocker),disabledReason:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':delayBlocker || undefined,onClick:publish}:undefined}/>}
+      primaryAction={publishAllowed && !periodLocked && onPublish?{label:pilot?(onVerifyPilot?'Duyệt (thí điểm)':'Đối chiếu thử nghiệm'):'Duyệt & công bố',tone:pilot && !onVerifyPilot?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved || issueBlockers || delayBlocker),disabledReason:issueBlockers?`Còn ${issueBlockers} hạng mục lệch lũy kế — xem danh sách bên dưới.`:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':delayBlocker || undefined,onClick:publish}:undefined}/>}
     <div className="daily-log-document-body space-y-5 p-4 sm:p-6">
       {report && !verified && bundle.rollout.mode==='pilot' && <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">{onVerifyPilot ? 'Đang chạy thử: bấm Duyệt (thí điểm) để khép ngày. Hệ thống đối chiếu số liệu với cách ghi cũ; tiến độ chính thức chưa thay đổi.' : 'Đang chạy thử: CHT chỉ đối chiếu số liệu với cách ghi cũ. Tiến độ chính thức không thay đổi và bản tổng hợp vẫn ở trạng thái chờ duyệt.'}</p>}
       {report && periodLocked && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">Kỳ tiến độ đang khóa. <Link to={reopenUrl} className="inline-flex min-h-11 items-center font-medium underline">Mở Tiến độ thực tế</Link> để mở lại tuần trước khi xử lý.</p>}
@@ -437,12 +452,15 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
         <div className={report && (verified?historicalQualityCount:reportWarningCount)===0?'dl-metric-calm':'dl-metric-attention'}><dt className="text-muted-foreground">{verified?'Cần lưu ý':report?'Cần chú ý':'Cần xử lý'}</dt><dd className="mt-1 text-lg font-semibold">{verified?historicalQualityCount:report?reportWarningCount:warningCount} mục</dd></div>
       </dl>}
       {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-100">{error}</p>}
+      {!verified && <DailyLogProgressIssuesPanel issues={progressIssues} busy={busy}
+        onReturn={!periodLocked && (mode === 'review' ? canReview : editable) ? (sourceId, reason) => requestChange(sourceId, reason) : undefined}
+        returnDisabledReason={mode === 'summarize' && (dirty || metadataDirty) ? 'Lưu tổng hợp trước khi trả phiếu.' : undefined} />}
       {notice && <p role="status" className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">{notice}</p>}
       {mode === 'summarize' && <details className="rounded-md border border-border p-4" open={pickerOpen} onToggle={event=>setPickerOpen(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer text-base font-semibold">Chọn phiếu để tổng hợp · {cards.length} đã chọn</summary><fieldset disabled={busy || !editable} className="mt-3 min-w-0"><DailyLogSourcePicker sources={bundle.contributionsForSummary} selectedIds={cards.map(card=>card.contribution.id)} selectionMode="multiple" onChange={selectSources} /></fieldset><p className="mt-3 text-sm text-muted-foreground">Chọn đúng phiếu cần tổng hợp. Bỏ chọn không xóa hoặc sửa phiếu gốc.</p></details>}
       {metadataForm}
       {report ? <>
         {missingSavedCopies && <p className="rounded-xl border border-border bg-muted/30 p-3 text-sm">Thiếu số liệu đã lưu của một số phiếu, nên báo cáo chưa đầy đủ. Hồ sơ đã duyệt được giữ nguyên, không lấy số liệu mới điền vào.</p>}
-        {warningCount > 0 && !verified && <p className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" />Có phiếu hoặc hạng mục chưa chốt. Trả đúng phiếu cho kỹ sư, hoặc trả bản tổng hợp cho người tổng hợp để sửa.</p>}
+        {sourceBlockers + unresolved > 0 && !verified && <p className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" />Có phiếu hoặc hạng mục chưa chốt. Trả đúng phiếu cho kỹ sư, hoặc trả bản tổng hợp cho người tổng hợp để sửa.</p>}
         <DayReportBody board={reportBoard} onOpenPhotos={photoViewer.open} unknownTotals={missingSavedCopies} emptyItemsText={verified ? 'Chưa có hạng mục được lưu cho phiếu này.' : undefined} renderSlipExtra={slip => {
           const card = cards.find(item => item.source.id === slip.id);
           if (!card) return null;
@@ -489,7 +507,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
         </section>
         {wbsTable}
         {delaySection}
-        {warningCount > 0 && <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có phiếu cần sửa, gửi lại hoặc thiếu nguồn. Xử lý đúng phiếu trước khi gửi. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa chốt. Có thể lưu tổng hợp để tiếp tục sau; chưa thể gửi CHT.` : ''}</span></p>}
+        {sourceBlockers + unresolved > 0 && <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có phiếu cần sửa, gửi lại hoặc thiếu nguồn. Xử lý đúng phiếu trước khi gửi. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa chốt. Có thể lưu tổng hợp để tiếp tục sau; chưa thể gửi CHT.` : ''}</span></p>}
       </>}
     </div>
     {photoViewer.viewer}
