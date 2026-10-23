@@ -3,7 +3,7 @@ import { AlertTriangle, Camera, ChevronDown, ChevronUp, Minus, Plus, Truck, User
 import type {
   BusinessPartner, DailyLogCrewContract, DailyLogEntryMode, DailyLogLaborInput, DailyLogMachineInput, DailyLogResourceProvider, ProjectTask, ProjectWorkBoqItem,
 } from '../../../types';
-import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
+import { approvedBoundHint, approvedBoundMessage, deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import { formatDailyLogDate, formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
 import { forecastProblem, providerName } from '../../../lib/dailyLogSlipRules';
@@ -132,7 +132,8 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
   const addSlot = (after: string) => { const key = `slot-${Math.random().toString(36).slice(2)}`; setSlots(current => [...current, { key, after }]); setFocusSlot(key); };
 
   const derive = (row: DailyLogEngineerRow) => deriveDailyLogEntry({ mode: row.entryMode, enteredValue: row.enteredValue, plannedQuantity: row.plannedQuantity,
-    unit: row.unit, previousCumulativeQuantity: row.previousCumulativeQuantity, baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100 });
+    unit: row.unit, previousCumulativeQuantity: row.previousCumulativeQuantity, baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100,
+    approvedBefore: row.approvedBefore, approvedAfter: row.approvedAfter });
   const previousPercent = (row: DailyLogEngineerRow) => row.baselineQuantityState === 'known' && row.plannedQuantity && row.previousCumulativeQuantity != null
     ? row.previousCumulativeQuantity / row.plannedQuantity * 100 : row.baselineQuantityState === 'none' ? 0 : null;
 
@@ -172,9 +173,9 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
       {result.valid ? <p className="text-xs text-muted-foreground">Lũy kế <b className="text-foreground">{result.cumulativeQuantity != null ? formatDailyLogQuantity(result.cumulativeQuantity, row.unit) : '—'}</b>
         {result.cumulativePercent != null && <> · <b className={NUM}>{formatDailyLogQuantity(result.cumulativePercent, '%')}</b></>}
         {row.entryMode !== 'daily_quantity' && result.dailyQuantity != null && <> · hôm nay <b className={NUM}>+{formatDailyLogQuantity(result.dailyQuantity, row.unit)}</b></>}</p>
-        : String(row.enteredValue ?? '').trim() ? <p className="text-xs text-rose-700 dark:text-rose-300">{entryErrors[result.errorCode || ''] || 'Chưa có số liệu hợp lệ.'}</p> : null}
-      <p className="text-xs text-muted-foreground">{noBasis ? 'Chưa có cơ sở quy đổi — nhập % lũy kế' : row.baselineQuantityState === 'unknown' ? 'Chưa xác định khối lượng trước ngày này'
-        : `Trước ngày này: ${formatDailyLogQuantity(row.baselineQuantityState === 'none' ? 0 : row.previousCumulativeQuantity, row.unit)}`}</p>
+        : String(row.enteredValue ?? '').trim() ? <p className="text-xs text-rose-700 dark:text-rose-300">{approvedBoundMessage(result.errorCode, row) || entryErrors[result.errorCode || ''] || 'Chưa có số liệu hợp lệ.'}</p> : null}
+      <p className="text-xs text-muted-foreground">{noBasis ? 'Chưa có cơ sở quy đổi — nhập % lũy kế' : row.baselineQuantityState === 'unknown' ? approvedBoundHint(row) ? null : 'Chưa xác định khối lượng trước ngày này'
+        : `Trước ngày này: ${formatDailyLogQuantity(row.baselineQuantityState === 'none' ? 0 : row.previousCumulativeQuantity, row.unit)}`}{approvedBoundHint(row) && <>{noBasis || row.baselineQuantityState !== 'unknown' ? ' · ' : ''}{approvedBoundHint(row)}</>}</p>
     </div>;
   };
 
