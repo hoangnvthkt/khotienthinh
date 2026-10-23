@@ -107,6 +107,19 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     return () => { cancelled = true; };
   }, [isOpen, userToEdit]);
 
+  // Gắn / bỏ mẫu quyền đổi quyền ngay trên máy chủ: nạp lại quyền trực tiếp + ảnh quyền, giữ nguyên ô hồ sơ đang sửa.
+  const reloadDirectGrants = async () => {
+    if (!userToEdit?.id) return;
+    try {
+      const grants = await listUserPermissionGrants(userToEdit.id);
+      setPermissionGrants(grants);
+      setOriginalPermissionGrants(grants);
+    } catch (error) {
+      logApiError('userModal.reloadDirectGrants', error);
+    }
+    setSnapshotReload(value => value + 1);
+  };
+
   const inheritedPermissionCodes = useMemo(
     () => getInheritedPermissionCodes(userToEdit || ({ role: Role.EMPLOYEE } as User)),
     [userToEdit],
@@ -414,6 +427,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             onCatalogChange={setAuthorizationCatalog}
             onDirectGrantsChange={setPermissionGrants}
             onReasonChange={setAuthorizationReason}
+            onDirectGrantsReload={reloadDirectGrants}
           /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> {canGrantPermissions
             ? 'Quyền được cấp sau khi tạo xong tài khoản: lưu, rồi mở lại người này để cấp quyền.'
             : 'Tài khoản mới là tài khoản thường, chưa có quyền. Admin cấp quyền sau.'}</div>}

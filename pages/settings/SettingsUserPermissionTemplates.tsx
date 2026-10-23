@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Loader2, Plus, RefreshCw, Save, UserCog, X } from 'lucide-react';
+import { ChevronRight, Loader2, Plus, RefreshCw, Save, UserCog, Users, X } from 'lucide-react';
 import {
   userPermissionTemplateService,
+  type PermissionTemplateOptionDef,
+  type TemplateChangePreview,
   type TemplateScopeType,
   type UserPermissionTemplate,
   type UserPermissionTemplateItem,
@@ -23,7 +25,7 @@ const slug = (name: string) => name.trim().toLowerCase()
   .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'mau_moi';
 
 const emptyTemplate = (): UserPermissionTemplate => ({
-  code: '', name: '', description: '', items: [], suggestedPositionIds: [], sortOrder: 100, isActive: true,
+  code: '', name: '', description: '', items: [], suggestedPositionIds: [], options: [], sortOrder: 100, isActive: true,
 });
 
 const templateScopes = (action: PermissionCatalogAction) =>
@@ -47,17 +49,25 @@ const SettingsUserPermissionTemplates: React.FC = () => {
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [positionQuery, setPositionQuery] = useState('');
+  const [optionDefs, setOptionDefs] = useState<PermissionTemplateOptionDef[]>([]);
+  const [assignees, setAssignees] = useState<Record<string, number>>({});
+  // Lưu mẫu đang có người theo: xem trước ai được thêm / gỡ gì rồi mới lưu.
+  const [confirm, setConfirm] = useState<TemplateChangePreview | null>(null);
 
   const load = async (keepCode?: string) => {
     setState('loading');
     try {
-      const [rows, nextCatalog, positionResult] = await Promise.all([
+      const [rows, nextCatalog, positionResult, defs, counts] = await Promise.all([
         userPermissionTemplateService.list(),
         listPermissionAdminCatalog(),
         supabase.from('hrm_positions').select('id,name').eq('is_active', true).order('name').limit(1000),
+        userPermissionTemplateService.listOptionDefs(),
+        userPermissionTemplateService.countAssignees(),
       ]);
       if (positionResult.error) throw positionResult.error;
       setTemplates(rows);
+      setOptionDefs(defs);
+      setAssignees(counts);
       setCatalog(nextCatalog);
       setPositions((positionResult.data || []) as Position[]);
       const next = rows.find(row => row.code === keepCode) || rows[0];
@@ -121,6 +131,11 @@ const SettingsUserPermissionTemplates: React.FC = () => {
     items: prev.items.map(item => item.permissionCode === permissionCode ? { ...item, scopeType } : item),
   }));
 
+  const toggleOption = (key: string) => setDraft(prev => ({
+    ...prev,
+    options: prev.options.includes(key) ? prev.options.filter(item => item !== key) : [...prev.options, key],
+  }));
+
   const togglePosition = (id: string) => setDraft(prev => ({
     ...prev,
     suggestedPositionIds: prev.suggestedPositionIds.includes(id)
@@ -128,14 +143,18 @@ const SettingsUserPermissionTemplates: React.FC = () => {
       : [...prev.suggestedPositionIds, id],
   }));
 
-  const save = async () => {
-    const code = isNew ? slug(draft.name) : draft.code;
-    if (draft.name.trim().length < 2) { toast.warning('Thiếu tên mẫu', 'Đặt tên cho mẫu trước khi lưu.'); return; }
-    if (isNew && templates.some(row => row.code === code)) { toast.warning('Trùng mẫu', 'Đã có mẫu với tên tương tự, hãy đặt tên khác.'); return; }
+  const persist = async (code: string) => {
     setSaving(true);
     try {
-      await userPermissionTemplateService.save({ ...draft, code });
-      toast.success('Đã lưu mẫu quyền', draft.name);
+      const result = await userPermissionTemplateService.save({ ...draft, code });
+      setConfirm(null);
+      toast.success('Đã lưu mẫu quyền', result.synced.length > 0
+        ? `${draft.name} · đã cập nhật ${result.synced.length} người đang theo mẫu`
+        : draft.name);
+      if (result.failed.length > 0) {
+        toast.warning(`${result.failed.length} người chưa cập nhật được`,
+          `${result.failed.map(item => item.name).join(', ')} — mở từng người ở Người dùng để xem lý do (thường do luật kiêm nhiệm cần xác nhận).`);
+      }
       await load(code);
     } catch (error) {
       logApiError('settings.userPermissionTemplates.save', error);
@@ -143,6 +162,26 @@ const SettingsUserPermissionTemplates: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const save = async () => {
+    const code = isNew ? slug(draft.name) : draft.code;
+    if (draft.name.trim().length < 2) { toast.warning('Thiếu tên mẫu', 'Đặt tên cho mẫu trước khi lưu.'); return; }
+    if (isNew && templates.some(row => row.code === code)) { toast.warning('Trùng mẫu', 'Đã có mẫu với tên tương tự, hãy đặt tên khác.'); return; }
+    if (!isNew && (assignees[code] || 0) > 0) {
+      setSaving(true);
+      try {
+        const preview = await userPermissionTemplateService.previewChange({ code, items: draft.items, options: draft.options });
+        if (preview.changed > 0) { setConfirm(preview); return; }
+      } catch (error) {
+        logApiError('settings.userPermissionTemplates.preview', error);
+        toast.error('Không xem trước được', getApiErrorMessage(error, 'Không thể tính thay đổi cho người đang theo mẫu.'));
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    await persist(code);
   };
 
   const visiblePositions = useMemo(() => {
@@ -191,7 +230,9 @@ const SettingsUserPermissionTemplates: React.FC = () => {
               className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${!isNew && selectedCode === template.code ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
               <span className="block text-sm font-black text-slate-800">{template.name}</span>
               <span className="block text-[11px] font-semibold text-slate-500">
-                {template.items.length} quyền{template.isActive ? '' : ' · đang tắt'}
+                {template.items.length} quyền
+                {(assignees[template.code] || 0) > 0 && ` · ${assignees[template.code]} người theo mẫu`}
+                {template.isActive ? '' : ' · đang tắt'}
               </span>
             </button>
           ))}
@@ -263,6 +304,23 @@ const SettingsUserPermissionTemplates: React.FC = () => {
             </div>
           </div>
 
+          {optionDefs.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-bold text-slate-600">Ô tùy chọn cho từng người <span className="font-medium text-slate-400">· bật ở đây, Admin tích cho người cần khi gắn mẫu</span></p>
+              <div className="space-y-1.5">
+                {optionDefs.map(option => (
+                  <label key={option.key} className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-100 px-3 py-2 hover:bg-slate-50">
+                    <input type="checkbox" checked={draft.options.includes(option.key)} onChange={() => toggleOption(option.key)} className="mt-0.5 h-4 w-4 rounded accent-indigo-600" />
+                    <span>
+                      <span className="block text-xs font-black text-slate-700">{option.label}</span>
+                      {option.description && <span className="block text-[11px] text-slate-500">{option.description}</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <p className="mb-2 text-xs font-bold text-slate-600">Gợi ý cho chức vụ <span className="font-medium text-slate-400">· khi sửa quyền người có chức vụ này, mẫu được chọn sẵn</span></p>
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -297,9 +355,43 @@ const SettingsUserPermissionTemplates: React.FC = () => {
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu mẫu
             </button>
           </div>
-          <p className="text-[11px] text-slate-400">Sửa mẫu không đổi quyền của người đã được áp trước đó; chỉ dùng cho lần điền tiếp theo.</p>
+          <p className="text-[11px] text-slate-400">
+            {(assignees[draft.code] || 0) > 0
+              ? `Lưu mẫu sẽ cập nhật ${assignees[draft.code]} người đang theo mẫu (xem trước trước khi lưu). Quyền Admin bỏ riêng cho từng người không bị cấp lại.`
+              : 'Chưa ai theo mẫu này. Gắn người ở Người dùng → Sửa → "Gắn mẫu (tự cập nhật)".'}
+          </p>
         </section>
       </div>
+
+      {confirm && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="template-sync-title">
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h3 id="template-sync-title" className="flex items-center gap-2 text-sm font-black text-slate-800"><Users size={16} className="text-indigo-600" /> Lưu mẫu sẽ cập nhật {confirm.changed} người</h3>
+              <p className="mt-1 text-xs text-slate-500">{confirm.assignees} người đang theo mẫu "{draft.name}". Quyền Admin bỏ riêng cho từng người không bị cấp lại.</p>
+            </div>
+            <ul className="flex-1 space-y-1.5 overflow-y-auto px-5 py-3">
+              {confirm.users.filter(user => user.add.length > 0 || user.remove.length > 0).map(user => (
+                <li key={user.userId} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 text-xs">
+                  <span className="font-bold text-slate-700">{user.name}</span>
+                  <span className="shrink-0 font-semibold">
+                    {user.add.length > 0 && <span className="text-emerald-700">+{user.add.length} quyền</span>}
+                    {user.add.length > 0 && user.remove.length > 0 && <span className="text-slate-300"> · </span>}
+                    {user.remove.length > 0 && <span className="text-rose-700">−{user.remove.length} quyền</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2 border-t border-slate-100 px-5 py-3">
+              <button type="button" onClick={() => setConfirm(null)} disabled={saving} className="flex-1 rounded-xl border border-slate-200 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Quay lại sửa</button>
+              <button type="button" onClick={() => void persist(draft.code)} disabled={saving}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu và cập nhật {confirm.changed} người
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
