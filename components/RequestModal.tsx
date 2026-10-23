@@ -2587,10 +2587,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
         && (
             isProjectRequest
-                ? canDeleteProjectRequest && (
-                    isAdmin(user)
+                ? isAdmin(user)
+                    || (canDeleteProjectRequest && (
+                        request.status === RequestStatus.DRAFT
+                        || request.status === RequestStatus.REJECTED
+                        || request.workflowStep === 'returned_to_creator'
+                    ))
                     || (request.requesterId === user.id && (request.status === RequestStatus.DRAFT || request.status === RequestStatus.REJECTED))
-                )
                 : canDeleteWmsMaterialRequest(user, request)
         );
     const isDynamicReturnedDraft = !!request

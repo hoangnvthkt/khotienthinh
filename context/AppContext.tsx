@@ -2417,7 +2417,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeRequest = async (id: string): Promise<void> => {
-    const req = requests.find(r => r.id === id);
+    let req = requests.find(r => r.id === id);
+    if (!req && isSupabaseConfigured) {
+      // Danh sách requests trong context được tải theo trang/phạm vi; phiếu mở từ tab Dự án hoặc Quy trình có thể chưa nằm trong đó.
+      const { data: requestRow, error: requestError } = await supabase
+        .from('requests')
+        .select(getSupabaseProjection('requests'))
+        .eq('id', id)
+        .maybeSingle();
+      if (requestError) throw requestError;
+      if (requestRow) req = mapMaterialRequestFromDb(requestRow);
+    }
     if (!req) throw new Error('Không tìm thấy phiếu đề xuất cần xoá.');
 
     const isOwner = req.requesterId === user.id;
