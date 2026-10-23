@@ -149,8 +149,8 @@ test("Skill · xem bên trong: dòng có lượt 7 ngày + màn gọi; skill ch�
   await expect(panel.getByRole("listitem", { name: "Trợ lý · hội thoại" })).toContainText("142 lượt · 11 người");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt đơn trước khi duyệt" })).toContainText("Mua hàng → đơn chờ duyệt");
   await expect(panel.getByRole("listitem", { name: "Tóm tắt văn bản" })).toContainText("Chưa gắn màn nào");
-  // 20 công cụ Trợ lý tính đến B3 (22/10): tim_ho_so … so_tay, bao_cao, bien_dong_nhan_su, 5 chuan_bi_*, chuan_bi_su_co, 4 Vioo Work.
-  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(20);
+  // 22 công cụ Trợ lý (23/10): tim_ho_so … so_tay, quyen_cua_toi, giai_thich_loi, bao_cao, bien_dong_nhan_su, 5 chuan_bi_*, chuan_bi_su_co, 4 Vioo Work.
+  await expect(panel.getByRole("button", { name: /^Xem công cụ / })).toHaveCount(22);
 
   await panel.getByRole("button", { name: "Xem công cụ Chuẩn bị đơn mua" }).click();
   const tool = page.getByRole("dialog", { name: "Công cụ Chuẩn bị đơn mua" });
@@ -188,4 +188,42 @@ test("Skill · cổng chưa cập nhật / lỗi lượt dùng: báo rõ + Thử
   await expect(page.getByRole("dialog", { name: "Skill Đọc báo giá thành dòng đơn" })).toContainText("Chưa đọc được lời dặn");
   await page.getByRole("dialog").getByRole("button", { name: "Đóng" }).last().click();
   await expect(panel.getByRole("radiogroup", { name: "Ai được dùng Đọc báo giá thành dòng đơn" })).toBeVisible();
+});
+
+test("Kiểm soát (K0): ô số + lọc theo trạng thái / phân hệ, bung luật thấy cách xử lý, chấp nhận lệch phải có lý do, Mở chứng từ; không tràn ngang", async ({ page }) => {
+  await page.goto(`${base}?tab=control`);
+  const panel = page.getByRole("tabpanel", { name: "Kiểm soát" });
+  await expect(panel.getByText("Chạy thử · 5 luật")).toBeVisible();
+  const group = panel.getByRole("list", { name: "Lệch theo luật" });
+  await expect(group.locator("[data-rule]")).toHaveCount(3);
+  await panel.getByRole("button", { name: /Dữ liệu cũ/ }).click();
+  await expect(group.locator("[data-rule]")).toHaveCount(2);
+  expect((await calls(page)).at(-1)).toMatchObject({ controlFindings: { status: "open", legacy: true } });
+  await panel.getByRole("button", { name: /Lệch mới/ }).click();
+  await panel.getByRole("button", { name: "Đề xuất", exact: true }).click();
+  await expect(group.locator("[data-rule]")).toHaveCount(1);
+  await panel.getByRole("button", { name: "Tất cả", exact: true }).click();
+  const price = group.locator('[data-rule="statement_price_no_reason"]');
+  await price.getByRole("button").first().click();
+  await expect(price).toContainText("Xử lý:");
+  await expect(price).toContainText("Kế toán công nợ");
+  await price.getByRole("button", { name: "Chấp nhận" }).click();
+  const reason = price.getByRole("textbox", { name: "Lý do chấp nhận" });
+  await reason.fill("ngắn");
+  await expect(price.getByRole("button", { name: "Chấp nhận" })).toBeDisabled();
+  await reason.fill("Giá mới theo phụ lục hợp đồng tháng 10");
+  await price.getByRole("button", { name: "Chấp nhận" }).click();
+  await expect(panel.getByRole("button", { name: /Đã chấp nhận\s*1/ })).toBeVisible();
+  expect((await calls(page)).find(c => c.controlAccept)).toMatchObject({ controlAccept: { id: "f1", reason: "Giá mới theo phụ lục hợp đồng tháng 10" } });
+  await group.locator('[data-rule="batch_vat_differs"]').getByRole("button").first().click();
+  await group.locator('[data-rule="batch_vat_differs"]').getByRole("button", { name: "Mở" }).first().click();
+  await expect(page.getByTestId("route")).toHaveText("/procurement");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
+test("Kiểm soát: chưa có lệch → báo yên; lỗi tải → nút thử lại", async ({ page }) => {
+  await page.goto(`${base}?tab=control&control=empty`);
+  await expect(page.getByText("Không có lệch mới.")).toBeVisible();
+  await page.goto(`${base}?tab=control&control=fail`);
+  await expect(page.getByText("Chưa tải được kiểm soát")).toBeVisible();
 });
