@@ -65,6 +65,7 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   DAILY_LOG_LABOR_LINES_OUT_OF_SCOPE: 'Có dòng nhân công không thuộc dự án này. Hãy tải lại danh sách.',
   DAILY_LOG_CONTRACT_UNLINK_REASON_REQUIRED: 'Hãy nhập lý do bỏ ghép.',
   DAILY_LOG_VIEW_REQUIRED: 'Bạn chưa có quyền "Xem nhật ký" trong Room Nhật ký của dự án này.',
+  SUMMARY_WORK_ITEM_INPUT_INVALID: 'Số liệu một hạng mục trong phiếu không khớp (lũy kế, % hoặc ngày dự báo thiếu lý do). Hãy tải lại; nếu vẫn lỗi, trả phiếu cho kỹ sư lập lại.',
   SUMMARY_NOT_SUBMITTABLE: 'Bản tổng hợp không còn ở trạng thái nháp hoặc bị trả, nên không gửi lại được. Hãy tải lại dữ liệu.',
 };
 
