@@ -303,6 +303,21 @@ describe('supplier delivery statement helpers', () => {
     expect(posted.status).toBe('posted');
   });
 
+  it('reverses a posted statement with a reason and no client-supplied actor', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: { id: 'statement-1', code: 'DCHD-202607-001', status: 'reversed', created_at: '2026-07-31T00:00:00.000Z' },
+      error: null,
+    });
+
+    const reversed = await supplierDeliveryStatementService.reverse('statement-1', 'NCC giao nhầm hóa đơn');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('reverse_supplier_delivery_statement', {
+      p_statement_id: 'statement-1',
+      p_reason: 'NCC giao nhầm hóa đơn',
+    });
+    expect(reversed.status).toBe('reversed');
+  });
+
   it('saves supplier delivery note and lines through one atomic RPC', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({
       data: {

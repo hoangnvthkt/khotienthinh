@@ -632,10 +632,11 @@ export const supplierDeliveryStatementService = {
     return normalizeStatement(Array.isArray(data) ? data[0] : data);
   },
 
-  async reverse(statementId: string, actorId?: string | null): Promise<SupplierDeliveryStatement> {
+  /** Chỉ Tài chính — Xác nhận / Admin; người đảo là người đang đăng nhập, bắt lý do. */
+  async reverse(statementId: string, reason: string): Promise<SupplierDeliveryStatement> {
     const { data, error } = await supabase.rpc('reverse_supplier_delivery_statement', {
       p_statement_id: statementId,
-      p_actor_id: actorId || null,
+      p_reason: reason,
     });
     if (error) throw error;
     return normalizeStatement(Array.isArray(data) ? data[0] : data);
