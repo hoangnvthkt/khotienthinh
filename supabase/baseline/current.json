@@ -409,7 +409,8 @@
     "20261029090000_procurement_po_approve_permission.sql",
     "20261029095000_finance_configure_and_admin_gates.sql",
     "20261029100000_account_manager_settings_users.sql",
-    "20261029110000_hrm_viewer_role.sql"
+    "20261029110000_hrm_viewer_role.sql",
+    "20261029120000_hrm_leave_decide_null_guard.sql"
   ],
   "forbidIncludeAll": true
 }
