@@ -110,6 +110,21 @@ export const isTableEmpty = (rows: string[][] | null | undefined) =>
 export const tableTemplateFileName = (label: string) =>
   `Mau_${normalizeHeader(label).replace(/ /g, '_') || 'bang'}.xlsx`;
 
+/** Tên file khi xuất dữ liệu đang có: "Bang_ke_vat_tu_YC-0012.xlsx". */
+export const tableExportFileName = (label: string, ref?: string) => {
+  const base = normalizeHeader(label).replace(/ /g, '_') || 'bang';
+  const suffix = normalizeHeader(ref).replace(/ /g, '-');
+  return `${base.charAt(0).toUpperCase()}${base.slice(1)}${suffix ? `_${suffix.toUpperCase()}` : ''}.xlsx`;
+};
+
+/** Dòng tiêu đề + các dòng có dữ liệu (bỏ dòng trống), đúng thứ tự cột để nhập lại được. */
+export const buildTableSheetRows = (columns: string[], rows: string[][] | null | undefined): string[][] => [
+  columns,
+  ...(Array.isArray(rows) ? rows : [])
+    .filter(row => (row || []).some(cell => String(cell ?? '').trim()))
+    .map(row => columns.map((_, index) => String(row?.[index] ?? ''))),
+];
+
 /** Số trong Excel: số thật giữ nguyên; chữ thì hiểu cả "1.234,5" (VN) lẫn "1,234.5" (EN); "1.500" = 1500. */
 export const parseLooseNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
