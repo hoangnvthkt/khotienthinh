@@ -4,7 +4,9 @@ import type { PermissionCatalogAction } from './permissionTypes';
 // Why a permission box in the user editor cannot be ticked, and where to
 // change it, in words an Admin can act on.
 
-const ROLE_LABELS: Record<string, string> = { HR: 'Nhân sự', HR_MANAGE: 'Trưởng phòng nhân sự', AUDITOR: 'Kiểm toán' };
+const ROLE_LABELS: Record<string, string> = {
+  HR_VIEWER: 'Xem nhân sự & lương', HR: 'Nhân sự', HR_MANAGE: 'Trưởng phòng nhân sự', AUDITOR: 'Kiểm toán',
+};
 
 export interface PermissionLockReason {
   badge: string;
@@ -19,7 +21,7 @@ export const notDirectGrantReason = (action: Pick<PermissionCatalogAction, 'perm
   if (action.permissionCode.startsWith('hrm.')) {
     return {
       badge: 'Qua vai trò nhân sự',
-      hint: 'Dữ liệu nhân sự nhạy cảm: gán vai trò Nhân sự hoặc Trưởng phòng nhân sự ở mục ② Vai trò đặc biệt bên dưới.',
+      hint: 'Dữ liệu nhân sự nhạy cảm: gán vai trò Xem nhân sự & lương, Nhân sự hoặc Trưởng phòng nhân sự ở mục ② Vai trò đặc biệt bên dưới.',
     };
   }
   return {

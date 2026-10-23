@@ -13,15 +13,19 @@ const held = (roleCode: string, assignmentId = `a-${roleCode}`): UserSpecialRole
 });
 
 describe('special roles in the user editor', () => {
-  it('offers HR, HR Manage and Auditor, and shows admin-only roles only when held', () => {
-    expect(visibleSpecialRoles([]).map(role => role.code)).toEqual(['HR', 'HR_MANAGE', 'AUDITOR']);
+  it('offers HR viewer, HR, HR Manage and Auditor, and shows admin-only roles only when held', () => {
+    expect(visibleSpecialRoles([]).map(role => role.code)).toEqual(['HR_VIEWER', 'HR', 'HR_MANAGE', 'AUDITOR']);
     expect(visibleSpecialRoles([held('SYSTEM_ADMIN')]).map(role => role.code)).toContain('SYSTEM_ADMIN');
   });
 
-  it('assigns, revokes, and switches between the two HR roles', () => {
+  it('assigns, revokes, and switches between the HR roles', () => {
     expect(specialRoleChangeFor([], 'AUDITOR')).toEqual({ kind: 'assign', role: 'AUDITOR' });
     expect(specialRoleChangeFor([held('AUDITOR', 'x')], 'AUDITOR')).toEqual({ kind: 'revoke', role: 'AUDITOR', assignmentId: 'x' });
     expect(specialRoleChangeFor([held('HR')], 'HR_MANAGE')).toEqual({ kind: 'switch', role: 'HR_MANAGE', from: 'HR' });
+    // One HR role at a time: the view-only role replaces HR, and the other way round.
+    expect(specialRoleChangeFor([held('HR')], 'HR_VIEWER')).toEqual({ kind: 'switch', role: 'HR_VIEWER', from: 'HR' });
+    expect(specialRoleChangeFor([held('HR_VIEWER', 'v')], 'HR_VIEWER')).toEqual({ kind: 'revoke', role: 'HR_VIEWER', assignmentId: 'v' });
+    expect(specialRoleChangeFor([held('HR_VIEWER')], 'AUDITOR')).toEqual({ kind: 'assign', role: 'AUDITOR' });
     // Auditor is not exclusive with HR.
     expect(specialRoleChangeFor([held('HR')], 'AUDITOR')).toEqual({ kind: 'assign', role: 'AUDITOR' });
   });
@@ -46,5 +50,6 @@ describe('special roles in the user editor', () => {
   it('labels each change in plain words', () => {
     expect(specialRoleChangeLabel({ kind: 'switch', role: 'HR_MANAGE', from: 'HR' })).toBe('Đổi từ Nhân sự sang Trưởng phòng nhân sự');
     expect(specialRoleChangeLabel({ kind: 'revoke', role: 'AUDITOR', assignmentId: 'x' })).toBe('Thu hồi vai trò Kiểm toán');
+    expect(specialRoleChangeLabel({ kind: 'assign', role: 'HR_VIEWER' })).toBe('Gán vai trò Xem nhân sự & lương');
   });
 });

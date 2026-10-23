@@ -436,8 +436,9 @@ const Payroll: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
             <DollarSign className="text-emerald-500" size={24} /> Bảng Lương
+            {!canCRUD && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" title="Bạn xem được bảng lương, không tính, sửa hay xác nhận phiếu lương">Chỉ xem</span>}
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">Tính lương và quản lý chi trả hàng tháng</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">{canCRUD ? 'Tính lương và quản lý chi trả hàng tháng' : 'Bảng lương và chi trả hàng tháng'}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Tab buttons */}

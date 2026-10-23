@@ -160,7 +160,23 @@ export const canPerformInAnyScope = (user: PermissionUser, permissionCode: strin
 
 const HRM_BUSINESS_ROLE_CODES = new Set(['HR', 'HR_MANAGE']);
 
-/** Mirrors app_private.has_hrm_template_permission for sensitive HRM surfaces. */
+/** View-only HRM permissions the HR_VIEWER role carries (app_private.is_hrm_viewer_permission). */
+export const HRM_VIEWER_PERMISSIONS = new Set([
+  'hrm.employee.view_directory',
+  'hrm.employee.view_profile',
+  'hrm.employee.view_sensitive',
+  'hrm.attendance.view',
+  'hrm.leave.view',
+  'hrm.payroll.view',
+  'hrm.contract.view',
+  'hrm.compensation.view',
+  'hrm.document.view',
+  'hrm.organization.view',
+  'hrm.staffing.view',
+  'hrm.master_data.view',
+]);
+
+/** Mirrors app_private.has_hrm_template_permission: the person works as HR (may also change HR data). */
 export const canPerformHrmTemplatePermission = (
   user: PermissionUser,
   permissionCode: string,
@@ -175,6 +191,30 @@ export const canPerformHrmTemplatePermission = (
       const sourceType = source.sourceType.toUpperCase();
       return (sourceType === 'ROLE' || sourceType === 'BUSINESS_ROLE')
         && HRM_BUSINESS_ROLE_CODES.has((source.sourceCode || '').toUpperCase());
+    }),
+  }, permissionCode, scope).allowed;
+};
+
+/**
+ * Mirrors app_private.has_hrm_view_permission: HR / HR Manage, or HR_VIEWER for view permissions only.
+ * Use for screens that only read sensitive HR data; buttons that change data keep canPerformHrmTemplatePermission.
+ */
+export const canViewHrmTemplatePermission = (
+  user: PermissionUser,
+  permissionCode: string,
+  scope: PermissionScope = DEFAULT_SCOPE,
+): boolean => {
+  if (canPerformHrmTemplatePermission(user, permissionCode, scope)) return true;
+  if (!HRM_VIEWER_PERMISSIONS.has(permissionCode)) return false;
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!snapshot) return false;
+
+  return evaluateCapability({
+    ...snapshot,
+    sources: snapshot.sources.filter(source => {
+      const sourceType = source.sourceType.toUpperCase();
+      return (sourceType === 'ROLE' || sourceType === 'BUSINESS_ROLE')
+        && (source.sourceCode || '').toUpperCase() === 'HR_VIEWER';
     }),
   }, permissionCode, scope).allowed;
 };
