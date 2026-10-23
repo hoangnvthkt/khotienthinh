@@ -411,7 +411,8 @@
     "20261029100000_account_manager_settings_users.sql",
     "20261029110000_hrm_viewer_role.sql",
     "20261029120000_hrm_leave_decide_null_guard.sql",
-    "20261029130000_live_permission_templates.sql"
+    "20261029130000_live_permission_templates.sql",
+    "20261029150000_daily_log_one_summary_per_day.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -442,6 +442,20 @@ export const dailyLogService = {
             };
         });
     },
+    /** Bản tổng hợp đang hiệu lực của một ngày, đọc thẳng máy chủ: danh sách trên máy có thể chưa tải lại. */
+    async findSummaryForDate(projectIdOrSiteId: string, constructionSiteId: string | null | undefined, date: string): Promise<DailyLog | null> {
+        const { data, error } = await supabase
+            .from('daily_logs')
+            .select(getSupabaseProjection('daily_logs'))
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .eq('summary_source_type', 'member_contributions')
+            .like('date', `${date.slice(0, 10)}%`)
+            .is('superseded_by_daily_log_id', null)
+            .order('revision_no', { ascending: false })
+            .limit(1);
+        if (error) throw error;
+        return data?.[0] ? fromDb(data[0]) as DailyLog : null;
+    },
     async upsert(item: DailyLog): Promise<void> {
         const { data: current, error: currentError } = await supabase
             .from('daily_logs')

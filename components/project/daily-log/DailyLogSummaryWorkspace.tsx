@@ -273,6 +273,12 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       && [decision.officialCumulativeQuantity,decision.officialDailyQuantity].every(value=>value==null || Number.isFinite(value) && value>=0));
   const editable = mode === 'summarize' && bundle.rollout.enabled && bundle.permissions.canSummarize && (!bundle.summaryLog || ['draft','rejected'].includes(bundle.summaryLog.status));
   const canSave = editable && safeDraft;
+  // Không sửa được thì nói đúng lý do: bản đã gửi / đã duyệt khác với thiếu quyền.
+  const summaryStatusLabel = { rejected: 'Cần sửa', submitted: 'Chờ CHT duyệt', verified: 'Đã xác nhận' }[bundle.summaryLog?.status || ''] || 'Nháp tổng hợp';
+  const lockedReason = bundle.summaryLog?.status === 'verified' ? 'Bản tổng hợp đã được duyệt. Muốn sửa, mở bản đã duyệt và tạo bản điều chỉnh.'
+    : bundle.summaryLog?.status === 'submitted' ? 'Bản tổng hợp đang chờ CHT duyệt. Nhờ CHT trả lại nếu cần sửa.'
+      : !bundle.rollout.enabled ? 'Nhật ký WBS chưa mở cho ngày này.'
+        : 'Bạn chưa có quyền Kiểm tra (tổng hợp) trong Room Nhật ký công trường.';
   // Lý do chậm (PR-3b): chỉ dự án dùng Nhật ký chính thức; người tổng hợp điền sẵn, CHT bắt buộc đủ khi Duyệt & công bố.
   const delayLogDate = (bundle.summaryLog?.date || bundle.contributionsForSummary[0]?.date || '').slice(0, 10);
   const delayActive = bundle.rollout.mode === 'enforced' && !verified && Boolean(projectId || bundle.summaryLog?.projectId) && Boolean(delayLogDate) && (mode === 'summarize' ? editable : mode === 'review');
@@ -430,10 +436,10 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
           editable={mode === 'summarize' ? editable && !busy : canReview && publishAllowed && !periodLocked && !busy} mode={mode === 'summarize' ? 'summarize' : 'review'} onChange={onDelayChange} /> : null;
   return <section className={`daily-log-document daily-log-summary ${report?'daily-log-summary--report':''} min-w-0 text-foreground`} aria-label="Workspace tổng hợp theo phiếu">
     {mode === 'summarize' && <DailyLogDocumentHeader title="Tổng hợp thi công ngày" date={date} authorName={summaryAuthor}
-      statusLabel={bundle.summaryLog?.status === 'rejected' ? 'Cần sửa' : 'Nháp tổng hợp'} statusTone={bundle.summaryLog?.status === 'rejected' ? 'returned' : 'neutral'}
+      statusLabel={summaryStatusLabel} statusTone={bundle.summaryLog?.status === 'rejected' ? 'returned' : bundle.summaryLog?.status === 'verified' ? 'verified' : bundle.summaryLog?.status === 'submitted' ? 'pending' : 'neutral'}
       mode="summarize" busyAction={busyAction} onClose={onClose} closeDisabled={busy}
-      secondaryAction={{label:'Lưu tổng hợp',disabled:!canSave,onClick:()=>save(false),disabledReason:!safeDraft?'Kiểm tra số liệu vật lý và lý do chỉnh bản sao trước khi lưu.':!editable?'Bạn chưa có quyền chỉnh bản tổng hợp này.':undefined}}
-      primaryAction={{label:'Gửi CHT',disabled:!canSave || !canSubmit,onClick:()=>save(true),disabledReason:!canSendSummary?sendDisabledReason || 'Hoàn thiện thông tin gửi trước khi gửi CHT.':!canSubmit?(issueBlockers && !dirty?`Còn ${issueBlockers} hạng mục lệch lũy kế — xử lý trước khi gửi CHT.`:'Chọn phiếu và xử lý các mục còn vướng trước khi gửi CHT.'):undefined}} />}
+      secondaryAction={{label:'Lưu tổng hợp',disabled:!canSave,onClick:()=>save(false),disabledReason:!safeDraft?'Kiểm tra số liệu vật lý và lý do chỉnh bản sao trước khi lưu.':!editable?lockedReason:undefined}}
+      primaryAction={{label:'Gửi CHT',disabled:!canSave || !canSubmit,onClick:()=>save(true),disabledReason:!editable?undefined:!canSendSummary?sendDisabledReason || 'Hoàn thiện thông tin gửi trước khi gửi CHT.':!canSubmit?(issueBlockers && !dirty?`Còn ${issueBlockers} hạng mục lệch lũy kế — xử lý trước khi gửi CHT.`:'Chọn phiếu và xử lý các mục còn vướng trước khi gửi CHT.'):undefined}} />}
     {report && <DailyLogDocumentHeader title="Bản tổng hợp thi công ngày" date={date} authorName={summaryAuthor}
       mode={verified?'verified':'review'} statusLabel={verified?'Đã xác nhận':bundle.summaryLog?.status==='submitted'?'Chờ CHT duyệt':bundle.summaryLog?.status==='rejected'?'Cần sửa':'Nháp tổng hợp'}
       statusTone={verified?'verified':bundle.summaryLog?.status==='rejected'?'returned':'pending'}
