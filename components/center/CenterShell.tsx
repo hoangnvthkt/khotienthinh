@@ -29,6 +29,7 @@ import type { LoadMaterialMoves } from '../dashboard/StockTable';
 import type { Site3dHooks } from '../../lib/site3d/site3dService';
 import type { Site3dAccess } from '../../lib/site3d/site3dData';
 import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
+import { noteScreen } from '../../lib/assistantScreen';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
@@ -170,6 +171,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
   // Tab Trợ lý chỉ dựng khi mở lần đầu (như Bảng điều khiển): không tính bản tin / tải Việc của tôi khi chưa ai xem.
   const [assistantMounted, setAssistantMounted] = useState(false);
   useEffect(() => { if (activeTab === ASSISTANT_TAB.id) setAssistantMounted(true); }, [activeTab]);
+  // Màn vừa mở cho Trợ lý (lib/assistantScreen): chuyển sang tab hồ sơ / màn nào thì ghi màn đó (tab Hôm nay, Trợ lý… không ghi).
+  useEffect(() => {
+    const tab = openTabs.find(t => t.id === activeTab);
+    if (tab) noteScreen(tab.target.kind === 'tab' ? tab.target.route : tab.target.path, tab.title);
+  }, [activeTab, openTabs]);
   const [mineCount, setMineCount] = useState<number | null>(null);
   const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY, userId));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });

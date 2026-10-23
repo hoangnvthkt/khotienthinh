@@ -136,7 +136,7 @@ Deno.serve(async request => {
             ? await converse({ step: (req, onDelta) => agentStep(target, req, onDelta), rpc, emit: event => send(sseEvent(event)), redact: text => redact(text).text,
               system: prompt.system, turns: prompt.messages, images: input.images, book, used, started, runId,
               projectId: typeof context.projectId === 'string' ? context.projectId : null, question: reportTextOf(input.question, history),
-              forceTool: isDailyReportTurn(input.question, history) ? 'chuan_bi_nhat_ky' : undefined, issueClassifier })
+              forceTool: isDailyReportTurn(input.question, history) ? 'chuan_bi_nhat_ky' : undefined, issueClassifier, screenPath: input.screen?.path ?? null })
             : await streamChat(target, { system: prompt.system, messages: prompt.messages, maxTokens: CHAT_MAX_OUTPUT_TOKENS, noThinking: true },
               delta => send(sseEvent({ type: 'delta', text: delta })));
           if (!out.text.trim()) throw new Error('AI_EMPTY');

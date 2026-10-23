@@ -94,6 +94,17 @@ ai-gateway (supabase/functions/ai-gateway)
              → lib/assistantIssue.ts: người dùng bấm Gửi Admin → feedbackService.createItem (module Góp ý sẵn có, visibility private, metadata.source
              'assistant' + 10 lỗi gần nhất trên máy từ lib/clientErrorLog.ts) + ảnh đã gửi trong chat → feedback-attachments + thông báo mọi Admin
              (feedbackNotificationService.notifyCreated) → assistant_command_finish_v1. Admin xử lý ở /feedback như góp ý thường.
+  Đợt 1 hỗ trợ (23/10, chủ SP: "AI trả lời được tại sao không làm được / hướng dẫn") — trả lời như Claude Code nhưng KHÔNG đọc mã / SQL tùy ý:
+             hiểu biết từ mã được dựng sẵn thành 3 thứ an toàn. (a) Màn vừa mở: lib/assistantScreen.ts (noteScreen từ components/ai/ScreenTracker.tsx ở Layout +
+             EmbeddedRoute, và CenterShell khi chuyển tab; chỉ đường dẫn + tham số tab/mode/view/section) + lib/clientErrorLog.ts (nay ghi cả mã + câu báo của
+             máy chủ qua lib/supabase.ts recordFailedResponse, và lời báo lỗi / cảnh báo toast qua context/ToastContext) → assistantChat gửi input.screen →
+             chat.ts parseChatScreen / screenBlock → <du_lieu loai="man_hinh"> (lỗi kèm giải thích). (b) Từ điển lỗi errorGuide.ts (~45 luật: mã cụ thể của hàm
+             máy chủ → họ mã *_DENIED / *_STALE_VERSION / *_REQUIRED… → SQLSTATE / HTTP / mạng / phiên / AI) + công cụ giai_thich_loi. (c) Công cụ quyen_cua_toi →
+             RPC assistant_my_access_v1(p_route, p_viec) (migration 20261028150000; chỉ quyền của chính người hỏi: theo phân hệ + phạm vi, nguồn mẫu, phòng dự án,
+             quyền ở màn vừa mở theo permission_modules.routes, quyền cần cho một việc khớp không dấu, Admin cấp được; smoke supabase/tests/assistant_my_access_smoke.sql).
+             Lời nhắc: tìm nguyên nhân trước (lỗi vừa gặp → quyền → sổ tay / chi tiết chứng từ) rồi mới đề nghị phiếu sự cố bằng gợi ý bấm; người dùng bảo báo lỗi thì
+             lập phiếu ngay như B2. Sổ tay thêm phần **Không làm được?** + frontmatter questions (scripts/handbook/lib.mjs questionKeywords); câu kiểm tìm mục
+             lib/__tests__/assistantHandbookQuestions.test.ts. Phiếu sự cố ghi thêm "màn vừa làm". Sửa kèm: hồ sơ ô tìm ngay (#254) trước đây KHÔNG được gửi lên cổng.
 Thẻ nháp (components/center/AssistantCommandCard.tsx): kind leave_request | material_request | purchase_order | daily_log | memory_note | unknown
   → form trong chat: AssistantMrForm / AssistantPoForm / AssistantDailyLogForm; gửi bằng ĐÚNG lệnh của module rồi assistant_command_finish_v1
 ```

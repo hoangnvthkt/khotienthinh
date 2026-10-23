@@ -20,6 +20,17 @@ describe('getApiErrorMessage', () => {
     })).toBe('Room này phải luôn có người giữ quyền duyệt / xác nhận bắt buộc. Giao quyền đó cho ít nhất một người trong dự án rồi lưu lại.');
   });
 
+  it('shows the Vietnamese sentence of procurement / finance back-door locks', () => {
+    expect(getApiErrorMessage({
+      code: '42501',
+      message: 'LOCKED_HUB_PO: Đơn lập tại màn Mua hàng — gửi, duyệt, hủy, kết thúc đơn ở màn Mua hàng.',
+    })).toBe('Đơn lập tại màn Mua hàng — gửi, duyệt, hủy, kết thúc đơn ở màn Mua hàng.');
+    expect(getApiErrorMessage({
+      code: '42501',
+      message: 'LOCKED_MR_LINE_ORDERED: Dòng đã lập đơn mua — không đổi vật tư, số lượng, đơn vị hoặc xóa dòng. Cần đổi, báo Mua hàng điều chỉnh đơn.',
+    })).toBe('Dòng đã lập đơn mua — không đổi vật tư, số lượng, đơn vị hoặc xóa dòng. Cần đổi, báo Mua hàng điều chỉnh đơn.');
+  });
+
   it('explains that a used workflow template must be deactivated instead of deleted', () => {
     expect(getApiErrorMessage({
       message: 'workflow template has bindings/versions/instances and must be deactivated instead of deleted',
