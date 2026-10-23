@@ -23,6 +23,7 @@ import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
 import type { DailyLogCrewContract, DailyLogCrewLaborLinks } from '../types';
 import { supabase } from './supabase';
 import type { DelayReasonEntry, DelayReasonOption } from './projectDelayReasons';
+import type { DailyLogProgressIssue } from './dailyLogProgressIssues';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 const fromDb = (value: unknown): any => {
@@ -84,6 +85,9 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
     /** Cơ sở quy đổi của ngày trước: khối lượng mũi (areaPlannedQuantitySnapshot) nếu đã chia, không thì plannedQuantitySnapshot. */
     previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number | null; plannedQuantitySnapshot?: number | null; unitSnapshot: string } | null;
     nextItem: { cumulativeQuantityDone: number | null; areaPlannedQuantitySnapshot: number | null; unitSnapshot: string | null } | null;
+    /** Tiến độ hạng mục đã ghi nhận gần nhất trước / sau ngày phiếu. */
+    approvedBefore?: { date: string; percent: number } | null;
+    approvedAfter?: { date: string; percent: number } | null;
   }>;
   permissions: DailyLogWbsBundle['permissions'] & {
     canCreateSource: boolean;
@@ -475,6 +479,11 @@ export const dailyLogWbsService = {
       p_daily_log_id: input.dailyLogId,
       p_expected_updated_at: input.expectedUpdatedAt,
     });
+  },
+
+  /** Hạng mục / phiếu đang làm Duyệt & công bố bị chặn vì lệch lũy kế; rỗng là duyệt được. */
+  getProgressIssues(dailyLogId: string): Promise<DailyLogProgressIssue[]> {
+    return callRpc('get_daily_log_progress_issues_v1', { p_daily_log_id: dailyLogId });
   },
 
   createSummaryRevision(input: CreateDailyLogSummaryRevisionInput): Promise<DailyLogSummaryRevisionReceipt> {

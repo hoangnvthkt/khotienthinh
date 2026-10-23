@@ -5,6 +5,7 @@ import type {
   DailyLogMachine,
   DailyLogVolume,
 } from '../types';
+import { shortDailyLogDate } from './dailyLogProgressIssues';
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
@@ -16,8 +17,8 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   PERIOD_LOCKED_WITH_REOPEN_REQUIRED: 'Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.',
   REVISION_REASON_REQUIRED: 'Vui lòng nhập lý do tạo bản điều chỉnh.',
   SUMMARY_REVISION_ALREADY_EXISTS: 'Bản tổng hợp này đã có bản điều chỉnh mới hơn.',
-  STALE_PROGRESS_BASELINE: 'Lũy kế trước ngày này đã đổi (nhật ký ngày trước vừa được duyệt sau khi kỹ sư lập phiếu). Trả phiếu cho kỹ sư để cập nhật lại lũy kế, rồi tổng hợp lại trước khi công bố.',
-  BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
+  STALE_PROGRESS_BASELINE: 'Mốc lũy kế của một số phiếu đã đổi sau khi lập (ngày khác vừa được duyệt). Trả phiếu cho kỹ sư theo danh sách bên dưới để cập nhật lại.',
+  BACKDATED_PROGRESS_CONFLICT: 'Có hạng mục ghi lũy kế thấp hơn ngày trước hoặc cao hơn ngày sau đã duyệt. Xem danh sách hạng mục cần xử lý bên dưới.',
   FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
   SUMMARY_SOURCE_REVIEW_BLOCKED: 'Có phiếu nguồn đã thay đổi hoặc đang chờ sửa. Hãy xử lý card nguồn trước khi tiếp tục.',
   CATALOG_PROVIDER_NOT_ACTIVE: 'Nhà cung cấp hoặc tổ đội trong danh mục không còn hoạt động. Hãy chọn nguồn đang hoạt động hoặc nhập tay.',
@@ -35,6 +36,8 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   DAILY_LOG_ENTRY_NUMBER_REQUIRED: 'Hãy nhập một số hợp lệ; có thể dùng dấu phẩy cho phần thập phân.',
   DAILY_LOG_ENTRY_NEGATIVE: 'Khối lượng hoặc phần trăm không được âm.',
   PROGRESS_BELOW_BASELINE: 'Lũy kế không được nhỏ hơn mốc lũy kế đã xác nhận của khu vực.',
+  PROGRESS_BELOW_APPROVED: 'Lũy kế thấp hơn mức đã ghi nhận ở ngày trước. Lũy kế là tổng từ đầu, không được giảm.',
+  PROGRESS_ABOVE_APPROVED_LATER: 'Lũy kế vượt mức đã duyệt ở ngày sau. Hãy kiểm tra lại ngày và số nhập.',
   PROGRESS_ABOVE_NEXT_ENTRY: 'Lũy kế vượt mốc đã xác nhận ở ngày sau. Hãy kiểm tra lại ngày và khối lượng.',
   PROGRESS_ABOVE_ALLOWED_MAXIMUM: 'Khối lượng vượt kế hoạch hoặc tiến độ vượt 100%. Hãy kiểm tra lại số nhập.',
   RESOURCE_PRICE_FIELDS_NOT_ALLOWED: 'Phiếu chỉ ghi khối lượng, nhân công, giờ máy và nguồn cung cấp; không ghi giá hoặc tiền.',
@@ -76,6 +79,16 @@ export const mapDailyLogWbsCommandError = (error: unknown): Error => {
     .sort((a, b) => b.length - a.length).find(key => raw.includes(key));
   if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
   const mapped = Object.assign(new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error }), { code });
+  if (code === 'PROGRESS_BELOW_APPROVED' || code === 'PROGRESS_ABOVE_APPROVED_LATER') {
+    try {
+      const details = JSON.parse(candidate?.details || '{}');
+      const task = [details.wbsCode, details.taskName].filter(Boolean).join(' ');
+      const date = shortDailyLogDate(details.approvedDate);
+      if (task) mapped.message = code === 'PROGRESS_BELOW_APPROVED'
+        ? `${task}: nhập ${details.enteredPercent}% nhưng đã ghi nhận ${details.approvedPercent}% ngày ${date}. Lũy kế là tổng từ đầu, không được giảm. Nếu ${details.approvedPercent}% ghi sai, đề nghị điều chỉnh tiến độ trước.`
+        : `${task}: nhập ${details.enteredPercent}% nhưng ngày ${date} đã duyệt ${details.approvedPercent}%. Lũy kế ngày này không được vượt ngày sau.`;
+    } catch { /* Giữ câu chung nếu không đọc được chi tiết. */ }
+  }
   if (code === 'DAILY_LOG_SOURCE_AREA_EXISTS') {
     try {
       const details = JSON.parse(candidate?.details || '{}');

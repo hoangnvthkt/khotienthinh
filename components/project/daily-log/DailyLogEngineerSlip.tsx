@@ -36,6 +36,9 @@ const hydrateRow = (bundle: DailyLogDocumentBundle, item: DailyLogSourceItemV2):
     unit, plannedQuantity: plan, baselineQuantityState: state,
     previousCumulativeQuantity: readonly && snapshot ? snapshot.baselineQuantityDone ?? null : known ? context!.previousItem!.cumulativeQuantityDone : null,
     allowOver100: context?.allowOver100 === true, scheduleFinishDate: task?.endDate || null,
+    // Chưa chia mũi thì % phiếu là % hạng mục: phải nằm giữa mốc đã ghi nhận trước và sau (máy chủ cũng chặn).
+    approvedBefore: !readonly && item.areaPlannedQuantity == null ? context?.approvedBefore ?? null : null,
+    approvedAfter: !readonly && item.areaPlannedQuantity == null ? context?.approvedAfter ?? null : null,
     snapshot: readonly && snapshot ? { dailyQuantity: snapshot.dailyQuantityDone ?? null, cumulativeQuantity: snapshot.cumulativeQuantityDone ?? null,
       cumulativePercent: snapshot.cumulativeProgressPercent ?? null } : null };
 };
@@ -102,7 +105,8 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
   }).map(line => line.workItemClientKey));
   const entryOf = (row: DailyLogEngineerRow) => deriveDailyLogEntry({ mode: row.entryMode, enteredValue: row.enteredValue,
     plannedQuantity: row.plannedQuantity, unit: row.unit, previousCumulativeQuantity: row.previousCumulativeQuantity,
-    baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100 });
+    baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100,
+    approvedBefore: row.approvedBefore, approvedAfter: row.approvedAfter });
   // Owner 04/10: an unfinished item past its plan date needs a new forecast date and a reason before sending.
   const forecastIssues = rows.filter(row => forecastProblem({ scheduleFinishDate: row.scheduleFinishDate, forecastFinishDate: row.forecastFinishDate,
     forecastChangeReason: row.forecastChangeReason, cumulativePercent: entryOf(row).cumulativePercent, slipDate: source.date }));
