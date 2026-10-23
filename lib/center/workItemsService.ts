@@ -10,7 +10,7 @@ export type InboxTab = 'mine' | 'sent' | 'watch';
 export type WorkItemSource =
   | 'rq' | 'mr' | 'wms_tx' | 'daily_log' | 'daily_slip' | 'work_plan' | 'po' | 'po_delivery' | 'hot'
   | 'fin_payment' | 'fin_site_expense' | 'fin_fund_opening' | 'leave' | 'makeup' | 'site_assignment'
-  | 'timesheet' | 'profile_change' | 'office' | 'work' | 'vehicle' | 'stock_count' | 'reconciliation' | 'wf' | 'safety';
+  | 'timesheet' | 'profile_change' | 'office' | 'work' | 'vehicle' | 'stock_count' | 'reconciliation' | 'wf' | 'safety' | 'control';
 
 /** approve: duyệt · do: làm / sửa · confirm: xác nhận · read: đọc & xác nhận · wait: tôi gửi, chờ người khác · watch: theo dõi */
 export type WorkItemKind = 'approve' | 'do' | 'confirm' | 'read' | 'wait' | 'watch';
@@ -96,7 +96,7 @@ const SOURCE_FALLBACK: Partial<Record<WorkItemSource, string>> = {
 /** Loại hồ sơ, ghi cạnh mã trong nhóm gom nhiều loại (Dự án, Công việc). */
 export const SOURCE_LABEL: Partial<Record<WorkItemSource, string>> = {
   rq: 'Đề xuất', wf: 'Quy trình', work: 'Vioo Work',
-  mr: 'Đề xuất vật tư', daily_log: 'Nhật ký', daily_slip: 'Phiếu kỹ sư', work_plan: 'Kế hoạch', safety: 'An toàn',
+  mr: 'Đề xuất vật tư', daily_log: 'Nhật ký', daily_slip: 'Phiếu kỹ sư', work_plan: 'Kế hoạch', safety: 'An toàn', control: 'Lệch cần sửa',
 };
 
 export const isMachineCode = (code: string | null | undefined): boolean => !code || MACHINE_ID.test(code.trim());

@@ -102,7 +102,7 @@ describe('Trợ lý T1 · công cụ đọc (lệnh máy chủ giả)', () => {
   });
 
   it('công cụ đọc + chuẩn bị nháp; không công cụ nào sửa / xóa / duyệt / gửi', () => {
-    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi', 'phep_nhan_vien', 'chi_tiet_ho_so', 'so_tay', 'quyen_cua_toi', 'giai_thich_loi', 'bao_cao', 'bien_dong_nhan_su', 'chuan_bi_don_nghi_phep', 'chuan_bi_de_xuat_vat_tu', 'chuan_bi_don_mua', 'chuan_bi_nhat_ky', 'chuan_bi_ghi_nho', 'chuan_bi_su_co', 'viec_giao', 'tom_tat_viec', 'chuan_bi_giao_viec', 'tre_han_theo_don_vi']);
+    expect(TOOLS.map(t => t.name)).toEqual(['tim_ho_so', 'ton_kho', 'chi_tiet_don_mua', 'chi_tiet_de_xuat', 'viec_cua_toi', 'phep_nhan_vien', 'chi_tiet_ho_so', 'so_tay', 'quyen_cua_toi', 'lech_kiem_soat', 'giai_thich_loi', 'bao_cao', 'bien_dong_nhan_su', 'chuan_bi_don_nghi_phep', 'chuan_bi_de_xuat_vat_tu', 'chuan_bi_don_mua', 'chuan_bi_nhat_ky', 'chuan_bi_ghi_nho', 'chuan_bi_su_co', 'viec_giao', 'tom_tat_viec', 'chuan_bi_giao_viec', 'tre_han_theo_don_vi']);
     for (const t of TOOLS) expect(t.name).not.toMatch(/tao|sua|xoa|duyet|tra_lai|huy|gui/);
   });
 });

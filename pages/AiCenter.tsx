@@ -445,7 +445,8 @@ const AiCenter: React.FC<{ service?: AiAdminService; skillService?: AiSkillCatal
       {tab === 'activity' && <div role="tabpanel" aria-label="Hoạt động"><AiActivityPanel load={service.activity} /></div>}
       {tab === 'digest' && <AiDigestPanel list={service.digests} run={service.runDigest} onOpenRoute={route => navigate(route)} confirm={o => confirm({ title: o.title, targetName: o.targetName, warningText: o.message, actionLabel: o.confirmText, intent: 'warning', countdownSeconds: 0 })} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))} />}
 
-      {tab === 'control' && <AiControlPanel service={controlService} onOpenRoute={route => navigate(route)} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))} />}
+      {tab === 'control' && <AiControlPanel service={controlService} onOpenRoute={route => navigate(route)} notify={(text, kind) => (kind === 'error' ? toast.error(text) : toast.success(text))}
+        confirm={o => confirm({ title: o.title, targetName: o.targetName, warningText: o.message, actionLabel: o.confirmText, intent: 'warning', countdownSeconds: 0 })} />}
       {tab === 'templates' && (
         <section role="tabpanel" aria-label="Mẫu cấp phát" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {data.templates.map(t => (

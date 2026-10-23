@@ -26,6 +26,8 @@ const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/finance/project',
   '/employee-dashboard',
   '/feedback',
+  // Lệch cần sửa (Kiểm soát viên K1): máy chủ chỉ trả lệch giao cho người xem (Admin thấy hết).
+  '/kiem-soat',
   '/leaderboard',
   '/safety-card/:qrToken',
   '/settings',

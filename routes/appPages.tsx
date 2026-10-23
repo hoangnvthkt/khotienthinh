@@ -81,6 +81,7 @@ const PredictiveAnalytics = React.lazy(() => import('../pages/PredictiveAnalytic
 const CustomDashboard = React.lazy(() => import('../pages/CustomDashboard'));
 const Leaderboard = React.lazy(() => import('../pages/Leaderboard'));
 const FeedbackHub = React.lazy(() => import('../pages/FeedbackHub'));
+const ControlFindingsPage = React.lazy(() => import('../pages/ControlFindingsPage'));
 const VehicleBookingLayout = React.lazy(() => import('../pages/booking/VehicleBookingLayout'));
 
 // Request pages
@@ -219,6 +220,7 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="analytics" element={<PredictiveAnalytics />} />
     <Route path="leaderboard" element={<Leaderboard />} />
     <Route path="feedback" element={<FeedbackHub />} />
+    <Route path="kiem-soat" element={<ControlFindingsPage />} />
     <Route path="rq" element={<RequestApprovalPhase1Guard><RequestListRoute /></RequestApprovalPhase1Guard>} />
     <Route path="rq/:requestId" element={<RequestApprovalPhase1Guard><RequestList /></RequestApprovalPhase1Guard>} />
     <Route path="rq/dashboard" element={<RequestApprovalPhase1Guard><RequestDashboard /></RequestApprovalPhase1Guard>} />

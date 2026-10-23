@@ -50,6 +50,8 @@ export const moduleRouteFor = (item: WorkItem): string => {
     case 'vehicle': return '/booking/vehicle/approvals';
     case 'wf': return buildWorkflowRoute(str(ref.instanceId) || item.id);
     case 'safety': return query('/da', { projectId: str(ref.projectId), tab: 'safety', safetyView: 'issues', safetyId: str(ref.safetyId) || item.id });
+    // Kiểm soát (K1): lệch mở đúng chứng từ cần sửa (máy chủ ghi sẵn đường dẫn trong app); không có thì màn Lệch cần sửa.
+    case 'control': { const link = str(ref.link); return link && /^\/[^/]/.test(link) ? link : '/kiem-soat'; }
     default: return CENTER_MODULES[item.module].route;
   }
 };
@@ -82,6 +84,11 @@ export const resolveDrillTarget = (item: WorkItem): ItemDrillTarget => {
     case 'hot': return tab('procurement', { initialHotPurchaseId: str(ref.hotPurchaseId) || item.id });
     case 'fin_payment': return tab('finance', { initialSection: 'requests', initialRequestId: str(ref.requestId) || item.id });
     case 'site_assignment': return tab('site_assignment', { initialSelectedId: str(ref.assignmentId) || item.id });
+    case 'control': {
+      const po = /^\/procurement\?(?:.*&)?po=([^&#]+)/.exec(route)?.[1];
+      if (po) return tab('procurement', { initialOrderId: decodeURIComponent(po) });
+      return isEmbeddableRoute(route) ? tab('route', { path: route }) : { kind: 'route', path: route, title: item.code };
+    }
     default: return isEmbeddableRoute(route) ? tab('route', { path: route }) : { kind: 'route', path: route, title: item.code };
   }
 };

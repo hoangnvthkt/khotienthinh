@@ -23,3 +23,21 @@ describe('kiểm soát — đọc dữ liệu', () => {
     expect(controlErrorMessage(new Error('gì đó'))).toBe('Chưa làm được, thử lại sau.');
   });
 });
+
+describe('kiểm soát K1 — người xử lý, quyền chấp nhận, mở chứng từ từ Việc của tôi', () => {
+  it('lệch có người xử lý, quyền chấp nhận, quá 3 ngày; tổng quan biết có phải Admin', async () => {
+    const f = parseFinding({ id: 'a', assignees: ['Bùi A', 3, 'Trần B'], canAccept: true, escalated: true });
+    expect(f).toMatchObject({ assignees: ['Bùi A', 'Trần B'], canAccept: true, escalated: true });
+    expect(parseFinding({}).canAccept).toBe(false);
+    expect(controlErrorMessage(new Error('42501 CONTROL_ACCEPT_DENIED'))).toMatch(/trưởng bộ phận/);
+  });
+  it('việc nguồn control mở đúng đơn trong tab Mua hàng; đường dẫn lạ → màn Lệch cần sửa', async () => {
+    const { resolveDrillTarget, moduleRouteFor } = await import('../center/drill');
+    const item = (link: unknown) => ({ source: 'control', module: 'procurement', kind: 'do', id: 'f1', code: 'PO-609', title: 't', who: null, whoId: null, meta: null, dueAt: null, status: 'open', ref: { link } }) as never;
+    expect(moduleRouteFor(item('/procurement?po=abc-1'))).toBe('/procurement?po=abc-1');
+    expect(resolveDrillTarget(item('/procurement?po=abc-1'))).toMatchObject({ kind: 'tab', renderer: 'procurement', props: { initialOrderId: 'abc-1' } });
+    expect(moduleRouteFor(item('javascript:alert(1)'))).toBe('/kiem-soat');
+    expect(moduleRouteFor(item('//evil.example'))).toBe('/kiem-soat');
+    expect(resolveDrillTarget(item('/da?projectId=p&tab=material'))).toMatchObject({ kind: 'tab', renderer: 'route', props: { path: '/da?projectId=p&tab=material' } });
+  });
+});
