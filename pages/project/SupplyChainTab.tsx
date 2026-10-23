@@ -7307,7 +7307,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                                    // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                                    // PO lập tại Mua hàng: tab dự án chỉ xem và nhận hàng theo phiếu giao; đợt giao, kết thúc thiếu làm ở Mua hàng.
                                     const isHubPo = isProcurementHubPurchaseOrder(po);
                                     const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
                                     const canSubmitPoDocument = !isHubPo && Boolean(
@@ -7478,7 +7478,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                // PO lập tại Mua hàng: tab dự án chỉ xem và nhận hàng theo phiếu giao; đợt giao, kết thúc thiếu làm ở Mua hàng.
                 const isHubPo = isProcurementHubPurchaseOrder(po);
                 const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
                 const canSubmitPoDocument = !isHubPo && Boolean(
@@ -7585,7 +7585,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         completedReturnQty={completedReturnQty}
                         pendingReturnQty={pendingReturnQty}
                         canMutatePoDocument={canMutatePoDocument}
-                        canConfirmPo={effectivePoCapabilities.canConfirmPo}
+                        canConfirmPo={effectivePoCapabilities.canConfirmPo && !isHubPo}
                         canApprovePendingDeliveryBatch={canApprovePoDocument}
                         poHasStockImpact={poHasStockImpact}
                         creatingDeliveryBatchId={creatingDeliveryBatchId}
