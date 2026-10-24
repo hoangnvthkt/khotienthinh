@@ -3644,6 +3644,9 @@ export const useApp = () => {
   return context;
 };
 
+/** Như useApp nhưng trả null khi không có AppProvider — cho fixture Playwright dựng thẳng một màn. */
+export const useOptionalApp = () => useContext(AppContext) ?? null;
+
 if (import.meta.env.DEV && import.meta.hot) {
   import.meta.hot.accept(() => {
     import.meta.hot?.invalidate('AppContext changed; forcing full reload to keep provider and consumers in sync.');

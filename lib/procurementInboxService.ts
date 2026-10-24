@@ -190,11 +190,14 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
   const { data, error } = await supabase.rpc(name, params);
   if (error) {
     const code = Object.keys(ERROR_MESSAGES).find(key => error.message?.includes(key));
+    // Lỗi ngày nghiệp vụ mang sẵn câu tiếng Việt đủ nghĩa (kèm ngày cụ thể) sau mã — hiện đúng câu đó,
+    // đừng đổ về câu chung chung khiến người dùng tưởng mất mạng rồi bấm lưu lại (24/10, PO-703/704/705).
+    const businessDate = error.message?.match(/^(BUSINESS_DATE_[A-Z_]+): (.+)$/s);
     const fallback = error.code === STATEMENT_TIMEOUT
       ? 'Máy chủ xử lý quá lâu nên chưa lưu được. Thử lại; nếu vẫn lỗi, tách thành vài đơn nhỏ hơn.'
       : 'Không tải được dữ liệu Mua hàng. Thử lại sau.';
-    const mapped = new Error(code ? ERROR_MESSAGES[code] : fallback);
-    (mapped as Error & { code?: string }).code = code || error.code;
+    const mapped = new Error(businessDate ? businessDate[2].trim() : code ? ERROR_MESSAGES[code] : fallback);
+    (mapped as Error & { code?: string }).code = businessDate?.[1] || code || error.code;
     // Đặt vượt / đơn mở (K2): máy chủ gửi danh sách dòng ở details (JSON).
     try { (mapped as Error & { details?: unknown }).details = error.details ? JSON.parse(error.details) : undefined; } catch { /* details không phải JSON */ }
     throw mapped;
