@@ -1,0 +1,62 @@
+/* Nền tối "Than chì" (25/10/2026): màu trong file dùng var(--wk-*, <màu sáng>).
+   Nền sáng không định nghĩa biến nên giữ nguyên màu cũ; chỉ .dark mới đổi. */
+.dark {
+  --wk-surface: #161a1e;
+  --wk-sunken: #1c2126;
+  --wk-raised: #252b31;
+  --wk-text: #e8ecef;
+  --wk-text-2: #c4ccd3;
+  --wk-muted: #8d98a2;
+  --wk-faint: #67727c;
+  --wk-glass: rgba(22, 26, 30, 0.92);
+  --wk-line: rgba(255, 255, 255, 0.08);
+  --wk-line-strong: rgba(255, 255, 255, 0.15);
+  --wk-primary: #0f8576;
+  --wk-accent-text: #3fcdb4;
+  --wk-accent-soft: rgba(47, 192, 168, 0.12);
+  --wk-accent-soft-2: rgba(47, 192, 168, 0.22);
+  --wk-accent-line: rgba(47, 192, 168, 0.5);
+  --wk-danger-text: #f27b84;
+  --wk-danger-soft: rgba(240, 106, 116, 0.13);
+  --wk-danger-soft-2: rgba(240, 106, 116, 0.24);
+  --wk-danger-line: rgba(240, 106, 116, 0.45);
+  --wk-warn-text: #f0b25c;
+  --wk-warn-soft: rgba(239, 169, 74, 0.13);
+  --wk-warn-soft-2: rgba(239, 169, 74, 0.24);
+  --wk-warn-line: rgba(239, 169, 74, 0.45);
+  --wk-ok-text: #5ccf96;
+  --wk-ok-soft: rgba(76, 195, 138, 0.13);
+  --wk-ok-soft-2: rgba(76, 195, 138, 0.24);
+  --wk-ok-line: rgba(76, 195, 138, 0.45);
+  --wk-info-text: #6cbcf0;
+  --wk-info-soft: rgba(100, 181, 238, 0.13);
+  --wk-info-soft-2: rgba(100, 181, 238, 0.24);
+  --wk-info-line: rgba(100, 181, 238, 0.45);
+  --wk-violet-text: #b9a4fb;
+  --wk-violet-soft: rgba(167, 139, 250, 0.14);
+  --wk-violet-soft-2: rgba(167, 139, 250, 0.26);
+  --wk-violet-line: rgba(167, 139, 250, 0.45);
+}
+.dark .work-module {
+  --work-border: var(--wk-line-strong);
+  --work-muted: var(--wk-muted);
+}
+/* Ô nhập lõm xuống so với thẻ, viền rõ khi focus */
+.dark .work-input,
+.dark .work-search,
+.dark .work-module select,
+.dark .work-module textarea,
+.dark .work-drawer select,
+.dark .work-drawer textarea {
+  background: var(--wk-sunken);
+  color: var(--wk-text);
+  border-color: var(--wk-line-strong);
+}
+.dark .work-input::placeholder,
+.dark .work-search::placeholder,
+.dark .work-module textarea::placeholder {
+  color: var(--wk-faint);
+}
+.dark .work-primary:hover {
+  background: #11978a;
+}
