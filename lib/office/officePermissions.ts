@@ -8,6 +8,7 @@ export const OFFICE_ROUTES = [
   "/office/new",
   "/office/documents/:id",
   "/office/documents/:id/edit",
+  "/office/documents/:id/amend",
   "/office/settings",
   "/office/templates",
   "/office/reports",
@@ -133,7 +134,7 @@ export const OFFICE_PERMISSION_APPLICATION: PermissionApplicationDefinition = {
       actions: [
         {
           action: "manage",
-          label: "Quản lý loại, tuyến duyệt, cấp số, kho",
+          label: "Quản trị Office: loại, tuyến duyệt, cấp số, kho, sửa văn bản đã ban hành",
           permissionCode: "office.configuration.manage",
           scopeTypes: ["global"],
           sortOrder: 120,

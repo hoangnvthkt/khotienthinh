@@ -70,8 +70,32 @@ export const OFFICE_VIEWS = {
   overdue: "Quá hạn xử lý",
   following: "Đang theo dõi",
   favorites: "Yêu thích",
-  archive: "Đã lưu trữ",
+  archive: "Kho lưu trữ",
 } as const;
+/** Văn bản không còn hiệu lực: chỉ nằm trong kho lưu trữ, không hiện ở các danh sách duyệt xem. */
+export const OFFICE_ARCHIVE_STATUSES = [
+  "CANCELLED",
+  "REVOKED",
+  "REJECTED",
+  "EXPIRED",
+  "ARCHIVED",
+] as const satisfies readonly OfficeStatus[];
+export function isArchivedOfficeStatus(status: OfficeStatus) {
+  return (OFFICE_ARCHIVE_STATUSES as readonly OfficeStatus[]).includes(status);
+}
+/** Mốc thời gian văn bản rời khỏi danh sách đang dùng. */
+export function officeArchivedAt(doc: {
+  status: OfficeStatus;
+  archived_at?: string | null;
+  revoked_at?: string | null;
+  expires_on?: string | null;
+  updated_at?: string | null;
+}) {
+  if (doc.status === "ARCHIVED") return doc.archived_at || doc.updated_at || null;
+  if (doc.status === "REVOKED") return doc.revoked_at || doc.updated_at || null;
+  if (doc.status === "EXPIRED") return doc.expires_on || null;
+  return doc.updated_at || null;
+}
 export const URGENCY = {
   NORMAL: "Bình thường",
   URGENT: "Khẩn",
@@ -229,7 +253,9 @@ export function officeError(error: unknown): string {
     OFFICE_SITE_PROJECT_MISMATCH: "Công trường không thuộc dự án đã chọn.",
     OFFICE_FOLDER_CYCLE: "Thư mục cha không được nằm trong chính thư mục này.",
     OFFICE_OFFICIAL_IMMUTABLE:
-      "Văn bản đã cấp số hoặc phát hành được khóa nội dung.",
+      "Văn bản đã cấp số hoặc phát hành được khóa nội dung. Chỉ Quản trị Office sửa được, qua nút “Sửa văn bản đã ban hành”.",
+    OFFICE_AMEND_NO_CHANGE:
+      "Chưa có gì thay đổi so với bản đang ban hành. Sửa nội dung hoặc tệp đính kèm trước khi lưu.",
     OFFICE_INVALID_WORKFLOW:
       "Tuyến duyệt không còn phù hợp với đơn vị hoặc dự án.",
     OFFICE_INVALID_TYPE: "Loại văn bản không phù hợp hoặc đã ngừng sử dụng.",

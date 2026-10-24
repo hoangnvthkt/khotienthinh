@@ -388,3 +388,47 @@ test("trình xem PDF dùng trình xem sẵn có của trình duyệt, không bá
   await expect(page.getByRole("link", { name: "Tải tệp" })).toBeVisible();
   expect(errors).toEqual([]);
 });
+test("kho lưu trữ gom văn bản hết hiệu lực và màn chính không còn rác", async ({ page }) => {
+  await page.goto(`${base}#/office/documents`);
+  await expect(page.locator(".office-document-list")).toBeVisible();
+  await expect(page.getByText("Thông báo điều chỉnh giờ làm việc mùa khô năm 2026")).toHaveCount(0);
+  await expect(page.getByText("Quyết định điều chuyển nhân sự Ban quản lý dự án SMB")).toHaveCount(0);
+  await page.getByRole("button", { name: "Kho lưu trữ" }).click();
+  await expect(page.getByRole("heading", { name: "Kho lưu trữ" })).toBeVisible();
+  await expect(page.locator(".office-list-heading")).toContainText("Lý do vào kho");
+  await expect(page.locator(".office-document-list")).toContainText(
+    "Thay bằng thông báo 231/2026/TB-TT sau khi Ban TGĐ chốt lại giờ làm.",
+  );
+  await page.getByRole("button", { name: "Đã hủy", exact: true }).click();
+  await expect(page.locator(".office-document-row")).toHaveCount(1);
+  await expect(page.locator(".office-document-row")).toContainText(
+    "Quyết định điều chuyển nhân sự Ban quản lý dự án SMB",
+  );
+  await page.locator(".office-document-row").click();
+  await expect(page.locator(".office-action-banner")).toContainText(
+    "Lý do: Phương án nhân sự chưa được duyệt, dừng ban hành.",
+  );
+  await expect(page.getByRole("button", { name: "Mở lại văn bản" })).toBeVisible();
+});
+test("quản trị Office sửa văn bản đã ban hành và được cảnh báo trước khi gửi thông báo", async ({ page }) => {
+  await page.goto(`${base}#/office/documents/doc-1`);
+  await page.getByRole("link", { name: "Sửa văn bản đã ban hành" }).click();
+  await expect(page).toHaveURL(/#\/office\/documents\/doc-1\/amend$/);
+  await expect(page.locator(".office-amend-warning")).toContainText("42 người nhận");
+  const save = page.getByRole("button", { name: "Lưu và thông báo" });
+  await expect(save).toBeDisabled();
+  await page.getByLabel("Tiêu đề văn bản").fill("Thông báo kế hoạch kiểm kê quý IV năm 2026 (bản sửa)");
+  await page.getByRole("button", { name: "Bỏ Vioo-hinh-anh.png" }).click();
+  await expect(page.locator(".office-amend-actions p")).toContainText("Tiêu đề, bỏ 1 tệp đính kèm");
+  await expect(save).toBeDisabled();
+  await page.getByLabel("Lý do sửa").fill("Sửa sai sót số liệu tại mục 2 theo chỉ đạo của Ban TGĐ");
+  await save.click();
+  await expect(page.locator(".office-amend-confirm")).toContainText("bỏ 1 tệp đính kèm");
+  await page.getByRole("button", { name: "Sửa và gửi thông báo" }).click();
+  await expect(page).toHaveURL(/#\/office\/documents\/doc-1$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("(bản sửa)");
+  await expect(page.locator(".office-attachments")).toContainText("1");
+  const commands = await page.evaluate(() => (window as any).officeTest.commands.map((c: any) => c.p_command));
+  expect(commands).toContain("attachment_remove");
+  expect(commands).toContain("amend");
+});

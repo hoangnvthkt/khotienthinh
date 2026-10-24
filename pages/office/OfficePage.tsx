@@ -22,6 +22,7 @@ import { OfficeError, OfficeLoading, useOfficeQuery } from "./OfficeShared";
 import { OfficeDashboardPage, OfficeListPage } from "./OfficeList";
 import { OfficeDraftPage } from "./OfficeDraft";
 import { OfficeDetailPage } from "./OfficeDetail";
+import { OfficeAmendPage } from "./OfficeAmend";
 import { OfficeSettingsPage } from "./OfficeSettings";
 import { OfficeTemplatesPage, OfficeReportsPage } from "./OfficeLibrary";
 import { createOfficeAiService } from "../../lib/office/officeAiService";
@@ -41,7 +42,10 @@ export function OfficeWorkspace({
   const catalog = useOfficeQuery(() => service.catalog(), [service]);
   const location = useLocation();
   const active = location.pathname;
-  const editing = active.endsWith("/edit") || active.endsWith("/new");
+  const editing =
+    active.endsWith("/edit") ||
+    active.endsWith("/new") ||
+    active.endsWith("/amend");
   return (
     <div className="office-app">
       <header className="office-topbar">
@@ -139,6 +143,12 @@ export function OfficeWorkspace({
               path="documents/:id"
               element={
                 <OfficeDetailPage service={service} catalog={catalog.data} />
+              }
+            />
+            <Route
+              path="documents/:id/amend"
+              element={
+                <OfficeAmendPage service={service} catalog={catalog.data} />
               }
             />
             <Route
