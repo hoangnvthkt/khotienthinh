@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SourceBook, type AgentMsg } from '../../supabase/functions/ai-gateway/agent';
-import { converse, looksLikeFabricatedRows, type StepRequest, type StepResult } from '../../supabase/functions/ai-gateway/loop';
+import { converse, looksLikeFabricatedRows, unverifiedClaims, type StepRequest, type StepResult } from '../../supabase/functions/ai-gateway/loop';
 import { chatSystem } from '../../supabase/functions/ai-gateway/chat';
 
 // Sự cố 24/10/2026: hỏi "phòng HCNS ai chưa chấm công" → gọi công cụ, trả 8 người THẬT. Hỏi tiếp "tìm trong cả
@@ -53,15 +53,16 @@ describe('Trợ lý · chặn bịa danh sách', () => {
     expect(String((nhac as { content: string }).content)).toMatch(/đổi phạm vi .* thì phải tra lại/);
   });
 
-  it('chỉ bắt tra lại MỘT lần, không lặp vô hạn', async () => {
+  it('chỉ bắt tra lại MỘT lần rồi chặn cứng, không lặp vô hạn', async () => {
     const h = deps([noTool(BIA)]);
     const out = await converse(h.d as never);
-    expect(out.text).toBe(BIA);
     expect(h.seen.length).toBe(2);
+    expect(out.text).not.toBe(BIA);
+    expect(out.text).toMatch(/chưa tra được số liệu/);
   });
 
-  it('đã tra công cụ rồi thì không bắt tra lại', async () => {
-    const h = deps([withTool, noTool(BIA)]);
+  it('đã tra công cụ mà câu trả lời khớp kết quả thì không bắt tra lại', async () => {
+    const h = deps([withTool, noTool('Trong phạm vi anh xem được, mọi người đã chấm công.')]);
     await converse(h.d as never);
     expect(h.seen.length).toBe(2);
     expect(h.seen[1].messages.some(m => m.role === 'user' && String((m as { content?: unknown }).content ?? '').includes('PHẢI gọi công cụ'))).toBe(false);
@@ -79,5 +80,58 @@ describe('Trợ lý · chặn bịa danh sách', () => {
     expect(system).toMatch(/KHÔNG BAO GIỜ nêu tên người, mã nhân viên, mã chứng từ hay con số tổng mà công cụ ở LƯỢT NÀY không trả về/);
     expect(system).toMatch(/phải GỌI LẠI công cụ với phạm vi mới/);
     expect(system).toMatch(/tuyệt đối không tự bịa cho đủ/);
+  });
+});
+
+describe('Trợ lý · đối chiếu mẩu dữ liệu với bằng chứng', () => {
+  it('bắt mã, số tiền và số đếm không có trong bằng chứng', () => {
+    expect(unverifiedClaims('56 người chưa chấm công, gồm TT039', '')).toEqual(['TT039', '56']);
+    expect(unverifiedClaims('Công nợ Hanaka còn 1.500.000.000 đ', '')).toEqual(['1.500.000.000']);
+    expect(unverifiedClaims('Còn 4,2 tỷ chưa trả', '')).toEqual(['4,2']);
+  });
+
+  it('có trong kết quả công cụ thì không tính là bịa, kể cả khi viết có dấu chấm', () => {
+    const tool = '{"tong_so":38,"ket_qua":[{"ma":"TT039"}],"no":1500000000}';
+    expect(unverifiedClaims('38 người chưa chấm, có TT039, nợ 1.500.000.000 đ', tool)).toEqual([]);
+  });
+
+  it('chiMa = true thì bỏ qua tiền và số đếm (đã tra rồi, chỉ soi mã)', () => {
+    expect(unverifiedClaims('56 người, nợ 9.999.999 đ, mã TT039', '', true)).toEqual(['TT039']);
+  });
+
+  it('câu không nêu dữ liệu thì sạch', () => {
+    expect(unverifiedClaims('Anh vào màn Nhân sự > Chấm công để xem nhé.', '')).toEqual([]);
+    expect(unverifiedClaims('Em đã lưu ghi nhớ cho anh.', '')).toEqual([]);
+  });
+});
+
+describe('Trợ lý · chặn cứng khi vẫn bịa sau khi đã bắt tra lại', () => {
+  it('bắt tra lại rồi vẫn nêu dữ liệu chưa kiểm → thay bằng câu nói không biết', async () => {
+    const h = deps([noTool(BIA), noTool(BIA)]);
+    const out = await converse(h.d as never);
+    expect(out.text).toMatch(/không muốn đưa ra con số hay tên người mà mình chưa kiểm/);
+    expect(out.text).toMatch(/chưa có công cụ tra việc này, hoặc anh\/chị không có quyền/);
+    expect(out.text).not.toMatch(/TT039/);
+    expect(out.text).not.toMatch(/56/);
+  });
+
+  it('đã tra công cụ nhưng nêu MÃ không có trong kết quả → vẫn chặn', async () => {
+    const withToolThenFake = [
+      (): StepResult => ({ text: '', toolCalls: [{ id: 't1', name: 'tinh_hinh_hom_nay', args: { loai: 'cham_cong' } }], usage: { tokensIn: 1, tokensOut: 1 } }),
+      noTool('Có TT039 và TT777 chưa chấm công.'),
+      noTool('Có TT039 và TT777 chưa chấm công.'),
+    ];
+    const h = deps(withToolThenFake);
+    const out = await converse(h.d as never);
+    expect(out.text).toMatch(/chưa tra được số liệu/);
+  });
+
+  it('đã tra công cụ và số liệu khớp kết quả → để nguyên', async () => {
+    const h = deps([
+      (): StepResult => ({ text: '', toolCalls: [{ id: 't1', name: 'tinh_hinh_hom_nay', args: { loai: 'cham_cong' } }], usage: { tokensIn: 1, tokensOut: 1 } }),
+      noTool('Hôm nay có 1 người chưa chấm công trong 1 người anh xem được.'),
+    ]);
+    const out = await converse(h.d as never);
+    expect(out.text).toMatch(/1 người chưa chấm công/);
   });
 });

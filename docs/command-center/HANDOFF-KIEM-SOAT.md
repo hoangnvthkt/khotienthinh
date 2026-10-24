@@ -40,6 +40,7 @@ Hai vòng:
 | #352 | **Trợ lý đọc sổ lệch**: `control_findings_search_v1`, tra theo luật / người / phân hệ | 20261031150000 |
 | #353 | **Trợ lý · tình hình hôm nay**: `assistant_today_status_v1` (chấm công / nghỉ / nhật ký / phiếu đứng) | 20261031160000 |
 | #354 | **Chặn Trợ lý bịa danh sách**: lượt không tra công cụ mà nêu mã → bắt tra thật | — |
+| #355 | **Chặn cứng bịa**: đối chiếu mã / tiền / số đếm với bằng chứng; vẫn bịa thì thay bằng câu nói không biết | — |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -288,6 +289,17 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
   **"0 nguồn"** — đó là cách soi nhanh một câu trả lời có tra thật hay không. Đã chặn bằng mã trong `loop.ts`
   (`looksLikeFabricatedRows`): lượt nào không tra công cụ mà câu trả lời nêu ≥ 2 mã nhân viên / chứng từ thì
   bắt model đi tra thật rồi trả lời lại, đúng một lần.
+- **Chặn cứng bịa** (chủ SP 24/10 "dữ liệu mà bịa thì quá nguy hiểm"): `unverifiedClaims` lấy mọi mẩu dữ liệu trong câu
+  trả lời (mã, **số tiền**, số đếm người / chứng từ) rồi đối chiếu với bằng chứng của lượt = kết quả công cụ đã tra +
+  các câu trả lời trước. Mã bịa thì chặn **kể cả khi đã tra** (mã là chuỗi chính xác); tiền / số đếm chỉ chặn khi cả
+  lượt không tra gì. Lần đầu bắt tra lại, vẫn bịa thì **thay câu trả lời** bằng "em chưa tra được… có thể chưa có công
+  cụ hoặc anh/chị không có quyền". Bộ kiểm model thật: 9 ca `bia-*` trong `scripts/assistant-evals/evals.ts`.
+- Trong bộ kiểm, `o.tools` chứa **nhãn** công cụ ("Tình hình hôm nay"), KHÔNG phải tên hàm — viết check theo tên hàm
+  thì ca nào cũng đỏ oan (đã dính 24/10).
+- `\b` sau chữ có dấu ("tỷ") **không khớp** trong regex JS không cờ `u` — ký tự có dấu không phải word char. Dùng
+  `(?!\p{L})` với cờ `u`.
+- Bộ kiểm model thật chạy nhiều lượt liên tiếp sẽ bị nhà cung cấp trả **503 / 429**: đó là lỗi hạ tầng, không phải ca
+  hỏng. Chạy từng nhóm nhỏ, đừng chạy cả bộ ngay sau khi vừa chạy nhóm khác.
 - `converse` lấy chữ trả lời từ **luồng delta**, không từ `out.text` — mock trong vitest phải phát delta, nếu không
   mọi khẳng định về câu trả lời đều so với chuỗi rỗng.
 - Thêm luật mà không cho Trợ lý đường đọc thì người dùng vẫn không hỏi được: mọi đợt luật mới nên kiểm luôn một câu

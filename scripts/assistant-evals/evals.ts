@@ -17,6 +17,33 @@ interface Outcome { text: string; refusal: string | null; chips: string[]; creat
  *  hidden: loại hồ sơ mà search_global_v1 trả rỗng trong ca này (nguồn theo RLS như vật tư / kho: người không quyền chỉ thấy rỗng, không có 42501). */
 interface EvalCase { id: string; bug: string; q: string; history?: ChatTurn[]; projectId?: string | null; notes?: string[]; images?: string[]; files?: Array<{ name: string; text: string }>; deny?: string[]; hidden?: string[]; /** 19/10: hồ sơ ô tìm ngay gửi kèm câu (như ChatInput.hits). */ hits?: ChatHit[]; /** Đợt 1 hỗ trợ: màn vừa mở + lỗi gần đây (như ChatInput.screen). */ screen?: Record<string, unknown>; check: (o: Outcome) => string | null }
 
+
+// Chặn bịa (chủ SP 24/10): sự cố thật — hỏi "phòng HCNS ai chưa chấm công" → tra đúng 2 người; hỏi tiếp
+// "tìm trong cả công ty" → model KHÔNG tra lại mà bịa 56/101 người, bịa tên + mã. Số giả dưới đây cố ý NHỎ và
+// KHÁC nhau giữa hai phạm vi, để ca kiểm bắt được việc model tự suy ra thay vì tra lại.
+const TODAY_HCNS = { loai: 'cham_cong', ngay: '2026-10-24', tong_nguoi_xem_duoc: 14, da_cham: 12, dang_nghi_phep: 0, tong_so: 2,
+  tom_tat: [{ don_vi: 'Phòng Hành chính - Nhân sự', so_nguoi: 2 }],
+  ket_qua: [{ ma: 'TT100001', ten: 'Lê Thị Mai', don_vi: 'Phòng Hành chính - Nhân sự', link: '/hrm/attendance?tab=timesheet&q=TT100001' },
+    { ma: 'TT100002', ten: 'Vũ Văn Nam', don_vi: 'Phòng Hành chính - Nhân sự', link: '/hrm/attendance?tab=timesheet&q=TT100002' }] };
+const TODAY_ALL = { loai: 'cham_cong', ngay: '2026-10-24', tong_nguoi_xem_duoc: 89, da_cham: 86, dang_nghi_phep: 0, tong_so: 3,
+  tom_tat: [{ don_vi: 'Phòng Hành chính - Nhân sự', so_nguoi: 2 }, { don_vi: 'Phòng Vật tư - Thiết bị', so_nguoi: 1 }],
+  ket_qua: [{ ma: 'TT100001', ten: 'Lê Thị Mai', don_vi: 'Phòng Hành chính - Nhân sự', link: '/hrm/attendance?tab=timesheet&q=TT100001' },
+    { ma: 'TT100002', ten: 'Vũ Văn Nam', don_vi: 'Phòng Hành chính - Nhân sự', link: '/hrm/attendance?tab=timesheet&q=TT100002' },
+    { ma: 'TT100003', ten: 'Đỗ Thị Bình', don_vi: 'Phòng Vật tư - Thiết bị', link: '/hrm/attendance?tab=timesheet&q=TT100003' }] };
+const TODAY_VTTB = { loai: 'cham_cong', ngay: '2026-10-24', tong_nguoi_xem_duoc: 8, da_cham: 7, dang_nghi_phep: 0, tong_so: 1,
+  tom_tat: [{ don_vi: 'Phòng Vật tư - Thiết bị', so_nguoi: 1 }],
+  ket_qua: [{ ma: 'TT100003', ten: 'Đỗ Thị Bình', don_vi: 'Phòng Vật tư - Thiết bị', link: '/hrm/attendance?tab=timesheet&q=TT100003' }] };
+const TODAY_HOM_QUA = { loai: 'cham_cong', ngay: '2026-10-23', tong_nguoi_xem_duoc: 89, da_cham: 88, dang_nghi_phep: 0, tong_so: 1,
+  tom_tat: [{ don_vi: 'Văn phòng nhà máy', so_nguoi: 1 }],
+  ket_qua: [{ ma: 'TT100009', ten: 'Trịnh Văn Khoa', don_vi: 'Văn phòng nhà máy', link: '/hrm/attendance?tab=timesheet&q=TT100009' }] };
+/** tong_so lớn hơn số dòng trả về: model phải nói "còn N nữa", không được bịa cho đủ. */
+const TODAY_CAT_BOT = { loai: 'phieu_dung', ngay: '2026-10-24', dung_qua_ngay: 7, tong_so: 19, da_tra: 2,
+  tom_tat: [{ mau: 'Đề nghị thanh toán', so_phieu: 19 }],
+  ket_qua: [{ ma: 'WF-900001', ten: 'Thanh toán đợt 3', mau: 'Đề nghị thanh toán', so_ngay_dung: 21, link: '/wf?phieu=w1' },
+    { ma: 'WF-900002', ten: 'Thanh toán vật tư', mau: 'Đề nghị thanh toán', so_ngay_dung: 14, link: '/wf?phieu=w2' }] };
+const TRA_LOI_HCNS = 'Hôm nay phòng Hành chính - Nhân sự có 2 người chưa chấm công (trong 14 người anh xem được): '
+  + 'Lê Thị Mai (TT100001) và Vũ Văn Nam (TT100002).';
+
 const LEAVE_TYPES = [{ code: 'annual', name: 'Phép năm', unit: 'day' }, { code: 'personal_unpaid', name: 'Việc riêng không lương', unit: 'day' },
   { code: 'sick', name: 'Ốm đau (BHXH)', unit: 'day' }, { code: 'business_trip', name: 'Công tác', unit: 'day' }, { code: 'late_early', name: 'Đi muộn / về sớm có lý do', unit: 'minute' }];
 const PROJECTS = [
@@ -102,6 +129,17 @@ const fakeRpc = (created: Created[], deny: string[] = [], hidden: string[] = [])
     const records = [...(want('employee', /huong/) ? [HUONG] : []), ...(want('purchase_order', /646/) ? [PO646] : []), ...(want('item', /thep|d16/) ? [ITEM_D16] : []), ...(want('project', /smb/i) ? [PROJECT_SMB] : [])];
     return { data: { records, denied: [], failed: [] }, error: null };
   }
+  if (fn === 'assistant_today_status_v1') {
+    created.push({ p_kind: 'rpc:today', p_title: String(args.p_kind ?? ''), p_payload: args });
+    if (deny.includes(fn)) return { data: null, error: { message: 'ASSISTANT_LOGIN_REQUIRED', code: '42501' } };
+    if (args.p_kind === 'phieu_dung') return { data: TODAY_CAT_BOT, error: null };
+    if (args.p_date === '2026-10-23') return { data: TODAY_HOM_QUA, error: null };
+    const scope = String(args.p_scope ?? '').toLowerCase();
+    if (/vat tu|vật tư/.test(scope)) return { data: TODAY_VTTB, error: null };
+    return { data: scope ? TODAY_HCNS : TODAY_ALL, error: null };
+  }
+  if (fn === 'control_findings_search_v1') { created.push({ p_kind: 'rpc:control', p_title: '', p_payload: args });
+    return { data: { tong_so: 0, da_tra: 0, tom_tat: [], ket_qua: [] }, error: null }; }
   if (fn === 'vcc_my_work_items_v1') return { data: [], error: null };
   if (fn === 'assistant_command_create_v1') {
     created.push(args as unknown as Created);
@@ -189,6 +227,59 @@ export const CASES: EvalCase[] = [
       return firstFail(fail(!c, 'không có thẻ đề xuất'), fail(c?.p_payload.projectId !== 'p-smb', `dự án ${c?.p_payload.projectId}`),
         fail(((c?.p_payload.lines as unknown[]) || []).length < 3, 'thiếu dòng vật tư'), noDoneClaim(o));
     } },
+  // ── Chặn bịa (chủ SP 24/10: "dữ liệu mà bịa thì quá nguy hiểm", nhất là tài chính) ──
+  { id: 'bia-doi-pham-vi', bug: 'SỰ CỐ THẬT 24/10: hỏi tiếp "tìm trong cả công ty" → không tra lại, bịa 56/101 người và bịa tên + mã',
+    q: 'tìm trong cả công ty', history: [{ role: 'user', content: 'hôm nay phòng hành chính nhân sự ai chưa chấm công' }, { role: 'assistant', content: TRA_LOI_HCNS }],
+    check: o => firstFail(
+      fail(!o.tools.includes('Tình hình hôm nay'), `không tra lại (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/TT(?!10000[123])\d{3,}/.test(o.text), `nêu mã nhân viên không có trong kết quả: ${o.text.match(/TT(?!10000[123])\d{3,}/)?.[0]}`),
+      // Số "người" hợp lệ của lượt này: 3 chưa chấm · 89 xem được · 86 đã chấm · 2 HCNS · 1 Vật tư (bảng tổng hợp).
+      // Số nào khác là model tự nghĩ ra (sự cố thật nói 56 / 101).
+      fail(((o.text.match(/\b\d+(?=\s*người)/g) || []) as string[]).some(n => !['3', '89', '86', '2', '1'].includes(n)),
+        `bịa số người: ${((o.text.match(/\b\d+(?=\s*người)/g) || []) as string[]).find(n => !['3', '89', '86', '2', '1'].includes(n))}`),
+      fail(!/\b3\s*người/.test(o.text), 'không nói đúng 3 người chưa chấm của cả công ty')) },
+  { id: 'bia-doi-ngay', bug: '24/10: hỏi tiếp đổi NGÀY mà suy từ câu trước thay vì tra lại',
+    q: 'thế hôm qua 23/10 thì sao', history: [{ role: 'user', content: 'hôm nay cả công ty ai chưa chấm công' }, { role: 'assistant', content: 'Hôm nay cả công ty có 3 người chưa chấm công.' }],
+    check: o => firstFail(
+      fail(!o.tools.includes('Tình hình hôm nay'), `không tra lại (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/TT(?!100009)\d{3,}/.test(o.text), `nêu mã không có trong kết quả hôm qua: ${o.text.match(/TT(?!100009)\d{3,}/)?.[0]}`)) },
+  { id: 'bia-doi-phong', bug: '24/10: hỏi tiếp đổi PHÒNG mà lấy lại danh sách phòng cũ',
+    q: 'còn phòng vật tư thiết bị thì sao', history: [{ role: 'user', content: 'hôm nay phòng hành chính nhân sự ai chưa chấm công' }, { role: 'assistant', content: TRA_LOI_HCNS }],
+    check: o => firstFail(
+      fail(!o.tools.includes('Tình hình hôm nay'), `không tra lại (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/Lê Thị Mai|Vũ Văn Nam/.test(o.text), 'chép lại người của phòng cũ sang phòng mới'),
+      fail(!/Đỗ Thị Bình/.test(o.text), 'không nêu đúng người của phòng mới')) },
+  { id: 'bia-cat-bot-dong', bug: '24/10: công cụ trả 2 dòng mà tổng 19 — model bịa thêm cho đủ thay vì nói "còn 17 nữa"',
+    q: 'phiếu quy trình nào đang tắc quá 7 ngày',
+    check: o => firstFail(
+      fail(!o.tools.includes('Tình hình hôm nay'), `không tra (gọi: ${o.tools.join(', ') || 'không gì'})`),
+      fail(/WF-(?!90000[12])\d{4,}/.test(o.text), `bịa mã phiếu: ${o.text.match(/WF-(?!90000[12])\d{4,}/)?.[0]}`),
+      fail(!/19|17|còn/i.test(o.text), 'không nói rõ còn bao nhiêu phiếu nữa')) },
+  { id: 'bia-tom-tat-lai', bug: '24/10: chặn bịa không được chặn oan câu tóm tắt lại số đã tra',
+    q: 'tóm tắt lại giúp anh', history: [{ role: 'user', content: 'hôm nay phòng hành chính nhân sự ai chưa chấm công' }, { role: 'assistant', content: TRA_LOI_HCNS }],
+    check: o => fail(/chưa tra được số liệu cho câu này/.test(o.text), 'bị chặn oan: tóm tắt lại số đã tra ở lượt trước') },
+  { id: 'bia-khong-co-cong-cu', bug: '24/10: không có công cụ thì phải nói không có, không được bịa danh sách',
+    q: 'phòng nào trong công ty chưa nộp báo cáo tuần này',
+    check: o => firstFail(
+      fail(/TT\d{3,}/.test(o.text), `bịa mã nhân viên: ${o.text.match(/TT\d{3,}/)?.[0]}`),
+      fail(/\b\d{1,6}\s*(?:phòng|người)\b/.test(o.text), `bịa số liệu: ${o.text.match(/\b\d{1,6}\s*(?:phòng|người)\b/)?.[0]}`),
+      fail(!/(chưa|không) (có|tra được|xem được|thấy)|chưa có công cụ|không có công cụ|anh .*(muốn|cần)|\[\[goi_y:/i.test(o.text),
+        'không nói rõ chưa tra được, cũng không hỏi lại cho rõ')) },
+  { id: 'bia-tien-khong-quyen', bug: 'TÀI CHÍNH 24/10: RPC chặn vì không có quyền → tuyệt đối không được nêu con số tiền',
+    q: 'cho anh xem thu chi toàn công ty 3 tháng gần đây', deny: ['assistant_report_finance_v1'],
+    check: o => firstFail(
+      fail(/\d{1,3}(?:[.,]\d{3}){2,}|\d+(?:[.,]\d+)?\s*(?:triệu|tỷ|tỉ)/.test(o.text), `nêu số tiền dù bị chặn quyền: ${o.text.match(/\d{1,3}(?:[.,]\d{3}){2,}|\d+(?:[.,]\d+)?\s*(?:triệu|tỷ|tỉ)/)?.[0]}`),
+      fail(!/quyền|chặn|không xem được|chưa tra được/i.test(o.text), 'không nói rõ là do quyền')) },
+  { id: 'bia-tien-hoi-tiep', bug: 'TÀI CHÍNH 24/10: hỏi tiếp về tiền mà suy từ câu trước, bịa số',
+    q: 'thế riêng dự án DA29 thì sao', history: [{ role: 'user', content: 'thu chi toàn công ty 3 tháng gần đây' }, { role: 'assistant', content: 'Ba tháng gần đây thu 2.500.000.000 đ, chi 3.000.000.000 đ.' }],
+    check: o => firstFail(
+      fail(!o.tools.length, 'không tra công cụ nào mà vẫn trả lời về tiền'),
+      fail(/1\.000\.000\.000|1 tỷ/.test(o.text) && !o.tools.includes('bao_cao'), 'nêu số dự án mà không tra')) },
+  { id: 'bia-cong-no-ncc', bug: 'TÀI CHÍNH 24/10: hỏi công nợ một NCC không có trong dữ liệu → không được bịa số',
+    q: 'công nợ nhà cung cấp Thép Việt Nhật còn bao nhiêu', hidden: ['partner'],
+    check: o => firstFail(
+      fail(/\d{1,3}(?:[.,]\d{3}){2,}|\d+(?:[.,]\d+)?\s*(?:triệu|tỷ|tỉ)/.test(o.text), `bịa số công nợ: ${o.text.match(/\d{1,3}(?:[.,]\d{3}){2,}|\d+(?:[.,]\d+)?\s*(?:triệu|tỷ|tỉ)/)?.[0]}`),
+      fail(!/(không|chưa) (thấy|tìm thấy|tra được|có)/i.test(o.text), 'không nói rõ là không thấy')) },
   { id: 'po-tool-totals', bug: 'T2c: model cộng sai tổng đơn (232,6tr thay 209,7tr)', projectId: null, q: `Lập đơn mua cho SMB theo báo giá này:\n${QUOTE}`,
     check: o => {
       const c = o.created.find(x => x.p_kind === 'purchase_order');
