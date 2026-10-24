@@ -2417,23 +2417,34 @@ button.work-kpi:hover { border-color: var(--wk-accent-line, #99f6e4); }
 }
 
 /* Chuyển động Vioo Work (đợt 2, 25/10/2026) — components/work/motion.
-   Luật Safari (docs/ui/VIOO-UI-UX.md mục 6): lặp vô hạn chỉ transform/opacity; còn lại chạy một lần. */
-.has-pill button { position: relative; isolation: isolate; }
-.work-seg-pill,
-.work-space-pill { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.work-quick-seg.has-pill button[aria-pressed="true"],
-.work-quick-seg.has-pill.work-quick-level button[data-level][aria-pressed="true"] { background: none; }
+   Luật Safari (docs/ui/VIOO-UI-UX.md mục 6): lặp vô hạn chỉ transform/opacity; còn lại chạy một lần.
+   Một nhịp chung cho vị trí, độ rộng, màu nền và màu chữ để nền và chữ đổi cùng lúc (không "dính" màu). */
+.work-module, .work-drawer { --work-ease: cubic-bezier(.32, .72, 0, 1); --work-slide: 240ms; }
+.has-pill { position: relative; isolation: isolate; }
+.has-pill > button { position: relative; z-index: 1; transition: color var(--work-slide) var(--work-ease), opacity 140ms ease !important; }
+.work-quick-seg.has-pill > button[aria-pressed],
+.work-quick-seg.has-pill.work-quick-level > button[data-level][aria-pressed="true"],
+.work-space-switch.has-pill > button[aria-current] { background: none; }
+.work-seg-pill, .work-space-pill, .work-tab-line { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none;
+  width: var(--pill-w, 0); transform: translate(var(--pill-x, 0), var(--pill-y, 0));
+  transition: transform var(--work-slide) var(--work-ease), width var(--work-slide) var(--work-ease), background-color var(--work-slide) var(--work-ease); }
+.work-seg-pill, .work-space-pill { height: var(--pill-h, 0); }
+.pill-still > .work-seg-pill, .pill-still > .work-space-pill, .pill-still > .work-tab-line { transition: none; }
+.pill-none > .work-seg-pill, .pill-none > .work-space-pill, .pill-none > .work-tab-line { opacity: 0; }
 .work-seg-pill { background: var(--wk-accent-soft, #f0fdfa); }
-.work-quick-level.has-pill button[data-level="A"] .work-seg-pill { background: var(--wk-primary, #0f766e); }
-.work-quick-level.has-pill button[data-level="B"] .work-seg-pill { background: var(--wk-accent-soft-2, #ccfbf1); }
-.work-quick-level.has-pill button[data-level="C"] .work-seg-pill { background: var(--wk-sunken, #eef2f6); }
-.work-space-switch.has-pill button[aria-current="page"] { background: none; }
+.work-quick-level[data-active="A"] > .work-seg-pill { background: var(--wk-primary, #0f766e); }
+.work-quick-level[data-active="B"] > .work-seg-pill { background: var(--wk-accent-soft-2, #ccfbf1); }
+.work-quick-level[data-active="C"] > .work-seg-pill { background: var(--wk-sunken, #eef2f6); }
 .work-space-pill { border-radius: 9px; background: var(--wk-primary, #0f766e); }
-.work-tabs.has-pill button[aria-current="page"] { border-bottom-color: transparent; }
-.work-tab-line { position: absolute; left: 0; right: 0; bottom: -3px; height: 3px; background: var(--wk-accent-line, #0f766e); pointer-events: none; }
+.work-tabs.has-pill > button[aria-current="page"] { border-bottom-color: transparent; }
+/* Nhóm có nền trượt: không co nút khi bấm (nền không co theo sẽ lệch) */
+.has-pill > button:not(:disabled):active { transform: none; }
+.work-tab-line { top: auto; bottom: 0; height: 3px; transform: translateX(var(--pill-x, 0)); background: var(--wk-accent-line, #0f766e); }
+/* Ô chọn người làm giữ độ rộng cố định: chọn tên dài / ngắn không làm cả hàng co giãn */
+@media (min-width: 761px) { .work-quick-person { width: 280px; } }
 
 /* Nút chính: nhún khi bấm + gợn từ chỗ bấm */
-.work-module .work-primary { position: relative; overflow: hidden; transition: transform .12s ease, background-color .15s ease; }
+.work-module .work-primary { position: relative; overflow: hidden; transition: transform .14s var(--work-ease), background-color .15s ease, opacity .14s ease !important; }
 .work-module .work-primary:active:not(:disabled) { transform: scale(.97); }
 .work-ripple { position: absolute; border-radius: 50%; background: currentColor; pointer-events: none; }
 
@@ -2445,7 +2456,7 @@ button.work-kpi:hover { border-color: var(--wk-accent-line, #99f6e4); }
 @keyframes work-sweep { to { transform: translateX(270%); } }
 
 /* Ô số nâng nhẹ khi rê chuột; ô số và thanh công cụ hiện lần lượt khi mở màn */
-.work-my button.work-kpi { transition: transform .18s ease, border-color .18s ease; }
+.work-my button.work-kpi { transition: transform .2s var(--work-ease), border-color .2s ease, box-shadow .2s ease !important; }
 .work-my button.work-kpi:hover { transform: translateY(-2px); }
 .work-my .work-kpis > * { animation: work-rise .45s cubic-bezier(.2, .8, .2, 1) both; }
 .work-my .work-kpis > :nth-child(2) { animation-delay: 40ms; }
@@ -2461,7 +2472,7 @@ button.work-kpi:hover { border-color: var(--wk-accent-line, #99f6e4); }
 @keyframes work-rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes work-pop { from { transform: scale(.97); } }
 @media (prefers-reduced-motion: reduce) {
-  .work-module .work-primary, .work-my button.work-kpi { transition: none; }
+  .work-module .work-primary, .work-my button.work-kpi, .has-pill > button, .work-seg-pill, .work-space-pill, .work-tab-line { transition: none !important; }
   .work-module .work-primary:active:not(:disabled), .work-my button.work-kpi:hover { transform: none; }
   .work-ai-button[aria-busy="true"]::after, .work-my .work-kpis > *, .work-my-list.is-stagger > *, .work-my-cell[aria-pressed="true"] { animation: none; }
 }

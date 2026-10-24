@@ -1,2 +1,2 @@
-// Gói tính năng Motion có layout (nền trượt, gạch chân trượt); tải riêng sau khi màn đã hiện.
-export { domMax as default } from "motion/react";
+// Gói tính năng Motion cơ bản (opacity, transform, height, AnimatePresence); tải riêng sau khi màn đã hiện.
+export { domAnimation as default } from "motion/react";

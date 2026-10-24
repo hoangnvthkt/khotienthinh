@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { WorkMyBoard } from "../../pages/work/WorkMyBoard";
 import { WorkQuickAssign } from "../../pages/work/WorkQuickAssign";
 import type { WorkMyBoard as Board, WorkMyTask } from "../../lib/work/workBoardService";
-import { Highlight, WorkMotion } from "../../components/work/motion";
+import { WorkMotion } from "../../components/work/motion";
 import "../../pages/work/work.css";
 
 const query = new URLSearchParams(location.search);
@@ -75,8 +75,8 @@ createRoot(document.getElementById("root")!).render(
       <WorkMyBoard board={boardService} service={taskService} refreshKey={0} detailTo={(code) => `/work/${code}`} onNotice={() => undefined}
         headerActions={<button className="work-secondary">Tạo công việc</button>}>
         <WorkQuickAssign service={taskService} board={boardService} ai={query.has("ai") ? aiService : undefined} actorName="Admin Hoàng" onCreated={() => undefined} />
-        <nav className="work-tabs has-pill" aria-label="Danh sách công việc">
-          {tabs.map((t, i) => <button key={t} aria-current={i === 0 ? "page" : undefined}>{i === 0 && <Highlight group="work-tabs" className="work-tab-line" />}{t}</button>)}
+        <nav className="work-tabs" aria-label="Danh sách công việc">
+          {tabs.map((t, i) => <button key={t} aria-current={i === 0 ? "page" : undefined}>{t}</button>)}
           <button className="work-tabs-extra"><Search size={15} /> Tìm & lọc</button>
         </nav>
       </WorkMyBoard>
