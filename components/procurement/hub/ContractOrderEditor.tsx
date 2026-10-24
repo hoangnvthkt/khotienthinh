@@ -5,13 +5,13 @@ import {
   procurementContractService, type ContractDetail, type ContractOrder, type ContractPriceLine, type ContractSummary,
 } from '../../../lib/procurementContractService';
 import type { Warehouse } from '../../../types';
-import { backdateHint, vnToday } from '../../../lib/businessDate';
+import { businessDateIssue, vnToday } from '../../../lib/businessDate';
 import { procurementInboxService } from '../../../lib/procurementInboxService';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { SpecInput } from '../../material/SpecInput';
-import { VatPicker } from './OrderFormParts';
+import { OrderDateField, VatPicker, useCanBackdate } from './OrderFormParts';
 
 // Gọi hàng theo HĐ nguyên tắc: giá lấy từ bảng giá HĐ theo ngày giao, không duyệt từng đơn.
 // Gửi xong thủ kho kho nhận thấy phiếu nhập như đơn PO; nhận xong chờ đối soát tháng (chưa ghi nợ).
@@ -115,6 +115,8 @@ export const ContractOrderEditor: React.FC<{
       qty: '', price: p ? qtyInput(p.unitPrice) : '', contractPrice: p ? p.unitPrice : null, vatRate: p ? p.vatRate : (cur[0]?.vatRate ?? 8) }]);
   };
   const specProblems = useMemo(() => duplicateItemSpecProblems(rows.map(r => ({ key: r.key, itemId: r.itemId, specification: r.spec }))), [rows]);
+  const canBackdate = useCanBackdate();
+  const dateIssue = useMemo(() => businessDateIssue(orderDate, canBackdate), [orderDate, canBackdate]);
   const patch = (i: number, p: Partial<Row>) => setRows(cur => cur.map((r, j) => j === i ? { ...r, ...p } : r));
   const manualVatNum = parseQty(manualVat);
   const rowVat = (r: Row) => r.contractPrice != null ? r.vatRate : manualVatNum ?? 0;
@@ -132,6 +134,7 @@ export const ContractOrderEditor: React.FC<{
     if (hasManual && (manualVatNum == null || manualVatNum < 0 || manualVatNum > 100)) throw new Error('VAT phải từ 0 đến 100%.');
     if (vats.length > 1) throw new Error('Các vật tư có VAT khác nhau — tách thành đơn riêng theo từng mức VAT.');
     if (specProblems.size) throw new Error('Có vật tư nhiều dòng chưa ghi quy cách khác nhau (ô viền đỏ).');
+    if (dateIssue?.blocked) throw new Error(dateIssue.text);
     const r = await procurementContractService.saveOrder({ purchaseOrderId: saved?.id, expectedRowVersion: saved?.rowVersion, contractId: c.id,
       targetWarehouseId: warehouseId, expectedDeliveryDate: date || null, fulfillmentMode: mode, purchaseMode: multiple ? 'multiple' : 'single',
       vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0, specification: x.spec.trim() || undefined,
@@ -192,9 +195,8 @@ export const ContractOrderEditor: React.FC<{
         <select value={warehouseId} disabled={!c} onChange={e => setWarehouseId(e.target.value)} className={`mt-1 w-full ${inputCls}`}>
           <option value="">Chọn kho…</option>
           {whOptions.map(w => <option key={w.id} value={w.id}>{w.name}{w.type === 'GENERAL' ? ' (hàng tồn công ty)' : ''}</option>)}</select></label>
-      <label className={label}>Ngày đặt hàng
-                  <input type="date" value={orderDate} max={vnToday()} onChange={e => { setOrderDate(e.target.value); setOrderDateTouched(true); }} className={`mt-1 w-full ${inputCls}`} />
-                  {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
+      <OrderDateField value={orderDate} canBackdate={canBackdate} issue={dateIssue}
+        onChange={v => { setOrderDate(v); setOrderDateTouched(true); }} />
       <label className={label}>Ngày cần giao <span className="font-normal">(giá HĐ lấy theo ngày này)</span><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
     </div>
     {loadError ? <StateBox kind="error" message={loadError} /> : !cid ? <StateBox kind="empty" title="Chọn hợp đồng để gọi hàng" message={choices.length ? 'Chỉ hiện HĐ còn hiệu lực bạn được gọi hàng.' : 'Chưa có HĐ nào bạn được gọi hàng. Nhờ Mua hàng khai HĐ hoặc cấp quyền.'} />
