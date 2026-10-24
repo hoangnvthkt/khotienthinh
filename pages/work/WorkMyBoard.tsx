@@ -17,7 +17,7 @@ import {
 import { periodLabel, periodQuery, periodShort, prevShort } from "../../lib/work/workPeriod";
 import { WorkPeriodPicker, useWorkPeriod } from "./WorkPeriodPicker";
 import { AnimatePresence, m } from "motion/react";
-import { AutoHeight, CountingNumber, Highlight, useRipple } from "../../components/work/motion";
+import { AutoHeight, CountingNumber, useRipple, useSlidingPill } from "../../components/work/motion";
 
 const CAP = 10;
 type Edit = { id: string; kind: "blocked" | "done"; text: string } | null;
@@ -62,6 +62,8 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
   const claimRipple = useRipple();
+  const viewPill = useSlidingPill<HTMLDivElement>(view);
+  const rangePill = useSlidingPill<HTMLDivElement>(range);
 
   useEffect(() => {
     let live = true;
@@ -207,9 +209,10 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
       {children}
 
       <div className="work-my-toolbar">
-        <div className="work-quick-seg has-pill" role="group" aria-label="Cách xem">
-          <button type="button" aria-pressed={view === "calendar"} onClick={() => chooseView("calendar")}>{view === "calendar" && <Highlight group="work-my-view" />}<CalendarDays size={15} /> Lịch</button>
-          <button type="button" aria-pressed={view === "list"} onClick={() => { chooseView("list"); setFilter("all"); }}>{view === "list" && <Highlight group="work-my-view" />}<LayoutList size={15} /> Danh sách</button>
+        <div className="work-quick-seg has-pill" role="group" aria-label="Cách xem" ref={viewPill}>
+          <span className="work-seg-pill" aria-hidden="true" />
+          <button type="button" aria-pressed={view === "calendar"} onClick={() => chooseView("calendar")}><CalendarDays size={15} /> Lịch</button>
+          <button type="button" aria-pressed={view === "list"} onClick={() => { chooseView("list"); setFilter("all"); }}><LayoutList size={15} /> Danh sách</button>
         </div>
         {view === "calendar" && <>
           <div className="work-my-nav">
@@ -219,8 +222,9 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
             <button type="button" className="work-icon-button" aria-label="Khoảng sau" onClick={() => setAnchor(myShiftAnchor(range, anchor || data.today, 1))}><ChevronRight size={18} /></button>
             {(anchor && !span.days.includes(data.today)) && <button type="button" className="work-text-button" onClick={() => { setAnchor(null); setSelected(null); }}>Hôm nay</button>}
           </div>
-          <div className="work-quick-seg work-my-range has-pill" role="group" aria-label="Khoảng thời gian">
-            {(Object.keys(MY_RANGE_LABELS) as MyRange[]).map((r) => <button type="button" key={r} aria-pressed={range === r} onClick={() => chooseRange(r)}>{range === r && <Highlight group="work-my-range" />}{MY_RANGE_LABELS[r]}</button>)}
+          <div className="work-quick-seg work-my-range has-pill" role="group" aria-label="Khoảng thời gian" ref={rangePill}>
+            <span className="work-seg-pill" aria-hidden="true" />
+            {(Object.keys(MY_RANGE_LABELS) as MyRange[]).map((r) => <button type="button" key={r} aria-pressed={range === r} onClick={() => chooseRange(r)}>{MY_RANGE_LABELS[r]}</button>)}
           </div>
         </>}
       </div>
