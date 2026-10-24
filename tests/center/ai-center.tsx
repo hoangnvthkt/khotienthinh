@@ -209,6 +209,7 @@ const controlService: ControlService = {
   reopen: async id => { calls.push({ controlReopen: id }); await sleep(40); controlState = controlState.map(f => (f.id === id ? { ...f, status: 'open', acceptedReason: null, acceptedBy: null, acceptedAt: null } : f)); },
   setMode: async (code, mode) => { calls.push({ controlMode: { code, mode } }); await sleep(40); const r = CONTROL_RULES.find(x => x.code === code); if (r) r.mode = mode; },
   runNow: async () => { calls.push({ controlRun: true }); await sleep(120); return { rules: 18, opened: 0, resolved: 0, errors: [] }; },
+  forDoc: async () => [],
 };
 
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}</p>; };

@@ -1,7 +1,8 @@
 // Kiểm soát viên (K0–K1, chủ SP 22–23/10/2026): lệch dữ liệu mà bộ luật máy chủ tìm ra (cron 15 phút, không gọi AI). Admin thấy hết, bật
 // "Báo người xử lý" từng luật; người xử lý / trưởng bộ phận thấy lệch của mình (luật đã bật, từ ngày luật tính), mở chứng từ để sửa;
 // trưởng bộ phận, người Quản trị phân hệ, Admin chấp nhận lệch có lý do. RPC: control_overview_v1, control_findings_v1,
-// control_finding_accept_v1, control_finding_reopen_v1, control_run_now_v1, control_rule_set_mode_v1. Migration 20261028190000 + 20261029200000.
+// control_finding_accept_v1, control_finding_reopen_v1, control_run_now_v1, control_rule_set_mode_v1, control_findings_for_doc_v1 (dải trên chứng từ).
+// Migration 20261028190000 + 20261029200000 + 20261030170000.
 import { supabase } from './supabase';
 
 export type ControlSeverity = 'P0' | 'P1' | 'P2';
@@ -21,6 +22,7 @@ export interface ControlFinding {
   /** Người xử lý (tên). */ assignees: string[];
   /** Người đang xem được chấp nhận / mở lại lệch này (trưởng bộ phận, Quản trị phân hệ, Admin). */ canAccept: boolean;
   /** Quá 3 ngày chưa xử lý — đã lên trưởng bộ phận. */ escalated: boolean;
+  /** Cách xử lý của luật (dải cảnh báo trên chứng từ). */ fixHint?: string;
 }
 export type ControlStatusFilter = ControlStatus | 'all';
 export interface ControlService {
@@ -30,6 +32,8 @@ export interface ControlService {
   reopen: (id: string) => Promise<void>;
   runNow: () => Promise<{ rules: number; opened: number; resolved: number; errors: Array<{ rule: string; error: string }>; skipped?: boolean }>;
   setMode: (code: string, mode: ControlRule['mode']) => Promise<void>;
+  /** Lệch đang mở của một chứng từ (đơn mua / đề xuất) — dải cảnh báo trên chứng từ. */
+  forDoc: (doc: { poId?: string | null; requestId?: string | null }) => Promise<ControlFinding[]>;
 }
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) || 0 : 0);
@@ -62,7 +66,8 @@ export const parseFinding = (raw: unknown): ControlFinding => {
     title: String(o.title ?? ''), detail: asObj(o.detail), amount: numOrNull(o.amount), happenedOn: str(o.happenedOn), link: link && /^\/[^/]/.test(link) ? link : null,
     legacy: o.legacy === true, status, firstSeenAt: String(o.firstSeenAt ?? ''), lastSeenAt: String(o.lastSeenAt ?? ''), resolvedAt: str(o.resolvedAt),
     acceptedAt: str(o.acceptedAt), acceptedReason: str(o.acceptedReason), acceptedBy: str(o.acceptedBy),
-    assignees: (Array.isArray(o.assignees) ? o.assignees : []).filter((x): x is string => typeof x === 'string'), canAccept: o.canAccept === true, escalated: o.escalated === true };
+    assignees: (Array.isArray(o.assignees) ? o.assignees : []).filter((x): x is string => typeof x === 'string'), canAccept: o.canAccept === true, escalated: o.escalated === true,
+    ...(str(o.fixHint) ? { fixHint: str(o.fixHint) as string } : {}) };
 };
 
 const MESSAGES: Array<[RegExp, string]> = [
@@ -93,6 +98,10 @@ export const controlService: ControlService = {
   async accept(id, reason) { await call('control_finding_accept_v1', { p_id: id, p_reason: reason }); },
   async reopen(id) { await call('control_finding_reopen_v1', { p_id: id }); },
   async setMode(code, mode) { await call('control_rule_set_mode_v1', { p_code: code, p_mode: mode }); },
+  async forDoc(doc) {
+    const d = await call('control_findings_for_doc_v1', { p_po_id: doc.poId || null, p_request_id: doc.requestId || null });
+    return (Array.isArray(d) ? d : []).map(parseFinding);
+  },
   async runNow() {
     const o = asObj(await call('control_run_now_v1', { p_rule: null }));
     return { rules: num(o.rules), opened: num(o.opened), resolved: num(o.resolved), skipped: o.skipped === true,

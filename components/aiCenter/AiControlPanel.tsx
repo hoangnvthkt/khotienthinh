@@ -17,12 +17,12 @@ const ddmm = (iso: string | null) => (iso && iso.length >= 10 ? `${iso.slice(8, 
 const two = (n: number) => String(n).padStart(2, '0');
 /** "10:15 23/10" theo giờ máy người xem. */
 const hhmm = (iso: string | null) => { if (!iso) return ''; const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${two(d.getHours())}:${two(d.getMinutes())} ${two(d.getDate())}/${two(d.getMonth() + 1)}` : ''; };
-const SEV_STYLE: Record<ControlSeverity, string> = {
+export const SEV_STYLE: Record<ControlSeverity, string> = {
   P0: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900',
   P1: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900',
   P2: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700',
 };
-const SEV_TITLE: Record<ControlSeverity, string> = { P0: 'P0 — sai tiền hoặc tồn kho', P1: 'P1 — lệch số hiển thị / truy vết', P2: 'P2 — thói quen, cần lý do' };
+export const SEV_TITLE: Record<ControlSeverity, string> = { P0: 'P0 — sai tiền hoặc tồn kho', P1: 'P1 — lệch số hiển thị / truy vết', P2: 'P2 — thói quen, cần lý do' };
 
 const Kpi: React.FC<{ label: string; value: number; active: boolean; onClick: () => void; warn?: number; title?: string }> = ({ label, value, active, onClick, warn, title }) => (
   <button type="button" onClick={onClick} aria-pressed={active} title={title}
@@ -33,7 +33,7 @@ const Kpi: React.FC<{ label: string; value: number; active: boolean; onClick: ()
   </button>
 );
 
-const FindingRow: React.FC<{ f: ControlFinding; onOpen: (route: string) => void; onAccept: (f: ControlFinding, reason: string) => Promise<boolean>; onReopen: (f: ControlFinding) => Promise<void> }> = ({ f, onOpen, onAccept, onReopen }) => {
+export const FindingRow: React.FC<{ f: ControlFinding; onOpen?: (route: string) => void; onAccept: (f: ControlFinding, reason: string) => Promise<boolean>; onReopen: (f: ControlFinding) => Promise<void> }> = ({ f, onOpen, onAccept, onReopen }) => {
   const [accepting, setAccepting] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -42,7 +42,7 @@ const FindingRow: React.FC<{ f: ControlFinding; onOpen: (route: string) => void;
     <li className="px-3 py-2.5" data-finding={f.id}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div className="min-w-0 flex-1">
-          <p className="text-sm text-foreground">{f.title}</p>
+          <p className="text-sm text-foreground">{f.title}{f.fixHint && <span className="ml-1 inline-flex align-middle text-muted-foreground" title={`Cách sửa: ${f.fixHint}`} aria-label={`Cách sửa: ${f.fixHint}`}><Info size={13} /></span>}</p>
           <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
             {f.projectName && <span>{f.projectName}</span>}
             {f.happenedOn && <span>{ddmm(f.happenedOn)}</span>}
@@ -54,7 +54,7 @@ const FindingRow: React.FC<{ f: ControlFinding; onOpen: (route: string) => void;
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          {f.link && <button type="button" onClick={() => onOpen(f.link!)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40" title={f.link}><ArrowUpRight size={14} /> Mở</button>}
+          {f.link && onOpen && <button type="button" onClick={() => onOpen(f.link!)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40" title={f.link}><ArrowUpRight size={14} /> Mở</button>}
           {f.status === 'open' && f.canAccept && !accepting && <button type="button" onClick={() => setAccepting(true)} className="rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted" title="Lệch có lý do chính đáng — ghi lý do, không tính là đang mở">Chấp nhận</button>}
           {f.status === 'accepted' && f.canAccept && <button type="button" onClick={() => { setBusy(true); void onReopen(f).finally(() => setBusy(false)); }} disabled={busy} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted"><RotateCcw size={13} /> Mở lại</button>}
         </div>
