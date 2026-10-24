@@ -7,6 +7,7 @@ import { WorkCreateAttempt, workError } from "../../lib/work/workForm";
 import { workDayLabel } from "../../lib/work/workPresentation";
 import { localIsoDate, matchWorkPerson, resolveDue, type WorkAiService } from "../../lib/work/workAi";
 import { WorkMeetingImport } from "./WorkMeetingImport";
+import { Highlight, useRipple } from "../../components/work/motion";
 import { dateAt, personOption, quickChoices, quickDuePresets, quickTaskInput } from "../../lib/work/workQuick";
 
 const CAP = 10;
@@ -40,6 +41,7 @@ export function WorkQuickAssign({ service, board, ai, actorName, onCreated, pres
   const [error, setError] = useState<unknown>(null);
   const [aiBusy, setAiBusy] = useState<null | "draft" | "writer">(null);
   const [aiNote, setAiNote] = useState<AiNote | null>(null);
+  const submitRipple = useRipple();
   /** Lượt AI đã điền form: gắn vào việc sau khi giao; cách gọi người để học (chỉ khi máy phải đoán / người giao bấm chọn). */
   const [draftRun, setDraftRun] = useState<{ runId: string; phrase: string | null; learn: boolean } | null>(null);
   const [writerRun, setWriterRun] = useState<string | null>(null);
@@ -182,7 +184,7 @@ export function WorkQuickAssign({ service, board, ai, actorName, onCreated, pres
           onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && ai) { e.preventDefault(); void fillFromSentence(); } }} />
         {ai && (
           <div className="work-quick-ai">
-            <button type="button" className="work-secondary work-ai-button" disabled={!people || aiBusy !== null} onClick={() => void fillFromSentence()}
+            <button type="button" className="work-secondary work-ai-button" aria-busy={aiBusy === "draft"} disabled={!people || aiBusy !== null} onClick={() => void fillFromSentence()}
               title="AI đọc câu giao việc và điền người làm, hạn, mức, checklist — bạn kiểm rồi bấm Giao">
               {aiBusy === "draft" ? <Loader2 size={15} className="work-spin" /> : <Sparkles size={15} />} {aiBusy === "draft" ? "AI đang đọc…" : "AI điền"}
             </button>
@@ -204,11 +206,13 @@ export function WorkQuickAssign({ service, board, ai, actorName, onCreated, pres
             <option key={p.userId} value={p.userId}>{p.isMe ? personOption(p, actorName) : `${personOption(p, actorName)} · ${loadLabel(p.load)}`}</option>
           ))}
         </select>
-        <div className="work-quick-seg" role="group" aria-label="Hạn">
+        <div className="work-quick-seg has-pill" role="group" aria-label="Hạn">
           {presets.map((p) => (
-            <button type="button" key={p.id} aria-pressed={form.dueId === p.id} onClick={() => { set({ dueId: p.id }); setDueAlt(null); }}>{p.label}</button>
+            <button type="button" key={p.id} aria-pressed={form.dueId === p.id} onClick={() => { set({ dueId: p.id }); setDueAlt(null); }}>
+              {form.dueId === p.id && <Highlight group="work-quick-due" />}{p.label}
+            </button>
           ))}
-          <button type="button" aria-pressed={form.dueId === "other"} onClick={() => set({ dueId: "other" })}>Ngày khác</button>
+          <button type="button" aria-pressed={form.dueId === "other"} onClick={() => set({ dueId: "other" })}>{form.dueId === "other" && <Highlight group="work-quick-due" />}Ngày khác</button>
         </div>
         {form.dueId === "other" && (
           <span className="work-quick-when">
@@ -218,16 +222,18 @@ export function WorkQuickAssign({ service, board, ai, actorName, onCreated, pres
               onChange={(e) => set({ otherTime: e.target.value || "17:00" })} />
           </span>
         )}
-        <div className="work-quick-seg work-quick-level" role="group" aria-label="Mức quan trọng">
+        <div className="work-quick-seg work-quick-level has-pill" role="group" aria-label="Mức quan trọng">
           {(["A", "B", "C"] as const).map((l) => (
-            <button type="button" key={l} data-level={l} aria-pressed={form.level === l} title={WORK_LEVEL_LABELS[l]} onClick={() => set({ level: l })}>{l}</button>
+            <button type="button" key={l} data-level={l} aria-pressed={form.level === l} title={WORK_LEVEL_LABELS[l]} onClick={() => set({ level: l })}>
+              {form.level === l && <Highlight group="work-quick-level" />}{l}
+            </button>
           ))}
         </div>
         <button type="button" className="work-secondary work-quick-more-toggle" aria-expanded={form.more} onClick={() => set({ more: !form.more })}>
           {form.more ? <ChevronUp size={16} /> : <ChevronDown size={16} />} Chi tiết
         </button>
-        <button className="work-primary work-quick-submit" disabled={busy || !people}>
-          <Send size={16} /> {busy ? "Đang giao…" : "Giao"}
+        <button className="work-primary work-quick-submit" disabled={busy || !people} onPointerDown={submitRipple.onPointerDown}>
+          <Send size={16} /> {busy ? "Đang giao…" : "Giao"}{submitRipple.ripples}
         </button>
       </div>
       {aiNote && (

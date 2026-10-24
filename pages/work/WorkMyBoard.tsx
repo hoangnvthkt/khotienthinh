@@ -16,6 +16,8 @@ import {
 } from "../../lib/work/workMyBoard";
 import { periodLabel, periodQuery, periodShort, prevShort } from "../../lib/work/workPeriod";
 import { WorkPeriodPicker, useWorkPeriod } from "./WorkPeriodPicker";
+import { AnimatePresence, m } from "motion/react";
+import { AutoHeight, CountingNumber, Highlight, useRipple } from "../../components/work/motion";
 
 const CAP = 10;
 type Edit = { id: string; kind: "blocked" | "done"; text: string } | null;
@@ -59,6 +61,7 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
   const [busy, setBusy] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const panel = useRef<HTMLElement>(null);
+  const claimRipple = useRipple();
 
   useEffect(() => {
     let live = true;
@@ -130,7 +133,7 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
       onClick={() => { if (view === "list" && filter === id) setFilter("all"); else { setFilter(id); chooseView("list"); } }}
       title={view === "list" && filter === id ? "Bấm lại để xem tất cả" : `Xem danh sách ${label.toLowerCase()}`}>
       <span className="work-kpi-icon" aria-hidden="true">{icon}</span>
-      <span><span className="work-kpi-label">{label}</span><b className="work-kpi-value">{value}</b><span className="work-kpi-sub">{sub}</span></span>
+      <span><span className="work-kpi-label">{label}</span><b className="work-kpi-value"><CountingNumber value={value} /></b><span className="work-kpi-sub">{sub}</span></span>
     </button>
   );
   const live = data.tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
@@ -170,8 +173,8 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
         <div className="work-my-actions">
           <WorkPeriodPicker period={period} today={localToday} onChange={setPeriod} />
           {headerActions}
-          <button type="button" className="work-primary" aria-expanded={composer} onClick={() => setComposer((v) => !v)}>
-            <Plus size={18} /> Ghi việc được giao
+          <button type="button" className="work-primary" aria-expanded={composer} onClick={() => setComposer((v) => !v)} onPointerDown={claimRipple.onPointerDown}>
+            <Plus size={18} /> Ghi việc được giao{claimRipple.ripples}
           </button>
         </div>
       </header>
@@ -185,7 +188,7 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
           <span className="work-kpi-icon" aria-hidden="true"><Check size={18} /></span>
           <span>
             <span className="work-kpi-label">Đúng hạn {periodShort(period)}</span>
-            <b className="work-kpi-value">{kpiOntime.rate == null ? "—" : `${kpiOntime.rate}%`}{kpiOntime.due > 0 && <small> {kpiOntime.ontime}/{kpiOntime.due}</small>}</b>
+            <b className="work-kpi-value">{kpiOntime.rate == null ? "—" : <><CountingNumber value={kpiOntime.rate} />%</>}{kpiOntime.due > 0 && <small> {kpiOntime.ontime}/{kpiOntime.due}</small>}</b>
             <span className="work-kpi-sub">{kpiOntime.rate == null ? "chưa có việc đến hạn"
               : kpiOntime.delta == null ? `${prevShort(period)} chưa có số`
               : <><span className={kpiOntime.delta >= 0 ? "work-up" : "work-down"}>{kpiOntime.delta >= 0 ? "+" : ""}{kpiOntime.delta} điểm</span> so với {prevShort(period)}</>}</span>
@@ -193,14 +196,20 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
         </div>
       </div>
 
-      {composer && <WorkClaimComposer board={board} service={service} me={data.me.userId} weekStart={data.weekStart}
-        onCancel={() => setComposer(false)} onDone={(message) => { setComposer(false); onNotice(message); setReload((v) => v + 1); }} />}
+      <AnimatePresence initial={false}>
+        {composer && (
+          <m.div key="claim" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, transition: { duration: 0.15 } }}>
+            <WorkClaimComposer board={board} service={service} me={data.me.userId} weekStart={data.weekStart}
+              onCancel={() => setComposer(false)} onDone={(message) => { setComposer(false); onNotice(message); setReload((v) => v + 1); }} />
+          </m.div>
+        )}
+      </AnimatePresence>
       {children}
 
       <div className="work-my-toolbar">
-        <div className="work-quick-seg" role="group" aria-label="Cách xem">
-          <button type="button" aria-pressed={view === "calendar"} onClick={() => chooseView("calendar")}><CalendarDays size={15} /> Lịch</button>
-          <button type="button" aria-pressed={view === "list"} onClick={() => { chooseView("list"); setFilter("all"); }}><LayoutList size={15} /> Danh sách</button>
+        <div className="work-quick-seg has-pill" role="group" aria-label="Cách xem">
+          <button type="button" aria-pressed={view === "calendar"} onClick={() => chooseView("calendar")}>{view === "calendar" && <Highlight group="work-my-view" />}<CalendarDays size={15} /> Lịch</button>
+          <button type="button" aria-pressed={view === "list"} onClick={() => { chooseView("list"); setFilter("all"); }}>{view === "list" && <Highlight group="work-my-view" />}<LayoutList size={15} /> Danh sách</button>
         </div>
         {view === "calendar" && <>
           <div className="work-my-nav">
@@ -210,8 +219,8 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
             <button type="button" className="work-icon-button" aria-label="Khoảng sau" onClick={() => setAnchor(myShiftAnchor(range, anchor || data.today, 1))}><ChevronRight size={18} /></button>
             {(anchor && !span.days.includes(data.today)) && <button type="button" className="work-text-button" onClick={() => { setAnchor(null); setSelected(null); }}>Hôm nay</button>}
           </div>
-          <div className="work-quick-seg work-my-range" role="group" aria-label="Khoảng thời gian">
-            {(Object.keys(MY_RANGE_LABELS) as MyRange[]).map((r) => <button type="button" key={r} aria-pressed={range === r} onClick={() => chooseRange(r)}>{MY_RANGE_LABELS[r]}</button>)}
+          <div className="work-quick-seg work-my-range has-pill" role="group" aria-label="Khoảng thời gian">
+            {(Object.keys(MY_RANGE_LABELS) as MyRange[]).map((r) => <button type="button" key={r} aria-pressed={range === r} onClick={() => chooseRange(r)}>{range === r && <Highlight group="work-my-range" />}{MY_RANGE_LABELS[r]}</button>)}
           </div>
         </>}
       </div>
@@ -258,11 +267,13 @@ export function WorkMyBoard({ board, service, refreshKey, detailTo, onNotice, he
               <section className="work-my-card work-my-dayp" aria-label="Việc trong ngày" ref={panel}>
                 <header><h2>{pick === "nodue" ? "Chưa có hạn" : pick ? dayTitle(pick) : ""}</h2>
                   <span>{pick === "nodue" ? `${noDue.length} việc` : picked?.count ? `${picked.count} việc · ${picked.percent}%` : ""}</span></header>
-                <div className="work-my-list">
-                  {pick === "nodue" ? noDue.map(row)
-                    : picked && picked.count ? picked.tasks.map(row)
-                    : <p className="work-my-dayp-empty"><CheckCircle2 size={16} aria-hidden="true" /> Không có việc đến hạn ngày này.</p>}
-                </div>
+                <AutoHeight>
+                  <div className="work-my-list is-stagger" key={pick || ""}>
+                    {pick === "nodue" ? noDue.map(row)
+                      : picked && picked.count ? picked.tasks.map(row)
+                      : <p className="work-my-dayp-empty"><CheckCircle2 size={16} aria-hidden="true" /> Không có việc đến hạn ngày này.</p>}
+                  </div>
+                </AutoHeight>
               </section>
               {stats}
             </aside>

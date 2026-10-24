@@ -2415,3 +2415,53 @@ button.work-kpi:hover { border-color: var(--wk-accent-line, #99f6e4); }
   .work-deck-acts > .work-secondary { flex: 1; }
   .work-deck-stage { padding: 8px; }
 }
+
+/* Chuyển động Vioo Work (đợt 2, 25/10/2026) — components/work/motion.
+   Luật Safari (docs/ui/VIOO-UI-UX.md mục 6): lặp vô hạn chỉ transform/opacity; còn lại chạy một lần. */
+.has-pill button { position: relative; isolation: isolate; }
+.work-seg-pill,
+.work-space-pill { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.work-quick-seg.has-pill button[aria-pressed="true"],
+.work-quick-seg.has-pill.work-quick-level button[data-level][aria-pressed="true"] { background: none; }
+.work-seg-pill { background: var(--wk-accent-soft, #f0fdfa); }
+.work-quick-level.has-pill button[data-level="A"] .work-seg-pill { background: var(--wk-primary, #0f766e); }
+.work-quick-level.has-pill button[data-level="B"] .work-seg-pill { background: var(--wk-accent-soft-2, #ccfbf1); }
+.work-quick-level.has-pill button[data-level="C"] .work-seg-pill { background: var(--wk-sunken, #eef2f6); }
+.work-space-switch.has-pill button[aria-current="page"] { background: none; }
+.work-space-pill { border-radius: 9px; background: var(--wk-primary, #0f766e); }
+.work-tabs.has-pill button[aria-current="page"] { border-bottom-color: transparent; }
+.work-tab-line { position: absolute; left: 0; right: 0; bottom: -3px; height: 3px; background: var(--wk-accent-line, #0f766e); pointer-events: none; }
+
+/* Nút chính: nhún khi bấm + gợn từ chỗ bấm */
+.work-module .work-primary { position: relative; overflow: hidden; transition: transform .12s ease, background-color .15s ease; }
+.work-module .work-primary:active:not(:disabled) { transform: scale(.97); }
+.work-ripple { position: absolute; border-radius: 50%; background: currentColor; pointer-events: none; }
+
+/* AI đang đọc: dải sáng chạy qua nút (thay ShimmeringText, chỉ dịch chuyển bằng transform) */
+.work-ai-button { position: relative; overflow: hidden; }
+.work-ai-button[aria-busy="true"]::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 60%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / .55), transparent); animation: work-sweep 1.1s linear infinite; }
+.dark .work-ai-button[aria-busy="true"]::after { background: linear-gradient(90deg, transparent, rgb(255 255 255 / .12), transparent); }
+@keyframes work-sweep { to { transform: translateX(270%); } }
+
+/* Ô số nâng nhẹ khi rê chuột; ô số và thanh công cụ hiện lần lượt khi mở màn */
+.work-my button.work-kpi { transition: transform .18s ease, border-color .18s ease; }
+.work-my button.work-kpi:hover { transform: translateY(-2px); }
+.work-my .work-kpis > * { animation: work-rise .45s cubic-bezier(.2, .8, .2, 1) both; }
+.work-my .work-kpis > :nth-child(2) { animation-delay: 40ms; }
+.work-my .work-kpis > :nth-child(3) { animation-delay: 80ms; }
+.work-my .work-kpis > :nth-child(4) { animation-delay: 120ms; }
+.work-my .work-kpis > :nth-child(5) { animation-delay: 160ms; }
+/* Việc trong ngày hiện lần lượt khi đổi ngày (danh sách có key theo ngày) */
+.work-my-list.is-stagger > * { animation: work-rise .32s cubic-bezier(.2, .8, .2, 1) both; }
+.work-my-list.is-stagger > :nth-child(2) { animation-delay: 40ms; }
+.work-my-list.is-stagger > :nth-child(3) { animation-delay: 80ms; }
+.work-my-list.is-stagger > :nth-child(n + 4) { animation-delay: 120ms; }
+.work-my-cell[aria-pressed="true"] { animation: work-pop .22s ease both; }
+@keyframes work-rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes work-pop { from { transform: scale(.97); } }
+@media (prefers-reduced-motion: reduce) {
+  .work-module .work-primary, .work-my button.work-kpi { transition: none; }
+  .work-module .work-primary:active:not(:disabled), .work-my button.work-kpi:hover { transform: none; }
+  .work-ai-button[aria-busy="true"]::after, .work-my .work-kpis > *, .work-my-list.is-stagger > *, .work-my-cell[aria-pressed="true"] { animation: none; }
+}
