@@ -73,6 +73,7 @@ const AiCenter = React.lazy(() => import('../pages/AiCenter'));
 // Audit Trail
 const AuditTrail = React.lazy(() => import('../pages/AuditTrail'));
 const AdminActivityDashboard = React.lazy(() => import('../pages/AdminActivityDashboard'));
+const PermissionCenter = React.lazy(() => import('../pages/PermissionCenter'));
 
 // Predictive Analytics
 const PredictiveAnalytics = React.lazy(() => import('../pages/PredictiveAnalytics'));
@@ -217,6 +218,7 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="knowledge-base" element={<Navigate to="/ai" replace />} />
     <Route path="audit-trail" element={<AuditTrail />} />
     <Route path="admin/activity" element={<AdminActivityDashboard />} />
+    <Route path="permissions" element={<PermissionCenter />} />
     <Route path="analytics" element={<PredictiveAnalytics />} />
     <Route path="leaderboard" element={<Leaderboard />} />
     <Route path="feedback" element={<FeedbackHub />} />

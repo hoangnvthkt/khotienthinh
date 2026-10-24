@@ -219,6 +219,10 @@ export const canAccessRoute = (
   if (pathname === '/settings/role-templates') {
     return canPerform(user, 'system.authorization.manage_roles', GLOBAL_SCOPE);
   }
+  // Trung tâm phân quyền: người quản lý phân quyền (máy chủ kiểm lại ở get_permission_center_v1).
+  if (pathname === '/permissions') {
+    return canPerform(user, 'system.authorization.manage_grants', GLOBAL_SCOPE);
+  }
 
   const moduleKey = getRouteModuleKey(pathname);
   if (!moduleKey) return false;

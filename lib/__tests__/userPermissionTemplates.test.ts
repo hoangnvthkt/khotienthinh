@@ -92,8 +92,9 @@ describe('person permission templates', () => {
     expect(ordered[0].suggested).toBe(true);
   });
 
-  it('is reachable from the user editor and Settings', () => {
+  it('is reachable from the user editor and the permission centre (Settings links there)', () => {
     expect(read('components/permissions/AuthorizationEditor.tsx')).toContain('<PermissionTemplateFill');
-    expect(read('pages/Settings.tsx')).toContain('<SettingsUserPermissionTemplates />');
+    expect(read('components/permissions/center/PermissionCenterView.tsx')).toContain('<SettingsUserPermissionTemplates />');
+    expect(read('pages/Settings.tsx')).toContain("navigate('/permissions');");
   });
 });
