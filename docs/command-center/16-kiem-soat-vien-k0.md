@@ -136,7 +136,82 @@ Kiểm: `supabase/tests/control_k3_wms_smoke.sql` (giao dịch tự hủy trên 
 2 bất biến gốc = 0, hai luật giá trị không chồng nhau, mọi dòng có đường dẫn mở được, bộ chạy không mở trùng,
 luật shadow không sinh thông báo, cờ lệch cũ khớp `since_date`).
 
-## Việc tiếp (K3 đợt 2+)
+## K3 đợt 2 — phủ luật sang phân hệ Tài chính (24/10, migration `20261031100000_control_k3_finance`)
 
-Còn ~70 luật: Tài chính (thu chi, đề nghị chi, ngân sách), Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình.
+10 luật mới, **mặc định shadow**. Phạm vi: công nợ NCC ở mức chứng từ, đề nghị chi, ngân sách dự án, thu chi tiền.
+
+### Hiện trạng dữ liệu Tài chính trên prod (24/10) — đọc trước khi đọc bảng luật
+
+| Bảng | Số dòng |
+|---|---:|
+| `supplier_payable_documents` | 62 chứng từ (7,4 tỷ ghi nhận) |
+| `supplier_payment_allocations` | **0** — chưa ghi một đồng thanh toán NCC nào |
+| `finance_payment_requests` | **0** |
+| `finance_project_budgets` | **0** |
+| `finance_cash_movements` / `finance_cash_entries` | **0** |
+
+Nên **chỉ 1 luật có lệch thật**; 9 luật còn lại là luật canh, số lệch 0 vì chưa có dữ liệu, không phải vì dữ liệu sạch.
+Cần nói rõ việc này với chủ SP: phần thu chi / đề nghị chi / ngân sách của Vioo chưa được dùng thật.
+
+| Mã | Mức | Luật | Mới | Cũ |
+|---|---|---|---:|---:|
+| payable_over_committed | P1 | Nợ ghi nhận vượt cam kết | 0 | 3 |
+| payable_over_settled | P0 | Trả / giảm trừ vượt phần phải trả | 0 | 0 |
+| payable_status_vs_balance | P0 | Trạng thái chứng từ nợ không khớp số còn nợ | 0 | 0 |
+| payable_no_due_date | P1 | Chứng từ nợ còn dư mà chưa có hạn trả | 0 | 0 |
+| payable_orphan_source | P0 | Chứng từ nợ trỏ tới nguồn không còn | 0 | 0 |
+| pr_amount_vs_lines | P0 | Số tiền đề nghị chi khác tổng các dòng | 0 | 0 |
+| pr_over_outstanding | P0 | Đang đề nghị chi vượt số còn nợ | 0 | 0 |
+| pr_stuck_pending | P2 | Đề nghị chi treo ở bước duyệt quá 3 ngày | 0 | 0 |
+| budget_total_vs_lines | P1 | Tổng ngân sách khác tổng các dòng | 0 | 0 |
+| cash_entry_mismatch | P0 | Phiếu tiền và sổ quỹ không khớp | 0 | 0 |
+
+3 lệch thật của `payable_over_committed` (đều tháng 8 → cũ): **123.428.082 đ** ghi nhận vượt cam kết —
+AP-REC…1606fb (+98,2 tr), AP-REC…ababce (+25,2 tr), AP-REC…e6763b (+34 ng). Route `{payable}` → người có quyền
+Tài chính · Ghi nhận / Xác nhận.
+
+**Đường dẫn**: dùng tham số deep-link sẵn có của Trung tâm Tài chính, không phải sửa giao diện —
+công nợ → `/finance/payables?supplier=<id>`, đề nghị chi → `/finance/requests?request=<id>`,
+ngân sách → `/finance/cost?project=<id>`, thu chi → `/finance/cash`.
+
+### Chỉ viết luật cho bất biến mà CSDL KHÔNG tự chặn
+
+Rà `pg_constraint` trước khi viết. Các ca sau đã có CHECK / unique index lo, viết luật là mã chết — **đã bỏ**:
+số tiền ≤ 0 (`amount > 0` trên đề nghị chi, phiếu tiền, bút toán quỹ), chuyển tiền cùng một tài khoản
+(`kind <> 'transfer' or from_account_id <> to_account_id`), ngân sách thiếu lý do (`length(btrim(reason)) > 0`),
+**một dự án có nhiều ngân sách approved** (`finance_project_budgets_one_current` unique index),
+nhiều ngân sách chờ duyệt (`finance_project_budgets_one_pending`).
+
+### Bẫy đã gặp: view chặn số âm làm luật thành mã chết
+
+Bản đầu của `payable_over_settled` đọc `supplier_payable_document_balances.outstanding_amount < 0`. View đó tính
+`GREATEST(0, recognized − credit − paid − non_cash_credit)` nên **không bao giờ âm** — luật sẽ không bao giờ báo, và
+phần trả/giảm trừ thừa cũng không hiện trên màn công nợ. Ca dựng trong smoke bắt được lỗi này; luật đã sửa để tự tính
+lại từ các thành phần gốc. Bài học: luật đọc view phải kiểm biểu thức của view, đừng tin tên cột.
+
+### Kiểm: ca dựng thay cho dữ liệu thật
+
+`supabase/tests/control_k3_finance_smoke.sql` (giao dịch tự hủy trên Cloud). Vì 9 luật không có dữ liệu thật để đo,
+smoke **tự dựng ca lệch** rồi kiểm luật bắt đúng và bỏ ca đi thì sạch:
+
+| Ca dựng | Kiểm |
+|---|---|
+| Đặt chứng từ còn nợ sang trạng thái "đã trả" | `payable_status_vs_balance` bắt đúng, đưa về "open" thì sạch |
+| Giảm trừ vượt giá trị ghi nhận | `payable_over_settled` bắt đúng + ghi đúng nguyên nhân + đúng số thừa; kiểm cả việc view vẫn trả 0 |
+| Đổi `source_id` sang uuid lạ | `payable_orphan_source` bắt đúng |
+| Đề nghị chi: số tiền ≠ tổng dòng, dòng vượt số còn nợ, nộp 10 ngày trước | 3 luật đề nghị chi bắt đúng; sửa cho khớp thì luật số tiền sạch |
+| Ngân sách tổng 5 tr, dòng 3 tr | `budget_total_vs_lines` bắt đúng, khớp lại thì sạch |
+| Phiếu tiền `confirmed` không có bút toán quỹ | `cash_entry_mismatch` bắt đúng + ghi đúng nguyên nhân |
+
+**Thứ tự quan trọng**: bộ chạy (`control_run`) phải chạy **trước** khi dựng ca — dữ liệu dựng làm các luật K0 đang
+`live` báo và sinh thông báo, làm khẳng định "shadow không báo ai" đỏ oan.
+
+Ngoài ra smoke kiểm: 10 luật chạy không lỗi, `object_key` không trùng, mọi dòng có đường dẫn `/finance…`,
+chạy lần hai không mở trùng, không sinh thông báo nào, và ghi lại hiện trạng số dòng 5 bảng Tài chính để lần sau so.
+
+## Việc tiếp (K3 đợt 3+)
+
+Còn ~60 luật: Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất.
 Mỗi luật mới vào shadow tối thiểu 1 tuần, xem số lệch thật, sửa luật báo sai, rồi mới để chủ SP bật Báo người xử lý.
+Phân hệ chưa có dữ liệu thật thì làm như đợt 2: dựng ca trong smoke để chứng minh luật, và nói rõ số 0 là "chưa dùng",
+không phải "sạch".

@@ -1,4 +1,4 @@
-# HANDOFF — Kiểm soát viên AI (K0–K3 đợt 1) · cập nhật 24/10/2026
+# HANDOFF — Kiểm soát viên AI (K0–K3 đợt 2) · cập nhật 24/10/2026
 
 Đọc file này trước khi làm tiếp phần **Kiểm soát viên** (luật phát hiện lệch dữ liệu, chặn lúc lưu, dải cảnh báo trên chứng từ).
 Chi tiết kỹ thuật từng đợt: [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md). Lộ trình K0–K5 chủ SP đã xem:
@@ -35,6 +35,7 @@ Hai vòng:
 | #337 | Dọn VAT: 12 đợt chưa nhận về VAT đơn; PO-259 đợt 1 tính lại giá trị | 20261030110000 |
 | #340 | **Dải cảnh báo trên chứng từ** (ngăn Đơn hàng + Tiến độ cung ứng đề xuất) | 20261030170000 |
 | #344 | **K3 đợt 1**: 9 luật phân hệ Kho, tất cả `shadow`; link mở sẵn mã vật tư / phiên kiểm kê | 20261031090000 |
+| #345 | **K3 đợt 2**: 10 luật phân hệ Tài chính, tất cả `shadow`; smoke dựng ca thay dữ liệu thật | 20261031100000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -74,7 +75,7 @@ Hai vòng:
 
 Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn kiểm tra (`gen.py` ở scratchpad phiên 4c15fcb3, sẽ mất). Lần sau làm lại cùng cách: dump hàm prod bằng `pg_get_functiondef`, rồi thay chuỗi, mỗi chỗ thay phải khớp đúng 1 lần.
 
-## 5. Trạng thái 27 luật trên prod (24/10)
+## 5. Trạng thái 37 luật trên prod (24/10)
 
 | Luật | Mức | Chế độ | Mở mới | Mở cũ | Ghi chú |
 |---|---|---|---:|---:|---|
@@ -106,6 +107,17 @@ Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn ki�
 | count_open_stale | P2 | shadow | 1 | 0 | KK-20261012-B2078 mở 12 ngày |
 | count_variance_no_reason | P1 | shadow | 0 | 0 | |
 | transfer_not_received | P1 | shadow | 0 | 0 | `wms_transfer_lines` còn rỗng |
+| **K3 đợt 2 — Tài chính (mới 24/10, tất cả shadow)** | | | | | |
+| payable_over_committed | P1 | shadow | 0 | 3 | 123.428.082 đ nợ vượt cam kết, đều tháng 8 |
+| payable_over_settled | P0 | shadow | 0 | 0 | luật canh; view chặn số còn nợ ở 0 nên phải tự tính lại |
+| payable_status_vs_balance | P0 | shadow | 0 | 0 | luật canh |
+| payable_no_due_date | P1 | shadow | 0 | 0 | luật canh; ảnh hưởng dự báo chi |
+| payable_orphan_source | P0 | shadow | 0 | 0 | luật canh |
+| pr_amount_vs_lines | P0 | shadow | 0 | 0 | **chưa có đề nghị chi nào trên prod** |
+| pr_over_outstanding | P0 | shadow | 0 | 0 | luật canh |
+| pr_stuck_pending | P2 | shadow | 0 | 0 | luật canh |
+| budget_total_vs_lines | P1 | shadow | 0 | 0 | **chưa có ngân sách nào trên prod** |
+| cash_entry_mismatch | P0 | shadow | 0 | 0 | **chưa có phiếu tiền nào trên prod** |
 
 Lấy số mới nhất:
 
@@ -125,6 +137,8 @@ group by 1, 2, 3, r.sort_order order by r.sort_order;
 1. Bật 8 luật Mua hàng / Công nợ còn ở chế độ shadow (bảng trên). Em đề xuất bật hết; hiện chỉ có lệch cũ, riêng `mr_completed_short` có 4 lệch mới.
 1b. 9 luật Kho (K3 đợt 1) **chạy shadow từ 24/10**: để đủ 1 tuần (tới 31/10) rồi xem lại số lệch mới trước khi bật. Riêng
    `count_open_stale` có 1 lệch mới thật (KK-20261012-B2078 mở 12 ngày) — có thể bật sớm vì chỉ báo thủ kho của kho đó.
+1c. 10 luật Tài chính (K3 đợt 2) **chạy shadow từ 24/10**. Chỉ `payable_over_committed` có lệch thật (3 chứng từ,
+   123,4 tr); 9 luật kia số 0 vì **chưa có dữ liệu**, không phải vì sạch — xem mục tiếp theo.
 2. Giao lệch **cũ** có tiền cho người xử lý (vào Việc của tôi, không báo đẩy):
    - `receipt_without_ap` 124,5 tr → kế toán.
    - `batch_vat_differs` 6 lệch cũ 11,4 tr → kế toán.
@@ -133,6 +147,14 @@ group by 1, 2, 3, r.sort_order order by r.sort_order;
    Cần sửa `control_can_view` / route cho từng luật, hoặc thêm cờ "giao cả dữ liệu cũ" trên `control_rules`.
 3. PO-259 đợt 1, 854 tr, đã duyệt chất lượng nhưng chưa nhập kho: giao thủ kho hoàn tất, hoặc Mua hàng kết thúc thiếu.
 4. 14 lệch đặt vượt cũ: (a) lập bảng thép thừa để chủ SP xem — đề xuất; hoặc (b) chấp nhận hàng loạt.
+
+**Cần nói với chủ SP — phân hệ Tài chính chưa được dùng thật** (phát hiện khi làm K3 đợt 2, 24/10). Trên prod:
+công nợ NCC có 62 chứng từ (7,4 tỷ ghi nhận) nhưng `supplier_payment_allocations` = **0** (chưa ghi một đồng thanh
+toán NCC nào), `finance_payment_requests` = 0 (chưa có đề nghị chi), `finance_project_budgets` = 0 (chưa có ngân
+sách), `finance_cash_movements` / `finance_cash_entries` = 0 (chưa có thu chi tiền). Nghĩa là phần thu chi / đề nghị
+chi / ngân sách của Vioo đang chưa chạy — có thể kế toán vẫn làm trên MISA. Cần hỏi chủ SP: định dùng Vioo cho phần
+này từ khi nào, có cần nhập số dư đầu kỳ không. Trước khi có dữ liệu thì 9 luật canh Tài chính không đo được, chỉ
+chứng minh bằng ca dựng trong smoke.
 
 **Cần nói lại với chủ SP**: chủ SP nghĩ PO-609 và PO-671 là phiếu nháp sẽ bỏ, nhưng:
 - **PO-609** đã giao, đã nhận hàng, bảng đối soát DCHD-202610-2865B0 đã ghi nợ. Muốn bỏ phải đảo đối soát + công nợ trước.
@@ -146,14 +168,18 @@ Khi chủ SP bỏ xong, Chấp nhận 2 lệch với lý do "phiếu thử".
 - Người mua PO-439: đối chiếu hóa đơn VAT (đơn 0%, đợt 10%).
 - Thủ kho: chốt PO-116/163/181 đợt 1 ở Đối chiếu nhận hàng.
 
-**Bước tiếp theo**: K3 đợt 1 (Kho) đã xong 24/10 — xem mục K3 trong [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md),
+**Bước tiếp theo**: K3 đợt 1 (Kho) + đợt 2 (Tài chính) đã xong 24/10 — xem mục K3 trong [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md),
 gồm cả 3 luật đã **bỏ sau khi đo** vì sẽ thành nhiễu (đừng viết lại). Còn ~70 luật: Tài chính (thu chi, đề nghị chi, ngân sách),
 Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình. Mỗi luật mới chạy shadow ít nhất 1 tuần, xem số lệch thật,
-sửa luật báo sai, rồi mới để chủ SP bật.
+sửa luật báo sai, rồi mới để chủ SP bật. Còn ~60 luật.
 
 **Cách thêm một đợt luật** (đã dùng cho K3 đợt 1): dò số lệch thật bằng `scripts/cloud-sql.mjs` TRƯỚC khi viết hàm luật;
 luật nào báo phần lớn dữ liệu bình thường thì bỏ và ghi lý do vào doc 16; `link` phải mở đúng chỗ sửa
-(`?q=` cho màn có `useSearchParamPrefill`, `?tx=` cho phiếu kho); smoke phải chốt số lệch thật + bất biến nào bắt buộc = 0.
+(`?q=` cho màn có `useSearchParamPrefill`, `?tx=` cho phiếu kho, `?supplier=` / `?request=` / `?project=` cho Trung tâm
+Tài chính); smoke phải chốt số lệch thật + bất biến nào bắt buộc = 0. **Rà `pg_constraint` trước**: CHECK / unique index
+đã chặn thì đừng viết luật (mã chết). **Luật đọc view phải kiểm biểu thức của view** — `outstanding_amount` có
+`GREATEST(0, …)` nên điều kiện "< 0" không bao giờ đúng. Phân hệ chưa có dữ liệu thật thì **dựng ca lệch trong smoke**
+(như đợt 2), và chạy `control_run` TRƯỚC khi dựng ca, nếu không dữ liệu dựng làm luật live cũ sinh thông báo.
 
 ## 7. Cách làm việc (lệnh hay dùng)
 
