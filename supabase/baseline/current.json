@@ -426,7 +426,8 @@
     "20261031090000_control_k3_wms.sql",
     "20261031100000_control_k3_finance.sql",
     "20261031110000_authorization_dot4a_project_member_view.sql",
-    "20261031120000_control_k3_hrm.sql"
+    "20261031120000_control_k3_hrm.sql",
+    "20261031130000_work_attachment_no_fallback_variant.sql"
   ],
   "forbidIncludeAll": true
 }

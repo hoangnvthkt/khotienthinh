@@ -56,6 +56,18 @@ const describeEditError = (err: any): string => {
   return err?.message || 'Không mở được trình sửa bước duyệt.';
 };
 
+// Máy chủ chỉ gửi mã; màn phải nói người dùng cần làm gì (24/10, dự án SMB-2026).
+const BINDING_ERROR_MESSAGES: Record<string, string> = {
+  WORKFLOW_TEMPLATE_OWNED_BY_OTHER_SCOPE: 'Bản riêng của dự án chỉ áp dụng cho cả dự án, không gắn riêng một công trường. Chọn phạm vi “Riêng dự án” rồi lưu lại.',
+};
+
+const describeBindingError = (err: any, fallback: string): string => {
+  const code = Object.keys(BINDING_ERROR_MESSAGES).find(key => err?.message?.includes(key));
+  return code ? BINDING_ERROR_MESSAGES[code] : err?.message || fallback;
+};
+
+const OWNED_SCOPE_HINT = 'Bản riêng của dự án áp dụng cho cả dự án; không gắn riêng một công trường.';
+
 type EditSession = { template: WorkflowTemplate; nodes: WorkflowNode[] };
 
 const ProjectWorkflowBindingPanel: React.FC<Props> = ({
@@ -253,13 +265,13 @@ const ProjectWorkflowBindingPanel: React.FC<Props> = ({
         subjectType: 'material_request',
         workflowTemplateId: templateId,
         projectId,
-        constructionSiteId: targetScope === 'site' ? constructionSiteId || null : null,
+        constructionSiteId: effectiveTargetScope === 'site' ? constructionSiteId || null : null,
       });
       await refresh();
       setShowChange(false);
       setNotice('Đã áp dụng mẫu quy trình. Phiếu đang chạy vẫn đi theo các bước cũ; phiếu gửi mới sẽ theo mẫu này.');
     } catch (err: any) {
-      setError(err?.message || 'Không lưu được cấu hình quy trình.');
+      setError(describeBindingError(err, 'Không lưu được cấu hình quy trình.'));
     } finally {
       setSaving(false);
     }
@@ -274,19 +286,23 @@ const ProjectWorkflowBindingPanel: React.FC<Props> = ({
       await projectWorkflowService.removeBinding({
         subjectType: 'material_request',
         projectId,
-        constructionSiteId: targetScope === 'site' ? constructionSiteId || null : null,
+        constructionSiteId: effectiveTargetScope === 'site' ? constructionSiteId || null : null,
       });
       await refresh();
       setShowChange(false);
       setNotice('Đã bỏ cấu hình riêng. Dự án quay về quy trình cấp trên.');
     } catch (err: any) {
-      setError(err?.message || 'Không xóa được cấu hình riêng.');
+      setError(describeBindingError(err, 'Không xóa được cấu hình riêng.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const selectedScopeMatchesEffective = scope === targetScope;
+  // Mẫu riêng dự án chỉ gắn được ở phạm vi dự án (app_private: WORKFLOW_TEMPLATE_OWNED_BY_OTHER_SCOPE).
+  const selectedTemplate = activeTemplates.find(template => template.id === templateId) || null;
+  const selectedOwnedByProject = Boolean(selectedTemplate?.ownerProjectId);
+  const effectiveTargetScope: 'project' | 'site' = selectedOwnedByProject ? 'project' : targetScope;
+  const selectedScopeMatchesEffective = scope === effectiveTargetScope;
   const hasIssue = (Boolean(loadError) && !loadDenied) || Boolean(configuration && !configuration.valid);
 
   const renderSteps = () => {
@@ -496,18 +512,30 @@ const ProjectWorkflowBindingPanel: React.FC<Props> = ({
                       {showChange && (
                         <div className="space-y-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
                           {constructionSiteId && (
-                            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Phạm vi áp dụng">
-                              {(['site', 'project'] as const).map(option => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  aria-pressed={targetScope === option}
-                                  onClick={() => setTargetScope(option)}
-                                  className={`rounded-lg border px-3 py-2 text-xs font-black ${targetScope === option ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'}`}
-                                >
-                                  {scopeLabel[option]}
-                                </button>
-                              ))}
+                            <div>
+                              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Phạm vi áp dụng">
+                                {(['site', 'project'] as const).map(option => {
+                                  const locked = selectedOwnedByProject && option === 'site';
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      disabled={locked}
+                                      title={locked ? OWNED_SCOPE_HINT : undefined}
+                                      aria-pressed={effectiveTargetScope === option}
+                                      onClick={() => setTargetScope(option)}
+                                      className={`rounded-lg border px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40 ${effectiveTargetScope === option ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200' : 'border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400'}`}
+                                    >
+                                      {scopeLabel[option]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {selectedOwnedByProject && (
+                                <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                  <Lock size={12} className="mt-0.5 shrink-0" /> {OWNED_SCOPE_HINT}
+                                </p>
+                              )}
                             </div>
                           )}
                           <div>
