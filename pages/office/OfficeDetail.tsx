@@ -16,7 +16,9 @@ import {
   LockKeyhole,
   Paperclip,
   Pencil,
+  RotateCcw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Star,
   UserRound,
@@ -57,6 +59,7 @@ import {
 import { useOfficeCommand, OfficeAudience } from "./OfficeDraft";
 const actionLabels: Partial<Record<OfficeCommand, string>> = {
   cancel: "Hủy văn bản",
+  restore: "Mở lại văn bản",
   add_recipients: "Gửi bổ sung",
   add_watchers: "Thêm người theo dõi",
   confirm_read: "Tôi đã đọc và hiểu nội dung",
@@ -96,6 +99,8 @@ const activityLabels: Record<string, string> = {
   ATTACHMENT_RESERVED: "Chuẩn bị tải tệp",
   ATTACHMENT_UPLOADED: "Tải tệp đính kèm",
   ATTACHMENT_REMOVED: "Gỡ tệp đính kèm",
+  AMENDED: "Sửa văn bản đã ban hành",
+  RESTORED: "Mở lại từ kho lưu trữ",
 };
 export function OfficeDetailPage({
   service,
@@ -229,7 +234,10 @@ function OfficeDetailContent({
                 : "start"
               : "acknowledge"
             : null;
-  const guidance = d.revoked_at
+  const archived = ["CANCELLED", "REVOKED", "REJECTED", "EXPIRED", "ARCHIVED"].includes(d.status);
+  const guidance = d.status === "CANCELLED"
+    ? "Văn bản đã hủy và được chuyển vào kho lưu trữ. Nội dung vẫn tra cứu được."
+    : d.revoked_at
     ? "Văn bản đã thu hồi. Không sử dụng nội dung này để thực hiện công việc."
     : d.status === "REJECTED"
       ? "Văn bản đã bị từ chối. Xem lý do trong quy trình duyệt hoặc lịch sử."
@@ -313,10 +321,18 @@ function OfficeDetailContent({
       <div
         className="office-action-banner"
         data-revoked={!!d.revoked_at || d.status === "REVOKED" || undefined}
+        data-archived={archived || undefined}
       >
         <div>
           <ShieldCheck size={20} />
-          <p>{guidance}</p>
+          <p>
+            {guidance}
+            {archived && detail.archiveReason && (
+              <small className="office-archive-reason">
+                Lý do: {detail.archiveReason}
+              </small>
+            )}
+          </p>
         </div>
         <div className="office-action-buttons">
           {caps.edit && (
@@ -327,6 +343,25 @@ function OfficeDetailContent({
               <Pencil size={15} />
               Chỉnh sửa
             </Link>
+          )}
+          {caps.amend && (
+            <Link
+              className="office-secondary"
+              to={`/office/documents/${d.id}/amend`}
+            >
+              <ShieldAlert size={15} />
+              Sửa văn bản đã ban hành
+            </Link>
+          )}
+          {caps.restore && (
+            <button
+              className="office-primary"
+              disabled={busy}
+              onClick={() => setModal("restore")}
+            >
+              <RotateCcw size={15} />
+              Mở lại văn bản
+            </button>
           )}
           {caps.approve && (
             <button
@@ -806,7 +841,7 @@ function OfficeActionDialog({
         ? "Đăng ký tiếp nhận"
         : actionLabels[action] || "Xác nhận";
   const [specs, setSpecs] = useState<RecipientSpec[]>([]);
-  const needReason = ["return", "reject", "revoke", "cancel"].includes(action);
+  const needReason = ["return", "reject", "revoke", "cancel", "restore"].includes(action);
   const descriptions: Partial<Record<OfficeCommand, string>> = {
     add_watchers: "Người được thêm có thể xem và nhận cập nhật văn bản trong phạm vi quyền Office được cấp.",
     add_recipients:
@@ -814,12 +849,15 @@ function OfficeActionDialog({
     confirm_read:
       "Xác nhận bạn đã đọc và hiểu nội dung văn bản. Thao tác này được lưu cùng thời điểm và tài khoản của bạn.",
     cancel:
-      "Dừng bản nháp hoặc yêu cầu đang chờ duyệt. Lịch sử được giữ để tra cứu.",
+      "Dừng bản nháp hoặc yêu cầu đang chờ duyệt. Văn bản chuyển vào kho lưu trữ, lịch sử được giữ để tra cứu.",
+    restore:
+      "Đưa văn bản ra khỏi kho lưu trữ để dùng lại. Bản nháp trở lại để soạn tiếp; văn bản đã ban hành trở lại danh sách đang hiệu lực và người nhận được báo.",
     publish:
       "Phát hành sẽ chốt người nhận và khóa nội dung, người ký, số và tệp đính kèm. Người nhận sẽ được thông báo.",
     issue_number:
       "Cấp đúng số người soạn đã chọn; nếu để trống thì cấp số tiếp theo trong sổ. Số đã cấp được giữ vĩnh viễn; nội dung sẽ được khóa.",
-    archive: "Văn bản vẫn có thể tra cứu và người nhận vẫn giữ quyền xem.",
+    archive:
+      "Văn bản chuyển vào kho lưu trữ, không còn ở danh sách đang dùng. Vẫn tra cứu được và người nhận vẫn giữ quyền xem.",
     revoke:
       "Người nhận sẽ được thông báo thu hồi. Số văn bản được giữ trong lịch sử.",
     approve:
@@ -1106,6 +1144,9 @@ function OfficeActivityTimeline({
                   </p>
                   {event.context.number && (
                     <small>{event.context.number}</small>
+                  )}
+                  {event.context.detail && (
+                    <small>Đã sửa: {event.context.detail}</small>
                   )}
                   {event.context.comment && (
                     <blockquote>{event.context.comment}</blockquote>
