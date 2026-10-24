@@ -101,6 +101,42 @@ Kiểm: `supabase/tests/control_k2_save_guards_smoke.sql` (giao dịch tự hủ
   Đối chiếu hóa đơn NCC trước: hóa đơn thực tế không VAT thì ghi lý do VAT ở đợt thay vì điều chỉnh. Bật **Báo người xử lý** cho luật `batch_vat_differs` thì từng đợt vào Việc của tôi của người quyền Tài chính.
 - **Không sửa**: PO-439 (đơn 0%, đợt 10% — Mua hàng kiểm VAT đơn), PO-373 (đã hủy), 6 đợt cũ PO-038/044/054/057/089/110 (nhận ngoài kho, tiền hàng 0).
 
-## Việc tiếp (K3)
+## K3 đợt 1 — phủ luật sang phân hệ Kho (24/10, migration `20261031090000_control_k3_wms`)
 
-Phủ luật sang các phân hệ khác (~80 luật), dải cảnh báo ngay trên chứng từ.
+9 luật mới, **mặc định shadow** (không báo ai, chỉ Admin thấy ở tab Kiểm soát). Cách làm: mỗi luật là một bất biến của sổ kho;
+đo số lệch trên dữ liệu thật trước khi đưa vào, luật nào báo phần lớn dữ liệu bình thường thì bỏ (xem "Đã bỏ" bên dưới).
+
+| Mã | Mức | Luật | Mới | Cũ | Ghi chú |
+|---|---|---|---:|---:|---|
+| stock_vs_ledger | P0 | Tồn kho khác tổng sổ kho | 0 | 0 | bất biến gốc; smoke bắt buộc = 0 |
+| stock_negative | P0 | Tồn kho âm | 0 | 0 | bất biến gốc; smoke bắt buộc = 0 |
+| ledger_negative_after | P0 | Ghi sổ làm tồn âm tại thời điểm | 0 | 34 | gom theo phiếu; mới nhất 13/07 |
+| stock_value_negative | P0 | Giá trị tồn kho âm | 0 | 4 | −11.306.988 đ |
+| stock_no_value | P1 | Có hàng trong kho mà giá trị tồn 0 | 0 | 25 | hệ quả của nhập kho giá 0 (hết phát sinh sau 03/10) |
+| wms_adjust_no_reason | P1 | Phiếu điều chỉnh / hao hụt kho không ghi lý do | 0 | 4 | |
+| count_open_stale | P2 | Phiên kiểm kê mở lâu chưa chốt | 1 | 0 | KK-20261012-B2078, mở 12 ngày |
+| count_variance_no_reason | P1 | Dòng kiểm kê lệch chưa ghi nguyên nhân | 0 | 0 | |
+| transfer_not_received | P1 | Điều chuyển đã gửi chưa nhận đủ | 0 | 0 | `wms_transfer_lines` còn rỗng; luật canh sẵn |
+
+Tổng: **68 lệch** (1 mới, 67 cũ). Route `{warehouse}` → thủ kho của kho; không xác định được thì chỉ Admin.
+
+**Đường dẫn mở đúng chỗ sửa**: luật tồn kho → `/inventory?q=<sku>` (màn Kho tự chuyển tab Tồn kho và tìm sẵn mã,
+qua `useSearchParamPrefill`); luật phiếu → `/operations?tx=<id>`; luật kiểm kê → `/audit?q=<số phiên>`
+(đã thêm `useSearchParamPrefill` vào `StockCountView`).
+
+**Đã bỏ sau khi đo** (báo phần lớn dữ liệu bình thường → sẽ thành nhiễu):
+- *Xuất cho dự án không gắn yêu cầu*: 54/80 phiếu không gắn — đó là cách làm thường, không phải lệch.
+- *Phiếu nhập kho PENDING quá 3 ngày*: 38 phiếu, nhưng phần lớn là đợt giao hàng chưa về thật; ca lệch thật
+  (đợt đã nhận mà phiếu kho chưa xong) đã có luật `batch_wms_status`.
+- *Phiếu kho có dòng đơn giá 0 (per phiếu)*: 115 phiếu nhập + 65 phiếu xuất, hết phát sinh sau 03/10 — hệ quả đã
+  được `stock_no_value` / `stock_value_negative` báo ở đúng mức sửa (mã vật tư + kho, sửa bằng phiếu điều chỉnh giá trị).
+  Để lại cho đợt sau, sau khi dọn xong dữ liệu cũ.
+
+Kiểm: `supabase/tests/control_k3_wms_smoke.sql` (giao dịch tự hủy trên Cloud: 9 luật chạy không lỗi, `object_key` không trùng,
+2 bất biến gốc = 0, hai luật giá trị không chồng nhau, mọi dòng có đường dẫn mở được, bộ chạy không mở trùng,
+luật shadow không sinh thông báo, cờ lệch cũ khớp `since_date`).
+
+## Việc tiếp (K3 đợt 2+)
+
+Còn ~70 luật: Tài chính (thu chi, đề nghị chi, ngân sách), Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình.
+Mỗi luật mới vào shadow tối thiểu 1 tuần, xem số lệch thật, sửa luật báo sai, rồi mới để chủ SP bật Báo người xử lý.

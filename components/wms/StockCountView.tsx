@@ -4,6 +4,7 @@ import {
   RefreshCw, Save, Search, Send, ShieldCheck, Warehouse, X, XCircle,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
+import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 import { useToast } from '../../context/ToastContext';
 import { formatQuantityInput, parseQuantityInput } from '../../lib/quantityInput';
 import { SpecCountRows, specCountInvalid, specCountTotal, type SpecCountRow } from './SpecCountRows';
@@ -45,6 +46,8 @@ export const StockCountView: React.FC<{ items: Array<{ id: string; name: string;
   const [message, setMessage] = useState('');
   const [tile, setTile] = useState<Tile | null>(null);
   const [search, setSearch] = useState('');
+  // Mở đúng phiên từ link (/audit?q=<số phiếu>): lệch Kiểm soát viên, Tìm toàn hệ thống.
+  useSearchParamPrefill(setSearch);
   const [warehouseId, setWarehouseId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<StockCountDetail | null>(null);

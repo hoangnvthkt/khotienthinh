@@ -1,4 +1,4 @@
-# HANDOFF — Kiểm soát viên AI (K0–K2 + dải cảnh báo) · cập nhật 24/10/2026
+# HANDOFF — Kiểm soát viên AI (K0–K3 đợt 1) · cập nhật 24/10/2026
 
 Đọc file này trước khi làm tiếp phần **Kiểm soát viên** (luật phát hiện lệch dữ liệu, chặn lúc lưu, dải cảnh báo trên chứng từ).
 Chi tiết kỹ thuật từng đợt: [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md). Lộ trình K0–K5 chủ SP đã xem:
@@ -34,6 +34,7 @@ Hai vòng:
 | #336 | **K2**: chặn lúc lưu 6 ca P0 (mục 4) + sửa 5 luật K0 + sửa dữ liệu PO-272 đợt 2 | 20261030100000 |
 | #337 | Dọn VAT: 12 đợt chưa nhận về VAT đơn; PO-259 đợt 1 tính lại giá trị | 20261030110000 |
 | #340 | **Dải cảnh báo trên chứng từ** (ngăn Đơn hàng + Tiến độ cung ứng đề xuất) | 20261030170000 |
+| #344 | **K3 đợt 1**: 9 luật phân hệ Kho, tất cả `shadow`; link mở sẵn mã vật tư / phiên kiểm kê | 20261031090000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -73,7 +74,7 @@ Hai vòng:
 
 Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn kiểm tra (`gen.py` ở scratchpad phiên 4c15fcb3, sẽ mất). Lần sau làm lại cùng cách: dump hàm prod bằng `pg_get_functiondef`, rồi thay chuỗi, mỗi chỗ thay phải khớp đúng 1 lần.
 
-## 5. Trạng thái 18 luật trên prod (24/10)
+## 5. Trạng thái 27 luật trên prod (24/10)
 
 | Luật | Mức | Chế độ | Mở mới | Mở cũ | Ghi chú |
 |---|---|---|---:|---:|---|
@@ -95,6 +96,16 @@ Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn ki�
 | mr_completed_short | P1 | shadow | 4 | 0 | |
 | received_over | P2 | shadow | 0 | 1 | |
 | batch_quality_stuck | P1 | shadow | 0 | 1 | PO-259 đợt 1, 854 tr, chờ nhập kho từ tháng 8 |
+| **K3 đợt 1 — Kho (mới 24/10, tất cả shadow)** | | | | | |
+| stock_vs_ledger | P0 | shadow | 0 | 0 | bất biến gốc: tồn = tổng sổ; smoke bắt buộc = 0 |
+| stock_negative | P0 | shadow | 0 | 0 | bất biến gốc; smoke bắt buộc = 0 |
+| ledger_negative_after | P0 | shadow | 0 | 34 | ghi sổ làm tồn âm; mới nhất 13/07 |
+| stock_value_negative | P0 | shadow | 0 | 4 | −11.306.988 đ |
+| stock_no_value | P1 | shadow | 0 | 25 | có hàng mà giá trị tồn 0 |
+| wms_adjust_no_reason | P1 | shadow | 0 | 4 | điều chỉnh / hao hụt không lý do |
+| count_open_stale | P2 | shadow | 1 | 0 | KK-20261012-B2078 mở 12 ngày |
+| count_variance_no_reason | P1 | shadow | 0 | 0 | |
+| transfer_not_received | P1 | shadow | 0 | 0 | `wms_transfer_lines` còn rỗng |
 
 Lấy số mới nhất:
 
@@ -111,7 +122,9 @@ group by 1, 2, 3, r.sort_order order by r.sort_order;
 
 **Chờ chủ SP trả lời** (đã hỏi 24/10, chưa trả lời):
 
-1. Bật 8 luật còn ở chế độ shadow (bảng trên). Em đề xuất bật hết; hiện chỉ có lệch cũ, riêng `mr_completed_short` có 4 lệch mới.
+1. Bật 8 luật Mua hàng / Công nợ còn ở chế độ shadow (bảng trên). Em đề xuất bật hết; hiện chỉ có lệch cũ, riêng `mr_completed_short` có 4 lệch mới.
+1b. 9 luật Kho (K3 đợt 1) **chạy shadow từ 24/10**: để đủ 1 tuần (tới 31/10) rồi xem lại số lệch mới trước khi bật. Riêng
+   `count_open_stale` có 1 lệch mới thật (KK-20261012-B2078 mở 12 ngày) — có thể bật sớm vì chỉ báo thủ kho của kho đó.
 2. Giao lệch **cũ** có tiền cho người xử lý (vào Việc của tôi, không báo đẩy):
    - `receipt_without_ap` 124,5 tr → kế toán.
    - `batch_vat_differs` 6 lệch cũ 11,4 tr → kế toán.
@@ -133,7 +146,14 @@ Khi chủ SP bỏ xong, Chấp nhận 2 lệch với lý do "phiếu thử".
 - Người mua PO-439: đối chiếu hóa đơn VAT (đơn 0%, đợt 10%).
 - Thủ kho: chốt PO-116/163/181 đợt 1 ở Đối chiếu nhận hàng.
 
-**Bước tiếp theo đã đề xuất**: **K3** phủ luật sang Kho / Tài chính / Nhân sự (~80 luật). Mỗi luật mới chạy shadow ít nhất 1 tuần, xem số lệch thật, sửa luật báo sai, rồi mới để chủ SP bật.
+**Bước tiếp theo**: K3 đợt 1 (Kho) đã xong 24/10 — xem mục K3 trong [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md),
+gồm cả 3 luật đã **bỏ sau khi đo** vì sẽ thành nhiễu (đừng viết lại). Còn ~70 luật: Tài chính (thu chi, đề nghị chi, ngân sách),
+Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình. Mỗi luật mới chạy shadow ít nhất 1 tuần, xem số lệch thật,
+sửa luật báo sai, rồi mới để chủ SP bật.
+
+**Cách thêm một đợt luật** (đã dùng cho K3 đợt 1): dò số lệch thật bằng `scripts/cloud-sql.mjs` TRƯỚC khi viết hàm luật;
+luật nào báo phần lớn dữ liệu bình thường thì bỏ và ghi lý do vào doc 16; `link` phải mở đúng chỗ sửa
+(`?q=` cho màn có `useSearchParamPrefill`, `?tx=` cho phiếu kho); smoke phải chốt số lệch thật + bất biến nào bắt buộc = 0.
 
 ## 7. Cách làm việc (lệnh hay dùng)
 
@@ -191,6 +211,7 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
 - `control_findings_k0_smoke.sql` đã cũ từ K1 (K1 mở RPC cho mọi người dùng): chạy riêng sẽ đỏ, không phải lỗi mới.
 - Vòng chờ bằng `grep` trên JSON: `json_build_object` in `"key" : value` (có dấu cách trước `:`).
 - PostgREST: lỗi xung đột phiên bản dùng `PT409`, không dùng `40001` (vòng lặp vô hạn, sự cố 11/10).
+- `declare p record` trong plpgsql **che bí danh bảng** `pg_proc p` → lỗi "record p is not assigned yet". Đặt tên biến khác bí danh.
 
 ## 9. Quy tắc làm việc với chủ SP
 
