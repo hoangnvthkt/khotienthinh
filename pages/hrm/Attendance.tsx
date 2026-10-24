@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
+import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
@@ -92,6 +93,14 @@ const Attendance: React.FC = () => {
   // Trung tâm điều hành gửi người duyệt tới đúng đơn (?tab=proposals&proposal=<id>): chỉ mở danh sách, không mở form tạo.
   const [searchParams] = useSearchParams();
   const reviewProposalId = searchParams.get('proposal');
+  // Mở đúng người + đúng tháng từ link (/hrm/attendance?tab=timesheet&q=<tên>&month=&year=): lệch Kiểm soát viên.
+  useSearchParamPrefill(setSearchText);
+  useEffect(() => {
+    const month = Number(searchParams.get('month'));
+    const year = Number(searchParams.get('year'));
+    if (month >= 1 && month <= 12) setCurrentMonth(month);
+    if (year >= 2000 && year <= 2100) setCurrentYear(year);
+  }, [searchParams]);
   const openProposals = searchParams.get('tab') === 'proposals';
   const openProposalForm = openProposals && !reviewProposalId;
   // Người không quản lý chấm công mở trang thấy ngay lịch của mình; HR vẫn mặc định Bảng công.
