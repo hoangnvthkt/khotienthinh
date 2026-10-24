@@ -172,6 +172,9 @@ export interface OfficeSummary {
   project_name: string | null;
   is_recipient: boolean;
   read_at: string | null;
+  updated_at?: string;
+  /** Lý do văn bản vào kho lưu trữ, lấy từ lần hủy / thu hồi / từ chối / lưu trữ gần nhất. */
+  archive_reason?: string | null;
 }
 export interface OfficeAttachment {
   id: string;
@@ -198,6 +201,8 @@ export interface OfficeApproval {
 }
 export type OfficeCapability =
   | "edit"
+  | "amend"
+  | "restore"
   | "submit"
   | "approve"
   | "issue_number"
@@ -215,6 +220,7 @@ export type OfficePeopleKind = "recipients" | "viewers" | "followers" | "downloa
 export interface OfficePerson { user_id: string; name: string; username: string | null; occurred_at: string | null; }
 export interface OfficeDetail {
   issuedByName?: string | null;
+  archiveReason?: string | null;
   peoplePreview?: Record<OfficePeopleKind, OfficePage<OfficePerson>> | null;
   pendingRecipientSpecs?: RecipientSpec[];
   receipt?: { read_at: string | null; acknowledged_at: string | null } | null;
@@ -268,6 +274,7 @@ export interface OfficeDashboard {
   numbering: number;
   assigned: number;
   overdue: number;
+  archived: number;
   issuedThisMonth: number;
 }
 export interface OfficeRecipient {
@@ -284,6 +291,11 @@ export interface OfficeActivity {
   context: {
     comment?: string;
     number?: string;
+    /** Tóm tắt những gì lệnh sửa văn bản đã ban hành thay đổi. */
+    detail?: string;
+    changedFields?: string[];
+    attachmentsAdded?: number;
+    attachmentsRemoved?: number;
     version: number;
     status: OfficeStatus;
   };
@@ -291,6 +303,8 @@ export interface OfficeActivity {
 }
 export type OfficeCommand =
   | "download"
+  | "amend"
+  | "restore"
   | "add_watchers"
   | "confirm_read"
   | "cancel"

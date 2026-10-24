@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 // Edge Function) nhưng app_private.work_finish_attachment vẫn bắt ảnh phải có đủ thumbnail + display
 // + fallback → WORK_INVALID_VARIANTS (400) → Edge Function 500 → tệp kẹt 'processing' → màn báo
 // "Tệp đang được xử lý. Vui lòng thử lại sau ít phút." (Untitled.png, hai lần, đều 'rejected').
-const fix = readFileSync('supabase/migrations/20261031130000_work_attachment_no_fallback_variant.sql', 'utf8');
+const fix = readFileSync('supabase/migrations/20261031140000_work_attachment_no_fallback_variant.sql', 'utf8');
 const origin = readFileSync('supabase/migrations/20260907041036_work_r1a_private_attachments.sql', 'utf8');
 const processor = readFileSync('supabase/functions/work-attachments/processor.ts', 'utf8');
 const client = readFileSync('lib/work/workAttachmentService.ts', 'utf8');

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  Archive,
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
@@ -29,9 +30,11 @@ import type {
 import {
   CONFIDENTIALITY,
   displayDate,
+  OFFICE_ARCHIVE_STATUSES,
   OFFICE_GROUPS,
   OFFICE_STATUSES,
   OFFICE_VIEWS,
+  officeArchivedAt,
   processingLabel,
   URGENCY,
 } from "../../lib/office/officePresentation";
@@ -53,14 +56,20 @@ export const groupIcons = {
   OUTGOING: ArrowUpRight,
   INTERNAL: FileText,
 };
-function DocumentRows({ items }: { items: OfficeSummary[] }) {
+function DocumentRows({
+  items,
+  archive,
+}: {
+  items: OfficeSummary[];
+  archive?: boolean;
+}) {
   return (
-    <div className="office-document-list">
+    <div className="office-document-list" data-archive={archive || undefined}>
       <div className="office-list-heading">
         <span>Văn bản</span>
         <span>Trạng thái</span>
-        <span>Đơn vị / người ban hành</span>
-        <span>Ngày văn bản</span>
+        <span>{archive ? "Lý do vào kho" : "Đơn vị / người ban hành"}</span>
+        <span>{archive ? "Ngày vào kho" : "Ngày văn bản"}</span>
       </div>
       {items.map((doc) => {
         const Icon = groupIcons[doc.document_group];
@@ -113,17 +122,32 @@ function DocumentRows({ items }: { items: OfficeSummary[] }) {
               )}
             </div>
             <div className="office-row-issuer">
-              <span>
-                {doc.department_name || doc.signer_name || doc.creator_name}
-              </span>
-              <small>
-                {doc.signer_name && doc.department_name
-                  ? doc.signer_name
-                  : doc.creator_name}
-              </small>
+              {archive ? (
+                <>
+                  <span>{doc.archive_reason || "Không ghi lý do"}</span>
+                  <small>
+                    {doc.department_name || doc.signer_name || doc.creator_name}
+                  </small>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {doc.department_name || doc.signer_name || doc.creator_name}
+                  </span>
+                  <small>
+                    {doc.signer_name && doc.department_name
+                      ? doc.signer_name
+                      : doc.creator_name}
+                  </small>
+                </>
+              )}
             </div>
             <div className="office-row-date">
-              <span>{displayDate(doc.document_date)}</span>
+              <span>
+                {displayDate(
+                  archive ? officeArchivedAt(doc) : doc.document_date,
+                )}
+              </span>
               <ArrowRight size={16} />
             </div>
           </Link>
@@ -204,6 +228,11 @@ export function OfficeDashboardPage({
           >
             <Clock3 size={17} />
             <strong>{stats.data.overdue}</strong> văn bản quá hạn{" "}
+            <ArrowRight size={14} />
+          </Link>
+          <Link to="/office/documents?view=archive">
+            <Archive size={17} />
+            <strong>{stats.data.archived}</strong> văn bản trong kho lưu trữ{" "}
             <ArrowRight size={14} />
           </Link>
         </div>
@@ -315,11 +344,13 @@ export function OfficeListPage({
     ["created", Building2],
     ["following", Bell],
     ["favorites", Bookmark],
-    ["archive", FolderOpen],
   ] as const;
+  const archive = view === "archive";
   const title = OFFICE_VIEWS[view] || "Văn bản";
   const count = Array.from(params.keys()).filter(
-    (k) => !["page", "view", "sort", "group"].includes(k),
+    (k) =>
+      !["page", "view", "sort", "group"].includes(k) &&
+      !(archive && k === "status"),
   ).length;
   return (
     <div className="office-workspace">
@@ -335,7 +366,15 @@ export function OfficeListPage({
             {OFFICE_VIEWS[key]}
           </button>
         ))}
-        <p>KHO LƯU TRỮ</p>
+        <p>KHÔNG CÒN HIỆU LỰC</p>
+        <button
+          className={archive ? "is-active" : ""}
+          onClick={() => change("view", "archive")}
+        >
+          <Archive size={17} />
+          {OFFICE_VIEWS.archive}
+        </button>
+        <p>THƯ MỤC HỒ SƠ</p>
         {catalog.folders
           .filter((f) => f.is_active)
           .map((f) => (
@@ -356,7 +395,11 @@ export function OfficeListPage({
         <div className="office-page-heading">
           <div>
             <h1>{title}</h1>
-            <p>Tìm đúng văn bản, nắm rõ trạng thái và bước tiếp theo.</p>
+            <p>
+              {archive
+                ? "Văn bản đã hủy, thu hồi, từ chối hoặc hết hiệu lực — vẫn tra cứu được."
+                : "Tìm đúng văn bản, nắm rõ trạng thái và bước tiếp theo."}
+            </p>
           </div>
           <div className="office-inline-actions">
             <OfficeAssistant service={service} searchOnly />
@@ -379,21 +422,43 @@ export function OfficeListPage({
           </label>
         </div>
         <div className="office-group-tabs">
-          <button
-            className={!filters.group ? "is-active" : ""}
-            onClick={() => change("group", "")}
-          >
-            Tất cả
-          </button>
-          {Object.entries(OFFICE_GROUPS).map(([key, g]) => (
-            <button
-              key={key}
-              className={filters.group === key ? "is-active" : ""}
-              onClick={() => change("group", key)}
-            >
-              {g.label}
-            </button>
-          ))}
+          {archive ? (
+            <>
+              <button
+                className={!filters.status ? "is-active" : ""}
+                onClick={() => change("status", "")}
+              >
+                Tất cả
+              </button>
+              {OFFICE_ARCHIVE_STATUSES.map((key) => (
+                <button
+                  key={key}
+                  className={filters.status === key ? "is-active" : ""}
+                  onClick={() => change("status", key)}
+                >
+                  {OFFICE_STATUSES[key]}
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              <button
+                className={!filters.group ? "is-active" : ""}
+                onClick={() => change("group", "")}
+              >
+                Tất cả
+              </button>
+              {Object.entries(OFFICE_GROUPS).map(([key, g]) => (
+                <button
+                  key={key}
+                  className={filters.group === key ? "is-active" : ""}
+                  onClick={() => change("group", key)}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
         <div className="office-list-toolbar">
           <form
@@ -439,11 +504,17 @@ export function OfficeListPage({
                 onChange={(e) => change("status", e.target.value)}
               >
                 <option value="">Tất cả trạng thái</option>
-                {Object.entries(OFFICE_STATUSES).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
+                {Object.entries(OFFICE_STATUSES)
+                  .filter(([k]) =>
+                    archive
+                      ? (OFFICE_ARCHIVE_STATUSES as readonly string[]).includes(k)
+                      : true,
+                  )
+                  .map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
               </select>
             </OfficeField>
             <OfficeField label="Loại văn bản">
@@ -540,13 +611,13 @@ export function OfficeListPage({
                     onChange={(e) => change("to", e.target.value)}
                   />
                 </OfficeField>
-                <OfficeField label="Kho lưu trữ">
+                <OfficeField label="Thư mục hồ sơ">
                   <select
-                    aria-label="Lọc kho"
+                    aria-label="Lọc thư mục hồ sơ"
                     value={filters.folderId || ""}
                     onChange={(e) => change("folderId", e.target.value)}
                   >
-                    <option value="">Tất cả kho</option>
+                    <option value="">Tất cả thư mục</option>
                     {catalog.folders.map((f) => (
                       <option key={f.id} value={f.id}>
                         {f.name}
@@ -587,11 +658,15 @@ export function OfficeListPage({
           ) : list.error ? (
             <OfficeError error={list.error} retry={list.refresh} />
           ) : list.data?.items.length ? (
-            <DocumentRows items={list.data.items} />
+            <DocumentRows items={list.data.items} archive={archive} />
           ) : (
             <OfficeEmpty
-              title="Không có văn bản phù hợp"
-              description="Thử đổi bộ lọc hoặc chọn một danh sách khác."
+              title={archive ? "Kho lưu trữ đang trống" : "Không có văn bản phù hợp"}
+              description={
+                archive
+                  ? "Văn bản bị hủy, thu hồi hoặc hết hiệu lực sẽ được chuyển vào đây."
+                  : "Thử đổi bộ lọc hoặc chọn một danh sách khác."
+              }
             />
           )}
           {list.data && (

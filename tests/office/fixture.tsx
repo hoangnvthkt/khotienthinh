@@ -248,6 +248,44 @@ for (let i = 0; i < titles.length; i++) {
   } as OfficeDocument;
   docs.set(d.id, d);
 }
+// Kho lưu trữ: một văn bản đã thu hồi và một văn bản đã hủy để kiểm kho và màn chính.
+const archivedSeeds = [
+  {
+    id: "doc-6",
+    title: "Thông báo điều chỉnh giờ làm việc mùa khô năm 2026",
+    status: "REVOKED" as const,
+    document_number: "228/2026/TB-TT",
+    revoked_at: now,
+    issued_at: now,
+  },
+  {
+    id: "doc-7",
+    title: "Quyết định điều chuyển nhân sự Ban quản lý dự án SMB",
+    status: "CANCELLED" as const,
+    document_number: null,
+    revoked_at: null,
+    issued_at: null,
+  },
+];
+for (const seed of archivedSeeds) {
+  const base = docs.get("doc-1") as OfficeDocument;
+  docs.set(seed.id, {
+    ...base,
+    ...seed,
+    document_group: "ANNOUNCEMENT",
+    processing_status: null,
+    assigned_to: null,
+    processing_instruction: null,
+    received_ack_at: null,
+    processing_started_at: null,
+    require_acknowledgement: false,
+    numbered_at: seed.document_number ? now : null,
+  } as OfficeDocument);
+}
+const archiveReasons: Record<string, string> = {
+  "doc-6": "Thay bằng thông báo 231/2026/TB-TT sau khi Ban TGĐ chốt lại giờ làm.",
+  "doc-7": "Phương án nhân sự chưa được duyệt, dừng ban hành.",
+};
 const fixtureDownloads = new Set<string>();
 function fixturePeople(kind: string, page = 0, pageSize = 4) {
  const items = kind === 'downloads' ? [...fixtureDownloads].map(user_id => ({ user_id, name: 'Nguyễn Minh An', username: 'an', occurred_at: now })) : Array.from({ length: kind === 'followers' ? 2 : kind === 'viewers' ? (reads.has('doc-1') ? 37 : 36) : 42 }, (_, i) => ({ user_id: `person-${i}`, name: ['Đặng Thị Hương', 'Nguyễn Văn Năm', 'Nguyễn Thị Hương', 'Trần Hải Nam', 'Lê Thu Hà', 'Nguyễn Minh An'][i % 6], username: `person${i}`, occurred_at: now }));
@@ -259,6 +297,7 @@ function detail(id: string): OfficeDetail {
   const editable = ["DRAFT", "RETURNED"].includes(d.status);
   return {
     document: { ...d, effective_on: '2026-10-05' },
+    archiveReason: archiveReasons[id] ?? null,
     issuedByName: d.issued_at ? 'Đặng Thị Hương' : null,
     peoplePreview: { recipients: fixturePeople('recipients'), viewers: fixturePeople('viewers'), followers: fixturePeople('followers'), downloads: fixturePeople('downloads') },
     receipt: {
@@ -281,6 +320,10 @@ function detail(id: string): OfficeDetail {
       confirm_read:
         !!d.require_acknowledgement && !!d.issued_at && !confirmed.has(id),
       edit: editable,
+      amend: !!d.issued_at && ["ISSUED", "ARCHIVED"].includes(d.status),
+      restore:
+        (["CANCELLED", "REJECTED"].includes(d.status) && !d.document_number) ||
+        (d.status === "ARCHIVED" && !d.revoked_at && !!d.issued_at),
       submit: editable,
       approve: d.status === "PENDING_APPROVAL",
       issue_number: d.status === "WAITING_NUMBER",
@@ -446,6 +489,7 @@ const rpc = async (name: string, p: any) => {
             numbering: 2,
             assigned: 4,
             overdue: 1,
+            archived: 2,
             issuedThisMonth: 18,
           },
           error: null,
@@ -469,6 +513,10 @@ const rpc = async (name: string, p: any) => {
         };
       if (q === "detail") return { data: detail(x.id), error: null };
       if (q === "list" || q === "export") {
+        const archived = (d: { status: string }) =>
+          ["CANCELLED", "REVOKED", "REJECTED", "EXPIRED", "ARCHIVED"].includes(
+            d.status,
+          );
         const rows = [...docs.values()]
           .filter(
             (d) =>
@@ -478,7 +526,14 @@ const rpc = async (name: string, p: any) => {
                 `${d.title} ${d.document_number}`
                   .toLowerCase()
                   .includes(x.search.toLowerCase())) &&
-              (x.view !== "favorites" || bookmarks.get(d.id)?.favorite),
+              (x.view !== "favorites" || bookmarks.get(d.id)?.favorite) &&
+              (x.view === "archive"
+                ? archived(d)
+                : x.status ||
+                  !["all", "created", "following", "favorites"].includes(
+                    x.view || "all",
+                  ) ||
+                  !archived(d)),
           )
           .map((d) => ({
             ...d,
@@ -489,6 +544,7 @@ const rpc = async (name: string, p: any) => {
             project_name: d.document_group === "INCOMING" ? "RICO" : null,
             is_recipient: !!d.issued_at,
             read_at: reads.has(d.id) ? now : null,
+            archive_reason: archived(d) ? (archiveReasons[d.id] ?? null) : null,
           }));
         return {
           data: {
@@ -636,6 +692,20 @@ const rpc = async (name: string, p: any) => {
         d.issued_at = now;
       }
       if (action === "cancel") d.status = "CANCELLED";
+      if (action === "amend") {
+        const { reason, baseVersion, ...changes } = data;
+        Object.assign(d, changes);
+        archiveReasons[d.id] = archiveReasons[d.id] ?? "";
+      }
+      if (action === "restore") {
+        if (d.status === "ARCHIVED") {
+          d.status = "ISSUED";
+          d.archived_at = null;
+        } else {
+          d.status = "DRAFT";
+        }
+        delete archiveReasons[d.id];
+      }
       if (action === "confirm_read") {
         confirmed.add(d.id);
         reads.add(d.id);
