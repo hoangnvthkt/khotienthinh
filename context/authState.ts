@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import {
   Role,
+  type AuthorizationProjectMembership,
   type AuthorizationRoomAction,
   type AuthorizationSnapshot,
   type EffectivePermissionSource,
@@ -360,6 +361,14 @@ const mapAuthorizationRoomAction = (row: any): AuthorizationRoomAction => ({
   fallback: row.pbac_fallback_enabled ?? row.fallback ?? false,
 });
 
+const mapAuthorizationProjectMembership = (value: unknown): AuthorizationProjectMembership => {
+  const row = (value || {}) as Record<string, any>;
+  return {
+    projectId: String(row.project_id ?? row.projectId ?? ''),
+    constructionSiteId: row.construction_site_id ?? row.constructionSiteId ?? null,
+  };
+};
+
 export const mapAuthorizationSnapshot = (value: unknown): AuthorizationSnapshot => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Authorization snapshot is invalid');
@@ -378,12 +387,17 @@ export const mapAuthorizationSnapshot = (value: unknown): AuthorizationSnapshot 
     ? mappedSources.filter(source => source.sourceType.toUpperCase() !== 'LEGACY')
     : mappedSources;
 
+  const membershipsValue = row.project_memberships ?? row.projectMemberships;
+
   return {
     generatedAt: String(row.generated_at ?? row.generatedAt ?? ''),
     flags,
     sources,
     roomActions: Array.isArray(roomActionsValue)
       ? roomActionsValue.map(mapAuthorizationRoomAction)
+      : [],
+    projectMemberships: Array.isArray(membershipsValue)
+      ? membershipsValue.map(mapAuthorizationProjectMembership)
       : [],
   };
 };

@@ -196,6 +196,33 @@ const hasProjectRoomWorkAction = (
     && hasRoomAction(snapshot, scopeInput.projectId!, scopeInput.constructionSiteId, action.roomCode, action.actionCode));
 };
 
+// Đợt 4a — người có tên trong dự án (project_staff còn hiệu lực) tự xem được
+// phần chủ SP đã chốt, kể cả khi họ không có Room và không còn quyền Dự án
+// phạm vi toàn công ty. Máy chủ cho phép đúng bộ này ở
+// app_private.project_member_view_permission_codes(); hai danh sách phải khớp
+// nhau, nếu không màn hình sẽ hiện tab rồi báo rỗng.
+// Điều hành, Hợp đồng, Báo cáo, Tài chính vẫn qua công tắc xem nhạy cảm.
+const PROJECT_MEMBER_TAB_KEYS: readonly ProjectOverviewTabKey[] = [
+  'documents', 'org', 'subcontract', 'material',
+];
+const PROJECT_MEMBER_MATERIAL_TAB_KEYS: readonly ProjectMaterialTabKey[] = [
+  'summary', 'planning', 'custom', 'waste', 'dashboard',
+];
+
+/** Người này đang làm ở dự án đang xem (và đúng công trường, nếu có). */
+export const isActiveProjectMember = (
+  user: ProjectPermissionUser,
+  scopeInput: { projectId?: string; constructionSiteId?: string | null },
+): boolean => {
+  if (!scopeInput.projectId) return false;
+  const memberships = getUserAuthorizationSnapshot(user)?.projectMemberships;
+  if (!memberships?.length) return false;
+  return memberships.some(membership => membership.projectId === scopeInput.projectId
+    && (!scopeInput.constructionSiteId
+      || !membership.constructionSiteId
+      || membership.constructionSiteId === scopeInput.constructionSiteId));
+};
+
 const hasProjectRoomView = (
   user: ProjectPermissionUser,
   roomCodes: readonly ProjectPermissionRoomCode[] | undefined,
@@ -225,6 +252,7 @@ export const canViewProjectTab = (
   if (ROOM_AUTHORITATIVE_TAB_KEYS.includes(tabKey)) {
     return hasProjectRoomView(user, PROJECT_TAB_ROOM_CODES_BY_KEY[tabKey], scopeInput);
   }
+  if (PROJECT_MEMBER_TAB_KEYS.includes(tabKey) && isActiveProjectMember(user, scopeInput)) return true;
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
@@ -252,6 +280,7 @@ export const canViewProjectMaterialTab = (
 ): boolean => {
   // PO view stays on this path: the PO tab also hosts supplier delivery, whose
   // grants the server still honors. Only PO management is Room-only.
+  if (PROJECT_MEMBER_MATERIAL_TAB_KEYS.includes(tabKey) && isActiveProjectMember(user, scopeInput)) return true;
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
