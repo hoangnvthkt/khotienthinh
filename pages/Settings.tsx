@@ -29,7 +29,6 @@ const SettingsAlerts = React.lazy(() => import('./settings/SettingsAlerts'));
 const SettingsPermissionHealth = React.lazy(() => import('./settings/SettingsPermissionHealth'));
 const SettingsRoleTemplates = React.lazy(() => import('./settings/SettingsRoleTemplates'));
 const SettingsProjectRoomTemplates = React.lazy(() => import('./settings/SettingsProjectRoomTemplates'));
-const SettingsUserPermissionTemplates = React.lazy(() => import('./settings/SettingsUserPermissionTemplates'));
 const SettingsHrmSharedCatalog = React.lazy(() => import('./settings/SettingsHrmSharedCatalog'));
 const SettingsAttendanceLocations = React.lazy(() => import('./settings/SettingsAttendanceLocations'));
 const SettingsSuggestionStats = React.lazy(() => import('./settings/SettingsSuggestionStats'));
@@ -160,7 +159,7 @@ const Settings: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState(
-    readOfficePermissionFocus(location.search) ? 'users' : ['ai-gateway', 'connections'].includes(new URLSearchParams(location.search).get('tab') || '') ? new URLSearchParams(location.search).get('tab')! : location.pathname === '/settings/role-templates'
+    readOfficePermissionFocus(location.search) ? 'users' : ['ai-gateway', 'connections', 'project-room-templates', 'attendance-locations'].includes(new URLSearchParams(location.search).get('tab') || '') ? new URLSearchParams(location.search).get('tab')! : location.pathname === '/settings/role-templates'
       ? 'role-templates'
       : location.pathname === '/settings/permission-health'
       ? 'permission-health'
@@ -1148,14 +1147,17 @@ const Settings: React.FC = () => {
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
     { id: 'role-templates', label: 'Vai trò đặc biệt', icon: ShieldCheck, rolesOnly: true },
-    { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
+    // Mẫu quyền theo vị trí đã gom vào Trung tâm phân quyền (/permissions).
+    { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, permissionCenter: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'connections', label: 'Kết nối', icon: Link2, adminOnly: true },
     { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
     { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => tab.rolesOnly
+  ].filter(tab => tab.permissionCenter
+    ? canAccessRoute(currentUser, '/permissions')
+    : tab.rolesOnly
     ? canManageBusinessRoles
     : tab.healthOnly
     ? canViewPermissionHealth
@@ -1177,6 +1179,10 @@ const Settings: React.FC = () => {
     && activeSettingsTab !== 'project-room-templates'
     && !canManageSettingsFeature(currentUser, activeSettingsTab as Exclude<SettingsFeatureId, 'account'>);
   const handleSelectTab = (tabId: string) => {
+    if (tabId === 'permissions') {
+      navigate('/permissions');
+      return;
+    }
     setActiveTab(tabId);
     if (tabId === 'role-templates') {
       navigate('/settings/role-templates');
@@ -2198,10 +2204,6 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'role-templates' && canManageBusinessRoles && (
             <SettingsRoleTemplates />
-          )}
-
-          {activeSettingsTab === 'user-permission-templates' && isSettingsAdmin && (
-            <SettingsUserPermissionTemplates />
           )}
 
           {activeSettingsTab === 'project-room-templates' && isSettingsAdmin && (

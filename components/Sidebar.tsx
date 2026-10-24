@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard, CalendarRange, Bell, Package, ArrowLeftRight, ClipboardCheck,
-  History, Settings, LogOut, FileText, Sun, Moon,
+  History, Settings, LogOut, FileText, Sun, Moon, ShieldCheck,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
@@ -658,6 +658,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                       <span className="font-bold text-sm">Hoạt động hệ thống</span>
                     </NavLink>
                   )}
+                  {canAccessRoute(user, '/permissions') && (
+                    <NavLink to="/permissions" onClick={toggle}
+                      className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <ShieldCheck className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Phân quyền</span>
+                    </NavLink>
+                  )}
 
                   <NavLink to="/feedback" onClick={toggle}
                     className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
@@ -728,6 +737,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                       <Activity className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                       <span className="font-bold text-sm">Hoạt động hệ thống</span>
+                    </NavLink>
+                  )}
+                  {canAccessRoute(user, '/permissions') && (
+                    <NavLink to="/permissions" onClick={toggle}
+                      className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <ShieldCheck className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Phân quyền</span>
                     </NavLink>
                   )}
                   <NavLink to="/feedback" onClick={toggle}
@@ -818,6 +836,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                   <Activity className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                   {!collapsed && <span className="font-bold text-sm">Hoạt động hệ thống</span>}
+                </NavLink>
+              )}
+              {canAccessRoute(user, '/permissions') && (
+                <NavLink to="/permissions" title={collapsed ? 'Phân quyền' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <ShieldCheck className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                  {!collapsed && <span className="font-bold text-sm">Phân quyền</span>}
                 </NavLink>
               )}
 
@@ -1030,6 +1057,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                     <Activity className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                     {!collapsed && <span className="font-bold text-sm">Hoạt động hệ thống</span>}
+                  </NavLink>
+                )}
+                {canAccessRoute(user, '/permissions') && (
+                  <NavLink to="/permissions" title={collapsed ? 'Phân quyền' : undefined}
+                    className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <ShieldCheck className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                    {!collapsed && <span className="font-bold text-sm">Phân quyền</span>}
                   </NavLink>
                 )}
               </div>

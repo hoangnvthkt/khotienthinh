@@ -134,6 +134,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/trace': 'AUDIT_TRAIL',
   '/audit-trail': 'AUDIT_TRAIL',
   '/admin/activity': 'SETTINGS',
+  '/permissions': 'SETTINGS',
   '/analytics': 'ANALYTICS',
   '/custom-dashboard': 'CUSTOM_DASHBOARD',
   '/org-map': 'HRM',
