@@ -1,5 +1,5 @@
 -- Kiểm soát viên K3 đợt 3 (Nhân sự): 14 luật trên dữ liệu thật + ca dựng cho luật đang bằng 0, giao dịch tự hủy.
--- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261031110000_control_k3_hrm.sql --smoke supabase/tests/control_k3_hrm_smoke.sql
+-- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration supabase/migrations/20261031120000_control_k3_hrm.sql --smoke supabase/tests/control_k3_hrm_smoke.sql
 begin;
 create temp table k3h(buoc text primary key, ket_qua text) on commit drop;
 

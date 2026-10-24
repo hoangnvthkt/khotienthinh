@@ -36,7 +36,7 @@ Hai vòng:
 | #340 | **Dải cảnh báo trên chứng từ** (ngăn Đơn hàng + Tiến độ cung ứng đề xuất) | 20261030170000 |
 | #344 | **K3 đợt 1**: 9 luật phân hệ Kho, tất cả `shadow`; link mở sẵn mã vật tư / phiên kiểm kê | 20261031090000 |
 | #345 | **K3 đợt 2**: 10 luật phân hệ Tài chính, tất cả `shadow`; smoke dựng ca thay dữ liệu thật | 20261031100000 |
-| #346 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031110000 |
+| #346 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031120000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 

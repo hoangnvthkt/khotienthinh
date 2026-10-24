@@ -209,7 +209,7 @@ smoke **tự dựng ca lệch** rồi kiểm luật bắt đúng và bỏ ca đi
 Ngoài ra smoke kiểm: 10 luật chạy không lỗi, `object_key` không trùng, mọi dòng có đường dẫn `/finance…`,
 chạy lần hai không mở trùng, không sinh thông báo nào, và ghi lại hiện trạng số dòng 5 bảng Tài chính để lần sau so.
 
-## K3 đợt 3 — phủ luật sang phân hệ Nhân sự (24/10, migration `20261031110000_control_k3_hrm`)
+## K3 đợt 3 — phủ luật sang phân hệ Nhân sự (24/10, migration `20261031120000_control_k3_hrm`)
 
 14 luật mới, **mặc định shadow**. Phạm vi: chấm công, phép, lương. Dữ liệu thật đầy đủ (1.988 bản ghi chấm công,
 269 đề xuất, 42 đơn phép, 97 dòng sổ phép, 35 bảng lương) nên đo được số lệch thật: **35 lệch trên 6 luật**.
