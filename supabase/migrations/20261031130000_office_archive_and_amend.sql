@@ -10,25 +10,25 @@ update public.permission_modules
 set routes=array['/office','/office/documents','/office/new','/office/documents/:id','/office/documents/:id/edit','/office/documents/:id/amend','/office/settings','/office/templates','/office/reports']
 where code='office.module';
 
-create function app_private.office_is_admin(p_user uuid default public.current_app_user_id()) returns boolean
+create or replace function app_private.office_is_admin(p_user uuid default public.current_app_user_id()) returns boolean
 language sql stable security definer set search_path='' as $$
  select app_private.office_access(p_user) and app_private.has_permission(p_user,'office.configuration.manage','global','*')
 $$;
 
 -- Văn bản không còn hiệu lực: nằm trong kho lưu trữ, không hiện ở các danh sách duyệt xem.
-create function app_private.office_is_archived(d public.office_documents) returns boolean
+create or replace function app_private.office_is_archived(d public.office_documents) returns boolean
 language sql stable set search_path='' as $$
  select app_private.office_effective_status(d) in ('CANCELLED','REVOKED','REJECTED','EXPIRED','ARCHIVED')
 $$;
 
-create index office_doc_archive_idx on public.office_documents(status,created_at desc)
+create index if not exists office_doc_archive_idx on public.office_documents(status,created_at desc)
  where status in ('CANCELLED','REVOKED','REJECTED','ARCHIVED');
 -- Lý do văn bản vào kho đọc từ nhật ký, nên tra theo văn bản phải đi bằng chỉ mục.
-create index audit_trail_office_document_idx on public.audit_trail(record_id,created_at desc) where table_name='office_documents';
+create index if not exists audit_trail_office_document_idx on public.audit_trail(record_id,created_at desc) where table_name='office_documents';
 
 -- Lịch sử cần ghi được chi tiết đã sửa gì, nên office_event nhận thêm ngữ cảnh.
-drop function app_private.office_event(uuid,text,text);
-create function app_private.office_event(p_doc uuid,p_event text,p_comment text default null,p_context jsonb default '{}'::jsonb) returns void
+drop function if exists app_private.office_event(uuid,text,text);
+create or replace function app_private.office_event(p_doc uuid,p_event text,p_comment text default null,p_context jsonb default '{}'::jsonb) returns void
 language plpgsql security definer set search_path='' as $$
 declare a uuid:=public.current_app_user_id(); d public.office_documents;
 begin
@@ -40,8 +40,8 @@ begin
 end $$;
 
 -- Thông báo sửa văn bản phải nói rõ đã đổi gì, nên office_notify nhận thêm phần mô tả.
-drop function app_private.office_notify(uuid,text,uuid[],text);
-create function app_private.office_notify(p_doc uuid,p_event text,p_users uuid[],p_reason text default 'assigned',p_detail text default null) returns void
+drop function if exists app_private.office_notify(uuid,text,uuid[],text);
+create or replace function app_private.office_notify(p_doc uuid,p_event text,p_users uuid[],p_reason text default 'assigned',p_detail text default null) returns void
 language plpgsql security definer set search_path='' as $$
 declare d public.office_documents; caption text;
 begin
@@ -60,7 +60,7 @@ begin
 end $$;
 
 -- Nhãn tiếng Việt của các trường được sửa, dùng cho thông báo và lịch sử.
-create function app_private.office_field_label(p_field text) returns text
+create or replace function app_private.office_field_label(p_field text) returns text
 language sql immutable set search_path='' as $$
  select coalesce((array['Tiêu đề','Tóm tắt','Nội dung','Ngày văn bản','Ngày hiệu lực','Ngày hết hiệu lực','Hạn xử lý',
   'Đơn vị ban hành','Người ký','Chức vụ người ký','Dự án','Công trường','Đơn vị gửi','Số bên gửi','Người gửi',
