@@ -39,6 +39,7 @@ Hai vòng:
 | #348 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031120000 |
 | #352 | **Trợ lý đọc sổ lệch**: `control_findings_search_v1`, tra theo luật / người / phân hệ | 20261031150000 |
 | #353 | **Trợ lý · tình hình hôm nay**: `assistant_today_status_v1` (chấm công / nghỉ / nhật ký / phiếu đứng) | 20261031160000 |
+| #354 | **Chặn Trợ lý bịa danh sách**: lượt không tra công cụ mà nêu mã → bắt tra thật | — |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -281,6 +282,14 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
   không khớp "Phòng Hành chính - Nhân sự" vì có gạch ngang — bản đầu trả 0 người cho cả Admin.
 - `daily_logs.construction_site_id` là `text`, `hrm_construction_sites.id` là `uuid` — phải ép `s.id::text`.
 - Thêm công cụ mới thì 2 test chốt danh sách công cụ (`aiAgent`, `assistantCommands`) sẽ đỏ — cập nhật cả hai.
+- **Trợ lý bịa khi hỏi tiếp đổi phạm vi** (sự cố 24/10): hỏi "phòng HCNS ai chưa chấm công" → tra đúng, 8 người thật;
+  hỏi tiếp "tìm trong cả công ty" → **không gọi lại công cụ**, bịa 56/101 người, bịa cả tên lẫn mã (TT039
+  "Nguyễn Ngọc Điệp" không có thật) và tên phòng ("Kỹ thuật xây dựng" không tồn tại). `ai_runs` lượt đó ghi
+  **"0 nguồn"** — đó là cách soi nhanh một câu trả lời có tra thật hay không. Đã chặn bằng mã trong `loop.ts`
+  (`looksLikeFabricatedRows`): lượt nào không tra công cụ mà câu trả lời nêu ≥ 2 mã nhân viên / chứng từ thì
+  bắt model đi tra thật rồi trả lời lại, đúng một lần.
+- `converse` lấy chữ trả lời từ **luồng delta**, không từ `out.text` — mock trong vitest phải phát delta, nếu không
+  mọi khẳng định về câu trả lời đều so với chuỗi rỗng.
 - Thêm luật mà không cho Trợ lý đường đọc thì người dùng vẫn không hỏi được: mọi đợt luật mới nên kiểm luôn một câu
   hỏi thật qua `lech_kiem_soat`.
 
