@@ -1,4 +1,4 @@
-# HANDOFF — Kiểm soát viên AI (K0–K3 đợt 2) · cập nhật 24/10/2026
+# HANDOFF — Kiểm soát viên AI (K0–K3 đợt 3) · cập nhật 24/10/2026
 
 Đọc file này trước khi làm tiếp phần **Kiểm soát viên** (luật phát hiện lệch dữ liệu, chặn lúc lưu, dải cảnh báo trên chứng từ).
 Chi tiết kỹ thuật từng đợt: [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md). Lộ trình K0–K5 chủ SP đã xem:
@@ -36,6 +36,7 @@ Hai vòng:
 | #340 | **Dải cảnh báo trên chứng từ** (ngăn Đơn hàng + Tiến độ cung ứng đề xuất) | 20261030170000 |
 | #344 | **K3 đợt 1**: 9 luật phân hệ Kho, tất cả `shadow`; link mở sẵn mã vật tư / phiên kiểm kê | 20261031090000 |
 | #345 | **K3 đợt 2**: 10 luật phân hệ Tài chính, tất cả `shadow`; smoke dựng ca thay dữ liệu thật | 20261031100000 |
+| #346 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031110000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -75,7 +76,7 @@ Hai vòng:
 
 Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn kiểm tra (`gen.py` ở scratchpad phiên 4c15fcb3, sẽ mất). Lần sau làm lại cùng cách: dump hàm prod bằng `pg_get_functiondef`, rồi thay chuỗi, mỗi chỗ thay phải khớp đúng 1 lần.
 
-## 5. Trạng thái 37 luật trên prod (24/10)
+## 5. Trạng thái 51 luật trên prod (24/10)
 
 | Luật | Mức | Chế độ | Mở mới | Mở cũ | Ghi chú |
 |---|---|---|---:|---:|---|
@@ -118,6 +119,21 @@ Bộ sinh migration K2 dựng từ định nghĩa hàm prod và chỉ chèn ki�
 | pr_stuck_pending | P2 | shadow | 0 | 0 | luật canh |
 | budget_total_vs_lines | P1 | shadow | 0 | 0 | **chưa có ngân sách nào trên prod** |
 | cash_entry_mismatch | P0 | shadow | 0 | 0 | **chưa có phiếu tiền nào trên prod** |
+| **K3 đợt 3 — Nhân sự (mới 24/10, tất cả shadow)** | | | | | |
+| att_future_date | P0 | shadow | 2 | 0 | bản ghi chấm công ngày sau hôm nay |
+| att_checkout_before_checkin | P0 | shadow | 0 | 0 | luật canh |
+| att_suspicion_unresolved | P1 | shadow | 6 | 0 | chung thiết bị 5 + cùng điểm GPS 1 (đã bỏ `no_passkey`) |
+| att_out_of_range_pending | P1 | shadow | 0 | 0 | luật canh |
+| att_proposal_stuck | P2 | shadow | 0 | 0 | 9 đề xuất chờ nhưng đều mới |
+| att_after_exit | P0 | shadow | 0 | 0 | mù tới khi HR ghi ngày nghỉ việc |
+| employee_resigned_no_exit_date | P1 | shadow | 3 | 0 | đúng 3 người HR còn treo ngày nghỉ việc |
+| leave_balance_vs_ledger | P0 | shadow | 0 | 0 | bất biến gốc; smoke bắt buộc = 0 |
+| leave_ledger_running | P0 | shadow | 0 | 0 | bất biến gốc; smoke bắt buộc = 0 |
+| leave_approved_no_ledger | P0 | shadow | 6 | 0 | phép có lương đã duyệt chưa trừ sổ |
+| leave_vs_attendance | P1 | shadow | 11 | 0 | nghỉ phép mà vẫn chấm công |
+| leave_overlap | P1 | shadow | 0 | 0 | luật canh |
+| leave_stuck_pending | P2 | shadow | 7 | 0 | đơn phép treo duyệt |
+| payroll_net_vs_gross | P0 | shadow | 0 | 0 | luật canh |
 
 Lấy số mới nhất:
 
@@ -139,6 +155,10 @@ group by 1, 2, 3, r.sort_order order by r.sort_order;
    `count_open_stale` có 1 lệch mới thật (KK-20261012-B2078 mở 12 ngày) — có thể bật sớm vì chỉ báo thủ kho của kho đó.
 1c. 10 luật Tài chính (K3 đợt 2) **chạy shadow từ 24/10**. Chỉ `payable_over_committed` có lệch thật (3 chứng từ,
    123,4 tr); 9 luật kia số 0 vì **chưa có dữ liệu**, không phải vì sạch — xem mục tiếp theo.
+1d. 14 luật Nhân sự (K3 đợt 3) **chạy shadow từ 24/10**: 35 lệch thật trên 6 luật (chấm công ngày tương lai 2,
+   dấu hiệu chấm hộ 6, nghỉ việc chưa ghi ngày 3, phép duyệt chưa vào sổ 6, nghỉ phép mà vẫn chấm công 11,
+   đơn phép treo duyệt 7). Em đề xuất bật sớm `leave_approved_no_ledger` (P0, HR sửa được ngay) và
+   `employee_resigned_no_exit_date` (P1, mở đường cho luật chấm công sau ngày nghỉ việc).
 2. Giao lệch **cũ** có tiền cho người xử lý (vào Việc của tôi, không báo đẩy):
    - `receipt_without_ap` 124,5 tr → kế toán.
    - `batch_vat_differs` 6 lệch cũ 11,4 tr → kế toán.
@@ -162,21 +182,25 @@ chứng minh bằng ca dựng trong smoke.
 
 Khi chủ SP bỏ xong, Chấp nhận 2 lệch với lý do "phiếu thử".
 
+**Việc mới cho HR (từ K3 đợt 3, 24/10)**: 11 ngày nghỉ phép đã duyệt mà nhân viên vẫn chấm công đi làm, 6 đơn phép
+có lương đã duyệt mà chưa trừ sổ phép, 2 bản ghi chấm công ngày tương lai, 6 bản ghi có dấu hiệu chấm hộ (chung thiết bị
+/ cùng điểm GPS), 3 người đã nghỉ việc chưa ghi ngày nghỉ. Chi tiết từng ca xem tab Kiểm soát, lọc phân hệ **Nhân sự**.
+
 **Chờ người khác**:
 - Kế toán: điều chỉnh 48,0 tr VAT thiếu (12 đợt) và ghi nợ 124,5 tr chưa ghi (3 đợt).
 - Người mua (PO-315, PO-463 — đã trả lại 24/10): sửa SL về phần còn thiếu rồi gửi lại.
 - Người mua PO-439: đối chiếu hóa đơn VAT (đơn 0%, đợt 10%).
 - Thủ kho: chốt PO-116/163/181 đợt 1 ở Đối chiếu nhận hàng.
 
-**Bước tiếp theo**: K3 đợt 1 (Kho) + đợt 2 (Tài chính) đã xong 24/10 — xem mục K3 trong [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md),
+**Bước tiếp theo**: K3 đợt 1 (Kho) + đợt 2 (Tài chính) + đợt 3 (Nhân sự) đã xong 24/10 — xem mục K3 trong [16-kiem-soat-vien-k0.md](16-kiem-soat-vien-k0.md),
 gồm cả 3 luật đã **bỏ sau khi đo** vì sẽ thành nhiễu (đừng viết lại). Còn ~70 luật: Tài chính (thu chi, đề nghị chi, ngân sách),
-Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình. Mỗi luật mới chạy shadow ít nhất 1 tuần, xem số lệch thật,
-sửa luật báo sai, rồi mới để chủ SP bật. Còn ~60 luật.
+Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất, Danh mục vật tư. Mỗi luật mới chạy shadow ít nhất 1 tuần, xem số lệch
+thật, sửa luật báo sai, rồi mới để chủ SP bật. Còn ~45 luật.
 
 **Cách thêm một đợt luật** (đã dùng cho K3 đợt 1): dò số lệch thật bằng `scripts/cloud-sql.mjs` TRƯỚC khi viết hàm luật;
 luật nào báo phần lớn dữ liệu bình thường thì bỏ và ghi lý do vào doc 16; `link` phải mở đúng chỗ sửa
 (`?q=` cho màn có `useSearchParamPrefill`, `?tx=` cho phiếu kho, `?supplier=` / `?request=` / `?project=` cho Trung tâm
-Tài chính); smoke phải chốt số lệch thật + bất biến nào bắt buộc = 0. **Rà `pg_constraint` trước**: CHECK / unique index
+Tài chính, `?tab=&q=&month=&year=` cho chấm công, `?person=` cho hồ sơ nhân sự); smoke phải chốt số lệch thật + bất biến nào bắt buộc = 0. **Rà `pg_constraint` trước**: CHECK / unique index
 đã chặn thì đừng viết luật (mã chết). **Luật đọc view phải kiểm biểu thức của view** — `outstanding_amount` có
 `GREATEST(0, …)` nên điều kiện "< 0" không bao giờ đúng. Phân hệ chưa có dữ liệu thật thì **dựng ca lệch trong smoke**
 (như đợt 2), và chạy `control_run` TRƯỚC khi dựng ca, nếu không dữ liệu dựng làm luật live cũ sinh thông báo.
@@ -237,7 +261,14 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
 - `control_findings_k0_smoke.sql` đã cũ từ K1 (K1 mở RPC cho mọi người dùng): chạy riêng sẽ đỏ, không phải lỗi mới.
 - Vòng chờ bằng `grep` trên JSON: `json_build_object` in `"key" : value` (có dấu cách trước `:`).
 - PostgREST: lỗi xung đột phiên bản dùng `PT409`, không dùng `40001` (vòng lặp vô hạn, sự cố 11/10).
-- `declare p record` trong plpgsql **che bí danh bảng** `pg_proc p` → lỗi "record p is not assigned yet". Đặt tên biến khác bí danh.
+- `declare p record` trong plpgsql **che bí danh bảng** `pg_proc p` → lỗi "record p is not assigned yet" hoặc
+  "record r has no field id". Đặt tên biến khác mọi bí danh bảng trong cùng block (đã gặp 2 lần: 24/10 đợt 1 và đợt 3).
+- **Bảng `hrm_*` trỏ `employees(id)`, KHÔNG phải `users(id)`** (trừ `created_by` / `updated_by`). Join sai bảng vẫn chạy
+  không lỗi, chỉ trả 0 dòng — luật thành mã chết mà trông như "dữ liệu sạch". Tên: `employees.full_name`,
+  mã: `employees.employee_code`, trạng thái: `employees.status`.
+- `trg_hrm_leave_balance_write_ledger` tự ghi dòng sổ khi sửa số dư phép: muốn dựng ca lệch số dư ↔ sổ thì phải sửa
+  từ phía sổ, không phải phía số dư.
+- `hrm_employee_employment_events.status` nhận `ACTIVE` / `VOID` (không phải `active` / `cancelled`).
 
 ## 9. Quy tắc làm việc với chủ SP
 
