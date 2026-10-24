@@ -23,6 +23,9 @@
 //   quyen_cua_toi            (Đợt 1 hỗ trợ 23/10) assistant_my_access_v1: quyền CỦA CHÍNH người hỏi (tên tiếng Việt, phạm vi), quyền ở màn vừa mở,
 //                            quyền cần cho một việc, ai cấp — để trả lời "sao em không thấy / không làm được". Không xem được quyền người khác.
 //   giai_thich_loi           (Đợt 1 hỗ trợ 23/10) từ điển lỗi errorGuide.ts: câu báo lỗi người dùng dán / chụp → nghĩa, cách xử lý, ai xử lý. Không gọi máy chủ.
+//   tinh_hinh_hom_nay        (24/10) assistant_today_status_v1: tình hình HÔM NAY của một NHÓM — ai chưa chấm công,
+//                            ai đang nghỉ, công trường chưa gửi nhật ký, phiếu quy trình đứng im. Quyền theo helper
+//                            của từng phân hệ (trưởng phòng hỏi được về người của mình).
 //   lech_kiem_soat           (Kiểm soát viên K1 23/10, mở rộng 24/10) control_findings_for_code_v1 + control_findings_search_v1:
 //                            lệch dữ liệu bộ luật máy chủ tìm ra — tra theo MÃ CHỨNG TỪ (PO-609, MR-…), theo LUẬT ("nghỉ việc"),
 //                            theo NGƯỜI / vật tư (tên không dấu cũng được), theo PHÂN HỆ, hoặc không lọc để lấy bảng tổng hợp.
@@ -66,8 +69,22 @@ export const KIND_LABEL: Record<string, string> = {
 };
 const KINDS = Object.keys(KIND_LABEL);
 
+const TODAY_TITLE: Record<string, string> = { cham_cong: 'Chấm công hôm nay', nghi_phep: 'Nghỉ phép hôm nay',
+  nhat_ky: 'Nhật ký công trường', phieu_dung: 'Phiếu quy trình đứng im' };
+const TODAY_NOTE: Record<string, string> = {
+  cham_cong: 'Nói rõ: trong N người xem được, bao nhiêu đã chấm, bao nhiêu đang nghỉ phép (đã trừ), còn lại là chưa chấm.',
+  nghi_phep: 'Nói số người nghỉ và loại phép của từng người.',
+  nhat_ky: 'Chỉ tính công trường đang dùng nhật ký; nói rõ đã gửi mấy / chưa gửi mấy và lần ghi gần nhất.',
+  phieu_dung: 'Nói phiếu đứng im bao nhiêu ngày và thuộc mẫu nào.' };
+const TODAY_EMPTY: Record<string, string> = {
+  cham_cong: 'Trong phạm vi người hỏi xem được, mọi người đã chấm công (hoặc đang nghỉ phép đã duyệt). Nói rõ là trong phạm vi xem được.',
+  nghi_phep: 'Không có ai nghỉ trong ngày, trong phạm vi người hỏi xem được.',
+  nhat_ky: 'Mọi công trường đang dùng nhật ký đều đã gửi trong ngày, trong phạm vi người hỏi xem được.',
+  phieu_dung: 'Không có phiếu quy trình nào đứng im quá số ngày đó, trong phạm vi người hỏi xem được.' };
+
 export const TOOL_LABEL: Record<string, string> = {
   so_tay: 'Sổ tay Vioo', quyen_cua_toi: 'Quyền của tôi', giai_thich_loi: 'Giải thích lỗi', lech_kiem_soat: 'Lệch kiểm soát',
+  tinh_hinh_hom_nay: 'Tình hình hôm nay',
   tim_ho_so: 'Tìm hồ sơ', ton_kho: 'Tồn kho', chi_tiet_don_mua: 'Chi tiết đơn mua', chi_tiet_de_xuat: 'Chi tiết đề xuất vật tư', viec_cua_toi: 'Việc của tôi', phep_nhan_vien: 'Số phép nhân viên', chi_tiet_ho_so: 'Hồ sơ nhân viên',
   bien_dong_nhan_su: 'Biến động nhân sự', bao_cao: 'Báo cáo',
   chuan_bi_don_nghi_phep: 'Chuẩn bị đơn nghỉ phép', chuan_bi_de_xuat_vat_tu: 'Chuẩn bị đề xuất vật tư', chuan_bi_don_mua: 'Chuẩn bị đơn mua', chuan_bi_nhat_ky: 'Chuẩn bị nhật ký', chuan_bi_ghi_nho: 'Chuẩn bị ghi nhớ', chuan_bi_su_co: 'Chuẩn bị phiếu sự cố',
@@ -88,6 +105,7 @@ export const TOOL_INFO: Record<string, ToolInfo> = {
     permission: 'Mức xem hồ sơ: danh bạ / chính mình / quản lý trực tiếp / HR. Không bao giờ có lương, CCCD, số tài khoản, SĐT cá nhân', result: 'Chức danh, phòng ban, quản lý, ngày vào, hợp đồng + nút mở hồ sơ' },
   quyen_cua_toi: { kind: 'tra_cuu', rpcs: ['assistant_my_access_v1'], permission: 'Chỉ quyền của chính người hỏi (không có tham số người khác); tên quyền, phạm vi, phòng dự án, quyền ở màn vừa mở, quyền cần cho một việc, Admin cấp được', result: 'Đang có / còn thiếu quyền gì, ai cấp' },
   lech_kiem_soat: { kind: 'tra_cuu', rpcs: ['control_findings_for_code_v1', 'control_findings_search_v1'], permission: 'Người xử lý / trưởng bộ phận: lệch của mình ở luật đã bật, không thấy dữ liệu cũ và luật đang chạy thử; Admin: mọi lệch', result: 'Lệch đang mở / đã chấp nhận: lệch gì, của ai / chứng từ nào, chênh bao nhiêu, cách xử lý, ai xử lý + nút mở; không lọc thì ra bảng tổng hợp theo luật' },
+  tinh_hinh_hom_nay: { kind: 'tra_cuu', rpcs: ['assistant_today_status_v1'], permission: 'Theo quyền từng phân hệ: chấm công / nghỉ phép theo phạm vi nhân sự của người hỏi (toàn công ty, cấp dưới trực tiếp, hoặc chỉ mình); nhật ký theo dự án được xem; phiếu quy trình theo phiếu được xem', result: 'Danh sách người / công trường / phiếu kèm số tổng và nhóm theo đơn vị' },
   giai_thich_loi: { kind: 'tra_cuu', rpcs: [], permission: 'Không đọc dữ liệu — chỉ từ điển lỗi dựng sẵn (errorGuide.ts)', result: 'Nghĩa của câu báo lỗi, cách xử lý, ai xử lý' },
   so_tay: { kind: 'tra_cuu', rpcs: [], permission: 'Không đọc dữ liệu nghiệp vụ — chỉ sổ tay dựng sẵn (docs/so-tay, hướng dẫn Dự án, danh mục màn hình / thao tác); mở được màn hay không vẫn do quyền của người dùng khi bấm', result: 'Các bước làm + nút mở màn hình / thao tác' },
   bao_cao: { kind: 'bieu_do', rpcs: ['assistant_report_workflow_v1', 'assistant_report_inventory_v1', 'assistant_report_procurement_v1', 'assistant_report_progress_v1', 'assistant_report_finance_v1', 'assistant_report_attendance_v1', 'assistant_report_leave_v1', 'assistant_report_requests_v1', 'assistant_report_vehicle_v1', 'assistant_report_office_v1'], permission: 'Theo đúng quyền xem dữ liệu của người hỏi (RLS): phiếu quy trình, kho, đơn hàng, nhật ký / hạng mục dự án, chấm công, đơn nghỉ, phiếu yêu cầu, chuyến xe, văn bản mình được xem; Tài chính cần quyền xem Tài chính (công nợ NCC cần quản lý)', result: 'Thẻ biểu đồ: cột / cột chồng / đường theo tuần / tháng, tròn theo mẫu / NCC / dự án / vật tư / loại / đơn vị, ô số, nút Bảng' },
@@ -182,6 +200,16 @@ export const TOOLS: ToolSpec[] = [
       nguoi: { type: 'string', description: 'Tên / mã nhân viên, tên vật tư, hoặc chữ bất kỳ có trong câu mô tả lệch. Không dấu vẫn tìm được.' },
       phan_he: { type: 'string', enum: ['Kho', 'Nhân sự', 'Công nợ', 'Tài chính', 'Mua hàng', 'Đề xuất'], description: 'Lọc theo phân hệ.' },
       muc: { type: 'string', enum: ['P0', 'P1', 'P2'], description: 'P0 sai tiền hoặc tồn kho, P1 sai số liệu, P2 nhắc việc.' },
+    } },
+  },
+  {
+    name: 'tinh_hinh_hom_nay',
+    description: 'TÌNH HÌNH HÔM NAY CỦA MỘT NHÓM (không phải một người, không phải báo cáo theo kỳ). loai: "cham_cong" = ai CHƯA chấm công trong ngày (đã trừ người nghỉ phép đã duyệt) — dùng cho "hôm nay phòng X ai chưa chấm công", "ai quên chấm công"; "nghi_phep" = ai đang nghỉ trong ngày — "hôm nay ai nghỉ", "phòng X có ai nghỉ không"; "nhat_ky" = công trường CHƯA gửi nhật ký trong ngày (chỉ tính công trường đang dùng nhật ký) — "công trường nào chưa gửi nhật ký"; "phieu_dung" = phiếu quy trình đang chạy mà đứng im quá nhiều ngày — "phiếu nào đang tắc", "hồ sơ nào bị bỏ quên". pham_vi lọc theo tên phòng / công trường / dự án, gõ không dấu hoặc thiếu gạch ngang vẫn khớp. ngay bỏ trống = hôm nay, truyền được ngày quá khứ. Số liệu theo đúng quyền người hỏi: trưởng phòng hỏi được về người của mình, nhân viên thường chỉ thấy chính mình.',
+    parameters: { type: 'object', additionalProperties: false, required: ['loai'], properties: {
+      loai: { type: 'string', enum: ['cham_cong', 'nghi_phep', 'nhat_ky', 'phieu_dung'] },
+      pham_vi: { type: 'string', description: 'Tên phòng ban / công trường / dự án để lọc, VD "hành chính nhân sự", "Sơn Miền Bắc". Bỏ trống = tất cả trong phạm vi xem được.' },
+      ngay: { type: 'string', description: 'Ngày YYYY-MM-DD. Bỏ trống = hôm nay. Không nhận ngày tương lai.' },
+      so_ngay_dung: { type: 'number', description: 'Chỉ cho loai "phieu_dung": đứng im bao nhiêu ngày thì tính (mặc định 7).' },
     } },
   },
   {
@@ -1199,6 +1227,34 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
     }
     return JSON.stringify({ tong_so: tong, da_tra: ketQua.length, tom_tat: tomTat, ket_qua: ketQua,
       ghi_chu: 'Trả lời theo đúng số công cụ trả. Có ket_qua thì LIỆT KÊ ra (mã / tên trong "ma", nội dung trong "lech") — người hỏi cần biết CỤ THỂ là ai / chứng từ nào, đừng chỉ nói số lượng rồi đẩy sang màn khác. tong_so > da_tra thì nói còn bao nhiêu ca nữa. Mỗi dòng chèn [[hN]] của mo_man. dang_chay_thu = luật đang chạy thử, chưa báo cho người xử lý — nói rõ nếu có. du_lieu_cu = phát sinh trước 01/10. Cuối cùng nói cách xử lý + ai xử lý. Không tự sửa, không hứa đã sửa.' });
+  }
+  if (name === 'tinh_hinh_hom_nay') {
+    const loai = str(args.loai, 20);
+    if (!loai || !['cham_cong', 'nghi_phep', 'nhat_ky', 'phieu_dung'].includes(loai)) {
+      return JSON.stringify({ loi: 'loai phải là cham_cong | nghi_phep | nhat_ky | phieu_dung.' });
+    }
+    const ngay = str(args.ngay, 10);
+    const r = await ctx.rpc('assistant_today_status_v1', { p_kind: loai, p_scope: str(args.pham_vi, 80) || null,
+      p_date: /^\d{4}-\d{2}-\d{2}$/.test(ngay) ? ngay : null,
+      p_days: loai === 'phieu_dung' ? (num(args.so_ngay_dung) ?? null) : null, p_limit: 30 });
+    if (r.error) return toolError(r.error, 'tình hình hôm nay');
+    const d = asObject(r.data);
+    const tong = num(d.tong_so) ?? 0;
+    const rows = asArray(d.ket_qua).map(asObject).map(x => compact({ ma: str(x.ma), ten: str(x.ten, 140), don_vi: str(x.don_vi),
+      cong_truong: str(x.cong_truong), du_an: str(x.du_an), mau: str(x.mau), loai_phep: str(x.loai_phep),
+      tu_ngay: str(x.tu_ngay, 12), den_ngay: str(x.den_ngay, 12), so_ngay: num(x.so_ngay), ly_do: str(x.ly_do, 120),
+      nhat_ky_gan_nhat: str(x.nhat_ky_gan_nhat, 12), so_ngay_chua_ghi: num(x.so_ngay_chua_ghi),
+      dung_tu: str(x.dung_tu, 12), so_ngay_dung: num(x.so_ngay_dung),
+      mo_man: typeof x.link === 'string' && /^\/[^/]/.test(x.link)
+        ? [{ ma: ctx.book.page(x.link, str(x.ten) || str(x.ma) || 'Mở', TODAY_TITLE[loai]), nhan: str(x.ma) || str(x.ten) || 'Mở' }] : null }));
+    const base = compact({ loai, ngay: str(d.ngay, 12), tong_so: tong, da_tra: rows.length,
+      tong_nguoi_xem_duoc: num(d.tong_nguoi_xem_duoc), da_cham: num(d.da_cham), dang_nghi_phep: num(d.dang_nghi_phep),
+      cong_truong_dang_dung: num(d.cong_truong_dang_dung), da_gui: num(d.da_gui), dung_qua_ngay: num(d.dung_qua_ngay),
+      tom_tat: asArray(d.tom_tat).length ? asArray(d.tom_tat) : null, ket_qua: rows });
+    if (!tong) {
+      return JSON.stringify({ ...base, ghi_chu: TODAY_EMPTY[loai] });
+    }
+    return JSON.stringify({ ...base, ghi_chu: `${TODAY_NOTE[loai]} LIỆT KÊ tên trong ket_qua, đừng chỉ nói số lượng. tong_so > da_tra thì nói còn bao nhiêu nữa. Mỗi dòng chèn [[hN]] của mo_man. Số liệu chỉ tính trong phạm vi người hỏi được xem — nếu người hỏi là quản lý một phòng thì nói rõ là của phòng đó.` });
   }
   if (name === 'giai_thich_loi') {
     const text = str(args.cau_loi, 600) || '';

@@ -38,6 +38,7 @@ Hai vòng:
 | #345 | **K3 đợt 2**: 10 luật phân hệ Tài chính, tất cả `shadow`; smoke dựng ca thay dữ liệu thật | 20261031100000 |
 | #348 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031120000 |
 | #352 | **Trợ lý đọc sổ lệch**: `control_findings_search_v1`, tra theo luật / người / phân hệ | 20261031150000 |
+| #353 | **Trợ lý · tình hình hôm nay**: `assistant_today_status_v1` (chấm công / nghỉ / nhật ký / phiếu đứng) | 20261031160000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -58,7 +59,9 @@ Hai vòng:
   - Nguồn `control` trong `vcc_my_work_items_v1`.
 - **Quyền xem**: `app_private.control_can_view(f)`. Admin thấy hết; người xử lý / trưởng bộ phận thấy lệch của mình ở luật live, không thấy lệch cũ. `control_can_accept(f)` quyết định ai được Chấp nhận.
 - **RPC**: `control_overview_v1`, `control_findings_v1`, `control_finding_accept_v1`, `control_finding_reopen_v1`, `control_run_now_v1`, `control_rule_set_mode_v1`, `control_findings_for_code_v1` + `control_findings_search_v1` (Trợ lý), `control_findings_for_doc_v1` (dải trên chứng từ).
-- **Trợ lý**: công cụ `lech_kiem_soat` tra sổ lệch theo mã chứng từ, theo luật, theo người (không dấu cũng được),
+- **Trợ lý**: công cụ `tinh_hinh_hom_nay` trả lời dạng "nhóm người / hôm nay" (ai chưa chấm công, ai đang nghỉ,
+  công trường chưa gửi nhật ký, phiếu quy trình đứng im) — quyền theo helper của từng phân hệ, trưởng phòng hỏi được
+  về người của mình. Công cụ `lech_kiem_soat` tra sổ lệch theo mã chứng từ, theo luật, theo người (không dấu cũng được),
   theo phân hệ / mức, hoặc không lọc để lấy bảng tổng hợp (`control_findings_search_v1`). Quyền vẫn do
   `control_can_view` — luật đang chạy thử chỉ Admin đọc được qua Trợ lý.
 - **Màn**:
@@ -274,6 +277,10 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
   từ phía sổ, không phải phía số dư.
 - `hrm_employee_employment_events.status` nhận `ACTIVE` / `VOID` (không phải `active` / `cancelled`).
 - `create temp table` **không chạy được trong hàm `STABLE`** (`0A000`). RPC chỉ đọc thì dựng bằng CTE.
+- Khớp chữ tiếng Việt phải theo **từng từ** (`app_private.vi_match`), không `like '%nguyên chuỗi%'`: "hành chính nhân sự"
+  không khớp "Phòng Hành chính - Nhân sự" vì có gạch ngang — bản đầu trả 0 người cho cả Admin.
+- `daily_logs.construction_site_id` là `text`, `hrm_construction_sites.id` là `uuid` — phải ép `s.id::text`.
+- Thêm công cụ mới thì 2 test chốt danh sách công cụ (`aiAgent`, `assistantCommands`) sẽ đỏ — cập nhật cả hai.
 - Thêm luật mà không cho Trợ lý đường đọc thì người dùng vẫn không hỏi được: mọi đợt luật mới nên kiểm luôn một câu
   hỏi thật qua `lech_kiem_soat`.
 

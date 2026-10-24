@@ -318,6 +318,48 @@ không thấy gì, người xử lý chỉ thấy lệch của mình và không 
 và `lib/__tests__/assistantControlLedger.test.ts` (9 ca: đúng câu chủ SP hỏi, mã chứng từ vẫn đi đường cũ,
 không lọc → tổng hợp, không có kết quả thì nói "không thấy trong phạm vi xem được" chứ không khẳng định sạch).
 
+## Trợ lý · "tình hình hôm nay của một nhóm" (24/10, migration `20261031160000_assistant_today_status`)
+
+Đo độ phủ trên **82 câu hỏi thật** của 8 người (17–24/10) cho thấy Trợ lý lệch nặng giữa 3 tầng:
+tìm được **20 loại** hồ sơ, đọc chi tiết được **5 loại**, và gần như **không có** dạng "nhóm người / hôm nay" —
+dạng người dùng hỏi hằng ngày. 10/82 câu nhận "chưa có công cụ", 3 câu tìm sai cách, 5 câu bị đẩy sang màn khác.
+
+RPC `assistant_today_status_v1(p_kind, p_scope, p_date, p_days, p_limit)` — 4 loại:
+
+| loai | Trả lời câu | Số thật 24/10 |
+|---|---|---|
+| `cham_cong` | "hôm nay phòng X ai chưa chấm công" | HCNS 14 người: 6 đã chấm, 8 chưa; toàn công ty 38/89 |
+| `nghi_phep` | "hôm nay ai nghỉ" | 3 người |
+| `nhat_ky` | "công trường nào chưa gửi nhật ký" | 2 công trường đang dùng, cả 2 chưa gửi |
+| `phieu_dung` | "phiếu nào đang tắc" | 19 phiếu đứng im ≥ 7 ngày |
+
+**Quyền dùng lại helper sẵn có, không tự nới**: `current_actor_hrm_visible_employee_ids(<mã quyền>)` cho chấm công
+(`hrm.attendance.view`) và nghỉ phép (`hrm.leave.view`) — helper này tự xử lý phạm vi global / của mình /
+**cấp dưới trực tiếp**, nên trưởng phòng hỏi được về người của mình mà không cần quyền HR toàn công ty;
+`project_scope_has_any_grant_v2` cho nhật ký; `workflow_visible_instance_ids()` cho phiếu quy trình.
+Smoke khẳng định nhân viên thường chỉ thấy **1 người** (chính mình) và **0** đơn nghỉ.
+
+**Hai chỗ dễ báo sai, đã xử lý**:
+- *Nghỉ phép đã duyệt không tính là chưa chấm công* — nếu không sẽ gọi tên người đang nghỉ đúng phép.
+- *Nhật ký chỉ tính công trường ĐANG dùng* (có phiếu trong 30 ngày): 7 công trường nhưng chỉ 2 dùng thật,
+  tính cả 7 sẽ báo nhầm 5 cái không ai ghi bao giờ.
+
+**`app_private.vi_match(text, query)`**: khớp tiếng Việt theo **từng từ** chứ không theo nguyên chuỗi.
+Người dùng gõ "hành chính nhân sự" phải khớp "Phòng Hành chính **-** Nhân sự" (có gạch ngang) — bản đầu dùng
+`like '%…%'` nên trượt sạch, Admin tra ra 0 người. Gõ không dấu cũng ra như gõ có dấu (smoke kiểm cả hai).
+
+**Bẫy kiểu dữ liệu**: `daily_logs.construction_site_id` là `text` còn `hrm_construction_sites.id` là `uuid` —
+phải ép `s.id::text`.
+
+Kiểm: `supabase/tests/assistant_today_status_smoke.sql` (Cloud, giao dịch tự hủy — 4 loại trên dữ liệu thật,
+lọc có dấu / không dấu ra như nhau, người nghỉ phép không bị tính, nhật ký không báo công trường chưa dùng bao giờ,
+ngưỡng ngày có tác dụng, chặn loại sai và ngày tương lai, nhân viên thường chỉ thấy mình, chưa đăng nhập thì chặn)
+và `lib/__tests__/assistantTodayStatus.test.ts` (8 ca).
+
+Còn thiếu sau đợt này (xếp theo độ phủ đã đo): đọc chi tiết **nhật ký / phiếu quy trình / yêu cầu** (828 bản ghi
+chỉ tìm được, không đọc được; riêng nhật ký còn chưa có trong `tim_ho_so`), tra theo **chức danh / đơn vị** thay vì
+theo tên, **việc của người khác**, **tổng quan + dự báo một dự án**, **soạn nháp đề nghị thanh toán**.
+
 ## Việc tiếp (K3 đợt 4+)
 
 Còn ~45 luật: Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất, Danh mục vật tư.
