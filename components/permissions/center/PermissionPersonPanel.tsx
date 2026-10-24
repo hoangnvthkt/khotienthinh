@@ -1,14 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, Loader2, SlidersHorizontal, X } from 'lucide-react';
 import { getApiErrorMessage, logApiError } from '../../../lib/apiError';
 import type { CapabilityRow, CenterPerson, CenterTemplate } from '../../../lib/permissions/permissionCenterService';
 import { emptySodAcknowledgement, sodAcknowledgementIssue, toSodAcceptances, type SodAcknowledgement } from '../../../lib/permissions/sodService';
 import { userTemplateAssignmentService, type TemplateAssignmentPreview } from '../../../lib/userTemplateAssignmentService';
 import { primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import { SodAcknowledgeFields, SodRuleList, type SodControlOwnerCandidate } from '../SodAcknowledge';
-import { CapabilityList, PersonAvatar, TemplateChip, optionLabels } from './PermissionCenterParts';
-
-export const SAVE_REASONS = ['Theo chức danh', 'Điều chuyển bộ phận', 'Kiêm nhiệm tạm thời', 'Chủ SP duyệt'] as const;
+import { CapabilityList, PersonAvatar, ReasonChips, SAVE_REASONS, TemplateChip, optionLabels } from './PermissionCenterParts';
 
 interface PermissionPersonPanelProps {
   person: CenterPerson;
@@ -20,6 +18,8 @@ interface PermissionPersonPanelProps {
   onClose?: () => void;
   onOpenDetail: () => void;
   onSaved: () => void | Promise<void>;
+  /** Mở Sao chép với người này làm mẫu. */
+  onCopyFrom?: () => void;
 }
 
 const Section: React.FC<{ no: number; title: string; children: React.ReactNode }> = ({ no, title, children }) => (
@@ -35,7 +35,7 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
 
 /** Ngăn "Theo người": mẫu + ô tích (đổi có xem trước), làm được gì, khác mẫu, quyền ở chỗ khác. */
 const PermissionPersonPanel: React.FC<PermissionPersonPanelProps> = ({
-  person, templates, baseRows, candidates, actorUserId, onClose, onOpenDetail, onSaved,
+  person, templates, baseRows, candidates, actorUserId, onClose, onOpenDetail, onSaved, onCopyFrom,
 }) => {
   const [code, setCode] = useState<string>(person.templateCode || '');
   const [options, setOptions] = useState<string[]>(person.options);
@@ -174,17 +174,7 @@ const PermissionPersonPanel: React.FC<PermissionPersonPanelProps> = ({
               <SodAcknowledgeFields warnings={sodWarnings} value={ack} onChange={setAck} candidates={candidates} disabled={saving} />
             </div>
           )}
-          {changed && (
-            <div className="space-y-1.5">
-              <span className="block text-xs font-semibold text-muted-foreground">Lý do (ghi vào nhật ký)</span>
-              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Lý do">
-                {SAVE_REASONS.map(item => (
-                  <button key={item} type="button" role="radio" aria-checked={reason === item} onClick={() => setReason(item)}
-                    className={`min-h-9 rounded-full border px-3 text-xs font-semibold ${reason === item ? 'border-teal-700 bg-teal-700 text-white' : 'border-border bg-background text-foreground hover:bg-muted'}`}>{item}</button>
-                ))}
-              </div>
-            </div>
-          )}
+          {changed && <ReasonChips value={reason} onChange={setReason} />}
         </Section>
 
         <Section no={2} title="Làm được gì">
@@ -241,6 +231,11 @@ const PermissionPersonPanel: React.FC<PermissionPersonPanelProps> = ({
         <button type="button" onClick={onOpenDetail} className={`${secondaryBtn} min-h-10 flex-1 md:flex-none`}>
           <SlidersHorizontal size={15} /> Chỉnh chi tiết
         </button>
+        {onCopyFrom && (
+          <button type="button" onClick={onCopyFrom} className={`${secondaryBtn} min-h-10 flex-1 md:flex-none`}>
+            <Copy size={15} /> Sao chép sang người khác
+          </button>
+        )}
         <button type="button" onClick={() => void save()} disabled={Boolean(saveBlock) || saving} title={saveBlock || undefined}
           className={`${primaryBtn} min-h-10 flex-1 md:ml-auto md:flex-none`}>
           {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Lưu thay đổi

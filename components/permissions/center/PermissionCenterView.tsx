@@ -1,13 +1,17 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Clock3, KeyRound, LayoutGrid, RefreshCw, Search, ShieldAlert, ShieldCheck, Users, UserCheck, Layers } from 'lucide-react';
+import { ArrowLeft, Clock3, Copy, History, KeyRound, LayoutGrid, ListChecks, RefreshCw, Search, ShieldAlert, ShieldCheck, Users, UserCheck, Layers } from 'lucide-react';
 import { getApiErrorMessage, logApiError } from '../../../lib/apiError';
 import {
   buildKpis, filterPeople, groupByDepartment, permissionCenterService, templateColor,
   type CenterKpiKey, type PermissionCenterData,
 } from '../../../lib/permissions/permissionCenterService';
 import { Kpi } from '../../finance/financeUi';
-import { StateBox, secondaryBtn } from '../../procurement/hub/hubUi';
+import { StateBox, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
+import PermissionBulkTab, { type BulkPreset } from './PermissionBulkTab';
+import PermissionControlTab from './PermissionControlTab';
+import PermissionCopyTab from './PermissionCopyTab';
+import PermissionLogTab from './PermissionLogTab';
 import PermissionPersonPanel from './PermissionPersonPanel';
 import PermissionTemplatesTab from './PermissionTemplatesTab';
 import { OtherPermissionTools, PersonCard, TemplateDot } from './PermissionCenterParts';
@@ -26,7 +30,8 @@ export interface PermissionCenterViewProps {
   reloadKey?: number;
 }
 
-type Tab = 'overview' | 'templates' | 'template-items';
+type Tab = 'overview' | 'templates' | 'template-items' | 'bulk' | 'copy' | 'control' | 'log';
+const TABS: Tab[] = ['overview', 'templates', 'template-items', 'bulk', 'copy', 'control', 'log'];
 const KPI_ICONS: Record<CenterKpiKey, { icon: React.ElementType; tone: string }> = {
   all: { icon: Users, tone: 'text-teal-700' },
   templated: { icon: UserCheck, tone: 'text-leaf-700' },
@@ -34,6 +39,14 @@ const KPI_ICONS: Record<CenterKpiKey, { icon: React.ElementType; tone: string }>
   sensitive: { icon: KeyRound, tone: 'text-violet-700' },
   extra: { icon: Layers, tone: 'text-slate-600' },
   expiring: { icon: Clock3, tone: 'text-sky-700' },
+};
+
+/** Trên điện thoại dải tab cuộn ngang: đưa tab đang mở vào khung nhìn (không cuộn cả trang). */
+const keepTabInView = (element: HTMLButtonElement | null) => {
+  const strip = element?.parentElement;
+  if (!element || !strip) return;
+  const left = element.offsetLeft - strip.offsetLeft;
+  if (left < strip.scrollLeft || left + element.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = Math.max(0, left - 8);
 };
 
 const useIsWide = () => {
@@ -51,8 +64,9 @@ const useIsWide = () => {
 /** Trung tâm phân quyền: một chỗ xem ai làm được gì, gắn mẫu theo vị trí, chỉnh từng người. */
 const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, currentUserId, isAdmin, people, canOpenRoute, onOpenDetail, reloadKey = 0 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = (['overview', 'templates', 'template-items'].includes(searchParams.get('tab') || '') ? searchParams.get('tab') : 'overview') as Tab;
+  const tab = (TABS.includes(searchParams.get('tab') as Tab) ? searchParams.get('tab') : 'overview') as Tab;
   const selectedUserId = searchParams.get('person');
+  const copyFrom = searchParams.get('from');
   const selectedTemplate = searchParams.get('template') || '';
   const [data, setData] = useState<PermissionCenterData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -60,6 +74,8 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
   const [query, setQuery] = useState('');
   const [templateFilter, setTemplateFilter] = useState<string | null>(null);
   const [kpi, setKpi] = useState<CenterKpiKey>('all');
+  const [bulkPreset, setBulkPreset] = useState<{ key: number; preset: BulkPreset | null }>({ key: 0, preset: null });
+  const [changes, setChanges] = useState(0);
   const isWide = useIsWide();
 
   const setParams = useCallback((patch: Record<string, string | null>) => {
@@ -71,6 +87,7 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
   }, [setSearchParams]);
 
   const load = useCallback(async () => {
+    setChanges(value => value + 1);
     setState(current => (current === 'ready' ? 'ready' : 'loading'));
     try {
       setData(await permissionCenterService.load());
@@ -97,22 +114,26 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
   const groups = useMemo(() => groupByDepartment(filtered), [filtered]);
   const selected = data?.people.find(person => person.userId === selectedUserId) || null;
   const hasFilter = Boolean(query.trim() || templateFilter || kpi !== 'all');
-  const candidates = useMemo(() => people
-    .filter(candidate => candidate.active && candidate.id !== selectedUserId && candidate.id !== currentUserId)
+  const ownerCandidates = useMemo(() => people
+    .filter(candidate => candidate.active && candidate.id !== currentUserId)
     .map(candidate => ({ id: candidate.id, name: candidate.name }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'vi')), [people, selectedUserId, currentUserId]);
+    .sort((a, b) => a.name.localeCompare(b.name, 'vi')), [people, currentUserId]);
+  const candidates = useMemo(() => ownerCandidates.filter(candidate => candidate.id !== selectedUserId), [ownerCandidates, selectedUserId]);
 
   if (!allowed) {
     return <StateBox kind="denied" title="Bạn chưa có quyền phân quyền" message="Trang này dành cho người quản lý phân quyền. Nhờ Admin nếu bạn cần." />;
   }
 
-  const openPerson = (userId: string) => setParams({ tab: 'overview', person: userId });
+  const openPerson = (userId: string) => setParams({ tab: 'overview', person: userId, from: null });
+  const openTab = (next: Tab, patch: Record<string, string | null> = {}) => setParams({ tab: next, person: null, ...patch });
+  const openBulk = (preset: BulkPreset | null) => { setBulkPreset(current => ({ key: current.key + 1, preset })); openTab('bulk'); };
   const clearFilter = () => { setQuery(''); setTemplateFilter(null); setKpi('all'); };
   const openDetail = () => { if (selectedUserId) onOpenDetail(selectedUserId); };
 
   const panel = selected && data ? (
     <PermissionPersonPanel person={selected} templates={data.templates} baseRows={baseRows} candidates={candidates} actorUserId={currentUserId}
-      onClose={() => setParams({ person: null })} onOpenDetail={openDetail} onSaved={load} />
+      onClose={() => setParams({ person: null })} onOpenDetail={openDetail} onSaved={load}
+      onCopyFrom={() => openTab('copy', { from: selected.userId })} />
   ) : null;
 
   return (
@@ -125,7 +146,19 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
             <p className="text-sm text-muted-foreground">Ai được làm gì trong công ty: xem toàn cảnh, gắn mẫu theo vị trí, chỉnh từng người.</p>
           </div>
         </div>
-        <button type="button" onClick={() => void load()} className={`${secondaryBtn} min-h-10 flex-1 md:flex-none`}><RefreshCw size={15} /> Làm mới</button>
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
+          <button type="button" onClick={() => void load()} aria-label="Làm mới" title="Làm mới" className={`${secondaryBtn} min-h-10`}><RefreshCw size={15} /></button>
+          {data && (
+            <button type="button" onClick={() => openTab('copy')} aria-label="Sao chép quyền" className={`${secondaryBtn} min-h-10 flex-1 md:flex-none`}>
+              <Copy size={15} /> <span className="sm:hidden">Sao chép</span><span className="hidden sm:inline">Sao chép quyền</span>
+            </button>
+          )}
+          {data && (
+            <button type="button" onClick={() => openBulk(null)} aria-label="Phân quyền hàng loạt" className={`${primaryBtn} min-h-10 flex-1 md:flex-none`}>
+              <ListChecks size={15} /> <span className="sm:hidden">Hàng loạt</span><span className="hidden sm:inline">Phân quyền hàng loạt</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {state === 'loading' && !data && <StateBox kind="loading" title="Đang tải phân quyền…" />}
@@ -142,13 +175,16 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
           </div>
 
           <div role="tablist" aria-label="Phân quyền" className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
-            {([['overview', 'Toàn cảnh', LayoutGrid], ['templates', 'Theo vị trí', Layers]] as const).map(([key, label, Icon]) => {
+            {([['overview', 'Toàn cảnh', LayoutGrid, null], ['templates', 'Theo vị trí', Layers, data.templates.length], ['bulk', 'Hàng loạt', ListChecks, null],
+              ['copy', 'Sao chép', Copy, null], ['control', 'Kiểm soát', ShieldAlert, data.people.filter(person => person.conflicts.length > 0).length || null],
+              ['log', 'Nhật ký', History, null]] as const).map(([key, label, Icon, badge]) => {
               const on = tab === key || (key === 'templates' && tab === 'template-items');
               return (
-                <button key={key} type="button" role="tab" aria-selected={on} onClick={() => setParams({ tab: key, person: null })}
+                <button key={key} type="button" role="tab" aria-selected={on} onClick={() => (key === 'bulk' ? openBulk(null) : openTab(key))}
+                  ref={on ? keepTabInView : undefined}
                   className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold ${on ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
                   <Icon size={16} />{label}
-                  {key === 'templates' && <span className={`rounded-full px-1.5 text-xs ${on ? 'bg-white/20' : 'bg-muted'}`}>{data.templates.length}</span>}
+                  {badge !== null && <span className={`rounded-full px-1.5 text-xs ${on ? 'bg-white/20' : 'bg-muted'}`}>{badge}</span>}
                 </button>
               );
             })}
@@ -222,6 +258,7 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
             <PermissionTemplatesTab templates={data.templates} people={data.people} baseRows={baseRows}
               selectedCode={selectedTemplate || data.templates[0]?.code || ''} onSelect={code => setParams({ template: code })}
               onOpenPerson={openPerson} onEditItems={() => setParams({ tab: 'template-items' })}
+              onAddPeople={code => openBulk({ userIds: [], kind: 'template', templateCode: code })}
               canEdit={isAdmin} onSummarySaved={load} />
           )}
 
@@ -234,7 +271,25 @@ const PermissionCenterView: React.FC<PermissionCenterViewProps> = ({ allowed, cu
             </div>
           )}
 
-          <OtherPermissionTools canOpenRoute={canOpenRoute} />
+          {tab === 'bulk' && (
+            <PermissionBulkTab key={bulkPreset.key} templates={data.templates} people={data.people} candidates={ownerCandidates} actorUserId={currentUserId}
+              preset={bulkPreset.preset} onApplied={load} />
+          )}
+
+          {tab === 'copy' && (
+            <PermissionCopyTab templates={data.templates} people={data.people} candidates={ownerCandidates} actorUserId={currentUserId}
+              fromUserId={copyFrom} onFromChange={userId => setParams({ from: userId })} onApplied={load} />
+          )}
+
+          {tab === 'control' && (
+            <PermissionControlTab people={data.people} candidates={ownerCandidates} actorUserId={currentUserId} reloadKey={changes}
+              onOpenPerson={openPerson} onShowAll={next => { setKpi(next); openTab('overview'); }}
+              onExtend={userIds => openBulk({ userIds, kind: 'extend', step: 3 })} />
+          )}
+
+          {tab === 'log' && <PermissionLogTab reloadKey={changes} />}
+
+          {(tab === 'overview' || tab === 'templates') && <OtherPermissionTools canOpenRoute={canOpenRoute} />}
         </>
       )}
 

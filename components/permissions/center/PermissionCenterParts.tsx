@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Bot, Building2, ChevronRight, FolderKanban, HeartPulse, Landmark, MapPin, Network, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Bot, Building2, CheckCircle2, ChevronRight, FolderKanban, HeartPulse, Landmark, MapPin, MinusCircle, Network, ShieldCheck } from 'lucide-react';
+import type { BulkApplyResult } from '../../../lib/permissions/permissionBulkService';
 import { initialOf, templateColor, type CapabilityRow, type CenterPerson, type CenterTemplate } from '../../../lib/permissions/permissionCenterService';
 
 export const PersonAvatar: React.FC<{ person: Pick<CenterPerson, 'name' | 'avatar' | 'templateCode'>; size?: number }> = ({ person, size = 36 }) => {
@@ -101,5 +102,44 @@ export const OtherPermissionTools: React.FC<{ canOpenRoute: (path: string) => bo
         ))}
       </div>
     </section>
+  );
+};
+
+/** Lý do bấm sẵn (ghi vào nhật ký từng người) — không còn lý do kiểu tên ảnh chụp màn hình. */
+export const SAVE_REASONS = ['Theo chức danh', 'Điều chuyển bộ phận', 'Kiêm nhiệm tạm thời', 'Chủ SP duyệt'] as const;
+
+export const ReasonChips: React.FC<{ value: string; onChange: (value: string) => void; label?: string; disabled?: boolean }> = ({ value, onChange, label = 'Lý do (ghi vào nhật ký)', disabled }) => (
+  <div className="space-y-1.5">
+    <span className="block text-xs font-semibold text-muted-foreground">{label}</span>
+    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Lý do">
+      {SAVE_REASONS.map(item => (
+        <button key={item} type="button" role="radio" aria-checked={value === item} disabled={disabled} onClick={() => onChange(item)}
+          className={`min-h-9 rounded-full border px-3 text-xs font-semibold ${value === item ? 'border-teal-700 bg-teal-700 text-white' : 'border-border bg-background text-foreground hover:bg-muted'}`}>{item}</button>
+      ))}
+    </div>
+  </div>
+);
+
+/** Kết quả áp hàng loạt / sao chép: đã xong, bỏ qua (kèm vì sao), chưa làm được (kèm lỗi). */
+export const ApplyResultBox: React.FC<{ result: BulkApplyResult; doneText: string; nameOf: (userId: string) => string }> = ({ result, doneText, nameOf }) => {
+  const name = (row: { userId: string; name: string }) => row.name || nameOf(row.userId);
+  return (
+    <div className="space-y-2" role="status">
+      {result.done.length > 0 && (
+        <p className="flex items-start gap-2 rounded-lg bg-leaf-50 px-3 py-2 text-sm font-semibold text-leaf-800"><CheckCircle2 size={16} className="mt-0.5 shrink-0" />{doneText}</p>
+      )}
+      {result.skipped.length > 0 && (
+        <details className="rounded-lg border border-border px-3 py-2 text-sm">
+          <summary className="cursor-pointer font-semibold text-foreground"><MinusCircle size={14} className="mr-1 inline text-muted-foreground" />Bỏ qua {result.skipped.length} người</summary>
+          <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">{result.skipped.map(row => <li key={row.userId}><b className="text-foreground">{name(row)}</b> — {row.note}</li>)}</ul>
+        </details>
+      )}
+      {result.failed.length > 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm" role="alert">
+          <p className="flex items-center gap-1.5 font-semibold text-rose-800"><AlertTriangle size={14} /> Chưa làm được {result.failed.length} người — quyền của họ giữ nguyên</p>
+          <ul className="mt-1 space-y-0.5 text-xs text-rose-900">{result.failed.map(row => <li key={row.userId}><b>{name(row)}</b> — {row.error}</li>)}</ul>
+        </div>
+      )}
+    </div>
   );
 };
