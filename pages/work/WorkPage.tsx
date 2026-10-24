@@ -50,6 +50,7 @@ import { createWorkGoalService, type WorkGoalService } from "../../lib/work/work
 import { workAi as defaultWorkAi, type WorkAiService } from "../../lib/work/workAi";
 import { WorkQuickAssign } from "./WorkQuickAssign";
 import { WorkMyBoard } from "./WorkMyBoard";
+import { Highlight, WorkMotion } from "../../components/work/motion";
 import { WorkTeamBoard } from "./WorkTeamBoard";
 import { WorkCompanyBoard } from "./WorkCompanyBoard";
 import type { WorkBoardAccess } from "../../lib/work/workBoardService";
@@ -343,14 +344,16 @@ export function WorkWorkspace({
     }
   }, [taskCode, list.loading, routeLocation.key]);
   return (
+    <WorkMotion>
     <main className={`work-module${taskCode ? " work-module-detail" : ""}`} ref={root}>
       {!taskCode && !workspaceContextId && access && (access.myUnits.length > 0 || access.company) && (
-        <nav className="work-space-switch" aria-label="Phạm vi xem việc">
+        <nav className="work-space-switch has-pill" aria-label="Phạm vi xem việc">
           {([["", "Việc của tôi", 0], ...(access.myUnits.length ? [["team", "Phòng tôi", access.reviewsWaitingMe]] : []),
             ...(access.company ? [["company", "Toàn công ty", access.claimsWaitingMe]] : [])] as Array<[string, string, number]>).map(([id, label, n]) => (
             <button type="button" key={id || "my"} aria-current={(space || "") === id ? "page" : undefined}
               onClick={() => setParams(() => { const next = new URLSearchParams(); if (id) next.set("space", id); return next; })}
               title={id === "team" && n ? `${n} việc chờ bạn duyệt` : id === "company" && n ? `${n} việc giao miệng chờ bạn xác nhận` : undefined}>
+              {(space || "") === id && <Highlight group="work-space" className="work-space-pill" />}
               {label}{n > 0 && <span className="work-space-badge">{n}</span>}
             </button>
           ))}
@@ -560,13 +563,14 @@ export function WorkWorkspace({
             <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); setBoardTick((v) => v + 1); }} />
           )}
-          <nav className="work-tabs" aria-label="Danh sách công việc">
+          <nav className="work-tabs has-pill" aria-label="Danh sách công việc">
             {views.map((tab) => (
               <button
                 key={tab.id}
                 aria-current={tab.id === view ? "page" : undefined}
                 onClick={() => setFilter("view", tab.id)}
               >
+                {tab.id === view && <Highlight group="work-tabs" className="work-tab-line" />}
                 {tab.label}
               </button>
             ))}
@@ -581,13 +585,14 @@ export function WorkWorkspace({
             <WorkQuickAssign service={service} board={board} ai={ai || undefined} actorName={actorName} preset={preset}
               onCreated={(message) => { setNotice(message); void list.refresh(); }} />
           )}
-          <nav className="work-tabs" aria-label="Danh sách công việc">
+          <nav className="work-tabs has-pill" aria-label="Danh sách công việc">
             {views.map((tab) => (
               <button
                 key={tab.id}
                 aria-current={tab.id === view ? "page" : undefined}
                 onClick={() => setFilter("view", tab.id)}
               >
+                {tab.id === view && <Highlight group="work-tabs" className="work-tab-line" />}
                 {tab.label}
               </button>
             ))}
@@ -799,6 +804,7 @@ export function WorkWorkspace({
         />
       )}
     </main>
+    </WorkMotion>
   );
 }
 export default function WorkPage() {

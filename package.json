@@ -36,6 +36,7 @@
     "docxtemplater": "^3.68.3",
     "file-saver": "^2.0.5",
     "lucide-react": "0.462.0",
+    "motion": "12.43.0",
     "open-docxtemplater-image-module": "^1.0.3",
     "pdfjs-dist": "4.10.38",
     "pizzip": "^3.2.0",

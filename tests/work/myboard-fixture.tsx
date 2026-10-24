@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { WorkMyBoard } from "../../pages/work/WorkMyBoard";
 import { WorkQuickAssign } from "../../pages/work/WorkQuickAssign";
 import type { WorkMyBoard as Board, WorkMyTask } from "../../lib/work/workBoardService";
+import { Highlight, WorkMotion } from "../../components/work/motion";
 import "../../pages/work/work.css";
 
 const query = new URLSearchParams(location.search);
@@ -53,6 +54,9 @@ const people = {
     { userId: "u3", name: "Trần Thu Hà", title: "Kỹ sư dự toán", unit: { id: "qs", code: "QS", name: "Phòng Dự toán" }, myTeam: false, sameUnit: false, isMe: false, canReceive: true, load: 4, aliases: ["Hà"] },
   ],
 };
+const aiService = {
+  draftTask: async () => { await new Promise((r) => setTimeout(r, 2500)); return { ok: false, message: "Dữ liệu mẫu." }; },
+} as never;
 const boardService = {
   myBoard: async () => board,
   assignablePeople: async () => people,
@@ -66,15 +70,17 @@ const taskService = { command: async () => ({}), preview: async () => ({}), crea
 const tabs = ["Được giao", "Tôi đã giao", "Tôi theo dõi", "Đã ghim"];
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
+    <WorkMotion>
     <main className="work-module">
       <WorkMyBoard board={boardService} service={taskService} refreshKey={0} detailTo={(code) => `/work/${code}`} onNotice={() => undefined}
         headerActions={<button className="work-secondary">Tạo công việc</button>}>
-        <WorkQuickAssign service={taskService} board={boardService} actorName="Admin Hoàng" onCreated={() => undefined} />
-        <nav className="work-tabs" aria-label="Danh sách công việc">
-          {tabs.map((t, i) => <button key={t} aria-current={i === 0 ? "page" : undefined}>{t}</button>)}
+        <WorkQuickAssign service={taskService} board={boardService} ai={query.has("ai") ? aiService : undefined} actorName="Admin Hoàng" onCreated={() => undefined} />
+        <nav className="work-tabs has-pill" aria-label="Danh sách công việc">
+          {tabs.map((t, i) => <button key={t} aria-current={i === 0 ? "page" : undefined}>{i === 0 && <Highlight group="work-tabs" className="work-tab-line" />}{t}</button>)}
           <button className="work-tabs-extra"><Search size={15} /> Tìm & lọc</button>
         </nav>
       </WorkMyBoard>
     </main>
+    </WorkMotion>
   </HashRouter>,
 );
