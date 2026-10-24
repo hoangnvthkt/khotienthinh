@@ -5,6 +5,8 @@ import '../../index.css';
 import PermissionCenterView from '../../components/permissions/center/PermissionCenterView';
 import { permissionCenterService, type CenterPerson, type CenterTemplate, type PermissionCenterData } from '../../lib/permissions/permissionCenterService';
 import { userTemplateAssignmentService } from '../../lib/userTemplateAssignmentService';
+import { permissionBulkService, type AuditRow, type BulkPreviewRow } from '../../lib/permissions/permissionBulkService';
+import { sodService, type SodWarning } from '../../lib/permissions/sodService';
 
 // Trung tâm phân quyền · fixture (không gọi Supabase). Số liệu giống Cloud 23/10/2026, rút gọn người.
 // ?denied=1: người không quản lý phân quyền. ?fail=1: lỗi tải. ?staff=1: không phải Admin (không sửa mô tả mẫu).
@@ -83,6 +85,97 @@ userTemplateAssignmentService.save = async (userId, code, options, reason, accep
   data = { ...data, people: data.people.map(person => (person.userId === userId ? { ...person, templateCode: code, options: [...options] } : person)) };
   return { added: 1 + options.length, removed: 0 };
 };
+
+// Bước 3: Hàng loạt, Sao chép, Kiểm soát, Nhật ký.
+const PO_WARNING: SodWarning = { ruleCode: 'PROCUREMENT_BUY_APPROVE_PO', name: 'Mua hàng + Duyệt PO', description: 'Người mua hàng cũng duyệt đơn mua.', scopeType: 'global', scopeId: '*', scopeLabel: null,
+  permissions: [{ code: 'system.procurement.manage', label: 'Quản trị', moduleLabel: 'Mua hàng' }, { code: 'system.procurement.approve', label: 'Duyệt PO', moduleLabel: 'Mua hàng' }],
+  controls: ['Ban lãnh đạo xem lại đơn mua lớn hằng tuần'] };
+const KEEPER_WARNING: SodWarning = { ...PO_WARNING, ruleCode: 'PROCUREMENT_BUY_WAREHOUSE_KEEPER', name: 'Mua hàng + Thủ kho', scopeType: 'warehouse', scopeId: 'wh-smb', scopeLabel: 'Kho Sơn Miền Bắc' };
+const nameOf = (userId: string) => data.people.find(person => person.userId === userId)?.name || userId;
+const templateName = (code: string | null) => TEMPLATES.find(template => template.code === code)?.name || null;
+permissionBulkService.grantableCatalog = async () => {
+  calls.push({ catalog: true }); await sleep(30);
+  return [
+    { code: 'hrm.attendance.approve', label: 'Duyệt/chốt công', module: 'Chấm công', scopeType: 'global', sensitive: false, search: 'nhan su cham cong duyet/chot cong' },
+    { code: 'project.report.export', label: 'Xuất dữ liệu', module: 'Báo cáo dự án', scopeType: 'global', sensitive: false, search: 'du an bao cao du an xuat du lieu' },
+    { code: 'system.finance.manage', label: 'Quản trị', module: 'Tài chính', scopeType: 'global', sensitive: true, search: 'tai chinh quan tri' },
+  ];
+};
+permissionBulkService.previewBulk = async (userIds, action) => {
+  calls.push({ previewBulk: { userIds: [...userIds], action } }); await sleep(50);
+  return userIds.map((userId): BulkPreviewRow => {
+    const person = data.people.find(item => item.userId === userId)!;
+    const base = { userId, name: person.name, fromTemplate: templateName(person.templateCode), toTemplate: null, skip: false, note: null, add: 0, remove: 0, extended: 0, warnings: [] as SodWarning[] };
+    if (action.kind === 'template') {
+      if (person.templateCode === action.templateCode) return { ...base, toTemplate: templateName(action.templateCode), skip: true, note: 'Đã theo mẫu này' };
+      return { ...base, toTemplate: templateName(action.templateCode), add: 5, remove: 2 };
+    }
+    if (action.kind === 'option') {
+      const template = TEMPLATES.find(item => item.code === person.templateCode);
+      if (!template?.options.some(option => option.key === action.optionKey)) return { ...base, skip: true, note: `Mẫu ${template?.name || ''} không có ô này` };
+      if (person.options.includes(action.optionKey) === action.on) return { ...base, skip: true, note: action.on ? 'Đã tích sẵn' : 'Chưa tích' };
+      return { ...base, add: action.on ? 1 : 0, remove: action.on ? 0 : 1, warnings: action.on && person.templateCode === 'material_staff' ? [PO_WARNING] : [] };
+    }
+    if (action.kind === 'extend') return person.expiringSoon ? { ...base, extended: person.expiringSoon } : { ...base, skip: true, note: 'Không có quyền sắp hết hạn' };
+    return { ...base, add: 1 };
+  });
+};
+permissionBulkService.applyBulk = async (userIds, action, reason, ack, onProgress) => {
+  calls.push({ applyBulk: { userIds: [...userIds], action, reason, ack } }); await sleep(80);
+  if (params.has('bulkfail')) throw new Error('Mất kết nối máy chủ');
+  if (action.kind === 'template') {
+    data = { ...data, people: data.people.map(person => (userIds.includes(person.userId) ? { ...person, templateCode: action.templateCode, options: [...action.options] } : person)) };
+  }
+  onProgress?.(userIds.length, userIds.length);
+  const failed = userIds.filter(userId => userId === 'u-vinh').map(userId => ({ userId, name: nameOf(userId), error: 'Tài khoản đã khóa' }));
+  return { done: userIds.filter(userId => userId !== 'u-vinh').map(userId => ({ userId, name: nameOf(userId), added: 5, removed: 2 })), failed, skipped: [] };
+};
+permissionBulkService.previewCopy = async (fromUserId, toUserIds, what) => {
+  calls.push({ previewCopy: { fromUserId, toUserIds: [...toUserIds], what } }); await sleep(50);
+  const source = data.people.find(person => person.userId === fromUserId)!;
+  return toUserIds.map(userId => {
+    const person = data.people.find(item => item.userId === userId)!;
+    const lines: { text: string; tone: 'ok' | 'warn' | 'muted' }[] = [];
+    if (what.template) lines.push(person.templateCode === source.templateCode
+      ? { text: `Mẫu: giữ ${templateName(source.templateCode)}`, tone: 'muted' }
+      : { text: `Mẫu: ${templateName(person.templateCode) || 'chưa có'} → ${templateName(source.templateCode)} (thêm 20, gỡ 0)`, tone: 'ok' });
+    if (what.extra) lines.push({ text: `+ ${source.extraCount} quyền riêng${source.sensitive.length ? `, có ${source.sensitive.length} quyền nhạy cảm` : ''}`, tone: source.sensitive.length ? 'warn' : 'ok' });
+    if (what.warehouses) lines.push({ text: `+ 1 quyền riêng`, tone: 'ok' });
+    if (what.room) lines.push({ text: `Room: thêm vào ${source.roomProjects} dự án, cùng vị trí và vai trò`, tone: 'ok' });
+    return { userId, name: person.name, lines, warnings: fromUserId === 'u-tam' && what.extra ? [KEEPER_WARNING] : [] };
+  });
+};
+permissionBulkService.applyCopy = async (fromUserId, toUserIds, what, reason, ack, onProgress) => {
+  calls.push({ applyCopy: { fromUserId, toUserIds: [...toUserIds], what, reason, ack } }); await sleep(80);
+  onProgress?.(toUserIds.length, toUserIds.length);
+  return { done: toUserIds.map(userId => ({ userId, name: nameOf(userId), added: 3, rooms: what.room ? 1 : 0 })), failed: [], skipped: [] };
+};
+const log = (id: string, patch: Partial<AuditRow>): AuditRow => ({ id, at: '2026-10-23T14:27:07Z', eventType: 'user_authorization_v2_updated', kind: 'change', actor: 'Admin Hoàng',
+  target: 'Nguyễn Quang Thuận', reason: 'Theo chức danh', before: 80, after: 81, added: null, removed: null, template: null, rule: null, controlOwner: null, until: null, room: null, project: null, ...patch });
+permissionBulkService.listAudit = async before => {
+  calls.push({ listAudit: before || null }); await sleep(40);
+  if (before) return [log('old-1', { at: '2026-09-22T04:14:25Z', reason: 'Screenshot 2026-09-22 at 11.14.25', target: 'Hà Thị Tuyết Minh' })];
+  return [
+    log('e1', { eventType: 'sod_existing_conflict_acknowledged', kind: 'sod', target: 'Bùi Thị Tâm', rule: 'Mua hàng + Thủ kho', controlOwner: 'Nguyễn Thị Hương',
+      until: '2027-04-23T14:27:07Z', reason: 'Kế toán kiêm thủ kho và mua hàng Kho Sơn Miền Bắc (chủ SP chốt 23/10)', before: null, after: null }),
+    log('e2', { eventType: 'user_template_assignment_saved', kind: 'template', target: 'Bùi Thị Tâm', template: 'Kế toán', added: 21, removed: 0, reason: 'Đợt 3: gắn mẫu quyền theo bộ phận (chủ SP duyệt 23/10/2026)' }),
+    log('e3', { at: '2026-10-23T09:00:00Z', reason: 'Okokokokok', target: 'Nguyễn Văn Năm' }),
+    log('e4', { at: '2026-10-22T09:00:00Z', eventType: 'replace_project_permission_room_members', kind: 'room', target: null, reason: '', room: 'Nhật ký công trường', project: 'Sơn Miền Bắc' }),
+    log('e5', { at: '2026-10-21T09:00:00Z', reason: 'thuannq@tienthinhjsc.vn' }),
+    ...Array.from({ length: 95 }, (_, index) => log(`f${index}`, { at: new Date(Date.UTC(2026, 9, 20, 12, 0) - index * 3600_000).toISOString(), reason: 'Phân quyền Room dự án', target: 'Phạm Ngọc Sơn' })),
+  ];
+};
+permissionBulkService.expiryOverview = async () => { calls.push({ expiry: true }); await sleep(30); return { nextExpiry: '2026-12-31T16:59:59Z', within30: 0, within90: 0 }; };
+sodService.listConflicts = async userId => {
+  const person = data.people.find(item => item.userId === userId);
+  if (!person?.conflicts.length) return [];
+  return [{ userId: person.userId, name: person.name, email: '', conflicts: person.conflicts.map(conflict => ({
+    ruleCode: conflict.rule === 'Mua hàng + Thủ kho' ? 'PROCUREMENT_BUY_WAREHOUSE_KEEPER' : 'PROCUREMENT_BUY_APPROVE_PO', name: conflict.rule, description: '',
+    scopes: [{ scopeType: conflict.scope === 'Toàn công ty' ? 'global' : 'warehouse', scopeId: '*', scopeLabel: conflict.scope }],
+    acceptance: conflict.until ? { expiresAt: conflict.until, reason: 'Chủ SP chốt 23/10', compensatingControls: 'Rà soát hằng tuần', controlOwnerName: conflict.controlOwner, acceptedAt: '2026-10-23T14:27:07Z' } : null,
+  })) }];
+};
+sodService.recordExisting = async (userId, ruleCode, ack) => { calls.push({ recordExisting: { userId, ruleCode, ack } }); await sleep(40); };
 
 const Where: React.FC = () => { const l = useLocation(); return <p data-testid="route" className="sr-only">{l.pathname}{l.search}</p>; };
 const people = [...PEOPLE.map(person => ({ id: person.userId, name: person.name, active: true })), { id: 'u-admin', name: 'Admin Hoàng', active: true }];

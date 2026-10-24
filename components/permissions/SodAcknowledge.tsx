@@ -100,7 +100,7 @@ export const SodAcknowledgeFields: React.FC<SodAcknowledgeFieldsProps> = ({ warn
             ))}
           </div>
         )}
-        <textarea value={value.compensatingControls} disabled={disabled} rows={2}
+        <textarea value={value.compensatingControls} disabled={disabled} rows={2} aria-label="Kiểm soát bù bằng cách nào"
           onChange={event => onChange({ ...value, compensatingControls: event.target.value })}
           placeholder="Bấm gợi ý ở trên hoặc tự ghi" className={fieldCls} />
       </div>

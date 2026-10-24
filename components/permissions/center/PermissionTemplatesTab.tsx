@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, PencilLine, Plus, Settings2, Trash2 } from 'lucide-react';
+import { Loader2, PencilLine, Plus, Settings2, Trash2, UserPlus } from 'lucide-react';
 import { getApiErrorMessage, logApiError } from '../../../lib/apiError';
 import { permissionCenterService, templateColor, type CapabilityRow, type CenterPerson, type CenterTemplate } from '../../../lib/permissions/permissionCenterService';
 import { inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
@@ -14,13 +14,15 @@ interface PermissionTemplatesTabProps {
   onOpenPerson: (userId: string) => void;
   /** Mở bảng quyền chi tiết của mẫu (màn sửa mẫu hiện có). */
   onEditItems: () => void;
+  /** Mở Hàng loạt với mẫu này để thêm nhiều người cùng lúc. */
+  onAddPeople?: (code: string) => void;
   canEdit: boolean;
   onSummarySaved: () => void | Promise<void>;
 }
 
 /** Tab "Theo vị trí": 8 mẫu, mỗi mẫu một màu; mẫu đang chọn hiện làm được gì, ô tích và người đang theo. */
 const PermissionTemplatesTab: React.FC<PermissionTemplatesTabProps> = ({
-  templates, people, baseRows, selectedCode, onSelect, onOpenPerson, onEditItems, canEdit, onSummarySaved,
+  templates, people, baseRows, selectedCode, onSelect, onOpenPerson, onEditItems, onAddPeople, canEdit, onSummarySaved,
 }) => {
   const selected = templates.find(template => template.code === selectedCode) || templates[0];
   const [editing, setEditing] = useState(false);
@@ -85,6 +87,11 @@ const PermissionTemplatesTab: React.FC<PermissionTemplatesTabProps> = ({
             <h2 className="text-lg font-bold text-foreground">{selected.name}</h2>
             <p className="text-sm text-muted-foreground">{members.length} người đang theo mẫu · {selected.itemCount} quyền</p>
           </div>
+          {onAddPeople && (
+            <button type="button" onClick={() => onAddPeople(selected.code)} className={`${secondaryBtn} min-h-10 flex-1 sm:flex-none`}>
+              <UserPlus size={15} /> Thêm người vào mẫu
+            </button>
+          )}
           {canEdit && (
             <button type="button" onClick={onEditItems} className={`${secondaryBtn} min-h-10 flex-1 sm:flex-none`}>
               <Settings2 size={15} /> Sửa quyền trong mẫu

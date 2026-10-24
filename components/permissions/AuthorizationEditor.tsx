@@ -22,6 +22,7 @@ import SpecialRolesEditor from './SpecialRolesEditor';
 import PermissionGuide from './PermissionGuide';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 import type { SodControlOwnerCandidate } from './SodAcknowledge';
+import { SAVE_REASONS } from './center/PermissionCenterParts';
 
 interface AuthorizationEditorProps {
   targetUser: User;
@@ -286,6 +287,14 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
           Lý do thay đổi
           {!reasonRequired && <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">(không bắt buộc khi chỉ sửa hồ sơ)</span>}
         </span>
+        {!disabled && (
+          <span className="flex flex-wrap gap-1.5" aria-label="Lý do bấm sẵn">
+            {SAVE_REASONS.map(item => (
+              <button key={item} type="button" aria-pressed={reason === item} onClick={() => onReasonChange(item)}
+                className={`min-h-8 rounded-full border px-2.5 text-[11px] font-bold ${reason === item ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>{item}</button>
+            ))}
+          </span>
+        )}
         <textarea
           required={reasonRequired}
           value={reason}
