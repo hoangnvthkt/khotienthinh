@@ -278,6 +278,58 @@ describe('projectPermissionService', () => {
     expect(canViewProjectTab(roomUser, 'subcontract', { projectId: 'project-1' })).toBe(false);
   });
 
+  it('Đợt 4a: thành viên dự án xem được đúng các tab chủ SP đã chốt', () => {
+    const member = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-10-24T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [],
+        roomActions: [],
+        projectMemberships: [{ projectId: 'project-1', constructionSiteId: null }],
+      },
+    });
+
+    // Được mở
+    expect(canViewProjectTab(member, 'documents', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(member, 'org', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(member, 'subcontract', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(member, 'material', { projectId: 'project-1' })).toBe(true);
+    for (const tab of ['summary', 'planning', 'custom', 'waste', 'dashboard'] as const) {
+      expect(canViewProjectMaterialTab(member, tab, { projectId: 'project-1' })).toBe(true);
+    }
+
+    // Vẫn đóng: nhạy cảm, Room, và BOQ
+    for (const tab of ['executive', 'contract', 'report', 'finance', 'budget', 'cashflow', 'dailylog', 'gantt'] as const) {
+      expect(canViewProjectTab(member, tab, { projectId: 'project-1' })).toBe(false);
+    }
+    expect(canViewProjectMaterialTab(member, 'boq', { projectId: 'project-1' })).toBe(false);
+
+    // Không mở gì ở dự án người này không có tên
+    expect(canViewProjectTab(member, 'documents', { projectId: 'project-2' })).toBe(false);
+    expect(canViewProjectMaterialTab(member, 'summary', { projectId: 'project-2' })).toBe(false);
+
+    // Không quản trị được, chỉ xem
+    expect(canManageProjectTab(member, 'documents', { projectId: 'project-1' })).toBe(false);
+    expect(canManageProjectTab(member, 'org', { projectId: 'project-1' })).toBe(false);
+  });
+
+  it('Đợt 4a: thành viên gắn công trường chỉ mở ở công trường của mình', () => {
+    const siteMember = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-10-24T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [],
+        roomActions: [],
+        projectMemberships: [{ projectId: 'project-1', constructionSiteId: 'site-1' }],
+      },
+    });
+
+    expect(canViewProjectTab(siteMember, 'documents', { projectId: 'project-1', constructionSiteId: 'site-1' })).toBe(true);
+    expect(canViewProjectTab(siteMember, 'documents', { projectId: 'project-1', constructionSiteId: 'site-2' })).toBe(false);
+    // Phụ trách cả dự án thì mọi công trường đều mở
+    expect(canViewProjectTab(siteMember, 'documents', { projectId: 'project-1' })).toBe(true);
+  });
+
   it('lets only Room work actions manage Room-managed tabs', () => {
     const roomAction = (roomCode: string, actionCode: string) => ({
       projectId: 'project-1', constructionSiteId: null, roomCode, actionCode,

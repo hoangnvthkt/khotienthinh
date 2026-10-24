@@ -42,6 +42,14 @@ describe('procurement orders', () => {
     await expect(procurementInboxService.saveOrder({ vendorId: 'v1', vatRate: 8, items: [] }))
       .rejects.toThrow('tách thành vài đơn nhỏ hơn');
   });
+  it('shows the real reason when the order date is refused, not "Không tải được dữ liệu"', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: {
+      message: 'BUSINESS_DATE_BACKDATE: Ngày 14/10/2026 lùi quá 7 ngày — cần quyền "Nhập dữ liệu quá khứ" (Admin cấp ở Cài đặt → Người dùng).',
+      code: '42501',
+    } });
+    await expect(procurementInboxService.setOrderDate('po-1', '2026-10-14'))
+      .rejects.toThrow('Ngày 14/10/2026 lùi quá 7 ngày — cần quyền "Nhập dữ liệu quá khứ" (Admin cấp ở Cài đặt → Người dùng).');
+  });
   it('sends the order payload unchanged to the save RPC', async () => {
     rpc.mockResolvedValueOnce({ data: { purchaseOrderId: 'po-1', poNumber: 'PO-1', rowVersion: 1, totalAmount: 10, lines: 1 }, error: null });
     const input = { vendorId: 'v1', vatRate: 8, items: [{ itemId: 'i1', unitPrice: 5, allocations: [{ sourceType: 'material_request' as const, sourceId: 'r1', lineId: 'l1', qty: 2 }] }] };

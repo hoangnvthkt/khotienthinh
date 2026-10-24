@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { backdateHint, daysBack } from '../businessDate';
+import { backdateHint, businessDateIssue, daysBack, earliestBusinessDate } from '../businessDate';
 import { getApiErrorMessage } from '../apiError';
 
 const sql = readFileSync(new URL('../../supabase/migrations/20261008137600_procurement_business_dates.sql', import.meta.url), 'utf8');
@@ -15,6 +15,28 @@ describe('Ngày nghiệp vụ — gợi ý ở ô ngày', () => {
   it('lỗi nghiệp vụ hiện đúng câu tiếng Việt', () => {
     expect(getApiErrorMessage({ message: 'PURCHASE_RECEIPT_RECON_OPEN: Đợt này đang đối chiếu ở Mua hàng.', code: '22023' })).toBe('Đợt này đang đối chiếu ở Mua hàng.');
     expect(getApiErrorMessage({ message: 'BUSINESS_DATE_BACKDATE: Ngày 26/09/2026 lùi quá 7 ngày — cần quyền.', code: '42501', status: 403 })).toBe('Ngày 26/09/2026 lùi quá 7 ngày — cần quyền.');
+  });
+});
+
+// 24/10/2026 (PO-703/704/705): đơn đã lưu, bước đặt ngày 14/10 bị 403 vì thiếu quyền, màn lại báo câu chung chung
+// "Không tải được dữ liệu Mua hàng" nên người lập bấm lưu lại 3 lần → 3 đơn nháp trùng.
+describe('Ngày đặt hàng — chặn ngay ở ô ngày khi thiếu quyền', () => {
+  it('thiếu quyền: lùi quá 7 ngày bị chặn, nói rõ cách xử lý; trong 7 ngày thì không sao', () => {
+    expect(businessDateIssue('2026-10-01', false, '2026-10-08')).toBeNull();
+    const blocked = businessDateIssue('2026-10-14', false, '2026-10-24');
+    expect(blocked).toMatchObject({ blocked: true });
+    expect(blocked?.text).toContain('Lùi 10 ngày');
+    expect(blocked?.text).toContain('Nhập dữ liệu quá khứ');
+  });
+  it('có quyền: lùi xa chỉ nhắc, không chặn', () => {
+    expect(businessDateIssue('2026-10-14', true, '2026-10-24')).toMatchObject({ blocked: false });
+  });
+  it('không ai được chọn ngày sau hôm nay', () => {
+    for (const can of [true, false]) expect(businessDateIssue('2026-10-25', can, '2026-10-24')).toMatchObject({ blocked: true });
+  });
+  it('lịch chỉ mở 7 ngày gần đây khi thiếu quyền', () => {
+    expect(earliestBusinessDate('2026-10-24')).toBe('2026-10-17');
+    expect(businessDateIssue(earliestBusinessDate('2026-10-24'), false, '2026-10-24')).toBeNull();
   });
 });
 

@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
 import { procurementInboxService, type ProcurementVendor } from '../../../lib/procurementInboxService';
+import { businessDateIssue, earliestBusinessDate, vnToday } from '../../../lib/businessDate';
+import { canPerform } from '../../../lib/permissions/permissionService';
+import { useOptionalApp } from '../../../context/AppContext';
+import { Role } from '../../../types';
 import { inputCls } from './hubUi';
 
 // Ô nhập dùng chung cho màn lập đơn từ nhu cầu và đơn chủ động.
@@ -63,3 +67,28 @@ export const DeliveryModePicker: React.FC<{ value: 'single' | 'multiple'; onChan
         <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
       </button>)}
   </section>;
+
+/** Được ghi ngày nghiệp vụ lùi quá 7 ngày không (ô quyền "Nhập dữ liệu quá khứ"; Admin luôn có). */
+export const useCanBackdate = (): boolean => {
+  const user = useOptionalApp()?.user;
+  // Fixture dựng thẳng màn lập đơn, không có AppProvider: màn không chặn, luật vẫn nằm ở máy chủ.
+  if (!user) return true;
+  return user.role === Role.ADMIN || canPerform(user, 'system.procurement.backdate');
+};
+
+/**
+ * Ngày đặt hàng của đơn mua. Thiếu quyền "Nhập dữ liệu quá khứ" thì lịch chỉ mở 7 ngày gần đây
+ * và ô báo đỏ ngay — không để người dùng lưu xong mới bị máy chủ từ chối.
+ */
+export const OrderDateField: React.FC<{
+  value: string; onChange: (v: string) => void; canBackdate: boolean;
+  issue: ReturnType<typeof businessDateIssue>; className?: string;
+}> = ({ value, onChange, canBackdate, issue, className = '' }) =>
+  <label className={`text-xs font-semibold text-muted-foreground ${className}`}>Ngày đặt hàng
+    {/* block + whitespace-normal: index.css ép nhãn .text-xs trong .grid > div thành một dòng ở màn hẹp,
+        ô ngày và câu nhắc bị đẩy ra ngoài rồi cắt mất. */}
+    <input type="date" value={value} max={vnToday()} min={canBackdate ? undefined : earliestBusinessDate()}
+      aria-invalid={issue?.blocked || undefined} onChange={e => onChange(e.target.value)}
+      className={`mt-1 block w-full ${inputCls} ${issue?.blocked ? 'border-rose-400 focus:ring-rose-300 dark:border-rose-700' : ''}`} />
+    {issue && <span className={`mt-0.5 block whitespace-normal text-[11px] font-normal ${issue.blocked ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}>{issue.text}</span>}
+  </label>;

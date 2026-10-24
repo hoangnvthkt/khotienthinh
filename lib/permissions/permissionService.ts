@@ -115,6 +115,7 @@ export const getUserAuthorizationSnapshot = (
     flags: { legacy_fallback_disabled: true },
     sources,
     roomActions: [],
+    projectMemberships: [],
   };
 };
 

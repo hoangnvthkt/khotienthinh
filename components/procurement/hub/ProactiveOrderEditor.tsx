@@ -8,8 +8,8 @@ import {
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { SpecInput } from '../../material/SpecInput';
-import { backdateHint, vnToday } from '../../../lib/businessDate';
-import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
+import { businessDateIssue, vnToday } from '../../../lib/businessDate';
+import { DeliveryModePicker, OrderDateField, VatPicker, VendorPicker, useCanBackdate, type VendorValue } from './OrderFormParts';
 import PoExcelImport from './PoExcelImport';
 import { nameSimilarity, type ImportedPoLine } from '../../../lib/procurementExcelImport';
 import type { QuoteMeta } from '../../../lib/procurementQuoteRead';
@@ -107,6 +107,8 @@ export const ProactiveOrderEditor: React.FC<{
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
   const [orderDate, setOrderDate] = useState(order?.orderDate || vnToday());
   const [orderDateTouched, setOrderDateTouched] = useState(false);
+  // Đơn đã lưu trong phiên này: bấm Lưu lại là SỬA đơn đó, không đẻ thêm đơn nháp (24/10, PO-703/704/705).
+  const [saved, setSaved] = useState<{ id: string; rowVersion: number } | null>(null);
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
   const [note, setNote] = useState(order?.note || seed?.note || '');
@@ -230,6 +232,8 @@ export const ProactiveOrderEditor: React.FC<{
 
   const boqLines = useMemo(() => withPriorSameItem(lines), [lines]);
   const specProblems = useMemo(() => duplicateItemSpecProblems(lines.map(l => ({ key: l.key, itemId: l.itemId, specification: l.spec }))), [lines]);
+  const canBackdate = useCanBackdate();
+  const dateIssue = useMemo(() => businessDateIssue(orderDate, canBackdate), [orderDate, canBackdate]);
   const totals = useMemo(() => {
     let subtotal = 0; let invalid = 0; let unpriced = 0; let overBoq = 0; let belowAllocated = 0;
     boqLines.forEach(l => {
@@ -257,12 +261,13 @@ export const ProactiveOrderEditor: React.FC<{
     if (specProblems.size) { setError('Có vật tư nhiều dòng chưa ghi quy cách khác nhau (ô viền đỏ).'); return; }
     if (totals.belowAllocated) { setError('Có dòng nhỏ hơn phần đã gắn nhu cầu. Gỡ gắn ở đơn trước rồi mới giảm SL.'); return; }
     if (totals.overBoq && !overReason.trim()) { setError('Có vật tư vượt hoặc ngoài BOQ — ghi lý do mua vượt.'); return; }
+    if (dateIssue?.blocked) { setError(dateIssue.text); return; }
     const vatRate = parseQty(vat);
     if (vatRate == null || Number.isNaN(vatRate) || vatRate < 0 || vatRate > 100) { setError('Thuế VAT phải từ 0 đến 100%.'); return; }
     setSaving(true);
     try {
       const result = await procurementInboxService.saveProactiveOrder({
-        purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, purpose, projectId: stock ? null : projectId, targetWarehouseId: warehouseId, vendorId: vendor.id,
+        purchaseOrderId: saved?.id || order?.id, expectedRowVersion: saved?.rowVersion ?? order?.rowVersion, purpose, projectId: stock ? null : projectId, targetWarehouseId: warehouseId, vendorId: vendor.id,
         purchaseMode: mode, expectedDeliveryDate: expected || null, vatRate, note: note.trim(),
         reasonCode, reason: reason.trim() || undefined, overBoqReason: totals.overBoq ? overReason.trim() : undefined,
         items: lines.map(l => {
@@ -273,8 +278,14 @@ export const ProactiveOrderEditor: React.FC<{
           };
         }),
       });
-      if (orderDateTouched) await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
-      if (!order) recordPrefillOutcome(prefill, lines.map(l => ({ itemId: l.itemId, specification: l.spec, price: parseQty(l.price) })), { vendorId: vendor.id, poNumber: result.poNumber });
+      if (!order && !saved) recordPrefillOutcome(prefill, lines.map(l => ({ itemId: l.itemId, specification: l.spec, price: parseQty(l.price) })), { vendorId: vendor.id, poNumber: result.poNumber });
+      setSaved({ id: result.purchaseOrderId, rowVersion: result.rowVersion });
+      if (orderDateTouched) {
+        await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
+        setOrderDateTouched(false);
+        // Đổi ngày đặt hàng tăng phiên bản đơn — lấy phiên bản mới để lần lưu sau không báo xung đột.
+        setSaved({ id: result.purchaseOrderId, rowVersion: (await procurementInboxService.getOrder(result.purchaseOrderId)).rowVersion });
+      }
       onSaved(result.purchaseOrderId, result.poNumber);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
@@ -350,9 +361,8 @@ export const ProactiveOrderEditor: React.FC<{
               </label></>}
               <VendorPicker value={vendor} onChange={setVendor} autoFocus={false} />
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <label className="text-xs font-semibold text-muted-foreground">Ngày đặt hàng
-                  <input type="date" value={orderDate} max={vnToday()} onChange={e => { setOrderDate(e.target.value); setOrderDateTouched(true); }} className={`mt-1 w-full ${inputCls}`} />
-                  {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
+                <OrderDateField value={orderDate} canBackdate={canBackdate} issue={dateIssue}
+                  onChange={v => { setOrderDate(v); setOrderDateTouched(true); }} />
                 <label className="text-xs font-semibold text-muted-foreground">Ngày cần giao
                   <input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
                 <VatPicker value={vat} onChange={v => { setVat(v); setHeaderTouched(true); }} />

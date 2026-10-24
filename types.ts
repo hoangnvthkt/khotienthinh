@@ -164,11 +164,18 @@ export interface AuthorizationRoomAction {
   fallback: boolean;
 }
 
+export interface AuthorizationProjectMembership {
+  projectId: string;
+  constructionSiteId?: string | null;
+}
+
 export interface AuthorizationSnapshot {
   generatedAt: string;
   flags: Record<string, boolean>;
   sources: EffectivePermissionSource[];
   roomActions: AuthorizationRoomAction[];
+  /** Dự án người này đang làm (project_staff còn hiệu lực) — Đợt 4a. */
+  projectMemberships?: AuthorizationProjectMembership[];
 }
 
 export interface UserPermissionGrant {
