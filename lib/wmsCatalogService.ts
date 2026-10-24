@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { accessPayload, type LegacyGrant, type WmsAccess, type WmsAccessData } from './wmsAccess';
+import { toSodPreview, type SodAcknowledgement, type SodWarning } from './permissions/sodService';
 import type { DuplicatesData } from './wmsCatalogMerge';
 
 // V1 Module Vật tư: Danh mục vật tư một cửa (cấp mã, sửa, ngừng dùng, cách quản lý kho) và Tồn kho đọc thẳng sổ kho.
@@ -204,6 +205,10 @@ const OWNER_ERRORS: Record<string, string> = {
   WMS_OWNERS_CLOSER_NOT_ACCOUNTANT: 'Người khóa kỳ phải nằm trong danh sách Kế toán kho.',
   WMS_OWNERS_WAREHOUSE_INVALID: 'Có kho không còn hoạt động. Tải lại trang.',
   WMS_OWNERS_USER_INVALID: 'Có người đã nghỉ / bị khóa tài khoản. Tải lại trang.',
+  WMS_ACCESS_SOD_ADMIN_REQUIRED: 'Thay đổi này tạo kiêm nhiệm — nhờ người quản lý phân quyền lưu và ghi nhận.',
+  'SoD warning acknowledgement required': 'Thay đổi này tạo kiêm nhiệm — ghi nhận trước khi lưu.',
+  'Invalid SoD warning control evidence': 'Ghi nhận kiêm nhiệm chưa đủ: người kiểm soát phải khác người được cấp và người đang lưu.',
+  'hard SoD rule': 'Thay đổi này phạm luật kiêm nhiệm không được phép.',
 };
 export const ownersErrorMessage = (error: unknown, fallback = 'Chưa lưu được. Thử lại sau.') => {
   const raw = String((error as any)?.message || error || '');
@@ -211,7 +216,36 @@ export const ownersErrorMessage = (error: unknown, fallback = 'Chưa lưu đư�
   return code ? OWNER_ERRORS[code] : catalogErrorMessage(error, fallback);
 };
 
+export interface WmsAccessPreview {
+  added: number;
+  removed: number;
+  /** Thay đổi do máy chủ tính, kể cả phần tự chuẩn hóa (kèm bộ Xem, bỏ Xem kho trùng). */
+  lines: string[];
+  /** Người sẽ kiêm nhiệm mới sau lượt lưu này. */
+  sod: { userId: string; name: string; warnings: SodWarning[] }[];
+  /** Người đang lưu không quản lý phân quyền nên không ghi nhận kiêm nhiệm được. */
+  needsAdmin: boolean;
+}
+
+export const toWmsAccessPreview = (raw: unknown): WmsAccessPreview => {
+  const row = (raw || {}) as Record<string, any>;
+  return {
+    added: Number(row.added || 0),
+    removed: Number(row.removed || 0),
+    lines: Array.isArray(row.lines) ? row.lines.map(String) : [],
+    sod: (Array.isArray(row.sod) ? row.sod : []).map((person: any) => ({
+      userId: String(person.userId), name: String(person.name || ''), warnings: toSodPreview({ warnings: person.warnings }).warnings,
+    })),
+    needsAdmin: Boolean(row.needsAdmin),
+  };
+};
+
 export const wmsAccessService = {
   get: () => rpc<WmsAccessData>('get_wms_access_v1'),
-  save: (a: WmsAccess, revoke: LegacyGrant[]) => rpc<{ added: number; removed: number; lines: string[] }>('save_wms_access_v1', { p: accessPayload(a, revoke) }),
+  preview: async (a: WmsAccess, revoke: LegacyGrant[]) => toWmsAccessPreview(await rpc<unknown>('preview_wms_access_v1', { p: accessPayload(a, revoke) })),
+  save: (a: WmsAccess, revoke: LegacyGrant[], reason: string, ack: SodAcknowledgement | null) => rpc<{ added: number; removed: number; lines: string[] }>('save_wms_access_v1', {
+    p: accessPayload(a, revoke),
+    p_reason: reason,
+    p_ack: ack ? { reason: ack.reason.trim(), controlOwnerUserId: ack.controlOwnerUserId, compensatingControls: ack.compensatingControls.trim(), expiresAt: ack.expiresAt } : null,
+  }),
 };
