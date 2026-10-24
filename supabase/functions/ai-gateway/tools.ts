@@ -1233,7 +1233,7 @@ export async function runTool(name: string, rawArgs: Record<string, unknown>, ct
     if (!loai || !['cham_cong', 'nghi_phep', 'nhat_ky', 'phieu_dung'].includes(loai)) {
       return JSON.stringify({ loi: 'loai phải là cham_cong | nghi_phep | nhat_ky | phieu_dung.' });
     }
-    const ngay = str(args.ngay, 10);
+    const ngay = str(args.ngay, 10) ?? '';
     const r = await ctx.rpc('assistant_today_status_v1', { p_kind: loai, p_scope: str(args.pham_vi, 80) || null,
       p_date: /^\d{4}-\d{2}-\d{2}$/.test(ngay) ? ngay : null,
       p_days: loai === 'phieu_dung' ? (num(args.so_ngay_dung) ?? null) : null, p_limit: 30 });

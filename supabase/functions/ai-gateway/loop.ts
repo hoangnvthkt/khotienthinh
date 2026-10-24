@@ -6,20 +6,46 @@ import { MAX_AGENT_STEPS, MAX_TOOL_CALLS, type AgentMsg, type SourceBook, type T
 import { TOOLS, TOOL_LABEL, runTool, type Rpc, type ToolContext } from './tools.ts';
 
 
-// Chặn bịa (sự cố 24/10/2026): hỏi "phòng HCNS ai chưa chấm công" → gọi công cụ, trả 8 người THẬT. Hỏi tiếp
-// "tìm trong cả công ty" → model KHÔNG gọi lại công cụ mà tự suy ra, bịa ra 56/101 người, bịa cả tên và mã
-// (TT039 "Nguyễn Ngọc Điệp" không có thật) lẫn tên phòng ("Kỹ thuật xây dựng" không tồn tại). Nhật ký lượt đó
-// ghi "0 nguồn" — tức là không tra gì.
-//   Lời nhắc không đủ chắc, nên chặn bằng mã: lượt nào KHÔNG tra công cụ mà câu trả lời lại nêu mã nhân viên /
-//   mã chứng từ thì bắt model đi tra thật rồi trả lời lại (một lần duy nhất, không lặp).
-const MA_DU_LIEU = /\b[A-ZĐ]{2}\d{3,}\b|\b(?:PO|MR|DX|YC|NK|XK|CG|AP)-\d+/gi;
-export const looksLikeFabricatedRows = (text: string): boolean => {
-  const hits = text.match(MA_DU_LIEU);
-  return (hits?.length ?? 0) >= 2;
+// CHẶN CỨNG BỊA (chủ SP 24/10/2026: "dữ liệu mà bịa thì quá nguy hiểm", nhất là tài chính).
+// Sự cố: hỏi "phòng HCNS ai chưa chấm công" → tra đúng, 8 người thật. Hỏi tiếp "tìm trong cả công ty" → model
+// KHÔNG tra lại mà tự suy ra: bịa 56/101 người (thật là 38/89), bịa tên + mã (TT039 "Nguyễn Ngọc Điệp" không có
+// thật), bịa cả tên phòng. Nhật ký lượt đó ghi "0 nguồn".
+//   Cách chặn: lấy mọi "mẩu dữ liệu" trong câu trả lời (mã chứng từ / nhân viên, SỐ TIỀN, số đếm người / chứng từ)
+//   rồi đối chiếu với BẰNG CHỨNG của lượt này = kết quả công cụ đã tra + các câu trả lời trước trong hội thoại
+//   (những câu đó cũng đã qua cổng chặn này). Mẩu nào không có trong bằng chứng là chưa tra ra mà vẫn nói.
+const RE_MA = /\b[A-ZĐ]{2}\d{3,}\b|\b(?:PO|MR|DX|YC|NK|XK|CG|AP|NP|DC|KK)-\d+/gi;
+/** "1.500.000.000 đ" — số có phân cách nghìn, phải đủ dài mới tính (tránh bắt "8 đ"). */
+const RE_TIEN = /\b\d{1,3}(?:[.,]\d{3})+(?=\s*(?:đ|vnđ|vnd|đồng))/gi;
+/** "4,2 tỷ" / "230 triệu" — ít chữ số nhưng là số tiền lớn, phải quy ra đủ số rồi mới đối chiếu. */
+// `\b` sau "tỷ" KHÔNG khớp: trong regex JS không cờ `u`, ký tự có dấu không phải word char nên không có ranh giới từ.
+const RE_TIEN_DON_VI = /(\d+(?:[.,]\d+)?)\s*(triệu|tỷ|tỉ)(?!\p{L})/giu;
+const RE_DEM = /\b\d{1,6}(?=\s*(?:người|nhân viên|đơn|phiếu|chứng từ|dòng|lệch|công trường|ngày công|bản ghi))/gi;
+const so = (x: string) => x.replace(/[^0-9]/g, '');
+
+/** Mẩu dữ liệu trong câu trả lời mà bằng chứng của lượt này không có. `chiMa` = chỉ xét mã (dùng khi đã tra công cụ). */
+export const unverifiedClaims = (text: string, evidence: string, chiMa = false): string[] => {
+  const bcChu = evidence.toLowerCase();
+  const bcSo = so(evidence);
+  const out: string[] = [];
+  for (const m of text.match(RE_MA) ?? []) if (!bcChu.includes(m.toLowerCase())) out.push(m);
+  if (chiMa) return out;
+  for (const m of text.match(RE_TIEN) ?? []) if (so(m).length >= 4 && !bcSo.includes(so(m))) out.push(m);
+  for (const m of text.matchAll(RE_TIEN_DON_VI)) {
+    const value = Math.round(Number(m[1].replace(/\./g, '').replace(',', '.')) * (/tri/i.test(m[2]) ? 1e6 : 1e9));
+    if (Number.isFinite(value) && value > 0 && !bcSo.includes(String(value)) && !bcSo.includes(so(m[1]))) out.push(m[1]);
+  }
+  for (const m of text.match(RE_DEM) ?? []) if (!bcSo.includes(so(m))) out.push(m);
+  return out;
 };
+/** Giữ tên cũ cho chỗ gọi sẵn có: lượt không tra gì mà nêu từ 2 mẩu dữ liệu trở lên. */
+export const looksLikeFabricatedRows = (text: string): boolean => unverifiedClaims(text, '').length >= 2;
+
 const NHAC_TRA = 'Dừng lại. Câu này hỏi số liệu / danh sách người hoặc chứng từ, mà em chưa tra công cụ nào ở lượt này. '
-  + 'Em PHẢI gọi công cụ để lấy dữ liệu thật rồi mới trả lời. TUYỆT ĐỐI không liệt kê tên người, mã nhân viên, mã chứng từ '
-  + 'hay con số tổng từ trí nhớ hoặc suy ra từ câu trả lời trước — đổi phạm vi (cả công ty, phòng khác, ngày khác) thì phải tra lại.';
+  + 'Em PHẢI gọi công cụ để lấy dữ liệu thật rồi mới trả lời. TUYỆT ĐỐI không liệt kê tên người, mã nhân viên, mã chứng từ, '
+  + 'số tiền hay con số tổng từ trí nhớ hoặc suy ra từ câu trả lời trước — đổi phạm vi (cả công ty, phòng khác, ngày khác) thì phải tra lại.';
+const CAU_TU_CHOI = 'Em chưa tra được số liệu cho câu này nên không trả lời được — em không muốn đưa ra con số hay tên người '
+  + 'mà mình chưa kiểm. Có thể do chưa có công cụ tra việc này, hoặc anh/chị không có quyền xem phần dữ liệu đó. '
+  + 'Anh/chị hỏi lại rõ phạm vi (phòng nào, ngày nào, dự án nào) giúp em, hoặc xem thẳng trên màn hình của phân hệ tương ứng.';
 
 export interface StepRequest { system: string; messages: AgentMsg[]; tools: ToolSpec[]; toolChoice?: 'auto' | 'none' | { name: string }; maxTokens: number; noThinking?: boolean }
 export interface StepResult { text: string; toolCalls: ToolCall[]; usage: { tokensIn: number | null; tokensOut: number | null } }
@@ -78,13 +104,28 @@ export async function converse(d: ConverseDeps): Promise<{ text: string; usage: 
     });
     tokensIn = add(tokensIn, out.usage.tokensIn); tokensOut = add(tokensOut, out.usage.tokensOut); steps++;
     if (!out.toolCalls.length || last) {
-      // Không tra gì cả lượt mà lại nêu mã nhân viên / chứng từ → bắt tra thật, đúng một lần.
-      if (!last && calls === 0 && !daBatTra && looksLikeFabricatedRows(stepText)) {
-        daBatTra = true;
+      // Bằng chứng của lượt này: kết quả công cụ đã tra + các câu trả lời trước trong hội thoại.
+      const bangChung = [
+        ...messages.flatMap(m => (m.role === 'tool' ? m.results.map(r => r.content) : [])),
+        ...d.turns.filter(t => t.role === 'assistant').map(t => t.content),
+      ].join('\n');
+      // Mã bịa thì chặn kể cả khi ĐÃ tra (mã là chuỗi chính xác, không có chuyện diễn đạt lại).
+      // Tiền / số đếm chỉ chặn khi cả lượt KHÔNG tra gì — tra rồi mà diễn đạt lại số thì không chặn oan.
+      const chuaKiem = unverifiedClaims(stepText, bangChung, calls > 0);
+      if (chuaKiem.length) {
+        if (!last && !daBatTra) {
+          daBatTra = true;
+          if (shown) d.emit({ type: 'reset' });
+          messages.push({ role: 'assistant', content: stepText });
+          messages.push({ role: 'user', content: NHAC_TRA });
+          continue;
+        }
+        // Đã bắt tra lại mà vẫn nêu dữ liệu chưa kiểm → KHÔNG đưa ra người dùng. Thà nói không biết.
+        console.error('ai-gateway chan bia', { runId: d.runId, calls, chuaKiem: chuaKiem.slice(0, 8) });
         if (shown) d.emit({ type: 'reset' });
-        messages.push({ role: 'assistant', content: stepText });
-        messages.push({ role: 'user', content: NHAC_TRA });
-        continue;
+        d.emit({ type: 'delta', text: CAU_TU_CHOI });
+        text = CAU_TU_CHOI;
+        break;
       }
       if (!shown && stepText) d.emit({ type: 'delta', text: stepText });
       text = stepText;
