@@ -209,9 +209,81 @@ smoke **tự dựng ca lệch** rồi kiểm luật bắt đúng và bỏ ca đi
 Ngoài ra smoke kiểm: 10 luật chạy không lỗi, `object_key` không trùng, mọi dòng có đường dẫn `/finance…`,
 chạy lần hai không mở trùng, không sinh thông báo nào, và ghi lại hiện trạng số dòng 5 bảng Tài chính để lần sau so.
 
-## Việc tiếp (K3 đợt 3+)
+## K3 đợt 3 — phủ luật sang phân hệ Nhân sự (24/10, migration `20261031120000_control_k3_hrm`)
 
-Còn ~60 luật: Nhân sự (chấm công, phép, lương), Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất.
+14 luật mới, **mặc định shadow**. Phạm vi: chấm công, phép, lương. Dữ liệu thật đầy đủ (1.988 bản ghi chấm công,
+269 đề xuất, 42 đơn phép, 97 dòng sổ phép, 35 bảng lương) nên đo được số lệch thật: **35 lệch trên 6 luật**.
+
+| Mã | Mức | Luật | Lệch thật |
+|---|---|---|---:|
+| att_future_date | P0 | Chấm công ngày tương lai | **2** |
+| att_checkout_before_checkin | P0 | Giờ ra trước giờ vào | 0 |
+| att_suspicion_unresolved | P1 | Chấm công có dấu hiệu nhờ người khác chấm | **6** |
+| att_out_of_range_pending | P1 | Chấm công ngoài phạm vi chưa ai duyệt | 0 |
+| att_proposal_stuck | P2 | Đề xuất chấm công treo chờ duyệt > 3 ngày | 0 |
+| att_after_exit | P0 | Chấm công sau ngày nghỉ việc | 0 (mù tới khi HR ghi ngày) |
+| employee_resigned_no_exit_date | P1 | Đã nghỉ việc mà chưa ghi ngày nghỉ việc | **3** |
+| leave_balance_vs_ledger | P0 | Số dư phép khác sổ phép | 0 — bất biến gốc |
+| leave_ledger_running | P0 | Số dư lũy kế trên sổ phép không khớp | 0 — bất biến gốc |
+| leave_approved_no_ledger | P0 | Phép có lương đã duyệt mà chưa vào sổ phép | **6** |
+| leave_vs_attendance | P1 | Nghỉ phép đã duyệt mà vẫn chấm công đi làm | **11** |
+| leave_overlap | P1 | Hai đơn phép trùng ngày | 0 |
+| leave_stuck_pending | P2 | Đơn phép treo duyệt quá 3 ngày | **7** |
+| payroll_net_vs_gross | P0 | Lương thực nhận khác lương gộp trừ các khoản | 0 |
+
+`att_after_exit` và `employee_resigned_no_exit_date` đi theo cặp: chưa có ngày nghỉ việc thì luật kia không soi được.
+3 người đang bị báo đúng là 3 người HR còn treo ngày nghỉ việc (xem [[hrm-exit-date-events]]).
+
+### Route mới `hr`
+
+`control_route` thêm một nhánh: `'hr'` → `alert_module_manager_ids(array['HRM'])` (5 người có quyền Nhân sự · Quản trị
+trên prod). Phép và lương là dữ liệu riêng tư nên **không giao cho quản lý trực tiếp** của nhân viên bị báo, chỉ HR và
+Admin. Các nhánh `buyer` / `warehouse` / `payable` giữ nguyên — smoke khẳng định route của luật Kho và Công nợ không đổi.
+
+Luật lương để các con số lương trong `detail`, **tiêu đề chỉ nói số lệch** (smoke kiểm điều này) để lệch hiện trên
+danh sách mà không phô lương gộp.
+
+### Bẫy lớn nhất đợt này: HRM trỏ `employees(id)`, không phải `users(id)`
+
+Bản đầu join `public.users` — khớp **0/1.988** dòng. Hậu quả: mọi tiêu đề ra "—" và luật "chấm công của người đã khóa
+tài khoản" thành mã chết, mà vẫn chạy không lỗi nên trông như "0 lệch, dữ liệu sạch". Một phép đo giả (`cham_cong_nguoi_khoa = 0`)
+cũng từ đây. Mọi bảng `hrm_*` dùng `employees(id)`; tên là `employees.full_name`, mã là `employees.employee_code`,
+trạng thái là `employees.status` ('Đang làm việc' / 'Đã nghỉ việc'). `hrm_employee_employment_events.created_by` thì lại
+là `users(id)`. Smoke nay có khẳng định riêng: tiêu đề luật phải có mã / tên nhân viên thật.
+
+Vì phát hiện này, luật 7 đã đổi từ "chấm công của người đã khóa tài khoản" (đo bằng `users.is_active`, sai bảng) sang
+**"đã nghỉ việc mà chưa ghi ngày nghỉ việc"** — đo được 3 người, và là việc HR làm được ngay.
+
+### Đã bỏ sau khi đo
+
+- *Chấm vào mà không chấm ra*: 206/1.988 bản ghi (79 người-tháng) — 10% toàn bộ, là thói quen chung của công trường
+  chứ không phải lệch từng bản ghi; hôm nay riêng ngày 24/10 có 46 ca là người còn đang làm. Thuộc **báo cáo chấm công**
+  (tỷ lệ thiếu chấm ra theo tháng), không thuộc sổ lệch.
+- *Cờ `no_passkey`*: 299/1.988 — chưa cài passkey là tình trạng thiết bị, không phải lệch. Luật dấu hiệu chấm hộ chỉ
+  tính `shared_device` và `same_gps_fix` (6 ca).
+- *Số ngày công bảng lương khác số ngày chấm công*: 34/35 bảng lương — lương nhập từ file, không suy ra từ chấm công.
+- *Chấm công trùng ngày* (`unique_employee_date`), *bảng lương trùng tháng* (`unique_employee_month_year`),
+  *số dư phép trùng năm* (`unique_employee_year_balance`), *số ngày phép không bội 0,5* (CHECK) — CSDL đã chặn.
+
+### Kiểm
+
+`supabase/tests/control_k3_hrm_smoke.sql` (giao dịch tự hủy trên Cloud): 14 luật chạy không lỗi, `object_key` không trùng,
+mọi dòng có đường dẫn `/hrm/…`, tiêu đề có mã / tên nhân viên, 2 bất biến phép = 0, 6 luật có lệch thật đều bắt được,
+route `hr` ra đúng người và route cũ không đổi, bộ chạy không mở trùng, không sinh thông báo nào. Thêm **8 ca dựng** cho
+các luật đang bằng 0: giờ ra trước giờ vào, chấm ngoài phạm vi (duyệt rồi thì sạch), chấm công sau ngày nghỉ việc
+(sự kiện `VOID` thì sạch), sổ phép bị sửa dòng (bắt cả hai luật bất biến), hai đơn phép trùng ngày, lương thực nhận lệch
+(kiểm cả việc tiêu đề không in lương), đề xuất chấm công treo, ghi ngày nghỉ việc thì luật sạch.
+
+**Không phá được bất biến phép từ phía số dư**: trigger `trg_hrm_leave_balance_write_ledger` tự ghi dòng sổ cho mọi lần
+sửa số dư. Lỗi thật chỉ đến từ phía sổ (dòng bị sửa / xóa), nên ca dựng sửa một dòng sổ giữa.
+
+**Đường dẫn**: chấm công → `/hrm/attendance?tab=timesheet&q=<mã NV>&month=&year=` (đã thêm prefill `?q=` + tháng/năm vào
+`pages/hrm/Attendance.tsx`; ô tìm khớp cả mã và tên); đề xuất → `?tab=proposals&proposal=<id>`; phép → `/hrm/leave?request=<id>`
+hoặc `?tab=balances`; hồ sơ → `/hrm/employees?view=roster&person=<id>`; lương → `/hrm/payroll`.
+
+## Việc tiếp (K3 đợt 4+)
+
+Còn ~45 luật: Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất, Danh mục vật tư.
 Mỗi luật mới vào shadow tối thiểu 1 tuần, xem số lệch thật, sửa luật báo sai, rồi mới để chủ SP bật Báo người xử lý.
 Phân hệ chưa có dữ liệu thật thì làm như đợt 2: dựng ca trong smoke để chứng minh luật, và nói rõ số 0 là "chưa dùng",
 không phải "sạch".
