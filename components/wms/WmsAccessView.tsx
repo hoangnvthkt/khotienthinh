@@ -3,7 +3,10 @@ import { AlertTriangle, ArrowRightLeft, BookOpen, CheckCircle2, ChevronDown, Cop
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM } from '../finance/financeUi';
 import { useToast } from '../../context/ToastContext';
-import { foldVi, ownersErrorMessage, wmsAccessService } from '../../lib/wmsCatalogService';
+import { foldVi, ownersErrorMessage, wmsAccessService, type WmsAccessPreview } from '../../lib/wmsCatalogService';
+import { emptySodAcknowledgement, sodAcknowledgementIssue, type SodAcknowledgement } from '../../lib/permissions/sodService';
+import { SodAcknowledgeFields, SodRuleList } from '../permissions/SodAcknowledge';
+import { ReasonChips, SAVE_REASONS } from '../permissions/center/PermissionCenterParts';
 import {
   LEGACY_LABEL, WMS_ACCESS_TEMPLATES, WMS_JOB, WMS_JOBS, WMS_LIST_JOBS, WMS_TIERS, accessDiff, accessFromGrants, applyTemplate, canPropose, copyJobs, handOver,
   jobsOf, keeperWarehouses, legacyGroups, stripPerson, viewImplied, viewOf, type LegacyGrant, type WmsAccess, type WmsAccessData, type WmsJob,
@@ -128,7 +131,7 @@ const PersonDrawer: React.FC<{ id: string; data: WmsAccessData; cur: WmsAccess; 
     </Drawer>;
   };
 
-export const WmsAccessView: React.FC = () => {
+export const WmsAccessView: React.FC<{ currentUserId: string | null }> = ({ currentUserId }) => {
   const toast = useToast();
   const [data, setData] = useState<WmsAccessData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -142,6 +145,10 @@ export const WmsAccessView: React.FC = () => {
   const [q, setQ] = useState('');
   const [ask, setAsk] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<WmsAccessPreview | null>(null);
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [reason, setReason] = useState<string>(SAVE_REASONS[0]);
+  const [ack, setAck] = useState<SodAcknowledgement>(() => emptySodAcknowledgement());
 
   const load = useCallback(async () => {
     setState(s => (s === 'ready' ? s : 'loading'));
@@ -154,6 +161,17 @@ export const WmsAccessView: React.FC = () => {
   const whName = useCallback((id: string) => data?.warehouses.find(w => w.id === id)?.name || id, [data]);
   const whShort = (id: string) => whName(id).replace(/^Kho /, '');
   const diff = useMemo(() => (base && cur ? accessDiff(base, cur, name, whName, revoke) : []), [base, cur, name, whName, revoke]);
+
+  // Hộp Lưu: máy chủ tính đúng thay đổi và kiêm nhiệm mới của từng người trước khi lưu.
+  useEffect(() => {
+    if (!ask || !cur) return undefined;
+    let cancelled = false;
+    setPreview(null); setPreviewState('loading'); setAck(emptySodAcknowledgement());
+    wmsAccessService.preview(cur, revoke)
+      .then(next => { if (!cancelled) { setPreview(next); setPreviewState('idle'); } })
+      .catch(() => { if (!cancelled) setPreviewState('error'); });
+    return () => { cancelled = true; };
+  }, [ask]);
   const groups = useMemo(() => (data && base ? legacyGroups(data, base) : []), [data, base]);
 
   if (state === 'loading' && !data) return <StateBox kind="loading" title="Đang tải phân quyền kho…" />;
@@ -172,9 +190,18 @@ export const WmsAccessView: React.FC = () => {
     if (cur.closer === id) sod.push(`${name(id)} là thủ kho ${w.name} và người khóa kỳ → tồn ${w.name} phải được người Duyệt ngoại lệ / Admin xác nhận trước khi khóa.`);
     if (cur.exception.includes(id)) sod.push(`${name(id)} là thủ kho ${w.name} và Duyệt ngoại lệ → không tự duyệt phiếu ngoại lệ do mình lập.`);
   }));
+  const sodPeople = preview?.sod || [];
+  const sodWarnings = sodPeople.flatMap(p => p.warnings);
+  const warnedIds = sodPeople.map(p => p.userId);
+  const ackIssue = sodWarnings.length
+    ? (warnedIds.includes(ack.controlOwnerUserId) ? 'Người kiểm soát phải khác người được cấp quyền.' : sodAcknowledgementIssue(ack, currentUserId, warnedIds[0]))
+    : '';
+  const saveBlock = previewState === 'loading' ? 'Đang tính thay đổi' : previewState === 'error' || !preview ? 'Chưa tính được thay đổi'
+    : preview.needsAdmin ? 'Cần người quản lý phân quyền' : ackIssue;
   const save = async () => {
+    if (saveBlock) return;
     setSaving(true);
-    try { const r = await wmsAccessService.save(cur, revoke); toast.success('Đã lưu phân quyền kho', `Thêm ${r.added}, gỡ ${r.removed} quyền. Người được đổi đăng nhập lại để thấy đúng.`); setAsk(false); await load(); }
+    try { const r = await wmsAccessService.save(cur, revoke, reason, sodWarnings.length ? ack : null); toast.success('Đã lưu phân quyền kho', `Thêm ${r.added}, gỡ ${r.removed} quyền. Người được đổi đăng nhập lại để thấy đúng.`); setAsk(false); await load(); }
     catch (e) { toast.error('Chưa lưu được', ownersErrorMessage(e)); }
     finally { setSaving(false); }
   };
@@ -258,12 +285,28 @@ export const WmsAccessView: React.FC = () => {
       <button type="button" className={secondaryBtn} disabled={!diff.length || saving} onClick={() => { setCur(base); setRevoke([]); }}>Bỏ thay đổi</button>
       <button type="button" className={primaryBtn} disabled={!diff.length || saving} onClick={() => setAsk(true)}>Lưu</button>
     </div>}
-    {ask && <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/40 px-4" role="dialog" aria-modal="true" aria-label="Lưu phân quyền kho"><div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-2xl">
-      <h2 className="text-lg font-bold">Lưu phân quyền kho?</h2><p className={`mt-1 ${ENT}`}>{diff.length} thay đổi</p>
-      <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-xl border border-border p-3 text-sm">{diff.map((x, i) => <li key={i} className={x.startsWith('−') ? 'text-rose-700 dark:text-rose-300' : 'text-leaf-800 dark:text-leaf-200'}>{x}</li>)}</ul>
-      <p className={`mt-3 rounded-xl border px-3 py-2 text-xs ${WARN}`}>Có hiệu lực ngay; người được đổi đăng nhập lại để thấy đúng. Cấp mã / Duyệt ngoại lệ / Kế toán kho tự kèm Xem mọi kho. Nhật ký ghi ai, lúc nào, thêm / gỡ gì.</p>
-      <div className="mt-4 flex justify-end gap-2"><button type="button" className={secondaryBtn} onClick={() => setAsk(false)} disabled={saving}>Không</button>
-        <button type="button" className={primaryBtn} onClick={() => void save()} disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu'}</button></div>
+    {ask && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true" aria-label="Lưu phân quyền kho"><div className="flex max-h-[92vh] w-full min-w-0 max-w-lg flex-col rounded-2xl bg-card p-5 shadow-2xl">
+      <h2 className="text-lg font-bold">Lưu phân quyền kho?</h2>
+      <p className={`mt-1 ${ENT}`}>{preview ? `${preview.lines.length} thay đổi (thêm ${preview.added}, gỡ ${preview.removed})` : `${diff.length} thay đổi`}</p>
+      <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto">
+        {previewState === 'loading' && <p className="text-sm text-muted-foreground">Đang tính thay đổi và kiêm nhiệm của từng người…</p>}
+        {previewState === 'error' && <p role="alert" className="text-sm font-semibold text-rose-700">Chưa tính được thay đổi. Đóng và bấm Lưu lại.</p>}
+        <ul className="space-y-1 break-words rounded-xl border border-border p-3 text-sm">{(preview?.lines || diff).map((x, i) => <li key={i} className={x.startsWith('−') ? 'text-rose-700 dark:text-rose-300' : 'text-leaf-800 dark:text-leaf-200'}>{x}</li>)}</ul>
+        {preview && preview.lines.length > diff.length && <p className="text-xs text-muted-foreground">Gồm phần máy chủ tự chuẩn hóa: kèm bộ Xem cho người có việc, bỏ Xem từng kho khi đã Xem mọi kho.</p>}
+        {preview?.needsAdmin && <p role="alert" className={`rounded-xl border px-3 py-2 text-xs ${WARN}`}>Thay đổi này tạo kiêm nhiệm — nhờ người quản lý phân quyền lưu và ghi nhận.</p>}
+        {sodWarnings.length > 0 && (
+          <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-amber-900"><AlertTriangle size={14} /> {sodPeople.map(p => p.name).join(', ')} sẽ kiêm nhiệm — ghi nhận trước khi lưu</p>
+            <SodRuleList warnings={sodWarnings} />
+            <SodAcknowledgeFields warnings={sodWarnings} value={ack} onChange={setAck} disabled={saving}
+              candidates={data.users.filter(u => u.id !== currentUserId && !warnedIds.includes(u.id)).map(u => ({ id: u.id, name: u.name }))} />
+          </div>
+        )}
+        <ReasonChips value={reason} onChange={setReason} disabled={saving} />
+        <p className={`rounded-xl border px-3 py-2 text-xs ${WARN}`}>Có hiệu lực ngay; người được đổi đăng nhập lại để thấy đúng. Cấp mã / Duyệt ngoại lệ / Kế toán kho tự kèm Xem mọi kho. Nhật ký ghi ai, lúc nào, thêm / gỡ gì, vì sao.</p>
+      </div>
+      <div className="mt-4 flex shrink-0 justify-end gap-2"><button type="button" className={secondaryBtn} onClick={() => setAsk(false)} disabled={saving}>Không</button>
+        <button type="button" className={primaryBtn} onClick={() => void save()} disabled={saving || Boolean(saveBlock)} title={saveBlock || undefined}>{saving ? 'Đang lưu…' : 'Lưu'}</button></div>
     </div></div>}
     {person && <PersonDrawer id={person} data={data} cur={cur} base={base} canEdit={canEdit} set={set} onClose={() => setPerson(null)} say={say} />}
   </div>;
