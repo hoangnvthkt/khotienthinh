@@ -51,3 +51,11 @@ describe('Phân quyền kho qua luật kiêm nhiệm (20261030180000)', () => {
     expect(ownersErrorMessage(new Error('WMS_ACCESS_SOD_ADMIN_REQUIRED'))).toContain('nhờ người quản lý phân quyền');
   });
 });
+
+describe('vá xét kiêm nhiệm khi đổi việc kho của ADMIN (20261030190000)', () => {
+  const fix = readFileSync(new URL('../../supabase/migrations/20261030190000_wms_access_sod_admin_fix.sql', import.meta.url), 'utf8');
+  it('bỏ qua tài khoản ADMIN và chỉ đưa quyền cấp riêng được vào bộ xét', () => {
+    expect(fix).toContain("and u.role <> 'ADMIN'");
+    expect(fix).toContain("a.direct_grant_allowed and a.permission_code <> 'system.settings.manage'");
+  });
+});
