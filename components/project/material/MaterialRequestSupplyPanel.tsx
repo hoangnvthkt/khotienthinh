@@ -8,6 +8,7 @@ import {
 import { Badge, PoStatusChip, StateBox, inputCls, primaryBtn, secondaryBtn } from '../../procurement/hub/hubUi';
 import { TRANSFER_STATUS_LABELS } from '../../procurement/hub/SupplyFromStockDrawer';
 import { fmt } from '../work-plan/workPlanUi';
+import { ControlDocStrip } from '../../control/ControlDocStrip';
 
 // Đề xuất đã duyệt: "Đang cung ứng" (Mua hàng mua mới / cấp từ kho) → tự "Hoàn tất" khi nhận đủ,
 // hoặc CHT / người lập "Kết thúc đề xuất" có lý do. Không còn bước tạo đợt giao.
@@ -129,6 +130,8 @@ export const MaterialRequestSupplyPanel: React.FC<{ requestId: string; requestCo
         })}
       </ol>
     </div>
+
+    <ControlDocStrip requestId={requestId} />
 
     {data.ending && <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
       <b>Đã kết thúc:</b> “{data.ending.reason}”<span className="text-muted-foreground"> · {data.ending.byName || '—'}, {new Date(data.ending.at).toLocaleDateString('vi-VN')}. Các dòng còn thiếu đã rời Cần mua.</span></p>}

@@ -419,7 +419,8 @@
     "20261030100000_control_k2_save_guards.sql",
     "20261030110000_control_k2_vat_cleanup.sql",
     "20261030130000_permission_center.sql",
-    "20261030160000_permission_center_bulk_copy_log.sql"
+    "20261030160000_permission_center_bulk_copy_log.sql",
+    "20261030170000_control_doc_strip.sql"
   ],
   "forbidIncludeAll": true
 }

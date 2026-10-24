@@ -1,4 +1,5 @@
 // Kiểm soát viên K0: đọc dữ liệu RPC an toàn (đường dẫn chỉ trong app), đếm ô số, lời báo lỗi tiếng Việt.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { controlErrorMessage, controlTotals, parseFinding, parseRule, parseRun } from '../controlFindings';
 
@@ -39,5 +40,18 @@ describe('kiểm soát K1 — người xử lý, quyền chấp nhận, mở ch�
     expect(moduleRouteFor(item('javascript:alert(1)'))).toBe('/kiem-soat');
     expect(moduleRouteFor(item('//evil.example'))).toBe('/kiem-soat');
     expect(resolveDrillTarget(item('/da?projectId=p&tab=material'))).toMatchObject({ kind: 'tab', renderer: 'route', props: { path: '/da?projectId=p&tab=material' } });
+  });
+});
+
+describe('dải cảnh báo trên chứng từ', () => {
+  it('giữ cách sửa của luật, không có thì bỏ trống', () => {
+    expect(parseFinding({ id: 'a', title: 'PO-694 · Nilong', fixHint: 'Ghi lý do trên dòng đơn' }).fixHint).toBe('Ghi lý do trên dòng đơn');
+    expect(parseFinding({ id: 'a', title: 'PO-694 · Nilong' }).fixHint).toBeUndefined();
+  });
+  it('máy chủ lọc theo đơn (đường dẫn) hoặc đề xuất, cùng quyền xem với Lệch cần sửa', () => {
+    const sql = readFileSync('supabase/migrations/20261030170000_control_doc_strip.sql', 'utf8');
+    expect(sql).toContain("f.link = '/procurement?po=' || p_po_id");
+    expect(sql).toContain("f.object_type = 'material_request' and f.object_id = p_request_id");
+    expect(sql).toContain('app_private.control_can_view(f)');
   });
 });
