@@ -12,5 +12,6 @@ describe('remaining Supabase query policies', () => {
     expect(report.findings.filter((row: any) => !row.classification)).toEqual([]);
     expect(report.findings.filter((row: any) => row.classification === 'page' && row.projection === '*')).toEqual([]);
     expect(report.findings.filter((row: any) => row.severity === 'error')).toEqual([]);
-  }, 15_000);
+    // Quét cả workspace nên thời gian tăng dần theo số file; chạy cả bộ song song đã chạm 15 s (24/10).
+  }, 30_000);
 });

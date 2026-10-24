@@ -37,6 +37,7 @@ Hai vòng:
 | #344 | **K3 đợt 1**: 9 luật phân hệ Kho, tất cả `shadow`; link mở sẵn mã vật tư / phiên kiểm kê | 20261031090000 |
 | #345 | **K3 đợt 2**: 10 luật phân hệ Tài chính, tất cả `shadow`; smoke dựng ca thay dữ liệu thật | 20261031100000 |
 | #348 | **K3 đợt 3**: 14 luật phân hệ Nhân sự, tất cả `shadow`; route mới `hr` | 20261031120000 |
+| #352 | **Trợ lý đọc sổ lệch**: `control_findings_search_v1`, tra theo luật / người / phân hệ | 20261031150000 |
 
 `ai-gateway` đã deploy sau #336, gồm 6 mã lỗi K2 trong `errorGuide.ts`.
 
@@ -56,7 +57,10 @@ Hai vòng:
   - `control_daily_digest`: cron `control-daily-digest`, chạy 0h UTC = 07:00 VN.
   - Nguồn `control` trong `vcc_my_work_items_v1`.
 - **Quyền xem**: `app_private.control_can_view(f)`. Admin thấy hết; người xử lý / trưởng bộ phận thấy lệch của mình ở luật live, không thấy lệch cũ. `control_can_accept(f)` quyết định ai được Chấp nhận.
-- **RPC**: `control_overview_v1`, `control_findings_v1`, `control_finding_accept_v1`, `control_finding_reopen_v1`, `control_run_now_v1`, `control_rule_set_mode_v1`, `control_findings_for_code_v1` (Trợ lý), `control_findings_for_doc_v1` (dải trên chứng từ).
+- **RPC**: `control_overview_v1`, `control_findings_v1`, `control_finding_accept_v1`, `control_finding_reopen_v1`, `control_run_now_v1`, `control_rule_set_mode_v1`, `control_findings_for_code_v1` + `control_findings_search_v1` (Trợ lý), `control_findings_for_doc_v1` (dải trên chứng từ).
+- **Trợ lý**: công cụ `lech_kiem_soat` tra sổ lệch theo mã chứng từ, theo luật, theo người (không dấu cũng được),
+  theo phân hệ / mức, hoặc không lọc để lấy bảng tổng hợp (`control_findings_search_v1`). Quyền vẫn do
+  `control_can_view` — luật đang chạy thử chỉ Admin đọc được qua Trợ lý.
 - **Màn**:
   - Trung tâm AI → tab **Kiểm soát**: `components/aiCenter/AiControlPanel.tsx`, `lib/controlFindings.ts`.
   - `/kiem-soat`: `pages/ControlFindingsPage.tsx`.
@@ -269,6 +273,9 @@ Người dùng giả trong smoke cần cả `sub` và `email` trong claims, thi�
 - `trg_hrm_leave_balance_write_ledger` tự ghi dòng sổ khi sửa số dư phép: muốn dựng ca lệch số dư ↔ sổ thì phải sửa
   từ phía sổ, không phải phía số dư.
 - `hrm_employee_employment_events.status` nhận `ACTIVE` / `VOID` (không phải `active` / `cancelled`).
+- `create temp table` **không chạy được trong hàm `STABLE`** (`0A000`). RPC chỉ đọc thì dựng bằng CTE.
+- Thêm luật mà không cho Trợ lý đường đọc thì người dùng vẫn không hỏi được: mọi đợt luật mới nên kiểm luôn một câu
+  hỏi thật qua `lech_kiem_soat`.
 
 ## 9. Quy tắc làm việc với chủ SP
 

@@ -281,6 +281,43 @@ sửa số dư. Lỗi thật chỉ đến từ phía sổ (dòng bị sửa / x�
 `pages/hrm/Attendance.tsx`; ô tìm khớp cả mã và tên); đề xuất → `?tab=proposals&proposal=<id>`; phép → `/hrm/leave?request=<id>`
 hoặc `?tab=balances`; hồ sơ → `/hrm/employees?view=roster&person=<id>`; lương → `/hrm/payroll`.
 
+## Trợ lý đọc được sổ lệch (24/10, migration `20261031150000_control_findings_search`)
+
+Chủ SP 24/10 hỏi Trợ lý *"3 người đã nghỉ việc mà chưa ghi ngày nghỉ là ai"* → Trợ lý trả lời **không có danh sách** và
+chỉ sang màn Nhân sự, dù sổ lệch lúc đó đang giữ đúng 3 cái tên.
+
+**Vì sao**: công cụ `lech_kiem_soat` chỉ có `control_findings_for_code_v1(p_code)` — **bắt buộc mã chứng từ**
+(PO-…, MR-…). Câu hỏi này không có mã nào. Lời nhắc còn ghi thẳng: hỏi chung "tôi có lệch nào cần sửa" thì
+*chỉ sang màn /kiem-soat*. Nên Trợ lý làm đúng như được dặn — nó quay sang `bien_dong_nhan_su`, công cụ này
+trả **con số** chứ không trả danh sách tên. Nói cách khác: 51 luật dạy máy chủ rất nhiều, nhưng Trợ lý chưa biết hỏi lại.
+
+**RPC mới** `control_findings_search_v1(p_rule, p_who, p_module, p_severity, p_limit)`:
+
+| Tra theo | Tham số | Ví dụ câu hỏi |
+|---|---|---|
+| Mã chứng từ | `p_who` (hoặc đường cũ `ma`) | "PO-609 có gì lệch" |
+| Luật | `p_rule` — mã luật hoặc **chữ trong tên luật** | "ai đã nghỉ việc mà chưa ghi ngày" → `nghỉ việc` |
+| Người / vật tư | `p_who` — **không dấu cũng tìm được** (`unaccent`) | "anh Long đang bị lệch gì" → `long` |
+| Nhóm | `p_module` + `p_severity` | "Kho có lệch P0 nào" |
+| Không lọc | — | "tôi có lệch nào cần sửa" → bảng tổng hợp theo luật |
+
+Không lọc thì **chỉ trả bảng tổng hợp**, không trả danh sách dài (danh sách đầy đủ vừa dài vừa không giúp người hỏi).
+
+**Quyền không đổi**: dùng lại `app_private.control_can_view` — Admin thấy hết; người khác chỉ thấy lệch **của mình**
+ở luật **đã bật**, không thấy dữ liệu cũ và không thấy luật đang chạy thử. Nghĩa là 39 luật shadow vẫn chỉ Admin đọc
+được qua Trợ lý, không rò sang nhân viên.
+
+**Lời nhắc** (`chat.ts`) đổi từ "đẩy sang màn Lệch cần sửa" thành: gọi công cụ, và **công cụ trả ai / chứng từ nào thì
+phải liệt kê ra**, không được chỉ nói số lượng rồi bảo người dùng tự đi tìm. Màn `/kiem-soat` chỉ còn là bước làm tiếp theo.
+
+Hàm phải là **CTE, không dùng bảng tạm**: `create temp table` không chạy được trong hàm `STABLE`
+(`0A000: CREATE TABLE is not allowed in a non-volatile function`).
+
+Kiểm: `supabase/tests/control_findings_search_smoke.sql` (Cloud, giao dịch tự hủy — Admin tra đủ 6 kiểu, người ngoài
+không thấy gì, người xử lý chỉ thấy lệch của mình và không thấy dữ liệu cũ / luật chạy thử, chưa đăng nhập thì chặn)
+và `lib/__tests__/assistantControlLedger.test.ts` (9 ca: đúng câu chủ SP hỏi, mã chứng từ vẫn đi đường cũ,
+không lọc → tổng hợp, không có kết quả thì nói "không thấy trong phạm vi xem được" chứ không khẳng định sạch).
+
 ## Việc tiếp (K3 đợt 4+)
 
 Còn ~45 luật: Dự án / Tiến độ, Quy trình, Yêu cầu / Đề xuất, Danh mục vật tư.

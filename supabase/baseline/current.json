@@ -428,7 +428,8 @@
     "20261031110000_authorization_dot4a_project_member_view.sql",
     "20261031120000_control_k3_hrm.sql",
     "20261031130000_office_archive_and_amend.sql",
-    "20261031140000_work_attachment_no_fallback_variant.sql"
+    "20261031140000_work_attachment_no_fallback_variant.sql",
+    "20261031150000_control_findings_search.sql"
   ],
   "forbidIncludeAll": true
 }
