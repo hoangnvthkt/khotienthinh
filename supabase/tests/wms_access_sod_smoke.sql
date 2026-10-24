@@ -2,7 +2,8 @@
 --   psql "$DB" -v ON_ERROR_STOP=1 -f supabase/tests/wms_access_sod_smoke.sql
 \set ON_ERROR_STOP 1
 begin;
-\ir ../migrations/20261030180000_wms_access_sod.sql
+-- 20261030180000_wms_access_sod.sql đã áp trên Cloud (24/10); chạy kèm bản vá.
+\ir ../migrations/20261030190000_wms_access_sod_admin_fix.sql
 
 create temp table p on commit drop as
 select key, u.id, u.auth_id from (values ('admin', 'admin@khoviet.vn'), ('huong', 'huongnt@tienthinhjsc.vn'), ('chung', 'chungbq@tienthinhjsc.vn'),
@@ -97,6 +98,19 @@ begin
        where a.user_id = pg_temp.uid('nhu') and x ->> 'permissionCode' = 'wms.inventory.view' and x ->> 'scopeType' = 'global') then
     raise exception 'SMOKE: mẫu chưa ghi Như bỏ riêng Xem mọi kho'; end if;
   raise notice 'OK: gỡ Xem mọi kho của Như — mẫu ghi bỏ riêng, đồng bộ mẫu sau không cấp lại';
+end $$;
+
+-- Đổi việc kho của chính Admin (bộ quyền có system.settings.manage chỉ cấp qua mẫu): xem trước / lưu không hỏng.
+do $$
+declare
+  v_p jsonb := pg_temp.current_access();
+  v jsonb;
+begin
+  v_p := jsonb_set(v_p, '{whAdmin}', (select coalesce(jsonb_agg(x), '[]') from jsonb_array_elements(v_p -> 'whAdmin') x where x #>> '{}' <> pg_temp.uid('admin')::text));
+  v := public.preview_wms_access_v1(v_p);
+  if not exists (select 1 from jsonb_array_elements_text(v -> 'lines') l where l like '− Admin Hoàng — %') then raise exception 'SMOKE: xem trước thiếu dòng của Admin: %', v; end if;
+  perform public.save_wms_access_v1(v_p, 'Theo chức danh');
+  raise notice 'OK: đổi việc kho của Admin — xem trước và lưu chạy, không xét kiêm nhiệm với ADMIN';
 end $$;
 
 do $$

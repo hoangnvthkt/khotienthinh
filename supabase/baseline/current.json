@@ -421,7 +421,8 @@
     "20261030130000_permission_center.sql",
     "20261030160000_permission_center_bulk_copy_log.sql",
     "20261030170000_control_doc_strip.sql",
-    "20261030180000_wms_access_sod.sql"
+    "20261030180000_wms_access_sod.sql",
+    "20261030190000_wms_access_sod_admin_fix.sql"
   ],
   "forbidIncludeAll": true
 }
